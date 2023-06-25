@@ -221,8 +221,5 @@ func (input *Input) GetJoystickButton(joy int, button int) byte {
 	if joy < 0 || joy >= len(input.joysticks) {
 		return 0
 	}
-	// if joy == 0 && input.joysticks[joy].Button(button) != 0 {
-	// 	fmt.Printf("input_sdl.go:GetJoystickButton: joy=%v button=%v pressed\n", joy, button)
-	// }
 	return input.joysticks[joy].Button(button)
 }

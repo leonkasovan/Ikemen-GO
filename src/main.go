@@ -102,7 +102,6 @@ func main() {
 	defer sys.shutdown()
 
 	// Begin processing game using its lua scripts
-	fmt.Printf("Running script: %v\n", tmp.System)
 	if err := sys.luaLState.DoFile(tmp.System); err != nil {
 		// Display error logs.
 		errorLog := createLog("Ikemen.log")
