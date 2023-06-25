@@ -16,8 +16,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/samhocevar/beep"
-	"github.com/samhocevar/beep/speaker"
+	"github.com/ikemen-engine/Ikemen-GO/dhaninovan/beep"
+	"github.com/ikemen-engine/Ikemen-GO/dhaninovan/beep/speaker"
 	lua "github.com/yuin/gopher-lua"
 )
 
@@ -449,7 +449,7 @@ func (s *System) init(w, h int32) *lua.LState {
 			}
 			s.windowMainIcon[i], _, err = image.Decode(f[i])
 		}
-		s.window.SetIcon(s.windowMainIcon)
+		//s.window.SetIcon(s.windowMainIcon)
 		chk(err)
 	}
 	// [Icon add end]

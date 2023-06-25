@@ -18,7 +18,7 @@ var Version = "development"
 var BuildTime = ""
 
 func init() {
-	runtime.LockOSThread()
+	//runtime.LockOSThread() //it works? if not, move to main()
 }
 
 // Checks if error is not null, if there is an error it displays a error dialogue box and crashes the program.
@@ -48,7 +48,22 @@ func closeLog(f *os.File) {
 	f.Close()
 }
 
+// func main() {
+// 	sdl.Main(func() {
+// 		// Your code here....
+// 		// [....]
+
+// 		// Calls to SDL can be made by any goroutine, but always guarded by sdl.Do()
+// 		sdl.Do(func() {
+// 			sdl.Init(0)
+// 		})
+// 	})
+// }
+
 func main() {
+	//bismillah try in here if fail, remove it
+	runtime.LockOSThread()
+
 	// Make save directories, if they don't exist
 	os.Mkdir("save", os.ModeSticky|0755)
 	os.Mkdir("save/replays", os.ModeSticky|0755)
@@ -87,6 +102,7 @@ func main() {
 	defer sys.shutdown()
 
 	// Begin processing game using its lua scripts
+	fmt.Printf("Running script: %v\n", tmp.System)
 	if err := sys.luaLState.DoFile(tmp.System); err != nil {
 		// Display error logs.
 		errorLog := createLog("Ikemen.log")

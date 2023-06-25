@@ -7,14 +7,14 @@ import (
 	"math"
 	"os"
 
-	"github.com/samhocevar/beep"
-	"github.com/samhocevar/beep/effects"
+	"github.com/ikemen-engine/Ikemen-GO/dhaninovan/beep"
+	"github.com/ikemen-engine/Ikemen-GO/dhaninovan/beep/effects"
 
-	"github.com/samhocevar/beep/midi"
-	"github.com/samhocevar/beep/mp3"
-	"github.com/samhocevar/beep/speaker"
-	"github.com/samhocevar/beep/vorbis"
-	"github.com/samhocevar/beep/wav"
+	"github.com/ikemen-engine/Ikemen-GO/dhaninovan/beep/midi"
+	"github.com/ikemen-engine/Ikemen-GO/dhaninovan/beep/mp3"
+	"github.com/ikemen-engine/Ikemen-GO/dhaninovan/beep/speaker"
+	"github.com/ikemen-engine/Ikemen-GO/dhaninovan/beep/vorbis"
+	"github.com/ikemen-engine/Ikemen-GO/dhaninovan/beep/wav"
 )
 
 const (

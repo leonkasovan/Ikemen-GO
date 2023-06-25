@@ -1,5 +1,3 @@
-//go:build raw
-
 package main
 
 import (
@@ -11,9 +9,9 @@ import (
 // Main entry point for C programs
 //
 //export GoMain
-func GoMain() {
-	main()
-}
+// func GoMain() {
+// 	main()
+// }
 
 // Log writer implementation
 func NewLogWriter() io.Writer {

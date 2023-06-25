@@ -89,7 +89,7 @@ type ShortcutScript struct {
 
 type ShortcutKey struct {
 	Key Key
-	Mod ModifierKey
+	Mod Keymod
 }
 
 func NewShortcutKey(key Key, ctrl, alt, shift bool) *ShortcutKey {
@@ -99,11 +99,11 @@ func NewShortcutKey(key Key, ctrl, alt, shift bool) *ShortcutKey {
 	return sk
 }
 
-func (sk ShortcutKey) Test(k Key, m ModifierKey) bool {
+func (sk ShortcutKey) Test(k Key, m Keymod) bool {
 	return k == sk.Key && (m&ModCtrlAltShift) == sk.Mod
 }
 
-func OnKeyReleased(key Key, mk ModifierKey) {
+func OnKeyReleased(key Key, mk Keymod) {
 	if key != KeyUnknown {
 		sys.keyState[key] = false
 		sys.keyInput = KeyUnknown
@@ -111,7 +111,7 @@ func OnKeyReleased(key Key, mk ModifierKey) {
 	}
 }
 
-func OnKeyPressed(key Key, mk ModifierKey) {
+func OnKeyPressed(key Key, mk Keymod) {
 	if key != KeyUnknown {
 		sys.keyState[key] = true
 		sys.keyInput = key
@@ -145,22 +145,19 @@ func JoystickState(joy, button int) bool {
 		return false
 	}
 	if button >= 0 {
-		// Query button state
-		btns := input.GetJoystickButtons(joy)
-		if button >= len(btns) {
-			return false
-		}
-		return btns[button] != 0
+		return input.GetJoystickButton(joy, button) != 0
 	} else {
 		// Query axis state
 		axis := -button - 1
+		// fmt.Printf("JoystickState joy=%v button=%v axis=%v\n", joy, button, axis)
 		axes := input.GetJoystickAxes(joy)
 		if axis >= len(axes)*2 {
 			return false
 		}
 
 		// Read value and invert sign for odd indices
-		val := axes[axis/2] * float32((axis&1)*2-1)
+		//val := axes[axis/2] * float32((axis&1)*2-1)
+		val := float32(0.0)
 
 		var joyName = input.GetJoystickName(joy)
 

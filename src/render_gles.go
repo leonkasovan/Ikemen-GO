@@ -1,5 +1,3 @@
-//go:build !kinc
-
 package main
 
 import (
@@ -8,7 +6,7 @@ import (
 	"fmt"
 	"runtime"
 
-	gl "github.com/fyne-io/gl-js"
+	gl "github.com/ikemen-engine/Ikemen-GO/dhaninovan/gl-js"
 	"golang.org/x/mobile/exp/f32"
 )
 

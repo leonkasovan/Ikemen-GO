@@ -100,14 +100,15 @@ function varLinux() {
 function varLinuxARM() {
 	export GOOS=linux
 	export GOARCH=arm64
+	export CC=aarch64-linux-gnu-gcc 
 	binName="Ikemen_GO_LinuxARM"
 }
 
 # Build functions.
 function build() {
-	#echo "buildNormal"
-	#echo "$binName"
-	go build -trimpath -v -trimpath -o ./bin/$binName ./src
+	echo "buildNormal"
+	echo "$binName"
+	go build -ldflags "-s -w" -x -v -trimpath -o ./bin/$binName ./src
 }
 
 function buildWin() {
