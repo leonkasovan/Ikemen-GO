@@ -202,9 +202,9 @@ type configSettings struct {
 	BarStun                    bool
 	Borderless                 bool
 	ComboExtraFrameWindow      int32
-	CommonAir                  []string
-	CommonCmd                  []string
-	CommonConst                []string
+	CommonAir                  []string	// old config will fail loaded, change to array of string
+	CommonCmd                  []string // old config will fail loaded, change to array of string
+	CommonConst                []string // old config will fail loaded, change to array of string
 	CommonFx                   []string
 	CommonLua                  []string
 	CommonStates               []string

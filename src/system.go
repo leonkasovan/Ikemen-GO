@@ -632,7 +632,7 @@ func (s *System) playerIDExist(id BytecodeValue) BytecodeValue {
 	return BytecodeBool(s.playerID(id.ToI()) != nil)
 }
 func (s *System) screenHeight() float32 {
-	return 240
+	return float32(s.gameHeight)
 }
 func (s *System) screenWidth() float32 {
 	return float32(s.gameWidth)

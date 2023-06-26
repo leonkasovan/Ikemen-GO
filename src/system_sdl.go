@@ -29,7 +29,7 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 
 	// Create main window.
 	window, err = sdl.CreateWindow(s.windowTitle, sdl.WINDOWPOS_UNDEFINED, sdl.WINDOWPOS_UNDEFINED,
-		640, 480, sdl.WINDOW_OPENGL)
+		int32(w), int32(h), sdl.WINDOW_OPENGL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sdl.CreateWindow: %w", err)
 	}
@@ -39,7 +39,7 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 		return nil, fmt.Errorf("failed to window.GLCreateContext: %w", err)
 	}
 
-	gl.Viewport(0, 0, 640, 480)
+	gl.Viewport(0, 0, w, h)
 
 	// V-Sync
 	if s.vRetrace >= 0 {
