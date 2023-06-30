@@ -305,7 +305,7 @@ func loadDefInfo(f *Fnt, filename string, is IniSection, height int32) {
 
 	if len(is["file"]) > 0 {
 		if f.Type == "truetype" {
-			//LoadFntTtf(f, filename, is["file"], height)
+			LoadFntTtf(f, filename, is["file"], height)
 		} else {
 			LoadFntSff(f, filename, is["file"])
 		}

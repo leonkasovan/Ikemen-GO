@@ -3,6 +3,10 @@ package gl
 /*
 #include <stdlib.h>
 #include <GLES2/gl2.h>
+#define GL_VERTEX_ARRAY_BINDING_OES       0x85B5
+typedef void (GL_APIENTRYP PFNGLBINDVERTEXARRAYOESPROC) (unsigned int array);
+GL_APICALL void GL_APIENTRY glBindVertexArray(unsigned int array);
+GL_APICALL void GL_APIENTRY glGenVertexArrays(GLsizei n, GLuint *arrays);
 */
 import "C"
 
@@ -14,6 +18,17 @@ type contextWatcher struct{}
 
 func (contextWatcher) OnMakeCurrent(context interface{}) {}
 func (contextWatcher) OnDetach()                         {}
+
+func BindVertexArray(array uint32) {
+	C.glBindVertexArray(C.GLuint(array))
+}
+
+func CreateVertexArray() uint32 {
+	var array uint32
+
+	C.glGenVertexArrays(1, (*C.GLuint)(&array))
+	return array
+}
 
 func ActiveTexture(texture Enum) {
 	C.glActiveTexture(texture.c())
@@ -79,6 +94,10 @@ func BufferInit(target Enum, size int, usage Enum) {
 
 func BufferSubData(target Enum, offset int, data []byte) {
 	C.glBufferSubData(target.c(), C.GLintptr(offset), C.GLsizeiptr(len(data)), unsafe.Pointer(&data[0]))
+}
+
+func BufferSubDataFloat(target Enum, offset int, data []float32) {
+	C.glBufferSubData(target.c(), C.GLintptr(offset), C.GLsizeiptr(len(data)*4), unsafe.Pointer(&data[0]))
 }
 
 func CheckFramebufferStatus(target Enum) Enum {

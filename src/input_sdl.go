@@ -22,12 +22,12 @@ const (
 )
 
 var KeyToStringLUT = map[sdl.Keycode]string{
-	sdl.K_RETURN:        "RETURN",
+	sdl.K_RETURN:       "RETURN",
 	sdl.K_ESCAPE:       "ESCAPE",
 	sdl.K_BACKSPACE:    "BACKSPACE",
 	sdl.K_TAB:          "TAB",
 	sdl.K_SPACE:        "SPACE",
-	sdl.K_QUOTE:   "QUOTE",
+	sdl.K_QUOTE:        "QUOTE",
 	sdl.K_COMMA:        "COMMA",
 	sdl.K_MINUS:        "MINUS",
 	sdl.K_PERIOD:       "PERIOD",
@@ -43,11 +43,11 @@ var KeyToStringLUT = map[sdl.Keycode]string{
 	sdl.K_8:            "8",
 	sdl.K_9:            "9",
 	sdl.K_SEMICOLON:    "SEMICOLON",
-	sdl.K_EQUALS:        "EQUALS",
+	sdl.K_EQUALS:       "EQUALS",
 	sdl.K_LEFTBRACKET:  "LBRACKET",
 	sdl.K_BACKSLASH:    "BACKSLASH",
 	sdl.K_RIGHTBRACKET: "RBRACKET",
-	sdl.K_BACKQUOTE:  "BACKQUOTE",
+	sdl.K_BACKQUOTE:    "BACKQUOTE",
 	sdl.K_a:            "a",
 	sdl.K_b:            "b",
 	sdl.K_c:            "c",
@@ -100,24 +100,24 @@ var KeyToStringLUT = map[sdl.Keycode]string{
 	sdl.K_LEFT:         "LEFT",
 	sdl.K_DOWN:         "DOWN",
 	sdl.K_UP:           "UP",
-	sdl.K_NUMLOCKCLEAR:      "NUMLOCKCLEAR",
-	sdl.K_KP_DIVIDE:     "KP_DIVIDE",
-	sdl.K_KP_MULTIPLY:   "KP_MULTIPLY",
-	sdl.K_KP_MINUS:   "KP_MINUS",
-	sdl.K_KP_PLUS:        "KP_PLUS",
-	sdl.K_KP_ENTER:      "KP_ENTER",
-	sdl.K_KP_1:          "KP_1",
-	sdl.K_KP_2:          "KP_2",
-	sdl.K_KP_3:          "KP_3",
-	sdl.K_KP_4:          "KP_4",
-	sdl.K_KP_5:          "KP_5",
-	sdl.K_KP_6:          "KP_6",
-	sdl.K_KP_7:          "KP_7",
-	sdl.K_KP_8:          "KP_8",
-	sdl.K_KP_9:          "KP_9",
-	sdl.K_KP_0:          "KP_0",
+	sdl.K_NUMLOCKCLEAR: "NUMLOCKCLEAR",
+	sdl.K_KP_DIVIDE:    "KP_DIVIDE",
+	sdl.K_KP_MULTIPLY:  "KP_MULTIPLY",
+	sdl.K_KP_MINUS:     "KP_MINUS",
+	sdl.K_KP_PLUS:      "KP_PLUS",
+	sdl.K_KP_ENTER:     "KP_ENTER",
+	sdl.K_KP_1:         "KP_1",
+	sdl.K_KP_2:         "KP_2",
+	sdl.K_KP_3:         "KP_3",
+	sdl.K_KP_4:         "KP_4",
+	sdl.K_KP_5:         "KP_5",
+	sdl.K_KP_6:         "KP_6",
+	sdl.K_KP_7:         "KP_7",
+	sdl.K_KP_8:         "KP_8",
+	sdl.K_KP_9:         "KP_9",
+	sdl.K_KP_0:         "KP_0",
 	sdl.K_KP_PERIOD:    "KP_PERIOD",
-	sdl.K_KP_EQUALS:      "KP_EQUALS",
+	sdl.K_KP_EQUALS:    "KP_EQUALS",
 	sdl.K_F13:          "F13",
 	sdl.K_F14:          "F14",
 	sdl.K_F15:          "F15",
@@ -131,14 +131,14 @@ var KeyToStringLUT = map[sdl.Keycode]string{
 	sdl.K_F23:          "F23",
 	sdl.K_F24:          "F24",
 	sdl.K_MENU:         "MENU",
-	sdl.K_LCTRL:  "LCTRL",
-	sdl.K_LSHIFT:    "LSHIFT",
-	sdl.K_LALT:      "LALT",
-	sdl.K_LGUI:    "LGUI",
-	sdl.K_RCTRL: "RCTRL",
-	sdl.K_RSHIFT:   "RSHIFT",
-	sdl.K_RALT:     "RALT",
-	sdl.K_RGUI:   "RGUI",
+	sdl.K_LCTRL:        "LCTRL",
+	sdl.K_LSHIFT:       "LSHIFT",
+	sdl.K_LALT:         "LALT",
+	sdl.K_LGUI:         "LGUI",
+	sdl.K_RCTRL:        "RCTRL",
+	sdl.K_RSHIFT:       "RSHIFT",
+	sdl.K_RALT:         "RALT",
+	sdl.K_RGUI:         "RGUI",
 }
 
 var StringToKeyLUT = map[string]sdl.Keycode{}
@@ -197,12 +197,13 @@ func (input *Input) GetJoystickName(joy int) string {
 	return input.joysticks[joy].Name()
 }
 
-// func (input *Input) GetJoystickAxes(joy int) []int16 {
-// 	if joy < 0 || joy >= len(input.joysticks) {
-// 		return []int16{}
-// 	}
-// 	return []int16{input.joysticks[joy].Axis(0), input.joysticks[joy].Axis(1)}
-// }
+func (input *Input) GetJoystickAxis(joy int, axis int) int16 {
+	if joy < 0 || joy >= len(input.joysticks) {
+		return 0
+	}
+	return input.joysticks[joy].Axis(axis)
+}
+
 func (input *Input) GetJoystickAxes(joy int) []float32 {
 	if joy < 0 || joy >= len(input.joysticks) {
 		return []float32{}
@@ -214,7 +215,7 @@ func (input *Input) GetJoystickButtons(joy int) []byte {
 	if joy < 0 || joy >= len(input.joysticks) {
 		return []byte{}
 	}
-	return []byte{input.joysticks[joy].Button(0),input.joysticks[joy].Button(1),input.joysticks[joy].Button(2),input.joysticks[joy].Button(3),input.joysticks[joy].Button(4),input.joysticks[joy].Button(5),input.joysticks[joy].Button(6),input.joysticks[joy].Button(7),input.joysticks[joy].Button(8),input.joysticks[joy].Button(9),input.joysticks[joy].Button(10),input.joysticks[joy].Button(11),input.joysticks[joy].Button(12),input.joysticks[joy].Button(13)}
+	return []byte{input.joysticks[joy].Button(0), input.joysticks[joy].Button(1), input.joysticks[joy].Button(2), input.joysticks[joy].Button(3), input.joysticks[joy].Button(4), input.joysticks[joy].Button(5), input.joysticks[joy].Button(6), input.joysticks[joy].Button(7), input.joysticks[joy].Button(8), input.joysticks[joy].Button(9), input.joysticks[joy].Button(10), input.joysticks[joy].Button(11), input.joysticks[joy].Button(12), input.joysticks[joy].Button(13)}
 }
 
 func (input *Input) GetJoystickButton(joy int, button int) byte {

@@ -75,7 +75,7 @@ var sys = System{
 	keyInput:              KeyUnknown,
 	wavChannels:           256,
 	comboExtraFrameWindow: 1,
-	fontShaderVer:         120,
+	fontShaderVer:         320,
 	//FLAC_FrameWait:          -1,
 	luaSpriteScale:       1,
 	luaPortraitScale:     1,

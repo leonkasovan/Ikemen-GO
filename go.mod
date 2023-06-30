@@ -3,7 +3,9 @@ module github.com/ikemen-engine/Ikemen-GO
 go 1.20
 
 require (
+	github.com/flopp/go-findfont v0.1.0 // indirect
 	github.com/go-gl/mathgl v1.0.0 // indirect
+	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
 	github.com/hajimehoshi/go-mp3 v0.3.4 // indirect
 	github.com/hajimehoshi/oto v1.0.1 // indirect
 	github.com/jfreymuth/oggvorbis v1.0.5 // indirect

@@ -146,41 +146,24 @@ func JoystickState(joy, button int) bool {
 	}
 	if button >= 0 {
 		return input.GetJoystickButton(joy, button) != 0
-	} else {
-		// Query axis state
-		axis := -button - 1
-		// fmt.Printf("JoystickState joy=%v button=%v axis=%v\n", joy, button, axis)
-		axes := input.GetJoystickAxes(joy)
-		if axis >= len(axes)*2 {
-			return false
-		}
-
-		// Read value and invert sign for odd indices
-		//val := axes[axis/2] * float32((axis&1)*2-1)
-		val := float32(0.0)
-
-		var joyName = input.GetJoystickName(joy)
-
-		// Xbox360コントローラーのLRトリガー判定
-		if (axis == 9 || axis == 11) && (strings.Contains(joyName, "XInput") || strings.Contains(joyName, "X360")) {
-			return val > sys.xinputTriggerSensitivity
-		}
-
-		// Ignore trigger axis on PS4 (We already have buttons)
-		if (axis >= 6 && axis <= 9) && joyName == "PS4 Controller" {
-			return false
-		}
-
-		return val > sys.controllerStickSensitivity
 	}
+	return false
 }
 
 type KeyConfig struct{ Joy, dU, dD, dL, dR, kA, kB, kC, kX, kY, kZ, kS, kD, kW, kM int }
 
-func (kc KeyConfig) U() bool { return JoystickState(kc.Joy, kc.dU) }
-func (kc KeyConfig) D() bool { return JoystickState(kc.Joy, kc.dD) }
-func (kc KeyConfig) L() bool { return JoystickState(kc.Joy, kc.dL) }
-func (kc KeyConfig) R() bool { return JoystickState(kc.Joy, kc.dR) }
+func (kc KeyConfig) U() bool {
+	return JoystickState(kc.Joy, kc.dU) || input.GetJoystickAxis(kc.Joy, 1) < -200
+}
+func (kc KeyConfig) D() bool {
+	return JoystickState(kc.Joy, kc.dD) || input.GetJoystickAxis(kc.Joy, 1) > 200
+}
+func (kc KeyConfig) L() bool {
+	return JoystickState(kc.Joy, kc.dL) || input.GetJoystickAxis(kc.Joy, 0) < -200
+}
+func (kc KeyConfig) R() bool {
+	return JoystickState(kc.Joy, kc.dR) || input.GetJoystickAxis(kc.Joy, 0) > 200
+}
 func (kc KeyConfig) a() bool { return JoystickState(kc.Joy, kc.kA) }
 func (kc KeyConfig) b() bool { return JoystickState(kc.Joy, kc.kB) }
 func (kc KeyConfig) c() bool { return JoystickState(kc.Joy, kc.kC) }
