@@ -1,6 +1,11 @@
 # Ikemen GO
 IKEMEN Go is a remake of the IKEMEN (open source fighting games engine that supports M.U.G.E.N resources) in Google’s Programming Language “Go”.
 
+## Char resource
+Jax MK3 : https://drive.google.com/file/d/1_FqmekqbPOtmywVa_Hz6kCrLjXKBAZ97/view  
+CM PUNK : https://drive.google.com/file/d/1MXj_lUdSrZIKQXM8ioIRhqJqrbObat2B/view  
+Jill : https://drive.google.com/file/d/1dmC-d3ikapZdC2P4lmF139nEhN01iLx-/view  
+
 ## Installing
 Ready to use builds for Windows, MacOS and Linux can be found on the releases tab of the repo. 
 
