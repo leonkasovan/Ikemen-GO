@@ -7,7 +7,7 @@ import (
 	"os"
 
 	findfont "github.com/flopp/go-findfont"
-	"github.com/ikemen-engine/glfont"
+	"github.com/leonkasovan/glfont"
 	"github.com/sqweek/dialog"
 )
 

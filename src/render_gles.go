@@ -1,4 +1,4 @@
-//go:build !kinc && !gles2
+//go:build gles2
 
 package main
 
@@ -10,7 +10,7 @@ import (
 	"runtime"
 	"unsafe"
 
-	gl "github.com/go-gl/gl/v2.1/gl"
+	gl "github.com/leonkasovan/gl/v3.1/gles2"
 	"golang.org/x/mobile/exp/f32"
 )
 
@@ -93,7 +93,7 @@ func (s *ShaderProgram) RegisterTextures(names ...string) {
 
 func compileShader(shaderType uint32, src string) (shader uint32) {
 	shader = gl.CreateShader(shaderType)
-	src = "#version 120\n" + src + "\x00"
+	src = "#version 320 es\nprecision mediump float;\n" + src + "\x00"
 	s, _ := gl.Strs(src)
 	var l int32 = int32(len(src) - 1)
 	gl.ShaderSource(shader, 1, s, &l)
@@ -225,7 +225,7 @@ func (t *Texture) SetPixelData(data []float32) {
 
 	gl.BindTexture(gl.TEXTURE_2D, t.handle)
 	gl.PixelStorei(gl.UNPACK_ALIGNMENT, 1)
-	gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F_ARB, t.width, t.height, 0, gl.RGBA, gl.FLOAT, unsafe.Pointer(&data[0]))
+	gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGBA, t.width, t.height, 0, gl.RGBA, gl.FLOAT, unsafe.Pointer(&data[0]))
 }
 
 // Return whether texture has a valid handle
@@ -255,29 +255,29 @@ type Renderer struct {
 	indexBuffer uint32
 }
 
-//go:embed shaders/sprite.vert.glsl
+//go:embed shaders/sprite.vert.320.glsl
 var vertShader string
 
-//go:embed shaders/sprite.frag.glsl
+//go:embed shaders/sprite.frag.320.glsl
 var fragShader string
 
-//go:embed shaders/model.vert.glsl
+//go:embed shaders/model.vert.320.glsl
 var modelVertShader string
 
-//go:embed shaders/model.frag.glsl
+//go:embed shaders/model.frag.320.glsl
 var modelFragShader string
 
-//go:embed shaders/ident.vert.glsl
+//go:embed shaders/ident.vert.320.glsl
 var identVertShader string
 
-//go:embed shaders/ident.frag.glsl
+//go:embed shaders/ident.frag.320.glsl
 var identFragShader string
 
 // Render initialization.
 // Creates the default shaders, the framebuffer and enables MSAA.
 func (r *Renderer) Init() {
 	chk(gl.Init())
-	sys.errLog.Printf("Using OpenGL %v (%v)", gl.GetString(gl.VERSION), gl.GetString(gl.RENDERER))
+	sys.errLog.Printf("Using OpenGL %v (%v)", gl.GoStr(gl.GetString(gl.VERSION)), gl.GoStr(gl.GetString(gl.RENDERER)))
 
 	r.postShaderSelect = make([]*ShaderProgram, 1+len(sys.externalShaderList))
 
@@ -294,14 +294,14 @@ func (r *Renderer) Init() {
 
 	// Sprite shader
 	r.spriteShader = newShaderProgram(vertShader, fragShader, "Main Shader")
-	r.spriteShader.RegisterAttributes("position", "uv")
+	r.spriteShader.RegisterAttributes("position", "uv", "FragColor")
 	r.spriteShader.RegisterUniforms("modelview", "projection", "x1x2x4x3",
 		"alpha", "tint", "mask", "neg", "gray", "add", "mult", "isFlat", "isRgba", "isTrapez", "hue")
 	r.spriteShader.RegisterTextures("pal", "tex")
 
 	// 3D model shader
 	r.modelShader = newShaderProgram(modelVertShader, modelFragShader, "Model Shader")
-	r.modelShader.RegisterAttributes("position", "uv", "vertColor", "joints_0", "joints_1", "weights_0", "weights_1", "morphTargets_0")
+	r.modelShader.RegisterAttributes("position", "uv", "vertColor", "joints_0", "joints_1", "weights_0", "weights_1", "morphTargets_0", "FragColor")
 	r.modelShader.RegisterUniforms("modelview", "projection", "baseColorFactor", "add", "mult", "textured", "neg", "gray", "hue", "enableAlpha", "alphaThreshold", "numJoints", "morphTargetWeight", "positionTargetCount", "uvTargetCount")
 	r.modelShader.RegisterTextures("tex", "jointMatrices")
 
@@ -312,7 +312,7 @@ func (r *Renderer) Init() {
 
 	// Ident shader (no postprocessing)
 	r.postShaderSelect[0] = newShaderProgram(identVertShader, identFragShader, "Identity Postprocess")
-	r.postShaderSelect[0].RegisterAttributes("VertCoord")
+	r.postShaderSelect[0].RegisterAttributes("texcoord", "FragColor")
 	r.postShaderSelect[0].RegisterUniforms("Texture", "TextureSize")
 
 	// External Shaders
@@ -323,14 +323,14 @@ func (r *Renderer) Init() {
 	}
 
 	if sys.multisampleAntialiasing {
-		gl.Enable(gl.MULTISAMPLE)
+		// gl.Enable(gl.MULTISAMPLE)
 	}
 
 	gl.ActiveTexture(gl.TEXTURE0)
 	gl.GenTextures(1, &r.fbo_texture)
 
 	if sys.multisampleAntialiasing {
-		gl.BindTexture(gl.TEXTURE_2D_MULTISAMPLE, r.fbo_texture)
+		// gl.BindTexture(gl.TEXTURE_2D_MULTISAMPLE, r.fbo_texture)
 	} else {
 		gl.BindTexture(gl.TEXTURE_2D, r.fbo_texture)
 	}
@@ -341,7 +341,7 @@ func (r *Renderer) Init() {
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
 
 	if sys.multisampleAntialiasing {
-		gl.TexImage2DMultisample(gl.TEXTURE_2D_MULTISAMPLE, 16, gl.RGBA, sys.scrrect[2], sys.scrrect[3], true)
+		// gl.TexImage2DMultisample(gl.TEXTURE_2D_MULTISAMPLE, 16, gl.RGBA, sys.scrrect[2], sys.scrrect[3], true)
 
 	} else {
 		gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGBA, sys.scrrect[2], sys.scrrect[3], 0, gl.RGBA, gl.UNSIGNED_BYTE, nil)

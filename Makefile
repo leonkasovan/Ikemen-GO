@@ -24,6 +24,11 @@ srcFiles=src/anim.go \
 	src/util_desktop.go \
 	src/util_js.go
 
+# Linux target
+Ikemen_GO_Linux: ${srcFiles}
+	cd ./build && ./build.sh Linux
+	cp bin/Ikemen_GO_Linux ../../Downloads/IkemenGo/Ikemen_GO_Linux_GLES
+	
 # Windows 64-bit target
 Ikemen_GO.exe: ${srcFiles}
 	cd ./build && bash ./build.sh Win64
@@ -31,10 +36,6 @@ Ikemen_GO.exe: ${srcFiles}
 # Windows 32-bit target
 Ikemen_GO_86.exe: ${srcFiles}
 	cd ./build && bash ./build.sh Win32
-
-# Linux target
-Ikemen_GO_Linux: ${srcFiles}
-	cd ./build && ./build.sh Linux
 
 # MacOS x64 target
 Ikemen_GO_MacOS: ${srcFiles}
