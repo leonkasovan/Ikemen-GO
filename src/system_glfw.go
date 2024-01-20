@@ -1,4 +1,4 @@
-//go:build !kinc
+//go:build !kinc && !sdl
 
 package main
 
@@ -36,9 +36,14 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 	fullscreen := s.fullscreen && !forceWindowed
 
 	glfw.WindowHint(glfw.Resizable, glfw.False)
-	glfw.WindowHint(glfw.ContextVersionMajor, 3)
-	glfw.WindowHint(glfw.ContextVersionMinor, 2)
-	glfw.WindowHint(glfw.ClientAPI, glfw.OpenGLESAPI)
+	if Renderer_API == 2 {	// 2=>OpenGLES
+		glfw.WindowHint(glfw.ContextVersionMajor, 3)
+		glfw.WindowHint(glfw.ContextVersionMinor, 2)
+		glfw.WindowHint(glfw.ClientAPI, glfw.OpenGLESAPI)
+	}else if Renderer_API == 1 {	// 1=>OpenGL 
+		glfw.WindowHint(glfw.ContextVersionMajor, 2)
+		glfw.WindowHint(glfw.ContextVersionMinor, 1)
+	}
 
 	// Create main window.
 	// NOTE: Borderless fullscreen is in reality just a window without borders.

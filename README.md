@@ -16,6 +16,10 @@ Download the ZIP archive that matches your operating system and extract its cont
 On Windows, double-click `Ikemen_GO.exe` (`Ikemen_GO_x86.exe` on 32-bit OSes).
 On macOS or Linux, double-click `Ikemen_GO.command`.
 
+## Testing 3D Stage
+Download stages from here:   
+https://www.mediafire.com/folder/syh6wacfmskeg/MBTL_Stages  
+
 ## Developing
 These instructions are for those interested in developing the Ikemen GO engine itself. Instructions for creating custom stages, fonts, characters and other resources can be found in the community forum.
 

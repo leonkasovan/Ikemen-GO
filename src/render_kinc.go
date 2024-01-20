@@ -66,6 +66,8 @@ type Texture struct {
 	handle *C.kinc_g4_texture_t
 }
 
+const Renderer_API = 3
+
 var TextureFormatLUT = map[int32]C.kinc_image_format_t{
 	8:  C.KINC_IMAGE_FORMAT_GREY8,
 	24: C.KINC_IMAGE_FORMAT_RGB24,

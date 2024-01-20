@@ -107,8 +107,10 @@ function varLinuxARM() {
 function build() {
 	#echo "buildNormal"
 	#echo "$binName"
-	# go build -trimpath -v -trimpath -o ./bin/$binName ./src
+	# go build -trimpath -v -trimpath -o ./bin/$binName ./src	// original with debug
+	# go build -tags=gles2,sdl -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/$binName ./src
 	go build -tags=gles2 -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/$binName ./src
+	# go build -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/$binName ./src
 }
 
 function buildWin() {

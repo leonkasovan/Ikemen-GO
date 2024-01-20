@@ -14,6 +14,8 @@ import (
 	"golang.org/x/mobile/exp/f32"
 )
 
+const Renderer_API = 1
+
 var InternalFormatLUT = map[int32]uint32{
 	8:  gl.LUMINANCE,
 	24: gl.RGB,
@@ -277,7 +279,7 @@ var identFragShader string
 // Creates the default shaders, the framebuffer and enables MSAA.
 func (r *Renderer) Init() {
 	chk(gl.Init())
-	sys.errLog.Printf("Using OpenGL %v (%v)", gl.GetString(gl.VERSION), gl.GetString(gl.RENDERER))
+	sys.errLog.Printf("Using OpenGL %v (%v)", gl.GoStr(gl.GetString(gl.VERSION)), gl.GoStr(gl.GetString(gl.RENDERER)))
 
 	r.postShaderSelect = make([]*ShaderProgram, 1+len(sys.externalShaderList))
 
