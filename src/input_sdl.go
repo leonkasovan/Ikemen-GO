@@ -6,8 +6,10 @@ import (
 	sdl "github.com/veandco/go-sdl2/sdl"
 )
 
+const MAX_JOYSTICK_COUNT = 4
 type Input struct {
-	joysticks [16]*sdl.Joystick
+	joysticks [MAX_JOYSTICK_COUNT]*sdl.Joystick
+	sdlButtonState [MAX_JOYSTICK_COUNT][16]byte
 }
 
 type Key = sdl.Keycode
@@ -164,6 +166,7 @@ func KeyToString(k sdl.Keycode) string {
 	return ""
 }
 
+//to be fix: doesn't work toggle Full Screen
 func NewModifierKey(ctrl, alt, shift bool) (mod ModifierKey) {
 	if ctrl {
 		mod |= sdl.KMOD_CTRL
@@ -174,7 +177,7 @@ func NewModifierKey(ctrl, alt, shift bool) (mod ModifierKey) {
 	if shift {
 		mod |= sdl.KMOD_SHIFT
 	}
-	return
+	return mod
 }
 
 var input Input
@@ -215,12 +218,14 @@ func (input *Input) GetJoystickButtons(joy int) []byte {
 	if joy < 0 || joy >= len(input.joysticks) {
 		return []byte{}
 	}
-	return []byte{input.joysticks[joy].Button(0), input.joysticks[joy].Button(1), input.joysticks[joy].Button(2), input.joysticks[joy].Button(3), input.joysticks[joy].Button(4), input.joysticks[joy].Button(5), input.joysticks[joy].Button(6), input.joysticks[joy].Button(7), input.joysticks[joy].Button(8), input.joysticks[joy].Button(9), input.joysticks[joy].Button(10), input.joysticks[joy].Button(11), input.joysticks[joy].Button(12), input.joysticks[joy].Button(13)}
+	// return []byte{input.joysticks[joy].Button(0), input.joysticks[joy].Button(1), input.joysticks[joy].Button(2), input.joysticks[joy].Button(3), input.joysticks[joy].Button(4), input.joysticks[joy].Button(5), input.joysticks[joy].Button(6), input.joysticks[joy].Button(7), input.joysticks[joy].Button(8), input.joysticks[joy].Button(9), input.joysticks[joy].Button(10), input.joysticks[joy].Hat(0), input.joysticks[joy].Hat(1), input.joysticks[joy].Hat(2), input.joysticks[joy].Hat(3)}
+	return input.sdlButtonState[joy][:]
 }
 
 func (input *Input) GetJoystickButton(joy int, button int) byte {
 	if joy < 0 || joy >= len(input.joysticks) {
 		return 0
 	}
-	return input.joysticks[joy].Button(button)
+	// return input.joysticks[joy].Button(button)
+	return input.sdlButtonState[joy][button]
 }

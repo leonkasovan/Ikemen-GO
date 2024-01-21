@@ -27,8 +27,8 @@ srcFiles=src/anim.go \
 # Linux target
 Ikemen_GO_Linux: ${srcFiles}
 	cd ./build && ./build.sh Linux
-	cp bin/Ikemen_GO_Linux ../../Downloads/IkemenGo0/Ikemen_GO_Linux
-	# cp bin/Ikemen_GO_Linux ../../Downloads/IkemenGo/Ikemen_GO_Linux_GLES
+	# cp bin/Ikemen_GO_Linux ../../Downloads/IkemenGo0/Ikemen_GO_Linux
+	cp bin/Ikemen_GO_Linux ../../Downloads/IkemenGo/Ikemen_GO_Linux_GLES
 	
 # Windows 64-bit target
 Ikemen_GO.exe: ${srcFiles}
