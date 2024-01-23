@@ -11,13 +11,10 @@ On MacOS or Linux, double-click on `Ikemen_GO.command`
 ## Developing
 These instructions are for those interested in developing the Ikemen_GO engine. Instructions on contributing with custom stages, fonts, characters and other resources can be found in the community forum.
 
-### Building on Windows
-Check the instructions [here](https://github.com/ikemen-engine/Ikemen-GO/wiki/Building,-Installing-and-Distributing#building-on-windows )
-
-### Building on Mac
-Check the instructions [here](https://github.com/ikemen-engine/Ikemen-GO/wiki/Building,-Installing-and-Distributing#building-on-macos)
-
-### Building on Linux
+```
+git clone -b develop https://github.com/leonkasovan/Ikemen-GO.git
+make
+```
 Check the instructions [here](https://github.com/ikemen-engine/Ikemen-GO/wiki/Building,-Installing-and-Distributing#building-on-linux)
 
 ### Debugging
