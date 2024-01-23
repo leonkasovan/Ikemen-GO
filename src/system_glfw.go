@@ -38,7 +38,7 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 	glfw.WindowHint(glfw.Resizable, glfw.False)
 	if Renderer_API == 2 {	// 2=>OpenGLES
 		glfw.WindowHint(glfw.ContextVersionMajor, 3)
-		glfw.WindowHint(glfw.ContextVersionMinor, 2)
+		glfw.WindowHint(glfw.ContextVersionMinor, 1)
 		glfw.WindowHint(glfw.ClientAPI, glfw.OpenGLESAPI)
 	}else if Renderer_API == 1 {	// 1=>OpenGL 
 		glfw.WindowHint(glfw.ContextVersionMajor, 2)

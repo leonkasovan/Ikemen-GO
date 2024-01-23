@@ -46,7 +46,13 @@ func LoadFntTtf(f *Fnt, fontfile string, filename string, height int32) {
 	} else {
 		f.Size[1] = uint16(height)
 	}
-	ttf, err := glfont.LoadFont(fileDir, height, int(sys.gameWidth), int(sys.gameHeight), sys.fontShaderVer)
+	var glsl_version uint
+	if Renderer_API == 2 {	// 2=>OpenGLES
+		glsl_version = 300
+	} else {
+		glsl_version = sys.fontShaderVer
+	}
+	ttf, err := glfont.LoadFont(fileDir, height, int(sys.gameWidth), int(sys.gameHeight), glsl_version)
 	if err != nil {
 		panic(err)
 	}

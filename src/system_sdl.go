@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"image"
 
-	// gl "github.com/leonkasovan/gl/v3.1/gles2"
 	sdl "github.com/veandco/go-sdl2/sdl"
 )
 
@@ -27,9 +26,14 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 	var window *sdl.Window
 	// Initialize OpenGL
 	chk(sdl.Init(sdl.INIT_EVERYTHING))
-	sdl.GLSetAttribute(sdl.GL_CONTEXT_MAJOR_VERSION, 3)
-	sdl.GLSetAttribute(sdl.GL_CONTEXT_MINOR_VERSION, 1)
-	sdl.GLSetAttribute(sdl.GL_CONTEXT_PROFILE_MASK, sdl.GL_CONTEXT_PROFILE_ES)
+	if Renderer_API == 2 {	// OpenGL ES
+		sdl.GLSetAttribute(sdl.GL_CONTEXT_MAJOR_VERSION, 3)
+		sdl.GLSetAttribute(sdl.GL_CONTEXT_MINOR_VERSION, 1)
+		sdl.GLSetAttribute(sdl.GL_CONTEXT_PROFILE_MASK, sdl.GL_CONTEXT_PROFILE_ES)
+	} else {
+		sdl.GLSetAttribute(sdl.GL_CONTEXT_MAJOR_VERSION, 2)
+		sdl.GLSetAttribute(sdl.GL_CONTEXT_MINOR_VERSION, 1)
+	}
 	// Create main window.
 	window, err = sdl.CreateWindow(s.windowTitle, sdl.WINDOWPOS_UNDEFINED, sdl.WINDOWPOS_UNDEFINED,
 		int32(w), int32(h), sdl.WINDOW_OPENGL)
@@ -103,18 +107,18 @@ func (w *Window) pollEvents() {
 		break
 	case *sdl.JoyHatEvent:
 		if t.Value == 1 {	// Up
-			input.sdlButtonState[t.Which][11] = 1
+			input.sdlButtonState[t.Which][10] = 1
 		}else if t.Value == 2 {	// Right
-			input.sdlButtonState[t.Which][12] = 1
+			input.sdlButtonState[t.Which][11] = 1
 		}else if t.Value == 4 {	// Down
-			input.sdlButtonState[t.Which][13] = 1
+			input.sdlButtonState[t.Which][12] = 1
 		}else if t.Value == 8 {	// Left
-			input.sdlButtonState[t.Which][14] = 1
+			input.sdlButtonState[t.Which][13] = 1
 		}else{
+			input.sdlButtonState[t.Which][10] = 0
 			input.sdlButtonState[t.Which][11] = 0
 			input.sdlButtonState[t.Which][12] = 0
 			input.sdlButtonState[t.Which][13] = 0
-			input.sdlButtonState[t.Which][14] = 0
 		}
 		break
 	case *sdl.JoyDeviceAddedEvent:
@@ -142,8 +146,8 @@ func (w *Window) Close() {
 }
 
 /*
-t.Button
-
+t.Button in Steamdeck
+Button R3 will be override this DPAD-UP in order to comply with Ikemen-Go default input config
 0 A
 1 B
 2 X
