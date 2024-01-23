@@ -25,29 +25,25 @@ type Window struct {
 func (s *System) newWindow(w, h int) (*Window, error) {
 	var err error
 	var window *sdl.Window
-	sys.errLog.Printf("src/system_sdl.go:28\n")
 	// Initialize OpenGL
 	chk(sdl.Init(sdl.INIT_EVERYTHING))
-	sys.errLog.Printf("src/system_sdl.go:31\n")
+	sdl.GLSetAttribute(sdl.GL_CONTEXT_MAJOR_VERSION, 3)
+	sdl.GLSetAttribute(sdl.GL_CONTEXT_MINOR_VERSION, 1)
+	sdl.GLSetAttribute(sdl.GL_CONTEXT_PROFILE_MASK, sdl.GL_CONTEXT_PROFILE_ES)
 	// Create main window.
 	window, err = sdl.CreateWindow(s.windowTitle, sdl.WINDOWPOS_UNDEFINED, sdl.WINDOWPOS_UNDEFINED,
 		int32(w), int32(h), sdl.WINDOW_OPENGL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sdl.CreateWindow: %w", err)
 	}
-	sys.errLog.Printf("src/system_sdl.go:38\n")
 	_, err = window.GLCreateContext()
 	if err != nil {
 		return nil, fmt.Errorf("failed to window.GLCreateContext: %w", err)
 	}
-	sys.errLog.Printf("src/system_sdl.go:43\n")
-	//gl.Viewport(0, 0, int32(w), int32(h))
-	sys.errLog.Printf("src/system_sdl.go:45\n")
 	// V-Sync
 	if s.vRetrace >= 0 {
 		sdl.GLSetSwapInterval(s.vRetrace)
 	}
-	sys.errLog.Printf("src/system_sdl.go:50\n")
 	ret := &Window{window, s.windowTitle, true, false, 0, 0, w, h}
 	return ret, err
 }

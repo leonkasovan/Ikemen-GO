@@ -64,7 +64,9 @@ type ShaderProgram struct {
 }
 
 func newShaderProgram(vert, frag, id string) (s *ShaderProgram) {
+	fmt.Printf("\nVERTEX:\n%v\n", vert)
 	vertObj := compileShader(gl.VERTEX_SHADER, vert)
+	fmt.Printf("\nFRAGMENT:\n%v\n", frag)
 	fragObj := compileShader(gl.FRAGMENT_SHADER, frag)
 	prog := linkProgram(vertObj, fragObj)
 
@@ -95,7 +97,7 @@ func (s *ShaderProgram) RegisterTextures(names ...string) {
 
 func compileShader(shaderType uint32, src string) (shader uint32) {
 	shader = gl.CreateShader(shaderType)
-	src = "#version 320 es\nprecision mediump float;\n" + src + "\x00"
+	src = "#version 300 es\nprecision mediump float;\n" + src + "\x00"
 	s, _ := gl.Strs(src)
 	var l int32 = int32(len(src) - 1)
 	gl.ShaderSource(shader, 1, s, &l)

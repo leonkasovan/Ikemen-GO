@@ -8,17 +8,16 @@ require (
 	github.com/go-gl/glfw/v3.3/glfw v0.0.0-20231124074035-2de0cf0c80af
 	github.com/go-gl/mathgl v1.0.0
 	github.com/ikemen-engine/beep v0.0.0-20230923080832-980aab9dbee7
-	github.com/leonkasovan/gl v0.0.0-20240116211521-87e6200c13ea
+	github.com/leonkasovan/gl v0.0.0-20240123013727-e5681d8b9711
 	github.com/leonkasovan/glfont v0.0.0-20240116222114-fd1d8a52b71d
 	github.com/lukegb/dds v0.0.0-20190402175749-8b7170e64003
 	github.com/qmuntal/gltf v0.24.2
-	github.com/sqweek/dialog v0.0.0-20220809060634-e981b270ebbf
+	github.com/veandco/go-sdl2 v0.4.38
 	github.com/yuin/gopher-lua v1.1.0
 	golang.org/x/mobile v0.0.0-20221110043201-43a038452099
 )
 
 require (
-	github.com/TheTitanrain/w32 v0.0.0-20200114052255-2654d97dbd3d // indirect
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
 	github.com/hajimehoshi/go-mp3 v0.3.0 // indirect
 	github.com/hajimehoshi/oto v0.7.1 // indirect
