@@ -98,29 +98,6 @@ func (w *Window) pollEvents() {
 			OnKeyReleased(t.Keysym.Sym, sdl.Keymod(t.Keysym.Mod))
 		}
 		break
-	// case *sdl.JoyAxisEvent:
-		// fmt.Printf("[%v ms] JoyAxis\ttype:%v\twhich:%v\taxis:%v\tvalue:%v\n",
-			// t.Timestamp, t.Type, t.Which, t.Axis, t.Value)
-			// break
-	case *sdl.JoyButtonEvent:
-		input.sdlButtonState[t.Which][t.Button] = t.State
-		break
-	case *sdl.JoyHatEvent:
-		if t.Value == 1 {	// Up
-			input.sdlButtonState[t.Which][10] = 1
-		}else if t.Value == 2 {	// Right
-			input.sdlButtonState[t.Which][11] = 1
-		}else if t.Value == 4 {	// Down
-			input.sdlButtonState[t.Which][12] = 1
-		}else if t.Value == 8 {	// Left
-			input.sdlButtonState[t.Which][13] = 1
-		}else{
-			input.sdlButtonState[t.Which][10] = 0
-			input.sdlButtonState[t.Which][11] = 0
-			input.sdlButtonState[t.Which][12] = 0
-			input.sdlButtonState[t.Which][13] = 0
-		}
-		break
 	case *sdl.JoyDeviceAddedEvent:
 		input.joysticks[int(t.Which)] = sdl.JoystickOpen(int(t.Which))
 		if input.joysticks[int(t.Which)] != nil {

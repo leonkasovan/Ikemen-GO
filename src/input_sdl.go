@@ -3,13 +3,13 @@
 package main
 
 import (
+	"strings"
 	sdl "github.com/veandco/go-sdl2/sdl"
 )
 
 const MAX_JOYSTICK_COUNT = 4
 type Input struct {
 	joysticks [MAX_JOYSTICK_COUNT]*sdl.Joystick
-	sdlButtonState [MAX_JOYSTICK_COUNT][16]byte
 }
 
 type Key = sdl.Keycode
@@ -219,13 +219,116 @@ func (input *Input) GetJoystickButtons(joy int) []byte {
 		return []byte{}
 	}
 	// return []byte{input.joysticks[joy].Button(0), input.joysticks[joy].Button(1), input.joysticks[joy].Button(2), input.joysticks[joy].Button(3), input.joysticks[joy].Button(4), input.joysticks[joy].Button(5), input.joysticks[joy].Button(6), input.joysticks[joy].Button(7), input.joysticks[joy].Button(8), input.joysticks[joy].Button(9), input.joysticks[joy].Button(10), input.joysticks[joy].Hat(0), input.joysticks[joy].Hat(1), input.joysticks[joy].Hat(2), input.joysticks[joy].Hat(3)}
-	return input.sdlButtonState[joy][:]
+	// input.sdlButtonState[joy][10] = input.sdlHatValue & 1
+	// input.sdlButtonState[joy][11] = input.sdlHatValue & 2
+	// input.sdlButtonState[joy][12] = input.sdlHatValue & 4
+	// input.sdlButtonState[joy][13] = input.sdlHatValue & 8
+	// return input.sdlButtonState[joy][:]
+	// return input.joysticks[joy].Buttons()
+	return []byte{}	// dummy
 }
 
-func (input *Input) GetJoystickButton(joy int, button int) byte {
-	if joy < 0 || joy >= len(input.joysticks) {
-		return 0
+// Button 10: dpad.up => hatValue = 1
+// Button 11: dpad.right =>  hatValue = 2
+// Button 12: dpad.down =>  hatValue = 4
+// Button 13: dpad.left =>  hatValue = 8
+
+// func (input *Input) GetJoystickButton(joy int, button int) byte {
+// 	if joy < 0 || joy >= len(input.joysticks) {
+// 		return 0
+// 	}
+// 	return input.sdlButtonState[joy][button]
+// }
+
+
+func JoystickState(joy, button int) bool {
+	if joy < 0 {
+		return sys.keyState[Key(button)]
 	}
-	// return input.joysticks[joy].Button(button)
-	return input.sdlButtonState[joy][button]
+	if joy >= input.GetMaxJoystickCount() {
+		return false
+	}
+	if button >= 0 {
+		if button >= 10 && button <= 13 {
+			return (input.joysticks[joy].Hat(0) & (1 << (button-10))) != 0
+		} else {
+			return input.joysticks[joy].Button(button) != 0
+		}
+	} else {
+		// Query axis state
+		axis := -button - 1
+		axes := input.GetJoystickAxes(joy)
+		if axis >= len(axes)*2 {
+			return false
+		}
+
+		// Read value and invert sign for odd indices
+		val := axes[axis/2] * float32((axis&1)*2-1)
+
+		var joyName = input.GetJoystickName(joy)
+
+		// Xbox360コントローラーのLRトリガー判定
+		// "Evaluate LR triggers on the Xbox 360 controller"
+		if (axis == 9 || axis == 11) && (strings.Contains(joyName, "XInput") || strings.Contains(joyName, "X360")) {
+			return val > sys.xinputTriggerSensitivity
+		}
+
+		// Ignore trigger axis on PS4 (We already have buttons)
+		if (axis >= 6 && axis <= 9) && joyName == "PS4 Controller" {
+			return false
+		}
+
+		return val > sys.controllerStickSensitivity
+	}
+}
+
+// Reads controllers and converts inputs to letters for later processing
+func (ir *InputReader) LocalInput(in int) (bool, bool, bool, bool, bool, bool, bool, bool, bool, bool, bool, bool, bool, bool) {
+	var U, D, L, R, a, b, c, x, y, z, s, d, w, m bool
+	// Keyboard
+	if in < len(sys.keyConfig) {
+		joy := sys.keyConfig[in].Joy
+		if joy == -1 {
+			U = sys.keyConfig[in].U()
+			D = sys.keyConfig[in].D()
+			L = sys.keyConfig[in].L()
+			R = sys.keyConfig[in].R()
+			a = sys.keyConfig[in].a()
+			b = sys.keyConfig[in].b()
+			c = sys.keyConfig[in].c()
+			x = sys.keyConfig[in].x()
+			y = sys.keyConfig[in].y()
+			z = sys.keyConfig[in].z()
+			s = sys.keyConfig[in].s()
+			d = sys.keyConfig[in].d()
+			w = sys.keyConfig[in].w()
+			m = sys.keyConfig[in].m()
+		}
+	}
+	// Joystick
+	if in < len(sys.joystickConfig) {
+		sdl.JoystickUpdate()
+		joyS := sys.joystickConfig[in].Joy
+		if joyS >= 0 {
+			U = sys.joystickConfig[in].U() || U // Does not override keyboard
+			D = sys.joystickConfig[in].D() || D
+			L = sys.joystickConfig[in].L() || L
+			R = sys.joystickConfig[in].R() || R
+			a = sys.joystickConfig[in].a() || a
+			b = sys.joystickConfig[in].b() || b
+			c = sys.joystickConfig[in].c() || c
+			x = sys.joystickConfig[in].x() || x
+			y = sys.joystickConfig[in].y() || y
+			z = sys.joystickConfig[in].z() || z
+			s = sys.joystickConfig[in].s() || s
+			d = sys.joystickConfig[in].d() || d
+			w = sys.joystickConfig[in].w() || w
+			m = sys.joystickConfig[in].m() || m
+		}
+	}
+	// Button assist is checked locally so the sent inputs are already processed
+	if sys.inputButtonAssist {
+		a, b, c, x, y, z, s, d, w = ir.ButtonAssistCheck(a, b, c, x, y, z, s, d, w)
+	}
+	return U, D, L, R, a, b, c, x, y, z, s, d, w, m
 }
