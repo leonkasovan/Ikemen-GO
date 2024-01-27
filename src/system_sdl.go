@@ -82,13 +82,13 @@ func (w *Window) pollEvents() {
 	event := sdl.PollEvent()
 	switch t := event.(type) {
 	case *sdl.QuitEvent:
-		fmt.Println("Quit: QuitEvent")
+		sys.errLog.Println("Quit: QuitEvent")
 		w.shouldclose = true
 		break
 	case *sdl.WindowEvent:
 		if t.Event == sdl.WINDOWEVENT_CLOSE {
 			w.shouldclose = true
-			fmt.Println("Quit: WindowEvent")
+			sys.errLog.Println("Quit: WindowEvent")
 		}
 		break
 	case *sdl.KeyboardEvent:
@@ -101,14 +101,14 @@ func (w *Window) pollEvents() {
 	case *sdl.JoyDeviceAddedEvent:
 		input.joysticks[int(t.Which)] = sdl.JoystickOpen(int(t.Which))
 		if input.joysticks[int(t.Which)] != nil {
-			fmt.Printf("Joystick (%v) %v connected\n", input.joysticks[int(t.Which)].Name(), t.Which)
+			sys.errLog.Printf("Joystick (%v) %v connected\n", input.joysticks[int(t.Which)].Name(), t.Which)
 		}
 		break
 	case *sdl.JoyDeviceRemovedEvent:
 		if joystick := input.joysticks[int(t.Which)]; joystick != nil {
 			joystick.Close()
 		}
-		fmt.Printf("Joystick %v disconnected\n", t.Which)
+		sys.errLog.Printf("Joystick %v disconnected\n", t.Which)
 		break
 	}
 }
