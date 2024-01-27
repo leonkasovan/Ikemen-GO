@@ -71,7 +71,7 @@ var sys = System{
 	statusDraw:       true,
 	mainThreadTask:   make(chan func(), 65536),
 	workpal:          make([]uint32, 256),
-	errLog:           log.New(NewLogWriter(), "", log.LstdFlags),
+	// errLog:           log.New(NewLogWriter(), "", log.LstdFlags),
 	keyInput:         KeyUnknown,
 	wavChannels:      256,
 	fontShaderVer:    320,
@@ -370,6 +370,7 @@ type System struct {
 	windowCentered    bool
 	loopBreak         bool
 	loopContinue      bool
+	logfile *os.File
 }
 
 // Initialize stuff, this is called after the config int at main.go
@@ -379,6 +380,12 @@ func (s *System) init(w, h int32) *lua.LState {
 	// Create a system window.
 	s.window, err = s.newWindow(int(s.scrrect[2]), int(s.scrrect[3]))
 	chk(err)
+
+	s.logfile, err = os.OpenFile("Ikemen-SDL.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		chk(err)
+	}
+	s.errLog = log.New(s.logfile, "", log.LstdFlags)
 
 	// Check if the shader selected is currently available.
 	if s.postProcessingShader < int32(len(s.externalShaderList)) {
@@ -472,6 +479,7 @@ func (s *System) init(w, h int32) *lua.LState {
 	return l
 }
 func (s *System) shutdown() {
+	s.logfile.Close()
 	if !sys.gameEnd {
 		sys.gameEnd = true
 	}
