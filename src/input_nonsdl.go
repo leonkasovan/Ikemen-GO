@@ -1,4 +1,4 @@
-//go:build !sdl
+//go:build !sdl && !steamdeck
 package main
 
 import (

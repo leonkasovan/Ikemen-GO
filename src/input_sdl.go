@@ -250,13 +250,13 @@ func JoystickState(joy, button int) bool {
 	if button >= 0 {
 			switch button {
 			case 10:	// Up: check axis and d.pad(hat)
-				return (input.joysticks[joy].Axis(1) < -10000) || ((input.joysticks[joy].Hat(0) & (1 << (button-10))) != 0)
+				return (input.joysticks[joy].Axis(1) < -16000) || ((input.joysticks[joy].Hat(0) & (1 << (button-10))) != 0)
 			case 11:	// Right: check axis and d.pad(hat)
-				return (input.joysticks[joy].Axis(0) > 10000) || ((input.joysticks[joy].Hat(0) & (1 << (button-10))) != 0)
+				return (input.joysticks[joy].Axis(0) > 16000) || ((input.joysticks[joy].Hat(0) & (1 << (button-10))) != 0)
 			case 12:	// Down: check axis and d.pad(hat)
-				return (input.joysticks[joy].Axis(1) > 10000) || ((input.joysticks[joy].Hat(0) & (1 << (button-10))) != 0)
+				return (input.joysticks[joy].Axis(1) > 16000) || ((input.joysticks[joy].Hat(0) & (1 << (button-10))) != 0)
 			case 13:	// Left: check axis and d.pad(hat)
-				return (input.joysticks[joy].Axis(0) < -10000) || ((input.joysticks[joy].Hat(0) & (1 << (button-10))) != 0)
+				return (input.joysticks[joy].Axis(0) < -16000) || ((input.joysticks[joy].Hat(0) & (1 << (button-10))) != 0)
 			default:	// Other (normal) button
 				return input.joysticks[joy].Button(button) != 0
 			}

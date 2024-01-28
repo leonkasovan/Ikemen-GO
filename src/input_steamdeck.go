@@ -34,27 +34,14 @@ func JoystickState(joy, button int) bool {
 			return btns[button] != 0
 		}
 	} else {
-		if axis >= len(axes)*2 {
+		switch button {
+		case -12:
+			return (input.joysticks[joy].Axis(2) > 0.5)
+		case -10:
+			return (input.joysticks[joy].Axis(5) > 0.5)
+		default:
 			return false
 		}
-
-		// Read value and invert sign for odd indices
-		val := axes[axis/2] * float32((axis&1)*2-1)
-
-		var joyName = input.GetJoystickName(joy)
-
-		// Xbox360コントローラーのLRトリガー判定
-		// "Evaluate LR triggers on the Xbox 360 controller"
-		if (axis == 9 || axis == 11) && (strings.Contains(joyName, "XInput") || strings.Contains(joyName, "X360")) {
-			return val > sys.xinputTriggerSensitivity
-		}
-
-		// Ignore trigger axis on PS4 (We already have buttons)
-		if (axis >= 6 && axis <= 9) && joyName == "PS4 Controller" {
-			return false
-		}
-
-		return val > sys.controllerStickSensitivity
 	}
 }
 
