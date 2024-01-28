@@ -8,8 +8,7 @@ func JoystickState(joy, button int) bool {
 	if joy >= input.GetMaxJoystickCount() {
 		return false
 	}
-	// Query axis state
-	axes := input.GetJoystickAxes(joy)
+	var axes []float32 = []float32{0.0, 0.0, 0.0}
 	if button >= 0 {
 		// Query button state
 		btns := input.GetJoystickButtons(joy)
@@ -18,26 +17,33 @@ func JoystickState(joy, button int) bool {
 		}
 		switch button {
 		case 10:	// Up: check axis and d.pad(hat)
+			axes = input.GetJoystickAxes(joy)
 			return (axes[1] < -0.5)|| (btns[11] != 0)
 		case 11:	// Right: check axis and d.pad(hat)
+			axes = input.GetJoystickAxes(joy)
 			return (axes[0] > 0.5) || (btns[12] != 0)
 		case 12:	// Down: check axis and d.pad(hat)
+			axes = input.GetJoystickAxes(joy)
 			return (axes[1] > 0.5) || (btns[13] != 0)
 		case 13:	// Left: check axis and d.pad(hat)
+			axes = input.GetJoystickAxes(joy)
 			return (axes[0] < -0.5) || (btns[14] != 0)
 		default:	// Other (normal) button
 			return btns[button] != 0
 		}
 	} else {
-		/*switch button {
+		axes = input.GetJoystickAxes(joy)
+		if len(axes) < 6 {
+			return false
+		}
+		switch button {
 		case -12:
-			return (axes[2] > 0.5)
+			return (axes[2] > -0.5)
 		case -10:
-			return (axes[5] > 0.5)
+			return (axes[5] > -0.5)
 		default:
 			return false
-		}*/
-		return false
+		}
 	}
 }
 
