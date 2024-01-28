@@ -1,10 +1,6 @@
 //go:build steamdeck
 package main
 
-import (
-	"strings"
-)
-
 func JoystickState(joy, button int) bool {
 	if joy < 0 {
 		return sys.keyState[Key(button)]
@@ -13,7 +9,6 @@ func JoystickState(joy, button int) bool {
 		return false
 	}
 	// Query axis state
-	axis := -button - 1
 	axes := input.GetJoystickAxes(joy)
 	if button >= 0 {
 		// Query button state
@@ -23,25 +18,26 @@ func JoystickState(joy, button int) bool {
 		}
 		switch button {
 		case 10:	// Up: check axis and d.pad(hat)
-			return (axes[1] > 0.5) || (btns[13] != 0)
+			return (axes[1] < -0.5)|| (btns[11] != 0)
 		case 11:	// Right: check axis and d.pad(hat)
 			return (axes[0] > 0.5) || (btns[12] != 0)
 		case 12:	// Down: check axis and d.pad(hat)
-			return (axes[1] < -0.5) || (btns[11] != 0)
+			return (axes[1] > 0.5) || (btns[13] != 0)
 		case 13:	// Left: check axis and d.pad(hat)
 			return (axes[0] < -0.5) || (btns[14] != 0)
 		default:	// Other (normal) button
 			return btns[button] != 0
 		}
 	} else {
-		switch button {
+		/*switch button {
 		case -12:
-			return (input.joysticks[joy].Axis(2) > 0.5)
+			return (axes[2] > 0.5)
 		case -10:
-			return (input.joysticks[joy].Axis(5) > 0.5)
+			return (axes[5] > 0.5)
 		default:
 			return false
-		}
+		}*/
+		return false
 	}
 }
 
