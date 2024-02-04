@@ -1,5 +1,37 @@
 //go:build sdl
 
+// ----------------------------
+// RG353P - Recalbox 9.1 - SDL2
+// ----------------------------
+// 
+// [Buttons=17]
+// button B down: 0
+// button A right: 1
+// button X up: 2
+// button Y left: 3
+// L1: 4
+// R1: 5
+// L2: 6
+// R2: 7
+// select: 8
+// start: 9
+// function: 10
+// L3: 11
+// R3: 12
+// dpad up: 13
+// dpad down: 14
+// dpad left: 15
+// dpad right: 16
+// 
+// [Axes=4]
+// Left.stick horizontal: axes[0] -32768(left) 32767(right)
+// Left.stick vertical: axes[1] -32768(up) 32767(down)
+// Right.stick horizontal: axes[2] -32768(left) 32767(right)
+// Right.stick vertical: axes[3] -32768(up) 32767(down)
+// 
+// [Hats=0]
+// [Balls=0]
+
 package main
 
 import (
