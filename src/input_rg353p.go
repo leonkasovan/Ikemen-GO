@@ -1,4 +1,38 @@
-//go:build sdl
+//go:build rg353p
+
+// -------------------------------------
+// Device: RG353P
+// OS: Recalbox 9.1 - using SDL2 Library
+// -------------------------------------
+// 
+// [Buttons=17]
+// button B down: 0
+// button A right: 1
+// button X up: 2
+// button Y left: 3
+// L1: 4
+// R1: 5
+// L2: 6
+// R2: 7
+// select: 8
+// start: 9
+// function: 10
+// L3: 11
+// R3: 12
+// dpad up: 13
+// dpad down: 14
+// dpad left: 15
+// dpad right: 16
+// 
+// [Axes=4]
+// Left.stick horizontal: axes[0] -32768(left) 32767(right)
+// Left.stick vertical: axes[1] -32768(up) 32767(down)
+// Right.stick horizontal: axes[2] -32768(left) 32767(right)
+// Right.stick vertical: axes[3] -32768(up) 32767(down)
+// 
+// [Hats=0]
+// [Balls=0]
+
 package main
 
 import (
@@ -216,7 +250,7 @@ func (input *Input) GetJoystickButtons(joy int) []byte {
 	if joy < 0 || joy >= len(input.joysticks) {
 		return []byte{}
 	}
-	return []byte{input.joysticks[joy].Button(0), input.joysticks[joy].Button(1), input.joysticks[joy].Button(2), input.joysticks[joy].Button(3), input.joysticks[joy].Button(4), input.joysticks[joy].Button(5), input.joysticks[joy].Button(6), input.joysticks[joy].Button(7), input.joysticks[joy].Button(8), input.joysticks[joy].Button(9), input.joysticks[joy].Hat(0) & 1, input.joysticks[joy].Hat(0) & 2, input.joysticks[joy].Hat(0) & 4, input.joysticks[joy].Hat(0) & 8, input.joysticks[joy].Button(14), input.joysticks[joy].Button(15)}
+	return []byte{input.joysticks[joy].Button(0), input.joysticks[joy].Button(1), input.joysticks[joy].Button(2), input.joysticks[joy].Button(3), input.joysticks[joy].Button(4), input.joysticks[joy].Button(5), input.joysticks[joy].Button(6), input.joysticks[joy].Button(7), input.joysticks[joy].Button(8), input.joysticks[joy].Button(9), input.joysticks[joy].Button(13), input.joysticks[joy].Button(16), input.joysticks[joy].Button(14), input.joysticks[joy].Button(15), input.joysticks[joy].Button(10), input.joysticks[joy].Button(11)}
 	// return []byte{}	// dummy
 }
 
@@ -230,25 +264,26 @@ func JoystickState(joy, button int) bool {
 	if button >= 0 {
 			switch button {
 			case 10:	// Up: check axis and d.pad(hat)
-				return (input.joysticks[joy].Axis(1) < -16000) || ((input.joysticks[joy].Hat(0) & (1 << (button-10))) != 0)
+				return (input.joysticks[joy].Axis(1) < -16000) || input.joysticks[joy].Button(13) != 0
 			case 11:	// Right: check axis and d.pad(hat)
-				return (input.joysticks[joy].Axis(0) > 16000) || ((input.joysticks[joy].Hat(0) & (1 << (button-10))) != 0)
+				return (input.joysticks[joy].Axis(0) > 16000) || input.joysticks[joy].Button(16) != 0
 			case 12:	// Down: check axis and d.pad(hat)
-				return (input.joysticks[joy].Axis(1) > 16000) || ((input.joysticks[joy].Hat(0) & (1 << (button-10))) != 0)
+				return (input.joysticks[joy].Axis(1) > 16000) || input.joysticks[joy].Button(14) != 0
 			case 13:	// Left: check axis and d.pad(hat)
-				return (input.joysticks[joy].Axis(0) < -16000) || ((input.joysticks[joy].Hat(0) & (1 << (button-10))) != 0)
+				return (input.joysticks[joy].Axis(0) < -16000) || input.joysticks[joy].Button(15) != 0
 			default:	// Other (normal) button
 				return input.joysticks[joy].Button(button) != 0
 			}
 	} else {
-		switch button {
-		case -12:
-			return (input.joysticks[joy].Axis(2) > 10000)
-		case -10:
-			return (input.joysticks[joy].Axis(5) > 10000)
-		default:
-			return false
-		}
+		// switch button {
+		// case -12:
+		// 	return (input.joysticks[joy].Axis(2) > 10000)
+		// case -10:
+		// 	return (input.joysticks[joy].Axis(5) > 10000)
+		// default:
+		// 	return false
+		// }
+		return false
 	}
 }
 

@@ -1,4 +1,4 @@
-//go:build !kinc && !sdl
+//go:build !kinc && !sdl && !rg353p
 
 package main
 

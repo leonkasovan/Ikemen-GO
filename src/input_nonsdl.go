@@ -1,4 +1,4 @@
-//go:build !sdl && !steamdeck
+//go:build !sdl && !steamdeck && !rg353p
 package main
 
 import (

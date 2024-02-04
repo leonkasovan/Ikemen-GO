@@ -24,11 +24,19 @@ srcFiles=src/anim.go \
 	src/util_desktop.go \
 	src/util_js.go
 
+# Handheld Anbernic RG353P target
+rg353p: ${srcFiles}
+	cd ./build && ./build.sh rg353p
+
+# Raspberry Pi 4 target
+rpi4: ${srcFiles}
+	cd ./build && ./build.sh rpi4
+	cp bin/Ikemen_GO_Linux_RPi4 /home/pi/Apps/
+
 # Linux target
 Ikemen_GO_Linux: ${srcFiles}
 	cd ./build && ./build.sh Linux
-	# cp bin/Ikemen_GO_Linux /home/deck/Applications/IkemenGo/Ikemen_GO_Linux_GLES
-	cp bin/Ikemen_GO_Linux /home/deck/Applications/IkemenGo/Ikemen_GO_Linux_Steamdeck
+	cp bin/Ikemen_GO_Linux /home/pi/Apps/Ikemen_GO_Linux_RPi4	
 	
 # Windows 64-bit target
 Ikemen_GO.exe: ${srcFiles}

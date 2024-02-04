@@ -1380,7 +1380,7 @@ func systemScriptInit(l *lua.LState) {
 				btns := input.GetJoystickButtons(joy)
 				name := input.GetJoystickName(joy)
 				for i := range axes {
-					if strings.Contains(name, "XInput") || strings.Contains(name, "X360") {
+					if strings.Contains(name, "XInput") || strings.Contains(name, "X360") || strings.Contains(name, "360") {
 						if axes[i] > 0.5 {
 							s = strconv.Itoa(-i*2 - 2)
 						} else if axes[i] < -0.5 && i < 4 {

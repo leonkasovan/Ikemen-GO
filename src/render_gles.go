@@ -1,4 +1,4 @@
-//go:build gles2
+//go:build gles2 || rg353p
 
 package main
 
@@ -64,9 +64,9 @@ type ShaderProgram struct {
 }
 
 func newShaderProgram(vert, frag, id string) (s *ShaderProgram) {
-	fmt.Printf("\nVERTEX:\n%v\n", vert)
+	// fmt.Printf("\nVERTEX:\n%v\n", vert)
 	vertObj := compileShader(gl.VERTEX_SHADER, vert)
-	fmt.Printf("\nFRAGMENT:\n%v\n", frag)
+	// fmt.Printf("\nFRAGMENT:\n%v\n", frag)
 	fragObj := compileShader(gl.FRAGMENT_SHADER, frag)
 	prog := linkProgram(vertObj, fragObj)
 
@@ -281,7 +281,7 @@ var identFragShader string
 // Creates the default shaders, the framebuffer and enables MSAA.
 func (r *Renderer) Init() {
 	chk(gl.Init())
-	sys.errLog.Printf("Using OpenGL %v (%v)", gl.GoStr(gl.GetString(gl.VERSION)), gl.GoStr(gl.GetString(gl.RENDERER)))
+	sys.errLog.Printf("Using %v (%v)", gl.GoStr(gl.GetString(gl.VERSION)), gl.GoStr(gl.GetString(gl.RENDERER)))
 
 	r.postShaderSelect = make([]*ShaderProgram, 1+len(sys.externalShaderList))
 

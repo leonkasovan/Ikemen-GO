@@ -1,4 +1,4 @@
-//go:build sdl
+//go:build sdl || rg353p
 package main
 
 /*

@@ -8,7 +8,7 @@ require (
 	github.com/go-gl/glfw/v3.3/glfw v0.0.0-20231124074035-2de0cf0c80af
 	github.com/go-gl/mathgl v1.0.0
 	github.com/ikemen-engine/beep v0.0.0-20230923080832-980aab9dbee7
-	github.com/leonkasovan/gl v0.0.0-20240123013727-e5681d8b9711
+	github.com/leonkasovan/gl v0.0.0-20240123111530-ebdf6324fd5a
 	github.com/leonkasovan/glfont v0.0.0-20240116222114-fd1d8a52b71d
 	github.com/lukegb/dds v0.0.0-20190402175749-8b7170e64003
 	github.com/qmuntal/gltf v0.24.2

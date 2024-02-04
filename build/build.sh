@@ -48,6 +48,21 @@ function main() {
 			varLinux
 			build
 		;;
+		[Ss]teamdeck)
+			export GOOS=linux
+			binName="Ikemen_GO_Linux_Steamdeck"
+			build_Steamdeck
+		;;
+		[Rr][Pp][Ii]4)
+			export GOOS=linux
+			binName="Ikemen_GO_Linux_RPi4"
+			build_RPi4
+		;;
+		[Rr][Gg]353[Pp])
+			export GOOS=linux
+			binName="Ikemen_GO_Linux_RG353P"
+			build_RG353P
+		;;
 	esac
 
 	if [[ "${binName}" == "Default" ]]; then
@@ -108,10 +123,25 @@ function build() {
 	#echo "buildNormal"
 	#echo "$binName"
 	# go build -trimpath -v -trimpath -o ./bin/$binName ./src	// original with debug
-	# go build -tags=gles2,sdl -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/$binName ./src
+	go build -tags=gles2,sdl -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/$binName ./src
 	# go build -tags=gles2 -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/$binName ./src
-	go build -tags=steamdeck -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/$binName ./src
+	# go build -tags=steamdeck -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/$binName ./src
 	# go build -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/$binName ./src
+}
+
+function build_RPi4() {
+	echo "Building for Raspberry Pi 4"
+	go build -tags=gles2,sdl -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/$binName ./src
+}
+
+function build_Steamdeck() {
+	echo "Building for Steamdeck"
+	go build -tags=steamdeck -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/$binName ./src
+}
+
+function build_RG353P() {
+	echo "Building for Anbernic RG353P"
+	go build -tags=gles2,rg353p -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/$binName ./src
 }
 
 function buildWin() {

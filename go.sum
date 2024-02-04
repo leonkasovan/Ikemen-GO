@@ -35,6 +35,8 @@ github.com/jfreymuth/vorbis v1.0.1 h1:iA3VC/w+H0rHzPVrv1dkwxMMjk3LJTlSXlpYw6800u
 github.com/jfreymuth/vorbis v1.0.1/go.mod h1:DoftRo4AznKnShRl1GxiTFCseHr4zR9BN3TWXyuzrqQ=
 github.com/leonkasovan/gl v0.0.0-20240123013727-e5681d8b9711 h1:ejnStpt8E6JwIJ1f10ZmRyoRMA9AMKVOn+z36KQP65g=
 github.com/leonkasovan/gl v0.0.0-20240123013727-e5681d8b9711/go.mod h1:FsbmKnamadwCMU92a/aFYYc4s9NXRx5N0mbSmL3voA8=
+github.com/leonkasovan/gl v0.0.0-20240123111530-ebdf6324fd5a h1:u3Wn7+Hr7CZ3UvowSkD4gPH9oEysj/yrmjM0GZ8uD88=
+github.com/leonkasovan/gl v0.0.0-20240123111530-ebdf6324fd5a/go.mod h1:FsbmKnamadwCMU92a/aFYYc4s9NXRx5N0mbSmL3voA8=
 github.com/leonkasovan/glfont v0.0.0-20240116222114-fd1d8a52b71d h1:kVkEfAmLg8d4P7dC03eLShyQoy4g98+HdfkjP0wEdmo=
 github.com/leonkasovan/glfont v0.0.0-20240116222114-fd1d8a52b71d/go.mod h1:7ZTBw2r0ElexHuYDavHzIbBEH5zPM6ZorOLxoF5T8x4=
 github.com/lucasb-eyer/go-colorful v1.0.2/go.mod h1:0MS4r+7BZKSJ5mw4/S5MPN+qHFF1fYclkSPilDOKW0s=
