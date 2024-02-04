@@ -35,7 +35,7 @@ void main(void) {
             uv.x = (gl_FragCoord.x - bounds[0]) / (bounds[1] - bounds[0]);
         }
 
-        vec4 c = texture2D(tex, uv);
+        vec4 c = texture(tex, uv);
         vec3 neg_base = vec3(1.0);
         vec3 final_add = add;
         vec4 final_mul = vec4(mult, alpha);
@@ -52,7 +52,7 @@ void main(void) {
             if (int(255.25*c.r) == mask) {
                 final_mul = vec4(0.0);
             } else {
-                c = texture2D(pal, vec2(c.r*0.9966, 0.5));
+                c = texture(pal, vec2(c.r*0.9966, 0.5));
             }
         }
         if (hue != 0.0) {
