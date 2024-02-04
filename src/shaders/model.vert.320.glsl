@@ -29,9 +29,9 @@ out vec4 vColor;
 
 mat4 getMatrixFromTexture(float index) {
     mat4 mat;
-    mat[0] = texture2D(jointMatrices, vec2(0.5 / 3.0, (index + 0.5) / float(numJoints)));
-    mat[1] = texture2D(jointMatrices, vec2(1.5 / 3.0, (index + 0.5) / float(numJoints)));
-    mat[2] = texture2D(jointMatrices, vec2(2.5 / 3.0, (index + 0.5) / float(numJoints)));
+    mat[0] = texture(jointMatrices, vec2(0.5 / 3.0, (index + 0.5) / float(numJoints)));
+    mat[1] = texture(jointMatrices, vec2(1.5 / 3.0, (index + 0.5) / float(numJoints)));
+    mat[2] = texture(jointMatrices, vec2(2.5 / 3.0, (index + 0.5) / float(numJoints)));
     mat[3] = vec4(0.0, 0.0, 0.0, 1.0);
     return transpose(mat);
 }
