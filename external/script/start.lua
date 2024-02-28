@@ -1480,7 +1480,7 @@ function start.f_selectMode()
 				end
 				--game over
 				if main.storyboard.gameover and motif.game_over_screen.enabled == 1 and main.f_fileExists(motif.game_over_screen.storyboard) then
-					if not main.continueScreen or (not continue() and motif.continue_screen.gameover_enabled == 1) then
+					if cleared or not main.continueScreen or (not continue() and motif.continue_screen.gameover_enabled == 1) then
 						storyboard.f_storyboard(motif.game_over_screen.storyboard)
 					end
 				end
@@ -1599,6 +1599,7 @@ function start.f_selectReset(hardReset)
 	end
 	t_recordText = start.f_getRecordText()
 	menu.movelistChar = 1
+	hook.run("start.f_selectReset")
 end
 
 function start.f_selectChallenger()

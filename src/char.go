@@ -161,7 +161,7 @@ type ClsnRect [][4]float32
 
 func (cr *ClsnRect) Add(clsn []float32, x, y, xs, ys float32) {
 	x = (x - sys.cam.Pos[0]) * sys.cam.Scale
-	y = (y-sys.cam.Pos[1])*sys.cam.Scale + sys.cam.GroundLevel()
+	y = (y*sys.cam.Scale - sys.cam.Pos[1]) + sys.cam.GroundLevel()
 	xs *= sys.cam.Scale
 	ys *= sys.cam.Scale
 	for i := 0; i+3 < len(clsn); i += 4 {
@@ -301,9 +301,9 @@ func (cs *CharSize) init() {
 	cs.air.back = 12
 	cs.air.front = 12
 	cs.height.stand = 60
-	cs.height.crouch = cs.height.stand * 2 / 3
-	cs.height.air = [...]float32{cs.height.stand * 4 / 3, -cs.height.stand / 3}
-	cs.height.down = cs.height.stand / 3
+	cs.height.crouch = 60
+	cs.height.air = [...]float32{60, 0}
+	cs.height.down = 60
 	cs.attack.dist.front = 160
 	cs.attack.dist.back = 0
 	cs.proj.attack.dist.front = 90
@@ -410,9 +410,6 @@ func (cv *CharVelocity) init() {
 	cv.air.gethit.airrecover.fwd = 0.0
 	cv.air.gethit.airrecover.up = -2.0
 	cv.air.gethit.airrecover.down = 1.5
-	cv.airjump.neu = [...]float32{0, -8.1}
-	cv.airjump.back = -2.55
-	cv.airjump.fwd = 2.5
 	cv.air.gethit.ko.add = [...]float32{-2, -2}
 	cv.air.gethit.ko.ymin = -3
 	cv.ground.gethit.ko.xmul = 0.66
@@ -464,8 +461,6 @@ type CharMovement struct {
 
 func (cm *CharMovement) init() {
 	*cm = CharMovement{}
-	cm.airjump.num = 0
-	cm.airjump.height = 35
 	cm.yaccel = 0.44
 	cm.stand.friction = 0.85
 	cm.stand.friction_threshold = 2.0
@@ -768,6 +763,7 @@ type GetHitVar struct {
 	score          float32
 	hitdamage      int32
 	guarddamage    int32
+	power          int32
 	hitpower       int32
 	guardpower     int32
 	hitredlife     int32
@@ -775,6 +771,7 @@ type GetHitVar struct {
 	fatal          bool
 	kill           bool
 	priority       int32
+	facing         int32
 }
 
 func (ghv *GetHitVar) clear() {
@@ -1528,6 +1525,7 @@ type Projectile struct {
 	platformAngle   float32
 	platformFence   bool
 	remflag         bool
+	freezeflag      bool
 }
 
 func newProjectile() *Projectile {
@@ -1561,11 +1559,6 @@ func (p *Projectile) paused(playerNo int) bool {
 	return false
 }
 func (p *Projectile) update(playerNo int) {
-	// Interpolate position
-	ti := sys.tickInterpola()
-	for i, np := range p.newPos {
-		p.pos[i] = np - (np-p.oldPos[i])*(1-ti)
-	}
 	if sys.tickFrame() && !p.paused(playerNo) && p.hitpause == 0 {
 		p.remflag = true
 		if p.anim >= 0 {
@@ -1619,6 +1612,31 @@ func (p *Projectile) update(playerNo int) {
 			}
 		}
 	}
+	if p.paused(playerNo) || p.hitpause > 0 || p.freezeflag {
+		p.setPos(p.pos)
+		// There's a minor issue here where a projectile will lag behind one frame relative to Mugen if created during a pause
+	} else {
+		if sys.tickFrame() {
+			p.newPos = [...]float32{p.pos[0] + p.velocity[0]*p.facing, p.pos[1] + p.velocity[1]}
+		}
+		ti := sys.tickInterpola()
+		for i, np := range p.newPos {
+			p.pos[i] = np - (np-p.oldPos[i])*(1-ti)
+		}
+		if sys.tickNextFrame() {
+			p.oldPos = p.pos
+			p.pos = p.newPos
+			for i := range p.velocity {
+				p.velocity[i] += p.accel[i]
+				p.velocity[i] *= p.velmul[i]
+			}
+			if p.velocity[0] < 0 && p.anim != -1 {
+				p.facing *= -1
+				p.velocity[0] *= -1
+				p.accel[0] *= -1
+			}
+		}
+	}
 }
 func (p *Projectile) clsn(playerNo int) {
 	if p.ani == nil || len(p.ani.frames) == 0 {
@@ -1666,23 +1684,6 @@ func (p *Projectile) clsn(playerNo int) {
 	}
 }
 func (p *Projectile) tick(playerNo int) {
-	if p.paused(playerNo) || p.hitpause != 0 {
-		p.setPos(p.pos)
-	} else {
-		p.oldPos = p.pos
-		p.newPos = [...]float32{p.pos[0] + p.velocity[0]*p.facing, p.pos[1] + p.velocity[1]}
-		p.pos = p.newPos
-		for i := range p.velocity {
-			p.velocity[i] += p.accel[i]
-			p.velocity[i] *= p.velmul[i]
-		}
-		if p.velocity[0] < 0 && p.anim != -1 {
-			p.facing *= -1
-			p.velocity[0] *= -1
-			p.accel[0] *= -1
-		}
-	}
-
 	if p.curmisstime < 0 {
 		p.curmisstime = ^p.curmisstime
 		if p.hits >= 0 {
@@ -1715,8 +1716,11 @@ func (p *Projectile) tick(playerNo int) {
 			if p.pausemovetime > 0 {
 				p.pausemovetime--
 			}
+			p.freezeflag = false
 		} else {
 			p.hitpause--
+			// This flag makes projectiles halt in place between multiple hits
+			p.freezeflag = true
 		}
 	}
 }
@@ -1770,11 +1774,12 @@ const (
 
 type CharGlobalInfo struct {
 	def              string
-	displayname      string
-	lifebarname      string
-	author           string
 	nameLow          string
+	displayname      string
+	displaynameLow   string
+	author           string
 	authorLow        string
+	lifebarname      string
 	palkeymap        [MaxPalNo]int32
 	sff              *Sff
 	palettedata      *Palette
@@ -1816,6 +1821,7 @@ type StateState struct {
 	prevStateType   StateType
 	moveType        MoveType
 	prevMoveType    MoveType
+	storeMoveType   bool
 	physics         StateType
 	ps              []int32
 	wakegawakaranai [MaxSimul*2 + MaxAttachedChar][]bool
@@ -2232,8 +2238,9 @@ func (c *Char) load(def string) error {
 					gi.lifebarname = gi.displayname
 				}
 				gi.author, _, _ = is.getText("author")
-				gi.authorLow = strings.ToLower(gi.author)
 				gi.nameLow = strings.ToLower(c.name)
+				gi.displaynameLow = strings.ToLower(gi.displayname)
+				gi.authorLow = strings.ToLower(gi.author)
 				if is.ReadF32("localcoord", &gi.localcoord[0], &gi.localcoord[1]) {
 					gi.portraitscale = 320 / gi.localcoord[0]
 					c.localcoord = gi.localcoord[0] / (float32(sys.gameWidth) / 320)
@@ -2447,6 +2454,10 @@ func (c *Char) load(def string) error {
 						is.ReadF32("air.front", &c.size.air.front)
 						is.ReadF32("height", &c.size.height.stand)
 						is.ReadF32("height.stand", &c.size.height.stand)
+						// New height constants default to old height constant
+						c.size.height.crouch = c.size.height.stand
+						c.size.height.air[0] = c.size.height.stand
+						c.size.height.down = c.size.height.stand
 						is.ReadF32("height.crouch", &c.size.height.crouch)
 						is.ReadF32("height.air", &c.size.height.air[0], &c.size.height.air[1])
 						is.ReadF32("height.down", &c.size.height.down)
@@ -2487,6 +2498,14 @@ func (c *Char) load(def string) error {
 							&gi.velocity.jump.neu[0], &gi.velocity.jump.neu[1])
 						is.ReadF32("jump.back", &gi.velocity.jump.back)
 						is.ReadF32("jump.fwd", &gi.velocity.jump.fwd)
+						// Running and air jumps default to regular jump velocities
+						c.gi().velocity.runjump.back[0] = c.gi().velocity.jump.back
+						c.gi().velocity.runjump.back[1] = c.gi().velocity.jump.neu[1]
+						c.gi().velocity.runjump.fwd[0] = c.gi().velocity.jump.fwd
+						c.gi().velocity.runjump.fwd[1] = c.gi().velocity.jump.neu[1]
+						c.gi().velocity.airjump.neu = c.gi().velocity.jump.neu
+						c.gi().velocity.airjump.back = c.gi().velocity.jump.back
+						c.gi().velocity.airjump.fwd = c.gi().velocity.jump.fwd
 						is.ReadF32("jump.up.x", &gi.velocity.jump.up.x)
 						is.ReadF32("jump.down.x", &gi.velocity.jump.down.x)
 						is.ReadF32("runjump.back",
@@ -2820,7 +2839,7 @@ func (c *Char) setJuggle(juggle int32) {
 	c.juggle = juggle
 }
 func (c *Char) changeAnimEx(animNo int32, playerNo int, ffx string, alt bool) {
-	if a := sys.chars[playerNo][0].getAnim(animNo, ffx, true); a != nil {
+	if a := sys.chars[playerNo][0].getAnim(animNo, ffx, false); a != nil {
 		c.anim = a
 		c.anim.remap = c.remapSpr
 		c.animPN = c.playerNo
@@ -3335,7 +3354,7 @@ func (c *Char) numPartner() int32 {
 func (c *Char) numProj() int32 {
 	n := int32(0)
 	for _, p := range sys.projs[c.playerNo] {
-		if p.id >= 0 && !p.remflag {
+		if p.id >= 0 && p.hits >= 0 && !p.remflag {
 			n++
 		}
 	}
@@ -3350,7 +3369,7 @@ func (c *Char) numProjID(pid BytecodeValue) BytecodeValue {
 	}
 	var id, n int32 = Max(0, pid.ToI()), 0
 	for _, p := range sys.projs[c.playerNo] {
-		if p.id == id && !p.remflag {
+		if p.id == id && p.hits >= 0 && !p.remflag {
 			n++
 		}
 	}
@@ -3579,7 +3598,7 @@ func (c *Char) playSound(ffx string, lowpriority, loop bool, g, n, chNo, vol int
 	if s == nil {
 		if log {
 			if ffx != "" {
-				sys.appendToConsole(c.warn() + fmt.Sprintf("%v sound %v,%v doesn't exist", strings.ToUpper(ffx), g, n))
+				sys.appendToConsole(c.warn() + fmt.Sprintf("sound %v %v,%v doesn't exist", strings.ToUpper(ffx), g, n))
 			} else {
 				sys.appendToConsole(c.warn() + fmt.Sprintf("sound %v,%v doesn't exist", g, n))
 			}
@@ -4051,7 +4070,7 @@ func (c *Char) enemyExplodsRemove(en int) {
 	remove(&sys.topexplDrawlist[en], false)
 	remove(&sys.underexplDrawlist[en], true)
 }
-func (c *Char) getAnim(n int32, ffx string, log bool) (a *Animation) {
+func (c *Char) getAnim(n int32, ffx string, fx bool) (a *Animation) {
 	if n == -2 {
 		return &Animation{}
 	}
@@ -4066,9 +4085,15 @@ func (c *Char) getAnim(n int32, ffx string, log bool) (a *Animation) {
 		a = c.gi().anim.get(n)
 	}
 	if a == nil {
-		if log {
+		if fx {
 			if ffx != "" && ffx != "s" {
-				sys.appendToConsole(c.warn() + fmt.Sprintf("changed to invalid %v action %v", strings.ToUpper(ffx), n))
+				sys.appendToConsole(c.warn() + fmt.Sprintf("called invalid action %v %v", strings.ToUpper(ffx), n))
+			} else {
+				sys.appendToConsole(c.warn() + fmt.Sprintf("called invalid action %v", n))
+			}
+		} else {
+			if ffx != "" && ffx != "s" {
+				sys.appendToConsole(c.warn() + fmt.Sprintf("changed to invalid action %v %v", strings.ToUpper(ffx), n))
 			} else {
 				sys.appendToConsole(c.warn() + fmt.Sprintf("changed to invalid action %v", n))
 			}
@@ -5045,29 +5070,21 @@ func (c *Char) defBW() float32 {
 	return float32(c.size.ground.back)
 }
 func (c *Char) defTHeight() float32 {
-	if c.stCgi().ikemenver[0] < 1 { // Change introduced in Ikemen 1.0
-		return float32(c.size.height.stand)
+	if c.ss.stateType == ST_L {
+		return float32(c.size.height.down)
+	} else if c.ss.stateType == ST_A {
+		return float32(c.size.height.air[0])
+	} else if c.ss.stateType == ST_C {
+		return float32(c.size.height.crouch)
 	} else {
-		if c.ss.stateType == ST_L {
-			return float32(c.size.height.down)
-		} else if c.ss.stateType == ST_A {
-			return float32(c.size.height.air[0])
-		} else if c.ss.stateType == ST_C {
-			return float32(c.size.height.crouch)
-		} else {
-			return float32(c.size.height.stand)
-		}
+		return float32(c.size.height.stand)
 	}
 }
 func (c *Char) defBHeight() float32 {
-	if c.stCgi().ikemenver[0] < 1 { // Change introduced in Ikemen 1.0
-		return 0
+	if c.ss.stateType == ST_A {
+		return float32(c.size.height.air[1])
 	} else {
-		if c.ss.stateType == ST_A {
-			return float32(c.size.height.air[1])
-		} else {
-			return 0
-		}
+		return 0
 	}
 }
 func (c *Char) setPauseTime(pausetime, movetime int32) {
@@ -5147,7 +5164,7 @@ func (c *Char) over() bool {
 }
 func (c *Char) makeDust(x, y float32) {
 	if e, i := c.newExplod(); e != nil {
-		e.anim = c.getAnim(120, "f", false)
+		e.anim = c.getAnim(120, "f", true)
 		if e.anim != nil {
 			e.anim.start_scale[0] *= c.localscl
 			e.anim.start_scale[1] *= c.localscl
@@ -5656,7 +5673,7 @@ func (c *Char) bind() {
 		if bt := sys.playerID(c.bindToId); bt != nil {
 			if bt.hasTarget(c.id) {
 				if bt.csf(CSF_destroy) {
-					sys.appendToConsole(c.warn() + fmt.Sprintf("6SelfState 5050, helper destroyed: %v", bt.name))
+					sys.appendToConsole(c.warn() + fmt.Sprintf("SelfState 5050, helper destroyed: %v", bt.name))
 					if c.ss.moveType == MT_H {
 						c.selfState(5050, -1, -1, -1, "")
 					}
@@ -5958,7 +5975,7 @@ func (c *Char) actionPrepare() {
 							c.changeState(40, -1, -1, "")
 						}
 					} else if !c.asf(ASF_noairjump) && c.ss.stateType == ST_A && c.cmd[0].Buffer.Ub == 1 &&
-						c.pos[1] <= float32(c.gi().movement.airjump.height) &&
+						c.pos[1] <= -float32(c.gi().movement.airjump.height) &&
 						c.airJumpCount < c.gi().movement.airjump.num {
 						if c.ss.no != 45 || c.ss.time > 0 {
 							c.airJumpCount++
@@ -6211,6 +6228,7 @@ func (c *Char) actionRun() {
 		}
 		c.ghv.hitdamage = 0
 		c.ghv.guarddamage = 0
+		c.ghv.power = 0
 		c.ghv.hitpower = 0
 		c.ghv.guardpower = 0
 		if c.ghv.dizzypoints != 0 {
@@ -6234,56 +6252,58 @@ func (c *Char) actionRun() {
 		// The following block used to be in char.update()
 		// That however caused a breaking difference with Mugen when checking these variables between different players
 		// https://github.com/ikemen-engine/Ikemen-GO/issues/1540
-		if c.ss.moveType == MT_H {
-			if c.ghv.guarded {
-				c.receivedDmg = 0
-				c.receivedHits = 0
-			}
-			if c.ghv.hitshaketime > 0 {
-				c.ghv.hitshaketime--
-			}
-			if c.ghv.fallf {
-				c.fallTime++
-			}
-		} else {
-			if c.hittmp > 0 {
-				c.hittmp = 0
-			}
-			if !c.scf(SCF_dizzy) {
-				// HitOverride KeepState preserves some GetHitVars for 1 frame so they can be accessed by the char
-				if !c.hoKeepState {
-					c.ghv.hitshaketime = 0
-					c.ghv.attr = 0
-					c.ghv.id = 0
-					c.ghv.playerNo = -1
+		if !c.hitPause() {
+			if c.ss.moveType == MT_H {
+				if c.ghv.guarded {
+					c.receivedDmg = 0
+					c.receivedHits = 0
 				}
-				c.superDefenseMul = 1
-				c.fallDefenseMul = 1
-				c.ghv.fallf = false
-				c.ghv.fallcount = 0
-				c.ghv.hitid = c.ghv.hitid >> 31
-				// HitCount doesn't reset here, like Mugen, but there's no apparent reason to keep that behavior with GuardCount
-				c.ghv.guardcount = 0
-				c.receivedDmg = 0
-				c.receivedHits = 0
-				c.ghv.score = 0
-				// In Mugen, when returning to idle, characters cannot act until the next frame
-				// To account for this, combos in Mugen linger one frame longer than they normally would in a fighting game
-				// Ikemen's "fake combo" code used to replicate this behavior
-				// After guarding was adjusted so that chars could guard when returning to idle, the fake combo code became obsolete
-				// https://github.com/ikemen-engine/Ikemen-GO/issues/597
-				//if c.comboExtraFrameWindow <= 0 {
-				//	c.fakeReceivedHits = 0
-				//	c.fakeComboDmg = 0
-				//	c.fakeCombo = false
-				//} else {
-				//	c.fakeCombo = true
-				//	c.comboExtraFrameWindow--
-				//}
+				if c.ghv.hitshaketime > 0 {
+					c.ghv.hitshaketime--
+				}
+				if c.ghv.fallf {
+					c.fallTime++
+				}
+			} else {
+				if c.hittmp > 0 {
+					c.hittmp = 0
+				}
+				if !c.scf(SCF_dizzy) {
+					// HitOverride KeepState preserves some GetHitVars for 1 frame so they can be accessed by the char
+					if !c.hoKeepState {
+						c.ghv.hitshaketime = 0
+						c.ghv.attr = 0
+						c.ghv.id = 0
+						c.ghv.playerNo = -1
+					}
+					c.superDefenseMul = 1
+					c.fallDefenseMul = 1
+					c.ghv.fallf = false
+					c.ghv.fallcount = 0
+					c.ghv.hitid = c.ghv.hitid >> 31
+					// HitCount doesn't reset here, like Mugen, but there's no apparent reason to keep that behavior with GuardCount
+					c.ghv.guardcount = 0
+					c.receivedDmg = 0
+					c.receivedHits = 0
+					c.ghv.score = 0
+					// In Mugen, when returning to idle, characters cannot act until the next frame
+					// To account for this, combos in Mugen linger one frame longer than they normally would in a fighting game
+					// Ikemen's "fake combo" code used to replicate this behavior
+					// After guarding was adjusted so that chars could guard when returning to idle, the fake combo code became obsolete
+					// https://github.com/ikemen-engine/Ikemen-GO/issues/597
+					//if c.comboExtraFrameWindow <= 0 {
+					//	c.fakeReceivedHits = 0
+					//	c.fakeComboDmg = 0
+					//	c.fakeCombo = false
+					//} else {
+					//	c.fakeCombo = true
+					//	c.comboExtraFrameWindow--
+					//}
+				}
 			}
-		}
-		if c.ghv.hitshaketime <= 0 && c.ghv.hittime >= 0 {
-			c.ghv.hittime--
+			if c.ghv.hitshaketime <= 0 && c.ghv.hittime >= 0 {
+				c.ghv.hittime--
+			}
 		}
 		if c.helperIndex == 0 && c.gi().pctime >= 0 {
 			c.gi().pctime++
@@ -6386,8 +6406,8 @@ func (c *Char) update(cvmin, cvmax,
 				}
 			}
 		}
-		if c.acttmp > 0 && c.ss.moveType != MT_H || c.roundState() == 2 &&
-			c.scf(SCF_ko) && c.scf(SCF_over) {
+		// https://github.com/ikemen-engine/Ikemen-GO/issues/1592
+		if c.acttmp > 0 && c.ss.moveType != MT_H || c.ss.no == 5150 {
 			c.exitTarget(true)
 		}
 		c.platformPosY = 0
@@ -6459,7 +6479,7 @@ func (c *Char) update(cvmin, cvmax,
 		if c.csf(CSF_movecamera_y) && !c.scf(SCF_standby) {
 			*highest = MinF(c.drawPos[1]*c.localscl, *highest)
 			*lowest = MaxF(c.drawPos[1]*c.localscl, *lowest)
-			sys.cam.Pos[1] = 0 + sys.cam.CameraZoomYBound
+			sys.cam.Pos[1] = 0
 		}
 	}
 	if c.koEchoTime > 0 {
@@ -6522,7 +6542,9 @@ func (c *Char) tick() {
 		}
 	}
 	if c.csf(CSF_gethit) && !c.hoKeepState {
-		c.ss.moveType = MT_H // Note that this change to MoveType breaks PrevMoveType
+		c.ss.changeMoveType(MT_H)
+		// This flag prevents the previous move type from being changed twice
+		c.ss.storeMoveType = true
 		if c.hitPauseTime > 0 {
 			c.ss.clearWw()
 		}
@@ -6681,7 +6703,7 @@ func (c *Char) cueDraw() {
 		sys.drawch.Add([]float32{-1, -1, 1, 1}, c.pos[0]*c.localscl, c.pos[1]*c.localscl, c.facing, 1)
 		//debug clsnText
 		x = (x-sys.cam.Pos[0])*sys.cam.Scale + ((320-float32(sys.gameWidth))/2 + 1) + float32(sys.gameWidth)/2
-		y = (y-sys.cam.Pos[1])*sys.cam.Scale + sys.cam.GroundLevel()
+		y = (y*sys.cam.Scale - sys.cam.Pos[1]) + sys.cam.GroundLevel()
 		y += float32(sys.debugFont.fnt.Size[1]) * sys.debugFont.yscl / sys.heightScale
 		sys.clsnText = append(sys.clsnText, ClsnText{x: x, y: y, text: fmt.Sprintf("%s, %d", c.name, c.id), r: 255, g: 255, b: 255})
 		for _, tid := range c.targets {
@@ -6739,9 +6761,6 @@ func (c *Char) cueDraw() {
 		}
 	}
 	if sys.tickNextFrame() {
-		if c.roundState() == 4 {
-			c.exitTarget(false)
-		}
 		if sys.supertime < 0 && c.teamside != sys.superplayer&1 {
 			c.superDefenseMul *= sys.superp2defmul
 		}
@@ -7014,6 +7033,7 @@ func (cl *CharList) clsn(getter *Char, proj bool) {
 				byf *= -1
 			}
 		}
+		// HitDef connects
 		if hitType > 0 {
 			if hitType == 1 {
 				if ch := getter.soundChannels.Get(0); ch != nil {
@@ -7030,10 +7050,17 @@ func (cl *CharList) clsn(getter *Char, proj bool) {
 				cmb := (getter.ss.moveType == MT_H || getter.csf(CSF_gethit)) &&
 					!ghv.guarded
 				// Save existing hit information
-				fall, hc, gc, fc, by, dmg := ghv.fallf, ghv.hitcount, ghv.guardcount, ghv.fallcount, ghv.hitBy, ghv.damage
+				dmg, hdmg, gdmg := ghv.damage, ghv.hitdamage, ghv.guarddamage
+				pwr, hpwr, gpwr := ghv.power, ghv.hitpower, ghv.guardpower
+				fall, hc, gc, fc, by := ghv.fallf, ghv.hitcount, ghv.guardcount, ghv.fallcount, ghv.hitBy
 				ghv.clear()
 				ghv.hitBy = by
 				ghv.damage = dmg
+				ghv.hitdamage = hdmg
+				ghv.guarddamage = gdmg
+				ghv.power = pwr
+				ghv.hitpower = hpwr
+				ghv.guardpower = gpwr
 				ghv.attr = hd.attr
 				ghv.hitid = hd.id
 				ghv.playerNo = hd.playerNo
@@ -7336,7 +7363,7 @@ func (cl *CharList) clsn(getter *Char, proj bool) {
 				off[1] += p1.hitdef.sparkxy[1] * c.localscl
 			}
 			if e, i := c.newExplod(); e != nil {
-				e.anim = c.getAnim(animNo, ffx, false)
+				e.anim = c.getAnim(animNo, ffx, true)
 				e.ontop = true
 				e.sprpriority = math.MinInt32
 				e.ownpal = true
@@ -7372,6 +7399,7 @@ func (cl *CharList) clsn(getter *Char, proj bool) {
 				c.powerAdd(hd.hitgetpower)
 				if getter.player {
 					getter.powerAdd(hd.hitgivepower)
+					getter.ghv.power += hd.hitgivepower
 				}
 				if getter.ss.moveType == MT_A {
 					c.counterHit = true
@@ -7408,6 +7436,7 @@ func (cl *CharList) clsn(getter *Char, proj bool) {
 				c.powerAdd(hd.guardgetpower)
 				if getter.player {
 					getter.powerAdd(hd.guardgivepower)
+					getter.ghv.power += hd.guardgivepower
 				}
 			}
 		}
@@ -7479,6 +7508,7 @@ func (cl *CharList) clsn(getter *Char, proj bool) {
 			if getter.p1facing == getter.facing {
 				getter.p1facing = 0
 			}
+			getter.ghv.facing = hd.p2facing
 			if hd.p1stateno >= 0 && c.stateChange1(hd.p1stateno, hd.playerNo) {
 				c.setCtrl(false)
 			}
@@ -7707,6 +7737,7 @@ func (cl *CharList) clsn(getter *Char, proj bool) {
 						dist >= -float32(c.hitdef.guard_dist[1]) {
 						getter.inguarddist = true
 					}
+					// ReversalDef connects
 					if getter.hitCheck(c) {
 						if ht := hit(c, &c.hitdef, [2]float32{}, 0, c.attackMul, 1); ht != 0 {
 							mvh := ht > 0 || c.hitdef.reversal_attr > 0
@@ -7760,6 +7791,7 @@ func (cl *CharList) clsn(getter *Char, proj bool) {
 									c.hitPauseTime = Max(1, c.hitdef.pausetime+
 										Btoi(c.gi().mugenver[0] == 1))
 								}
+								c.powerAdd(c.hitdef.hitgetpower)
 								c.uniqHitCount++
 							} else {
 								if mvh {

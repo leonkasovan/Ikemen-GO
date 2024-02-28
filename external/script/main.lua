@@ -415,6 +415,7 @@ main.font_def = {}
 -- * start.f_continue: start.lua 'f_continue' function (pre layerno=1)
 -- * start.f_hiscore: start.lua 'f_hiscore' function (pre layerno=1)
 -- * start.f_challenger: start.lua 'f_challenger' function (pre layerno=1)
+-- * start.f_selectReset: start.lua 'f_selectReset' function (before returning)
 -- More entry points may be added in future - let us know if your external
 -- module needs to hook code in place where it's not allowed yet.
 
@@ -3864,8 +3865,8 @@ function main.f_menuCommonDraw(t, item, cursorPosY, moveTxt, section, bgdef, tit
 						bank =   motif[section].menu_item_selected_active_font[2],
 						align =  motif[section].menu_item_selected_active_font[3],
 						text =   t[i].displayname,
-						x =      motif[section].menu_pos[1] + motif[section].menu_item_offset[1] + (i - 1) * motif[section].menu_item_spacing[1],
-						y =      motif[section].menu_pos[2] + motif[section].menu_item_offset[2] + (i - 1) * motif[section].menu_item_spacing[2] - moveTxt,
+						x =      motif[section].menu_pos[1] + motif[section].menu_item_selected_active_offset[1] + (i - 1) * motif[section].menu_item_spacing[1],
+						y =      motif[section].menu_pos[2] + motif[section].menu_item_selected_active_offset[2] + (i - 1) * motif[section].menu_item_spacing[2] - moveTxt,
 						scaleX = motif[section].menu_item_selected_active_scale[1],
 						scaleY = motif[section].menu_item_selected_active_scale[2],
 						r =      motif[section].menu_item_selected_active_font[4],

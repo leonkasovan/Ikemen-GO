@@ -4,7 +4,6 @@ import (
 	_ "embed" // Support for go:embed resources
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -68,7 +67,7 @@ func main() {
 	os.Mkdir("save/replays", os.ModeSticky|0755)
 
 	// Try reading stats
-	if _, err := ioutil.ReadFile("save/stats.json"); err != nil {
+	if _, err := os.ReadFile("save/stats.json"); err != nil {
 		// If there was an error reading, write an empty json file
 		f, err := os.Create("save/stats.json")
 		chk(err)
@@ -308,7 +307,7 @@ func setupConfig() configSettings {
 		cfgPath = sys.cmdFlags["-config"]
 	}
 	// Load the config file, overwriting the defaults
-	if bytes, err := ioutil.ReadFile(cfgPath); err == nil {
+	if bytes, err := os.ReadFile(cfgPath); err == nil {
 		if len(bytes) >= 3 &&
 			bytes[0] == 0xef && bytes[1] == 0xbb && bytes[2] == 0xbf {
 			bytes = bytes[3:]
@@ -332,7 +331,7 @@ func setupConfig() configSettings {
 	tmp.WavChannels = Clamp(tmp.WavChannels, 1, 256)
 	// Save config file, indent with two spaces to match calls to json.encode() in the Lua code
 	cfg, _ := json.MarshalIndent(tmp, "", "  ")
-	chk(ioutil.WriteFile(cfgPath, cfg, 0644))
+	chk(os.WriteFile(cfgPath, cfg, 0644))
 
 	// Set each config property to the system object
 	sys.afterImageMax = tmp.MaxAfterImage

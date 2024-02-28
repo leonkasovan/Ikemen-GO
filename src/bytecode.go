@@ -340,6 +340,7 @@ const (
 	OC_const_p7name
 	OC_const_p8name
 	OC_const_authorname
+	OC_const_displayname
 	OC_const_stagevar_info_author
 	OC_const_stagevar_info_displayname
 	OC_const_stagevar_info_name
@@ -418,6 +419,7 @@ const (
 	OC_ex_const240p
 	OC_ex_const480p
 	OC_ex_const720p
+	OC_ex_const1080p
 	OC_ex_gethitvar_animtype
 	OC_ex_gethitvar_air_animtype
 	OC_ex_gethitvar_ground_animtype
@@ -463,11 +465,13 @@ const (
 	OC_ex_gethitvar_score
 	OC_ex_gethitvar_hitdamage
 	OC_ex_gethitvar_guarddamage
+	OC_ex_gethitvar_power
 	OC_ex_gethitvar_hitpower
 	OC_ex_gethitvar_guardpower
 	OC_ex_gethitvar_kill
 	OC_ex_gethitvar_priority
 	OC_ex_gethitvar_guardcount
+	OC_ex_gethitvar_facing
 	OC_ex_ailevelf
 	OC_ex_animelemlength
 	OC_ex_animframe_alphadest
@@ -1282,7 +1286,7 @@ func (be BytecodeExp) run(c *Char) BytecodeValue {
 		case OC_camerapos_x:
 			sys.bcStack.PushF(sys.cam.Pos[0] / oc.localscl)
 		case OC_camerapos_y:
-			sys.bcStack.PushF(sys.cam.Pos[1] / oc.localscl)
+			sys.bcStack.PushF((sys.cam.Pos[1] + sys.cam.aspectCorrection + sys.cam.zoomAnchorCorrection) / oc.localscl)
 		case OC_camerazoom:
 			sys.bcStack.PushF(sys.cam.Scale)
 		case OC_canrecover:
@@ -1748,6 +1752,11 @@ func (be BytecodeExp) run_const(c *Char, i *int, oc *Char) {
 			sys.stringPool[sys.workingState.playerNo].List[*(*int32)(
 				unsafe.Pointer(&be[*i]))])
 		*i += 4
+	case OC_const_displayname:
+		sys.bcStack.PushB(c.gi().displaynameLow ==
+			sys.stringPool[sys.workingState.playerNo].List[*(*int32)(
+				unsafe.Pointer(&be[*i]))])
+		*i += 4
 	case OC_const_name:
 		sys.bcStack.PushB(c.gi().nameLow ==
 			sys.stringPool[sys.workingState.playerNo].List[*(*int32)(
@@ -1945,6 +1954,8 @@ func (be BytecodeExp) run_ex(c *Char, i *int, oc *Char) {
 		*sys.bcStack.Top() = c.constp(640, sys.bcStack.Top().ToF())
 	case OC_ex_const720p:
 		*sys.bcStack.Top() = c.constp(1280, sys.bcStack.Top().ToF())
+	case OC_ex_const1080p:
+		*sys.bcStack.Top() = c.constp(1920, sys.bcStack.Top().ToF())
 	case OC_ex_gethitvar_animtype:
 		sys.bcStack.PushI(int32(c.ghv.animtype))
 	case OC_ex_gethitvar_air_animtype:
@@ -1961,7 +1972,6 @@ func (be BytecodeExp) run_ex(c *Char, i *int, oc *Char) {
 		sys.bcStack.PushI(int32(c.ghv.groundtype))
 	case OC_ex_gethitvar_damage:
 		sys.bcStack.PushI(c.ghv.damage)
-
 	case OC_ex_gethitvar_guardcount:
 		sys.bcStack.PushI(c.ghv.guardcount)
 	case OC_ex_gethitvar_hitcount:
@@ -2038,6 +2048,8 @@ func (be BytecodeExp) run_ex(c *Char, i *int, oc *Char) {
 		sys.bcStack.PushI(c.ghv.hitdamage)
 	case OC_ex_gethitvar_guarddamage:
 		sys.bcStack.PushI(c.ghv.guarddamage)
+	case OC_ex_gethitvar_power:
+		sys.bcStack.PushI(c.ghv.power)
 	case OC_ex_gethitvar_hitpower:
 		sys.bcStack.PushI(c.ghv.hitpower)
 	case OC_ex_gethitvar_guardpower:
@@ -2046,6 +2058,8 @@ func (be BytecodeExp) run_ex(c *Char, i *int, oc *Char) {
 		sys.bcStack.PushB(c.ghv.kill)
 	case OC_ex_gethitvar_priority:
 		sys.bcStack.PushI(c.ghv.priority)
+	case OC_ex_gethitvar_facing:
+		sys.bcStack.PushI(c.ghv.facing)
 	case OC_ex_ailevelf:
 		if !c.asf(ASF_noailevel) {
 			sys.bcStack.PushF(c.aiLevel())
@@ -3872,7 +3886,7 @@ func (sc explod) Run(c *Char, _ []int32) bool {
 			if ffx != "" && ffx != "s" {
 				e.ownpal = true
 			}
-			e.anim = crun.getAnim(exp[1].evalI(c), ffx, false)
+			e.anim = crun.getAnim(exp[1].evalI(c), ffx, true)
 		case explod_ownpal:
 			e.ownpal = exp[0].evalB(c)
 		case explod_remappal:
@@ -4357,7 +4371,7 @@ func (sc modifyExplod) Run(c *Char, _ []int32) bool {
 				})
 			case explod_anim:
 				if c.stCgi().ikemenver[0] > 0 || c.stCgi().ikemenver[1] > 0 {
-					anim := crun.getAnim(exp[1].evalI(c), string(*(*[]byte)(unsafe.Pointer(&exp[0]))), false)
+					anim := crun.getAnim(exp[1].evalI(c), string(*(*[]byte)(unsafe.Pointer(&exp[0]))), true)
 					eachExpl(func(e *Explod) { e.anim = anim })
 				}
 			case explod_animelem:
@@ -4487,7 +4501,7 @@ func (sc gameMakeAnim) Run(c *Char, _ []int32) bool {
 		case gameMakeAnim_under:
 			e.ontop = !exp[0].evalB(c)
 		case gameMakeAnim_anim:
-			e.anim = crun.getAnim(exp[1].evalI(c), string(*(*[]byte)(unsafe.Pointer(&exp[0]))), false)
+			e.anim = crun.getAnim(exp[1].evalI(c), string(*(*[]byte)(unsafe.Pointer(&exp[0]))), true)
 		}
 		return true
 	})
@@ -6226,7 +6240,7 @@ func (sc superPause) Run(c *Char, _ []int32) bool {
 	crun := c
 	var t, mt int32 = 30, 0
 	uh := true
-	sys.superanim, sys.superpmap.remap = crun.getAnim(100, "f", false), nil
+	sys.superanim, sys.superpmap.remap = crun.getAnim(100, "f", true), nil
 	sys.superpos, sys.superfacing = [...]float32{crun.pos[0] * crun.localscl, crun.pos[1] * crun.localscl}, crun.facing
 	sys.superpausebg, sys.superendcmdbuftime, sys.superdarken = true, 0, true
 	sys.superp2defmul = crun.gi().constants["super.targetdefencemul"]
@@ -6244,7 +6258,7 @@ func (sc superPause) Run(c *Char, _ []int32) bool {
 			sys.superdarken = exp[0].evalB(c)
 		case superPause_anim:
 			ffx := string(*(*[]byte)(unsafe.Pointer(&exp[0])))
-			if sys.superanim = crun.getAnim(exp[1].evalI(c), ffx, false); sys.superanim != nil {
+			if sys.superanim = crun.getAnim(exp[1].evalI(c), ffx, true); sys.superanim != nil {
 				if ffx != "" && ffx != "s" {
 					sys.superpmap.remap = nil
 				} else {
@@ -6277,7 +6291,7 @@ func (sc superPause) Run(c *Char, _ []int32) bool {
 		case superPause_redirectid:
 			if rid := sys.playerID(exp[0].evalI(c)); rid != nil {
 				crun = rid
-				sys.superanim, sys.superpmap.remap = crun.getAnim(30, "f", false), nil
+				sys.superanim, sys.superpmap.remap = crun.getAnim(30, "f", true), nil
 				sys.superpos, sys.superfacing = [...]float32{crun.pos[0] * crun.localscl, crun.pos[1] * crun.localscl}, crun.facing
 			} else {
 				return false
@@ -9133,11 +9147,15 @@ func (sb *StateBytecode) init(c *Char) {
 		c.ss.changeStateType(sb.stateType)
 	}
 	if sb.moveType != MT_U {
-		c.ss.changeMoveType(sb.moveType)
+		if !c.ss.storeMoveType {
+			c.ss.prevMoveType = c.ss.moveType
+		}
+		c.ss.moveType = sb.moveType
 	}
 	if sb.physics != ST_U {
 		c.ss.physics = sb.physics
 	}
+	c.ss.storeMoveType = false
 	sys.workingState = sb
 	sb.stateDef.Run(c)
 }

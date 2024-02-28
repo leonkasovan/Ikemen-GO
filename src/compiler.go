@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"math"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -215,8 +215,10 @@ var triggerMap = map[string]int{
 	"const240p":         1,
 	"const480p":         1,
 	"const720p":         1,
+	"const1080p":        1,
 	"cos":               1,
 	"ctrl":              1,
+	"displayname":       1,
 	"drawgame":          1,
 	"e":                 1,
 	"exp":               1,
@@ -1722,8 +1724,17 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 			return bvNone(), err
 		}
 		out.append(OC_ex_, OC_ex_const720p)
+	case "const1080p":
+		if _, err := c.oneArg(out, in, rd, true); err != nil {
+			return bvNone(), err
+		}
+		out.append(OC_ex_, OC_ex_const1080p)
 	case "ctrl":
 		out.append(OC_ctrl)
+	case "displayname":
+		if err := nameSub(OC_const_displayname); err != nil {
+			return bvNone(), err
+		}
 	case "drawgame":
 		out.append(OC_ex_, OC_ex_drawgame)
 	case "facing":
@@ -1850,6 +1861,8 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 				out.append(OC_ex_gethitvar_hitdamage)
 			case "guarddamage":
 				out.append(OC_ex_gethitvar_guarddamage)
+			case "power":
+				out.append(OC_ex_gethitvar_power)
 			case "hitpower":
 				out.append(OC_ex_gethitvar_hitpower)
 			case "guardpower":
@@ -1858,6 +1871,8 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 				out.append(OC_ex_gethitvar_kill)
 			case "priority":
 				out.append(OC_ex_gethitvar_priority)
+			case "facing":
+				out.append(OC_ex_gethitvar_facing)
 			default:
 				return bvNone(), Error("Invalid data: " + c.token)
 			}
@@ -4264,7 +4279,7 @@ func (c *Compiler) stateCompile(states map[int32]StateBytecode,
 		var err error
 		// If this is a zss file
 		if zss {
-			b, err := ioutil.ReadFile(filename)
+			b, err := os.ReadFile(filename)
 			if err != nil {
 				return err
 			}
@@ -4279,7 +4294,7 @@ func (c *Compiler) stateCompile(states map[int32]StateBytecode,
 		// If filename doesn't exist, see if a zss file exists
 		fnz += ".zss"
 		if err := LoadFile(&fnz, dirs, func(filename string) error {
-			b, err := ioutil.ReadFile(filename)
+			b, err := os.ReadFile(filename)
 			if err != nil {
 				return err
 			}

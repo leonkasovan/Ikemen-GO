@@ -3,40 +3,42 @@ package main
 import "math"
 
 type stageCamera struct {
-	startx         int32
-	boundleft      int32
-	boundright     int32
-	boundhigh      int32
-	boundlow       int32
-	verticalfollow float32
-	floortension   int32
-	tensionhigh    int32
-	tensionlow     int32
-	tension        int32
-	tensionvel     float32
-	overdrawhigh   int32 //TODO: not implemented
-	overdrawlow    int32
-	cuthigh        int32
-	cutlow         int32
-	localcoord     [2]int32
-	localscl       float32
-	zoffset        int32
-	ztopscale      float32
-	drawOffsetY    float32
-	startzoom      float32
-	zoomin         float32
-	zoomout        float32
-	ytensionenable bool
-	zoomanchor     bool
-	fov            float32
-	yshift         float32
-	far            float32
-	near           float32
+	startx               int32
+	boundleft            int32
+	boundright           int32
+	boundhigh            int32
+	boundlow             int32
+	verticalfollow       float32
+	floortension         int32
+	tensionhigh          int32
+	tensionlow           int32
+	tension              int32
+	tensionvel           float32
+	overdrawhigh         int32 //TODO: not implemented
+	overdrawlow          int32
+	cuthigh              int32
+	cutlow               int32
+	localcoord           [2]int32
+	localscl             float32
+	zoffset              int32
+	ztopscale            float32
+	drawOffsetY          float32
+	startzoom            float32
+	zoomin               float32
+	zoomout              float32
+	ytensionenable       bool
+	zoomanchor           bool
+	fov                  float32
+	yshift               float32
+	far                  float32
+	near                 float32
+	aspectCorrection     float32
+	zoomAnchorCorrection float32
 }
 
 func newStageCamera() *stageCamera {
 	return &stageCamera{verticalfollow: 0.2, tensionvel: 1, tension: 50,
-		cuthigh: math.MinInt32, cutlow: math.MinInt32,
+		cuthigh: 0, cutlow: 0,
 		localcoord: [...]int32{320, 240}, localscl: float32(sys.gameWidth / 320),
 		ztopscale: 1, startzoom: 1, zoomin: 1, zoomout: 1, ytensionenable: false, fov: 40, yshift: 0, far: 10000, near: 0.1}
 }
@@ -60,12 +62,10 @@ type Camera struct {
 	XMin, XMax                      float32
 	Scale, MinScale                 float32
 	boundL, boundR, boundH, boundLo float32
-	ExtraBoundH                     float32
 	minYZoomDelta                   float32
 	zoff                            float32
 	screenZoff                      float32
 	halfWidth                       float32
-	CameraZoomYBound                float32
 	FollowChar                      *Char
 }
 
@@ -85,19 +85,34 @@ func (c *Camera) Reset() {
 	c.halfWidth = float32(sys.gameWidth) / 2
 	c.XMin = c.boundL - c.halfWidth/c.BaseScale()
 	c.XMax = c.boundR + c.halfWidth/c.BaseScale()
-	c.ExtraBoundH = ((1 - c.zoomout) * 100) * (1 / c.zoomout) * 2.1 * (float32(sys.gameHeight) / 240)
-	c.boundH = MinF(0, float32(c.boundhigh-c.localcoord[1])*c.localscl+float32(sys.gameHeight)-c.drawOffsetY) - c.ExtraBoundH*c.minYZoomDelta
-	c.boundLo = MaxF(0, float32(c.boundlow)*c.localscl) //-c.drawOffsetY)
-	//if c.boundlow < 0 {
-	//	c.boundLo += float32(c.boundlow) * c.localscl
-	//}
+	c.aspectCorrection = 0
+	c.zoomAnchorCorrection = 0
+	if float32(c.localcoord[1])*c.localscl-float32(sys.gameHeight) < 0 {
+		c.aspectCorrection = MinF(0, (float32(c.localcoord[1])*c.localscl-float32(sys.gameHeight))+MinF((float32(sys.gameHeight)-float32(c.localcoord[1])*c.localscl)/2, float32(c.overdrawlow)*c.localscl))
+	} else if float32(c.localcoord[1])*c.localscl-float32(sys.gameHeight) > 0 {
+		if c.cuthigh+c.cutlow <= 0 {
+			c.aspectCorrection = float32(Ceil(float32(c.localcoord[1])*c.localscl) - sys.gameHeight)
+		} else {
+			diff := Ceil(float32(c.localcoord[1])*c.localscl) - sys.gameHeight
+			tmp := Ceil(float32(c.cuthigh)*c.localscl) * diff / (Ceil(float32(c.cuthigh)*c.localscl) + Ceil(float32(c.cutlow)*c.localscl))
+			if diff-tmp <= c.cutlow {
+				c.aspectCorrection = float32(tmp)
+			} else {
+				c.aspectCorrection = float32(diff - Ceil(float32(c.cutlow)*c.localscl))
+			}
+		}
+
+	}
+	c.boundH = float32(c.boundhigh) * c.localscl
+	c.boundLo = float32(Max(c.boundhigh, c.boundlow)) * c.localscl
+
 	xminscl := float32(sys.gameWidth) / (float32(sys.gameWidth) - c.boundL +
 		c.boundR)
-	yminscl := float32(sys.gameHeight) / (240 - MinF(0, c.boundH))
-	c.MinScale = MaxF(c.zoomout, MinF(c.zoomin, MaxF(xminscl, yminscl)))
+	//yminscl := float32(sys.gameHeight) / (240 - MinF(0, c.boundH))
+	c.MinScale = MaxF(c.zoomout, MinF(c.zoomin, xminscl))
 	c.screenZoff = float32(c.zoffset-c.localcoord[1])*c.localscl + 240 - c.drawOffsetY
 	if c.boundhigh > 0 {
-		c.boundH += float32(c.boundhigh) * c.localscl
+		//c.boundH += float32(c.boundhigh) * c.localscl
 		c.screenZoff -= float32(c.boundhigh) * c.localscl
 	}
 }
@@ -107,7 +122,10 @@ func (c *Camera) Init() {
 }
 func (c *Camera) Update(scl, x, y float32) {
 	c.Scale = c.BaseScale() * scl
-	c.zoff = (c.screenZoff-240)*scl + float32(sys.gameHeight)
+	c.zoff = float32(c.zoffset) * c.localscl
+	if sys.stage.stageCamera.zoomanchor {
+		c.zoomAnchorCorrection = c.zoff - (float32(sys.gameHeight) + c.aspectCorrection - (float32(sys.gameHeight)-c.zoff+c.aspectCorrection)*scl)
+	}
 	for i := 0; i < 2; i++ {
 		c.Offset[i] = sys.stage.bga.offset[i] * sys.stage.localscl * scl
 	}
@@ -135,29 +153,19 @@ func (c *Camera) XBound(scl, x float32) float32 {
 }
 func (c *Camera) YBound(scl, y float32) float32 {
 	if c.verticalfollow <= 0 {
-		return 0
+		return MaxF(0, c.boundLo)
 	} else {
-		var extraBoundH float32
-		if c.zoomout < 1 {
-			extraBoundH = (c.ExtraBoundH * (1 - c.minYZoomDelta) * ((1 / scl) - 1) / ((1 / c.zoomout) - 1))
-		}
-		tmp := MaxF(0, 240-c.screenZoff)
-		c.CameraZoomYBound = 0
-		if !c.zoomanchor {
-			// Expand lower bound like MUGEN 1.1
-			c.CameraZoomYBound = ((tmp / (scl)) - tmp) - c.drawOffsetY*(1-scl)*1.21
-		}
 		bound := ClampF(y,
-			MinF(tmp*(1/scl-1), c.boundH-c.CameraZoomYBound-extraBoundH-240+MaxF(float32(sys.gameHeight)/scl, tmp+c.screenZoff/scl)),
-			c.boundLo)
-		return bound + c.CameraZoomYBound
+			c.boundH*scl,
+			c.boundLo*scl)
+		return bound
 	}
 }
 func (c *Camera) BaseScale() float32 {
 	return c.ztopscale
 }
 func (c *Camera) GroundLevel() float32 {
-	return c.zoff
+	return c.zoff - c.aspectCorrection - c.zoomAnchorCorrection
 }
 func (c *Camera) ResetZoomdelay() {
 	c.zoomdelay = 0
@@ -220,7 +228,7 @@ func (c *Camera) action(x, y *float32, leftest, rightest, lowest, highest,
 			*y = (lowest + ftensionlow) * Pow(vfollow,
 				MinF(1, 1/Pow(c.Scale, 4)))
 		} else {
-			*y = c.Pos[1] - c.CameraZoomYBound
+			*y = c.Pos[1]
 		}
 		tmp = (rightest + sys.screenright) - (leftest - sys.screenleft) -
 			float32(sys.gameWidth-320)

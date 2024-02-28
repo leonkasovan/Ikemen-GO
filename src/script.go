@@ -1121,7 +1121,6 @@ func systemScriptInit(l *lua.LState) {
 				sys.postMatchFlg = false
 				sys.preFightTime += sys.gameTime
 				sys.gameTime = 0
-				sys.cam.CameraZoomYBound = 0
 				sys.consoleText = []string{}
 				sys.stageLoopNo = 0
 				sys.paused = false
@@ -3089,6 +3088,10 @@ func triggerFunctions(l *lua.LState) {
 		l.Push(lua.LNumber(sys.debugWC.constp(1280, float32(numArg(l, 1))).ToF()))
 		return 1
 	})
+	luaRegister(l, "const1080p", func(*lua.LState) int {
+		l.Push(lua.LNumber(sys.debugWC.constp(1920, float32(numArg(l, 1))).ToF()))
+		return 1
+	})
 	luaRegister(l, "ctrl", func(*lua.LState) int {
 		l.Push(lua.LBool(sys.debugWC.ctrl()))
 		return 1
@@ -3252,6 +3255,8 @@ func triggerFunctions(l *lua.LState) {
 			ln = lua.LNumber(c.ghv.hitdamage)
 		case "guarddamage":
 			ln = lua.LNumber(c.ghv.guarddamage)
+		case "power":
+			ln = lua.LNumber(c.ghv.power)
 		case "hitpower":
 			ln = lua.LNumber(c.ghv.hitpower)
 		case "guardpower":
@@ -3260,6 +3265,8 @@ func triggerFunctions(l *lua.LState) {
 			ln = lua.LNumber(Btoi(c.ghv.kill))
 		case "priority":
 			ln = lua.LNumber(c.ghv.priority)
+		case "facing":
+			ln = lua.LNumber(c.ghv.facing)
 		default:
 			l.RaiseError("\nInvalid argument: %v\n", strArg(l, 1))
 		}

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"image"
 	"io"
-	"io/ioutil"
 	"log"
 	"math"
 	"os"
@@ -409,14 +408,14 @@ func (s *System) init(w, h int32) *lua.LState {
 			s.externalShaderNames[i] = splitDir[len(splitDir)-1]
 
 			// Load vert shaders.
-			content, err := ioutil.ReadFile(shaderLocation + ".vert")
+			content, err := os.ReadFile(shaderLocation + ".vert")
 			if err != nil {
 				chk(err)
 			}
 			s.externalShaders[0][i] = string(content) + "\x00"
 
 			// Load frag shaders.
-			content, err = ioutil.ReadFile(shaderLocation + ".frag")
+			content, err = os.ReadFile(shaderLocation + ".frag")
 			if err != nil {
 				chk(err)
 			}
@@ -1001,7 +1000,7 @@ func (s *System) charUpdate(cvmin, cvmax,
 		s.charList.tick()
 	}
 }
-func (s *System) posReset() { // unused after nointroreset update
+func (s *System) posReset() {
 	for _, p := range s.chars {
 		if len(p) > 0 {
 			p[0].posReset()
@@ -1025,7 +1024,7 @@ func (s *System) action() {
 	leftest, rightest = x, x
 	if s.cam.ytensionenable {
 		if y < 0 {
-			lowest = (y - s.cam.CameraZoomYBound)
+			lowest = y
 		}
 	}
 
@@ -1050,11 +1049,13 @@ func (s *System) action() {
 			if s.intro == 0 {
 				for _, p := range s.chars {
 					if len(p) > 0 {
-						p[0].unsetSCF(SCF_over)
-						if !p[0].scf(SCF_standby) || p[0].teamside == -1 {
-							p[0].setCtrl(true)
-							if p[0].ss.no != 0 && !p[0].asf(ASF_nointroreset) {
-								p[0].selfState(0, -1, -1, 1, "")
+						if p[0].alive() {
+							p[0].unsetSCF(SCF_over)
+							if !p[0].scf(SCF_standby) || p[0].teamside == -1 {
+								p[0].setCtrl(true)
+								if p[0].ss.no != 0 && !p[0].asf(ASF_nointroreset) {
+									p[0].selfState(0, -1, -1, 1, "")
+								}
 							}
 						}
 					}
@@ -2176,7 +2177,7 @@ type wincntMap map[string][]int32
 
 func (wm *wincntMap) init() {
 	if sys.autolevel {
-		b, err := ioutil.ReadFile(sys.wincntFileName)
+		b, err := os.ReadFile(sys.wincntFileName)
 		if err != nil {
 			return
 		}

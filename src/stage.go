@@ -407,8 +407,6 @@ func (bg backGround) draw(pos [2]float32, scl, bgscl, lclscl float32,
 	if bg.zoomscaledelta[1] != math.MaxFloat32 {
 		ys3 = ((scl + (1-scl)*(1-bg.zoomscaledelta[1])) / scly)
 	}
-	scly *= lclscl
-	sclx *= lscl[0]
 	// This handles the flooring of the camera position in MUGEN versions earlier than 1.0.
 	if bg.roundpos {
 		for i := 0; i < 2; i++ {
@@ -417,17 +415,28 @@ func (bg backGround) draw(pos [2]float32, scl, bgscl, lclscl float32,
 	}
 	x := bg.start[0] + bg.xofs - (pos[0]/stgscl[0]+bg.camstartx)*bg.delta[0] +
 		bg.bga.offset[0]
-	zoomybound := sys.cam.CameraZoomYBound * float32(Btoi(isStage))
 	// Hires breaks ydelta scrolling vel, so bgscl was commented from here.
-	yScrollPos := ((pos[1] - (zoomybound / lclscl)) / stgscl[1]) * bg.delta[1] // * bgscl
-	yScrollPos += ((zoomybound / lclscl) / stgscl[1]) * Pow(bg.zoomdelta[1], 1.4) / bgscl
+	yScrollPos := (pos[1] / scl / stgscl[1]) * bg.delta[1] // * bgscl
 	y := bg.start[1] - yScrollPos + bg.bga.offset[1]
-	ys2 := bg.scaledelta[1] * (pos[1] - zoomybound) * bg.delta[1] * bgscl
-	ys := ((100-(pos[1]-zoomybound)*bg.yscaledelta)*bgscl/bg.yscalestart)*bg.scalestart[1] + ys2
+	ys2 := bg.scaledelta[1] * pos[1] * bg.delta[1] * bgscl
+	ys := ((100-(pos[1])*bg.yscaledelta)*bgscl/bg.yscalestart)*bg.scalestart[1] + ys2
 	xs := bg.scaledelta[0] * pos[0] * bg.delta[0] * bgscl
 	x *= bgscl
-	y = y*bgscl + ((float32(sys.gameHeight)-shakeY)/scly-240)/stgscl[1]
-	scly *= stgscl[1]
+	if isStage {
+		zoff := float32(sys.cam.zoffset) * lclscl
+		//if sys.cam.zoomanchor {
+		//	y = y*bgscl + ((float32(sys.gameHeight)/lclscl*float32(sys.gameHeight)/float32(sys.cam.localcoord[1])-shakeY/lclscl)/scly-float32(sys.gameHeight))/stgscl[1]
+		//} else {
+		y = y*bgscl + ((zoff-shakeY)/scly-zoff)/lclscl/stgscl[1]
+		//}
+		y -= sys.cam.aspectCorrection / (scly * lclscl * stgscl[1])
+		y -= sys.cam.zoomAnchorCorrection / (scly * lclscl * stgscl[1])
+	} else {
+		y = y*bgscl + ((float32(sys.gameHeight)-shakeY)/lclscl/scly-240)/stgscl[1]
+	}
+
+	sclx *= lscl[0]
+	scly *= lclscl * stgscl[1]
 	rect := bg.startrect
 	var wscl [2]float32
 	for i := range wscl {
@@ -897,7 +906,7 @@ func loadStage(def string, main bool) (*Stage, error) {
 		sec[0].ReadF32("tensionvel", &s.stageCamera.tensionvel)
 		sec[0].ReadI32("overdrawhigh", &s.stageCamera.overdrawhigh) //TODO: not implemented
 		sec[0].ReadI32("overdrawlow", &s.stageCamera.overdrawlow)
-		sec[0].ReadI32("cuthigh", &s.stageCamera.cuthigh) //TODO: not implemented
+		sec[0].ReadI32("cuthigh", &s.stageCamera.cuthigh)
 		sec[0].ReadI32("cutlow", &s.stageCamera.cutlow)
 		sec[0].ReadF32("startzoom", &s.stageCamera.startzoom)
 		sec[0].ReadF32("fov", &s.stageCamera.fov)
@@ -974,8 +983,8 @@ func loadStage(def string, main bool) (*Stage, error) {
 				}
 			}
 		}
-		posMul := float32(math.Tan(float64(s.stageCamera.fov*math.Pi/180)/2)) * -s.model.offset[2] * s.localscl * sys.heightScale / (float32(sys.scrrect[3]) / 2)
-		s.stageCamera.zoffset = int32(float32(s.stageCamera.localcoord[1])/2 - s.model.offset[1]/posMul - s.stageCamera.yshift*float32(sys.scrrect[3]/2)/s.localscl/sys.heightScale)
+		posMul := float32(math.Tan(float64(s.stageCamera.fov*math.Pi/180)/2)) * -s.model.offset[2] / (float32(s.stageCamera.localcoord[1]) / 2)
+		s.stageCamera.zoffset = int32(float32(s.stageCamera.localcoord[1])/2 - s.model.offset[1]/posMul - s.stageCamera.yshift*float32(sys.scrrect[3]/2)/float32(sys.gameHeight)*float32(s.stageCamera.localcoord[1])/sys.heightScale)
 		if str, ok := sec[0]["scale"]; ok {
 			for k, v := range SplitAndTrim(str, ",") {
 				if k >= len(s.model.scale) {
@@ -1079,7 +1088,6 @@ func loadStage(def string, main bool) (*Stage, error) {
 		if s.zoffsetlink >= 0 && zlink < 0 && b.id == s.zoffsetlink {
 			zlink = i
 			s.stageCamera.zoffset += int32(b.start[1] * s.scale[1])
-			s.stageCamera.boundhigh -= int32(b.start[1] * s.scale[1])
 		}
 	}
 	ratio1 := float32(s.stageCamera.localcoord[0]) / float32(s.stageCamera.localcoord[1])
@@ -1384,9 +1392,6 @@ func (s *Stage) draw(top bool, x, y, scl float32) {
 	if s.hires {
 		bgscl = 0.5
 	}
-	if s.stageCamera.boundhigh > 0 {
-		y += float32(s.stageCamera.boundhigh)
-	}
 	yofs, pos := sys.envShake.getOffset(), [...]float32{x, y}
 	scl2 := s.localscl * scl
 	// This code makes the background scroll faster when surpassing boundhigh with the camera pushed down
@@ -1400,7 +1405,7 @@ func (s *Stage) draw(top bool, x, y, scl float32) {
 	// extraBoundH*scl
 	// pos[1] = float32(s.stageCamera.boundhigh) - extraBoundH/s.localscl
 	// }
-	if s.stageCamera.verticalfollow > 0 {
+	if yofs != 0 && s.stageCamera.verticalfollow > 0 {
 		if yofs < 0 {
 			tmp := (float32(s.stageCamera.boundhigh) - pos[1]) * scl2
 			if scl > 1 {
@@ -1428,19 +1433,12 @@ func (s *Stage) draw(top bool, x, y, scl float32) {
 			pos[i] = float32(math.Ceil(float64(p - 0.5)))
 		}
 	}
-	yofs3 := (float32(s.stageCamera.drawOffsetY) +
-		float32(s.stageCamera.localcoord[1]-240)*s.localscl)
-	yofs4 := ((360*float32(s.stageCamera.localcoord[0]) +
-		160*float32(s.stageCamera.localcoord[1])) /
-		float32(s.stageCamera.localcoord[0])) / 480
-
 	if !top {
 		s.drawModel(pos, yofs, scl)
 	}
 	for _, b := range s.bg {
 		if b.visible && b.toplayer == top && b.anim.spr != nil {
-			b.draw(pos, scl, bgscl, s.localscl, s.scale,
-				yofs+yofs3*Pow(Pow(scl, b.zoomdelta[1]), yofs4)-s.stageCamera.drawOffsetY*(1-b.delta[1]*bgscl), true)
+			b.draw(pos, scl, bgscl, s.localscl, s.scale, yofs, true)
 		}
 	}
 }
@@ -1573,8 +1571,6 @@ type Model struct {
 	meshes              []*Mesh
 	textures            []*GLTFTexture
 	materials           []*Material
-	vertexBuffer        []byte
-	elementBuffer       []uint32
 	offset              [3]float32
 	rotation            [3]float32
 	scale               [3]float32
@@ -1853,6 +1849,8 @@ func loadglTFStage(filepath string) (*Model, error) {
 		material.doubleSided = m.DoubleSided
 		mdl.materials = append(mdl.materials, material)
 	}
+	var vertexBuffer []byte
+	var elementBuffer []uint32
 	mdl.meshes = make([]*Mesh, 0, len(doc.Meshes))
 	for _, m := range doc.Meshes {
 		var mesh = &Mesh{}
@@ -1860,15 +1858,15 @@ func loadglTFStage(filepath string) (*Model, error) {
 		mesh.morphTargetWeights = m.Weights
 		for _, p := range m.Primitives {
 			var primitive = &Primitive{}
-			primitive.vertexBufferOffset = uint32(len(mdl.vertexBuffer))
-			primitive.elementBufferOffset = uint32(4 * len(mdl.elementBuffer))
+			primitive.vertexBufferOffset = uint32(len(vertexBuffer))
+			primitive.elementBufferOffset = uint32(4 * len(elementBuffer))
 			var posBuffer [][3]float32
 			positions, err := modeler.ReadPosition(doc, doc.Accessors[p.Attributes[gltf.POSITION]], posBuffer)
 			if err != nil {
 				return nil, err
 			}
 			for _, pos := range positions {
-				mdl.vertexBuffer = append(mdl.vertexBuffer, f32.Bytes(binary.LittleEndian, pos[:]...)...)
+				vertexBuffer = append(vertexBuffer, f32.Bytes(binary.LittleEndian, pos[:]...)...)
 			}
 			primitive.numVertices = uint32(len(positions))
 			if idx, ok := p.Attributes[gltf.TEXCOORD_0]; ok {
@@ -1880,7 +1878,7 @@ func loadglTFStage(filepath string) (*Model, error) {
 				if len(texCoords) > 0 {
 					primitive.useUV = true
 					for _, tex := range texCoords {
-						mdl.vertexBuffer = append(mdl.vertexBuffer, f32.Bytes(binary.LittleEndian, tex[:]...)...)
+						vertexBuffer = append(vertexBuffer, f32.Bytes(binary.LittleEndian, tex[:]...)...)
 					}
 				} else {
 					primitive.useUV = false
@@ -1894,7 +1892,7 @@ func loadglTFStage(filepath string) (*Model, error) {
 				return nil, err
 			}
 			for _, p := range indices {
-				mdl.elementBuffer = append(mdl.elementBuffer, p)
+				elementBuffer = append(elementBuffer, p)
 			}
 			primitive.numIndices = uint32(len(indices))
 			if idx, ok := p.Attributes[gltf.COLOR_0]; ok {
@@ -1908,7 +1906,7 @@ func loadglTFStage(filepath string) (*Model, error) {
 							return nil, err
 						}
 						for _, vec := range vecs.([][3]uint8) {
-							mdl.vertexBuffer = append(mdl.vertexBuffer, f32.Bytes(binary.LittleEndian, float32(vec[0])/255, float32(vec[1])/255, float32(vec[2])/255, 1)...)
+							vertexBuffer = append(vertexBuffer, f32.Bytes(binary.LittleEndian, float32(vec[0])/255, float32(vec[1])/255, float32(vec[2])/255, 1)...)
 						}
 					} else {
 						var vecBuffer [][4]uint8
@@ -1917,7 +1915,7 @@ func loadglTFStage(filepath string) (*Model, error) {
 							return nil, err
 						}
 						for _, vec := range vecs.([][4]uint8) {
-							mdl.vertexBuffer = append(mdl.vertexBuffer, f32.Bytes(binary.LittleEndian, float32(vec[0])/255, float32(vec[1])/255, float32(vec[2])/255, float32(vec[3])/255)...)
+							vertexBuffer = append(vertexBuffer, f32.Bytes(binary.LittleEndian, float32(vec[0])/255, float32(vec[1])/255, float32(vec[2])/255, float32(vec[3])/255)...)
 						}
 					}
 				case gltf.ComponentUshort:
@@ -1928,7 +1926,7 @@ func loadglTFStage(filepath string) (*Model, error) {
 							return nil, err
 						}
 						for _, vec := range vecs.([][3]uint16) {
-							mdl.vertexBuffer = append(mdl.vertexBuffer, f32.Bytes(binary.LittleEndian, float32(vec[0])/65535, float32(vec[1])/65535, float32(vec[2])/65535, 1)...)
+							vertexBuffer = append(vertexBuffer, f32.Bytes(binary.LittleEndian, float32(vec[0])/65535, float32(vec[1])/65535, float32(vec[2])/65535, 1)...)
 						}
 					} else {
 						var vecBuffer [][4]uint16
@@ -1937,7 +1935,7 @@ func loadglTFStage(filepath string) (*Model, error) {
 							return nil, err
 						}
 						for _, vec := range vecs.([][4]uint16) {
-							mdl.vertexBuffer = append(mdl.vertexBuffer, f32.Bytes(binary.LittleEndian, float32(vec[0])/65535, float32(vec[1])/65535, float32(vec[2])/65535, float32(vec[3])/65535)...)
+							vertexBuffer = append(vertexBuffer, f32.Bytes(binary.LittleEndian, float32(vec[0])/65535, float32(vec[1])/65535, float32(vec[2])/65535, float32(vec[3])/65535)...)
 						}
 					}
 				case gltf.ComponentFloat:
@@ -1948,7 +1946,7 @@ func loadglTFStage(filepath string) (*Model, error) {
 							return nil, err
 						}
 						for _, vec := range vecs.([][3]float32) {
-							mdl.vertexBuffer = append(mdl.vertexBuffer, f32.Bytes(binary.LittleEndian, vec[0], vec[1], vec[2], 1)...)
+							vertexBuffer = append(vertexBuffer, f32.Bytes(binary.LittleEndian, vec[0], vec[1], vec[2], 1)...)
 						}
 					} else {
 						var vecBuffer [][4]float32
@@ -1957,7 +1955,7 @@ func loadglTFStage(filepath string) (*Model, error) {
 							return nil, err
 						}
 						for _, vec := range vecs.([][4]float32) {
-							mdl.vertexBuffer = append(mdl.vertexBuffer, f32.Bytes(binary.LittleEndian, vec[:]...)...)
+							vertexBuffer = append(vertexBuffer, f32.Bytes(binary.LittleEndian, vec[:]...)...)
 						}
 					}
 				}
@@ -1976,7 +1974,7 @@ func loadglTFStage(filepath string) (*Model, error) {
 					for j, v := range joint {
 						f[j] = float32(v)
 					}
-					mdl.vertexBuffer = append(mdl.vertexBuffer, f32.Bytes(binary.LittleEndian, f[:]...)...)
+					vertexBuffer = append(vertexBuffer, f32.Bytes(binary.LittleEndian, f[:]...)...)
 				}
 				if idx, ok := p.Attributes[gltf.WEIGHTS_0]; ok {
 					var weightBuffer [][4]float32
@@ -1985,7 +1983,7 @@ func loadglTFStage(filepath string) (*Model, error) {
 						return nil, err
 					}
 					for _, weight := range weights {
-						mdl.vertexBuffer = append(mdl.vertexBuffer, f32.Bytes(binary.LittleEndian, weight[:]...)...)
+						vertexBuffer = append(vertexBuffer, f32.Bytes(binary.LittleEndian, weight[:]...)...)
 					}
 				} else {
 					return nil, errors.New("Primitive attribute JOINTS_0 is specified but WEIGHTS_0 is not specified.")
@@ -2002,7 +2000,7 @@ func loadglTFStage(filepath string) (*Model, error) {
 						for j, v := range joint {
 							f[j] = float32(v)
 						}
-						mdl.vertexBuffer = append(mdl.vertexBuffer, f32.Bytes(binary.LittleEndian, f[:]...)...)
+						vertexBuffer = append(vertexBuffer, f32.Bytes(binary.LittleEndian, f[:]...)...)
 					}
 					primitive.useJoint1 = false
 					if idx, ok := p.Attributes["WEIGHTS_1"]; primitive.useJoint1 && ok {
@@ -2012,7 +2010,7 @@ func loadglTFStage(filepath string) (*Model, error) {
 							return nil, err
 						}
 						for _, weight := range weights {
-							mdl.vertexBuffer = append(mdl.vertexBuffer, f32.Bytes(binary.LittleEndian, weight[:]...)...)
+							vertexBuffer = append(vertexBuffer, f32.Bytes(binary.LittleEndian, weight[:]...)...)
 						}
 					} else if primitive.useJoint1 {
 						return nil, errors.New("Primitive attribute JOINTS_1 is specified but WEIGHTS_1 is not specified.")
@@ -2029,7 +2027,7 @@ func loadglTFStage(filepath string) (*Model, error) {
 				for attr, accessor := range t {
 					switch attr {
 					case "POSITION":
-						o := uint32(len(mdl.vertexBuffer))
+						o := uint32(len(vertexBuffer))
 						target.positionOffset = &o
 						var posBuffer [][3]float32
 						positions, err := modeler.ReadPosition(doc, doc.Accessors[accessor], posBuffer)
@@ -2037,10 +2035,10 @@ func loadglTFStage(filepath string) (*Model, error) {
 							return nil, err
 						}
 						for _, pos := range positions {
-							mdl.vertexBuffer = append(mdl.vertexBuffer, f32.Bytes(binary.LittleEndian, pos[0], pos[1], pos[2], 0)...)
+							vertexBuffer = append(vertexBuffer, f32.Bytes(binary.LittleEndian, pos[0], pos[1], pos[2], 0)...)
 						}
 					case "TEXCOORD_0":
-						o := uint32(len(mdl.vertexBuffer))
+						o := uint32(len(vertexBuffer))
 						target.uvOffset = &o
 						var uvBuffer [][2]float32
 						texCoords, err := modeler.ReadTextureCoord(doc, doc.Accessors[accessor], uvBuffer)
@@ -2048,10 +2046,10 @@ func loadglTFStage(filepath string) (*Model, error) {
 							return nil, err
 						}
 						for _, uv := range texCoords {
-							mdl.vertexBuffer = append(mdl.vertexBuffer, f32.Bytes(binary.LittleEndian, uv[0], uv[1], 0, 0)...)
+							vertexBuffer = append(vertexBuffer, f32.Bytes(binary.LittleEndian, uv[0], uv[1], 0, 0)...)
 						}
 					case "COLOR_0":
-						o := uint32(len(mdl.vertexBuffer))
+						o := uint32(len(vertexBuffer))
 						target.colorOffset = &o
 						switch doc.Accessors[accessor].ComponentType {
 						case gltf.ComponentUbyte:
@@ -2062,7 +2060,7 @@ func loadglTFStage(filepath string) (*Model, error) {
 									return nil, err
 								}
 								for _, vec := range vecs.([][3]uint8) {
-									mdl.vertexBuffer = append(mdl.vertexBuffer, f32.Bytes(binary.LittleEndian, float32(vec[0])/255, float32(vec[1])/255, float32(vec[2])/255, 1)...)
+									vertexBuffer = append(vertexBuffer, f32.Bytes(binary.LittleEndian, float32(vec[0])/255, float32(vec[1])/255, float32(vec[2])/255, 1)...)
 								}
 							} else {
 								var vecBuffer [][4]uint8
@@ -2071,7 +2069,7 @@ func loadglTFStage(filepath string) (*Model, error) {
 									return nil, err
 								}
 								for _, vec := range vecs.([][4]uint8) {
-									mdl.vertexBuffer = append(mdl.vertexBuffer, f32.Bytes(binary.LittleEndian, float32(vec[0])/255, float32(vec[1])/255, float32(vec[2])/255, float32(vec[3])/255)...)
+									vertexBuffer = append(vertexBuffer, f32.Bytes(binary.LittleEndian, float32(vec[0])/255, float32(vec[1])/255, float32(vec[2])/255, float32(vec[3])/255)...)
 								}
 							}
 						case gltf.ComponentUshort:
@@ -2082,7 +2080,7 @@ func loadglTFStage(filepath string) (*Model, error) {
 									return nil, err
 								}
 								for _, vec := range vecs.([][3]uint16) {
-									mdl.vertexBuffer = append(mdl.vertexBuffer, f32.Bytes(binary.LittleEndian, float32(vec[0])/65535, float32(vec[1])/65535, float32(vec[2])/65535, 1)...)
+									vertexBuffer = append(vertexBuffer, f32.Bytes(binary.LittleEndian, float32(vec[0])/65535, float32(vec[1])/65535, float32(vec[2])/65535, 1)...)
 								}
 							} else {
 								var vecBuffer [][4]uint16
@@ -2091,7 +2089,7 @@ func loadglTFStage(filepath string) (*Model, error) {
 									return nil, err
 								}
 								for _, vec := range vecs.([][4]uint16) {
-									mdl.vertexBuffer = append(mdl.vertexBuffer, f32.Bytes(binary.LittleEndian, float32(vec[0])/65535, float32(vec[1])/65535, float32(vec[2])/65535, float32(vec[3])/65535)...)
+									vertexBuffer = append(vertexBuffer, f32.Bytes(binary.LittleEndian, float32(vec[0])/65535, float32(vec[1])/65535, float32(vec[2])/65535, float32(vec[3])/65535)...)
 								}
 							}
 						case gltf.ComponentFloat:
@@ -2102,7 +2100,7 @@ func loadglTFStage(filepath string) (*Model, error) {
 									return nil, err
 								}
 								for _, vec := range vecs.([][3]float32) {
-									mdl.vertexBuffer = append(mdl.vertexBuffer, f32.Bytes(binary.LittleEndian, vec[0], vec[1], vec[2], 1)...)
+									vertexBuffer = append(vertexBuffer, f32.Bytes(binary.LittleEndian, vec[0], vec[1], vec[2], 1)...)
 								}
 							} else {
 								var vecBuffer [][4]float32
@@ -2111,7 +2109,7 @@ func loadglTFStage(filepath string) (*Model, error) {
 									return nil, err
 								}
 								for _, vec := range vecs.([][4]float32) {
-									mdl.vertexBuffer = append(mdl.vertexBuffer, f32.Bytes(binary.LittleEndian, vec[:]...)...)
+									vertexBuffer = append(vertexBuffer, f32.Bytes(binary.LittleEndian, vec[:]...)...)
 								}
 							}
 						}
@@ -2127,6 +2125,11 @@ func loadglTFStage(filepath string) (*Model, error) {
 			mesh.primitives = append(mesh.primitives, primitive)
 		}
 		mdl.meshes = append(mdl.meshes, mesh)
+	}
+
+	sys.mainThreadTask <- func() {
+		gfx.SetStageVertexData(vertexBuffer)
+		gfx.SetStageIndexData(elementBuffer...)
 	}
 	mdl.nodes = make([]*Node, 0, len(doc.Nodes))
 	for _, n := range doc.Nodes {
@@ -2446,10 +2449,12 @@ func (s *Stage) drawModel(pos [2]float32, yofs float32, scl float32) {
 
 	drawFOV := s.stageCamera.fov * math.Pi / 180
 
-	var posMul float32 = float32(math.Tan(float64(drawFOV)/2)) * -s.model.offset[2] * s.localscl * sys.heightScale / (float32(sys.scrrect[3]) / 2)
-	var syo float32 = -(float32(sys.gameHeight) / 2) * (1 - scl) / s.localscl / scl
+	var posMul float32 = float32(math.Tan(float64(drawFOV)/2)) * -s.model.offset[2] / (float32(sys.scrrect[3]) / 2)
 
-	offset := []float32{(pos[0]*-posMul*(scl) + s.model.offset[0]) / scl, ((pos[1]+yofs/s.localscl/scl+syo)*posMul + s.model.offset[1]), s.model.offset[2] / scl}
+	var syo float32
+	aspectCorrection := (float32(sys.cam.zoffset)*float32(sys.gameHeight)/float32(sys.cam.localcoord[1]) - (float32(sys.cam.zoffset)*s.localscl - sys.cam.aspectCorrection))
+	syo = -(float32(s.stageCamera.zoffset) - float32(sys.cam.localcoord[1])/2) * (1 - scl) / scl * float32(sys.gameHeight) / float32(s.stageCamera.localcoord[1])
+	offset := []float32{(pos[0]*-posMul*s.localscl*sys.widthScale + s.model.offset[0]/scl), (((pos[1]*s.localscl+sys.cam.zoomAnchorCorrection+aspectCorrection)/scl+yofs/scl+syo)*posMul*sys.heightScale + s.model.offset[1]), s.model.offset[2] / scl}
 	rotation := []float32{s.model.rotation[0], s.model.rotation[1], s.model.rotation[2]}
 	scale := []float32{s.model.scale[0], s.model.scale[1], s.model.scale[2]}
 	proj := mgl.Translate3D(0, sys.cam.yshift*scl, 0)
@@ -2461,8 +2466,6 @@ func (s *Stage) drawModel(pos [2]float32, yofs float32, scl float32) {
 	view = view.Mul4(mgl.HomogRotate3DZ(rotation[2]))
 	view = view.Mul4(mgl.Scale3D(scale[0], scale[1], scale[2]))
 	scene := s.model.scenes[0]
-	gfx.SetByteVertexData(s.model.vertexBuffer)
-	gfx.SetIndexData(s.model.elementBuffer...)
 
 	for _, index := range scene.nodes {
 		s.model.nodes[index].calculateWorldTransform(mgl.Ident4(), s.model.nodes)
