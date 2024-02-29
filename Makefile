@@ -33,10 +33,15 @@ rpi4: ${srcFiles}
 	cd ./build && ./build.sh rpi4
 	cp bin/Ikemen_GO_Linux_RPi4 /home/pi/Apps/
 
+# Steamdeck target
+steamdeck: ${srcFiles}
+	cd ./build && ./build.sh steamdeck
+	cp bin/Ikemen_GO_Linux_RPi4 /home/pi/Apps/
+
 # Linux target
 Ikemen_GO_Linux: ${srcFiles}
 	cd ./build && ./build.sh Linux
-	cp bin/Ikemen_GO_Linux /home/pi/Apps/Ikemen_GO_Linux_RPi4	
+	cp bin/Ikemen_GO_Linux /home/pi/Apps/Ikemen_GO_Linux_RPi4
 	
 # Windows 64-bit target
 Ikemen_GO.exe: ${srcFiles}

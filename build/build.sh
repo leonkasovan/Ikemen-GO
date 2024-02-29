@@ -141,7 +141,7 @@ function build_Steamdeck() {
 
 function build_RG353P() {
 	echo "Building for Anbernic RG353P"
-	go build -tags=gles2,rg353p -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/$binName ./src
+	GOARCH=arm64 CGO_ENABLED=1 go build -tags=gles2,rg353p -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/$binName ./src
 }
 
 function buildWin() {
