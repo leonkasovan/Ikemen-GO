@@ -26,9 +26,11 @@ rm -rf /usr/local/go && tar -C /usr/local -xzf go1.22.0.linux-amd64.tar.gz
 ```
 3. Set environment variable for cross compiling
 ```shell
-export PATH=$PATH:/usr/local/go/bin
-export CC=
-export CXX=
-export CGO_CFLAGS=
-export CGO_LDFLAGS=
+export CC=aarch64-buildroot-linux-gnu-gcc
+export CXX=aarch64-buildroot-linux-gnu-g++
+export GOARCH=arm64
+export CGO_ENABLED=1
+export PATH="/home/ark/recalbox-rg353x/output/host/bin:/home/ark/recalbox-rg353x/output/host/aarch64-buildroot-linux-gnu/sysroot/usr/bin:/usr/local/go/bin:$PATH"
+
+go build -tags=gles2,rg353p -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/Ikemen_GO_Linux_RG353P ./src
 ```
