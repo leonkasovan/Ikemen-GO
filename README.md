@@ -14,12 +14,17 @@ make
 ```
 
 ### Cross-compiling binaries with WSL2 Ubuntu
-1. Download and install golang
+1. Download and install gcc toolchain for cross compile
+```shell
+wget https://github.com/leonkasovan/RG353P/releases/download/recalbox-9.1/rg353p-recalbox-toolchain.tar.gz
+tar -C /opt -xvzf rg353p-recalbox-toolchain.tar.gz
+```
+2. Download and install golang
 ```shell
 wget https://go.dev/dl/go1.22.0.linux-amd64.tar.gz
 rm -rf /usr/local/go && tar -C /usr/local -xzf go1.22.0.linux-amd64.tar.gz
 ```
-2. Set environment variable for cross compiling
+3. Set environment variable for cross compiling
 ```shell
 export PATH=$PATH:/usr/local/go/bin
 export CC=
