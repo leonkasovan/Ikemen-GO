@@ -64,9 +64,7 @@ type ShaderProgram struct {
 }
 
 func newShaderProgram(vert, frag, id string) (s *ShaderProgram) {
-	// fmt.Printf("\nVERTEX:\n%v\n", vert)
 	vertObj := compileShader(gl.VERTEX_SHADER, vert)
-	// fmt.Printf("\nFRAGMENT:\n%v\n", frag)
 	fragObj := compileShader(gl.FRAGMENT_SHADER, frag)
 	prog := linkProgram(vertObj, fragObj)
 
@@ -255,7 +253,7 @@ type Renderer struct {
 	spriteShader *ShaderProgram
 	vertexBuffer uint32
 	// Shader and index data for 3D model rendering
-	modelShader *ShaderProgram
+	modelShader       *ShaderProgram
 	stageVertexBuffer uint32
 	stageIndexBuffer  uint32
 }
@@ -491,7 +489,7 @@ func (r *Renderer) SetModelPipeline(eq BlendEquation, src, dst BlendFunc, depthM
 	gl.BlendEquation(BlendEquationLUT[eq])
 	gl.BlendFunc(BlendFunctionLUT[src], BlendFunctionLUT[dst])
 
-	gl.BindBuffer(gl.ARRAY_BUFFER, r.vertexBuffer)
+	gl.BindBuffer(gl.ARRAY_BUFFER, r.stageVertexBuffer)
 	gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, r.stageIndexBuffer)
 	loc := r.modelShader.a["position"]
 	gl.EnableVertexAttribArray(uint32(loc))
@@ -711,6 +709,7 @@ func (r *Renderer) SetStageIndexData(values ...uint32) {
 	gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, r.stageIndexBuffer)
 	gl.BufferData(gl.ELEMENT_ARRAY_BUFFER, len(values)*4, unsafe.Pointer(&data.Bytes()[0]), gl.STATIC_DRAW)
 }
+
 func (r *Renderer) RenderQuad() {
 	gl.DrawArrays(gl.TRIANGLE_STRIP, 0, 4)
 }
