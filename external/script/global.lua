@@ -171,7 +171,7 @@ function stateInfo()
 	)
 end
 
-loadDebugInfo({'engineInfo', 'playerInfo', 'actionInfo', 'stateInfo'})
+-- loadDebugInfo({'engineInfo', 'playerInfo', 'actionInfo', 'stateInfo'})
 
 --;===========================================================
 --; MATCH LOOP

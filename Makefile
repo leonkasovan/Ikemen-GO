@@ -25,32 +25,7 @@ srcFiles=src/anim.go \
 	src/util_js.go
 
 # Handheld Anbernic RG353P target
-rg353p: ${srcFiles}
-	cd ./build && ./build.sh rg353p
-
-# Raspberry Pi 4 target
-rpi4: ${srcFiles}
-	cd ./build && ./build.sh rpi4
-	cp bin/Ikemen_GO_Linux_RPi4 /home/pi/Apps/
-
-# Steamdeck target
-steamdeck: ${srcFiles}
-	cd ./build && ./build.sh steamdeck
-	cp bin/Ikemen_GO_Linux_RPi4 /home/pi/Apps/
-
-# Linux target
-Ikemen_GO_Linux: ${srcFiles}
-	cd ./build && ./build.sh Linux
-	cp bin/Ikemen_GO_Linux /home/pi/Apps/Ikemen_GO_Linux_RPi4
-	
-# Windows 64-bit target
-Ikemen_GO.exe: ${srcFiles}
-	cd ./build && bash ./build.sh Win64
-
-# Windows 32-bit target
-Ikemen_GO_86.exe: ${srcFiles}
-	cd ./build && bash ./build.sh Win32
-
-# MacOS x64 target
-Ikemen_GO_MacOS: ${srcFiles}
-	cd ./build && bash ./build.sh MacOS
+rg35xx:
+	@echo "Building for Anbernic RG35XX"
+	CGO_CFLAGS="-Os -marm -march=armv7-a -mtune=cortex-a9 -mfpu=neon-fp16 -mfloat-abi=hard" GOOS=linux GOARCH=arm CGO_ENABLED=1 go build -x -tags=rg35xx -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/Ikemen_GO_Linux_RG35XX ./src
+	cp bin/Ikemen_GO_Linux_RG35XX /mnt/f/ADB

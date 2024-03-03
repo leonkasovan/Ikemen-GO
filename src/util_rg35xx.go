@@ -1,14 +1,12 @@
-//go:build !js && !raw
+//go:build rg35xx
 
 package main
 
 import (
 	"io"
 	"os"
-
+	"github.com/leonkasovan/IkemenGo/src/glfont"
 	findfont "github.com/flopp/go-findfont"
-	"github.com/leonkasovan/glfont"
-	//"github.com/sqweek/dialog"
 )
 
 // Log writer implementation
@@ -27,6 +25,7 @@ func ShowErrorDialog(message string) {
 	print("I.K.E.M.E.N Error\n\n" + message)
 }
 
+// TTF font loading
 // TTF font loading
 func LoadFntTtf(f *Fnt, fontfile string, filename string, height int32) {
 	//Search in local directory
@@ -48,7 +47,7 @@ func LoadFntTtf(f *Fnt, fontfile string, filename string, height int32) {
 	}
 	var glsl_version uint
 	if Renderer_API == 2 {	// 2=>OpenGLES
-		glsl_version = 300
+		glsl_version = 100
 	} else {
 		glsl_version = sys.fontShaderVer
 	}
@@ -64,3 +63,4 @@ func LoadFntTtf(f *Fnt, fontfile string, filename string, height int32) {
 		f.palettes[0][i] = 0
 	}
 }
+

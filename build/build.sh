@@ -63,6 +63,11 @@ function main() {
 			binName="Ikemen_GO_Linux_RG353P"
 			build_RG353P
 		;;
+		[Rr][Gg]35[Xx][Xx])
+			export GOOS=linux
+			binName="Ikemen_GO_Linux_RG35XX"
+			build_RG35XX
+		;;
 	esac
 
 	if [[ "${binName}" == "Default" ]]; then
@@ -141,7 +146,12 @@ function build_Steamdeck() {
 
 function build_RG353P() {
 	echo "Building for Anbernic RG353P"
-	GOARCH=arm64 CGO_ENABLED=1 go build -tags=gles2,rg353p -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/$binName ./src
+	GOARCH=arm64 CGO_ENABLED=1 go build -x -tags=gles2,rg353p -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/$binName ./src
+}
+
+function build_RG35XX() {
+	echo "Building for Anbernic RG35XX"
+	CGO_CFLAGS="-Os -marm -march=armv7-a -mtune=cortex-a9 -mfpu=neon-fp16 -mfloat-abi=hard" GOARCH=arm CGO_ENABLED=1 go build -x -tags=rg35xx -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/$binName ./src
 }
 
 function buildWin() {

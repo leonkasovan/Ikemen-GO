@@ -73,7 +73,7 @@ var sys = System{
 	// errLog:           log.New(NewLogWriter(), "", log.LstdFlags),
 	keyInput:         KeyUnknown,
 	wavChannels:      256,
-	fontShaderVer:    320,
+	fontShaderVer:    100,
 	//FLAC_FrameWait:          -1,
 	luaSpriteScale:       1,
 	luaPortraitScale:     1,
@@ -1607,103 +1607,103 @@ func (s *System) drawTop() {
 		s.drawch.draw(0x3feff)
 	}
 }
-func (s *System) drawDebug() {
-	put := func(x, y *float32, txt string) {
-		for txt != "" {
-			w, drawTxt := int32(0), ""
-			for i, r := range txt {
-				w += s.debugFont.fnt.CharWidth(r, 0) + s.debugFont.fnt.Spacing[0]
-				if w > s.scrrect[2] {
-					drawTxt, txt = txt[:i], txt[i:]
-					break
-				}
-			}
-			if drawTxt == "" {
-				drawTxt, txt = txt, ""
-			}
-			*y += float32(s.debugFont.fnt.Size[1]) * s.debugFont.yscl / s.heightScale
-			s.debugFont.fnt.Print(drawTxt, *x, *y, s.debugFont.xscl/s.widthScale,
-				s.debugFont.yscl/s.heightScale, 0, 1, &s.scrrect,
-				s.debugFont.palfx, s.debugFont.frgba)
-		}
-	}
-	if s.debugDraw {
-		//Player Info
-		x := (320-float32(s.gameWidth))/2 + 1
-		y := 240 - float32(s.gameHeight)
-		if s.statusLFunc != nil {
-			s.debugFont.SetColor(255, 255, 255)
-			for i, p := range s.chars {
-				if len(p) > 0 {
-					top := s.luaLState.GetTop()
-					if s.luaLState.CallByParam(lua.P{Fn: s.statusLFunc, NRet: 1,
-						Protect: true}, lua.LNumber(i+1)) == nil {
-						l, ok := s.luaLState.Get(-1).(lua.LString)
-						if ok && len(l) > 0 {
-							put(&x, &y, string(l))
-						}
-					}
-					s.luaLState.SetTop(top)
-				}
-			}
-		}
-		//Console
-		y = MaxF(y, 48+240-float32(s.gameHeight))
-		s.debugFont.SetColor(255, 255, 255)
-		for _, s := range s.consoleText {
-			put(&x, &y, s)
-		}
-		//Data
-		pn := s.debugRef[0]
-		hn := s.debugRef[1]
-		if pn >= len(s.chars) || hn >= len(s.chars[pn]) {
-			s.debugRef[0] = 0
-			s.debugRef[1] = 0
-		}
-		s.debugWC = s.chars[s.debugRef[0]][s.debugRef[1]]
-		y = float32(s.gameHeight) - float32(s.debugFont.fnt.Size[1])*sys.debugFont.yscl/s.heightScale*
-			(float32(len(s.listLFunc))+float32(s.clipboardRows)) - 1*s.heightScale
-		for i, f := range s.listLFunc {
-			if f != nil {
-				if i == 1 {
-					s.debugFont.SetColor(199, 199, 219)
-				} else if (i == 2 && s.debugWC.animPN != s.debugWC.playerNo) ||
-					(i == 3 && s.debugWC.ss.sb.playerNo != s.debugWC.playerNo) {
-					s.debugFont.SetColor(255, 255, 127)
-				} else {
-					s.debugFont.SetColor(255, 255, 255)
-				}
-				top := s.luaLState.GetTop()
-				if s.luaLState.CallByParam(lua.P{Fn: f, NRet: 1,
-					Protect: true}) == nil {
-					s, ok := s.luaLState.Get(-1).(lua.LString)
-					if ok && len(s) > 0 {
-						if i == 1 && (sys.debugWC == nil || sys.debugWC.csf(CSF_destroy)) {
-							put(&x, &y, string(s)+" disabled")
-							break
-						}
-						put(&x, &y, string(s))
-					}
-				}
-				s.luaLState.SetTop(top)
-			}
-		}
-		//Clipboard
-		s.debugFont.SetColor(255, 255, 255)
-		for _, s := range s.debugWC.clipboardText {
-			put(&x, &y, s)
-		}
-	}
-	//Clsn
-	if s.clsnDraw {
-		for _, t := range s.clsnText {
-			s.debugFont.SetColor(t.r, t.g, t.b)
-			s.debugFont.fnt.Print(t.text, t.x, t.y, s.debugFont.xscl/s.widthScale,
-				s.debugFont.yscl/s.heightScale, 0, 0, &s.scrrect,
-				s.debugFont.palfx, s.debugFont.frgba)
-		}
-	}
-}
+// func (s *System) drawDebug() {
+// 	put := func(x, y *float32, txt string) {
+// 		for txt != "" {
+// 			w, drawTxt := int32(0), ""
+// 			for i, r := range txt {
+// 				w += s.debugFont.fnt.CharWidth(r, 0) + s.debugFont.fnt.Spacing[0]
+// 				if w > s.scrrect[2] {
+// 					drawTxt, txt = txt[:i], txt[i:]
+// 					break
+// 				}
+// 			}
+// 			if drawTxt == "" {
+// 				drawTxt, txt = txt, ""
+// 			}
+// 			*y += float32(s.debugFont.fnt.Size[1]) * s.debugFont.yscl / s.heightScale
+// 			s.debugFont.fnt.Print(drawTxt, *x, *y, s.debugFont.xscl/s.widthScale,
+// 				s.debugFont.yscl/s.heightScale, 0, 1, &s.scrrect,
+// 				s.debugFont.palfx, s.debugFont.frgba)
+// 		}
+// 	}
+// 	if s.debugDraw {
+// 		//Player Info
+// 		x := (320-float32(s.gameWidth))/2 + 1
+// 		y := 240 - float32(s.gameHeight)
+// 		if s.statusLFunc != nil {
+// 			s.debugFont.SetColor(255, 255, 255)
+// 			for i, p := range s.chars {
+// 				if len(p) > 0 {
+// 					top := s.luaLState.GetTop()
+// 					if s.luaLState.CallByParam(lua.P{Fn: s.statusLFunc, NRet: 1,
+// 						Protect: true}, lua.LNumber(i+1)) == nil {
+// 						l, ok := s.luaLState.Get(-1).(lua.LString)
+// 						if ok && len(l) > 0 {
+// 							put(&x, &y, string(l))
+// 						}
+// 					}
+// 					s.luaLState.SetTop(top)
+// 				}
+// 			}
+// 		}
+// 		//Console
+// 		y = MaxF(y, 48+240-float32(s.gameHeight))
+// 		s.debugFont.SetColor(255, 255, 255)
+// 		for _, s := range s.consoleText {
+// 			put(&x, &y, s)
+// 		}
+// 		//Data
+// 		pn := s.debugRef[0]
+// 		hn := s.debugRef[1]
+// 		if pn >= len(s.chars) || hn >= len(s.chars[pn]) {
+// 			s.debugRef[0] = 0
+// 			s.debugRef[1] = 0
+// 		}
+// 		s.debugWC = s.chars[s.debugRef[0]][s.debugRef[1]]
+// 		y = float32(s.gameHeight) - float32(s.debugFont.fnt.Size[1])*sys.debugFont.yscl/s.heightScale*
+// 			(float32(len(s.listLFunc))+float32(s.clipboardRows)) - 1*s.heightScale
+// 		for i, f := range s.listLFunc {
+// 			if f != nil {
+// 				if i == 1 {
+// 					s.debugFont.SetColor(199, 199, 219)
+// 				} else if (i == 2 && s.debugWC.animPN != s.debugWC.playerNo) ||
+// 					(i == 3 && s.debugWC.ss.sb.playerNo != s.debugWC.playerNo) {
+// 					s.debugFont.SetColor(255, 255, 127)
+// 				} else {
+// 					s.debugFont.SetColor(255, 255, 255)
+// 				}
+// 				top := s.luaLState.GetTop()
+// 				if s.luaLState.CallByParam(lua.P{Fn: f, NRet: 1,
+// 					Protect: true}) == nil {
+// 					s, ok := s.luaLState.Get(-1).(lua.LString)
+// 					if ok && len(s) > 0 {
+// 						if i == 1 && (sys.debugWC == nil || sys.debugWC.csf(CSF_destroy)) {
+// 							put(&x, &y, string(s)+" disabled")
+// 							break
+// 						}
+// 						put(&x, &y, string(s))
+// 					}
+// 				}
+// 				s.luaLState.SetTop(top)
+// 			}
+// 		}
+// 		//Clipboard
+// 		s.debugFont.SetColor(255, 255, 255)
+// 		for _, s := range s.debugWC.clipboardText {
+// 			put(&x, &y, s)
+// 		}
+// 	}
+// 	//Clsn
+// 	if s.clsnDraw {
+// 		for _, t := range s.clsnText {
+// 			s.debugFont.SetColor(t.r, t.g, t.b)
+// 			s.debugFont.fnt.Print(t.text, t.x, t.y, s.debugFont.xscl/s.widthScale,
+// 				s.debugFont.yscl/s.heightScale, 0, 0, &s.scrrect,
+// 				s.debugFont.palfx, s.debugFont.frgba)
+// 		}
+// 	}
+// }
 
 // Starts and runs gameplay
 // Called to start each match, on hard reset with shift+F4, and
@@ -2149,9 +2149,9 @@ func (s *System) fight() (reload bool) {
 			}
 		}
 		// Render debug elements
-		if !s.frameSkip {
-			s.drawDebug()
-		}
+		// if !s.frameSkip {
+		// 	s.drawDebug()
+		// }
 		// Break if finished
 		if fin && (!s.postMatchFlg || len(sys.commonLua) == 0) {
 			break

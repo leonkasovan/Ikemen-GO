@@ -1,4 +1,4 @@
-//go:build sdl || rg353p
+//go:build rg35xx
 package main
 
 /*
@@ -27,8 +27,8 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 	// Initialize OpenGL
 	chk(sdl.Init(sdl.INIT_EVERYTHING))
 	if Renderer_API == 2 {	// OpenGL ES
-		sdl.GLSetAttribute(sdl.GL_CONTEXT_MAJOR_VERSION, 3)
-		sdl.GLSetAttribute(sdl.GL_CONTEXT_MINOR_VERSION, 1)
+		sdl.GLSetAttribute(sdl.GL_CONTEXT_MAJOR_VERSION, 2)
+		sdl.GLSetAttribute(sdl.GL_CONTEXT_MINOR_VERSION, 0)
 		sdl.GLSetAttribute(sdl.GL_CONTEXT_PROFILE_MASK, sdl.GL_CONTEXT_PROFILE_ES)
 	} else {
 		sdl.GLSetAttribute(sdl.GL_CONTEXT_MAJOR_VERSION, 2)
@@ -38,11 +38,11 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 	window, err = sdl.CreateWindow(s.windowTitle, sdl.WINDOWPOS_UNDEFINED, sdl.WINDOWPOS_UNDEFINED,
 		int32(w), int32(h), sdl.WINDOW_OPENGL)
 	if err != nil {
-		return nil, fmt.Errorf("failed to sdl.CreateWindow: %w", err)
+		return nil, fmt.Errorf("\nfailed to sdl.CreateWindow: %w\n", err)
 	}
 	_, err = window.GLCreateContext()
 	if err != nil {
-		return nil, fmt.Errorf("failed to window.GLCreateContext: %w", err)
+		return nil, fmt.Errorf("\nfailed to window.GLCreateContext: %w\n", err)
 	}
 	// V-Sync
 	if s.vRetrace >= 0 {
@@ -121,25 +121,3 @@ func (w *Window) Close() {
 	w.Window.Destroy()
 	sdl.Quit()
 }
-
-/*
-t.Button in Steamdeck
-Button R3 will be override this DPAD-UP in order to comply with Ikemen-Go default input config
-0 A
-1 B
-2 X
-3 Y
-4 L1
-5 R1
-6 SELECT
-7 START
-8
-9 L3
-10 R3
-11 HAT0 UP
-12 HAT1 RIGHT
-13 HAT2 DOWN
-14 HAT3 LEFT
-15
-16
-*/

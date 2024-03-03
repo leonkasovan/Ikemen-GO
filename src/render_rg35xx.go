@@ -1,4 +1,4 @@
-//go:build !kinc && !gles2
+//go:build rg35xx
 
 package main
 
@@ -10,11 +10,11 @@ import (
 	"runtime"
 	"unsafe"
 
-	gl "github.com/go-gl/gl/v2.1/gl"
+	gl "github.com/leonkasovan/gl/v2.0/gles2"
 	"golang.org/x/mobile/exp/f32"
 )
 
-const Renderer_API = 1
+const Renderer_API = 2
 
 var InternalFormatLUT = map[int32]uint32{
 	8:  gl.LUMINANCE,
@@ -64,7 +64,9 @@ type ShaderProgram struct {
 }
 
 func newShaderProgram(vert, frag, id string) (s *ShaderProgram) {
+	sys.errLog.Printf("Compile vertex shader\n")
 	vertObj := compileShader(gl.VERTEX_SHADER, vert)
+	sys.errLog.Printf("Compile fragmen shader\n")
 	fragObj := compileShader(gl.FRAGMENT_SHADER, frag)
 	prog := linkProgram(vertObj, fragObj)
 
@@ -95,7 +97,7 @@ func (s *ShaderProgram) RegisterTextures(names ...string) {
 
 func compileShader(shaderType uint32, src string) (shader uint32) {
 	shader = gl.CreateShader(shaderType)
-	src = "#version 120\n" + src + "\x00"
+	src = "#version 100\nprecision mediump float;\n" + src + "\x00"
 	s, _ := gl.Strs(src)
 	var l int32 = int32(len(src) - 1)
 	gl.ShaderSource(shader, 1, s, &l)
@@ -227,7 +229,7 @@ func (t *Texture) SetPixelData(data []float32) {
 
 	gl.BindTexture(gl.TEXTURE_2D, t.handle)
 	gl.PixelStorei(gl.UNPACK_ALIGNMENT, 1)
-	gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F_ARB, t.width, t.height, 0, gl.RGBA, gl.FLOAT, unsafe.Pointer(&data[0]))
+	gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGBA, t.width, t.height, 0, gl.RGBA, gl.FLOAT, unsafe.Pointer(&data[0]))
 }
 
 // Return whether texture has a valid handle
@@ -258,29 +260,29 @@ type Renderer struct {
 	stageIndexBuffer  uint32
 }
 
-//go:embed shaders/sprite.vert.glsl
+//go:embed shaders/rg35xx.sprite.vert.glsl
 var vertShader string
 
-//go:embed shaders/sprite.frag.glsl
+//go:embed shaders/rg35xx.sprite.frag.glsl
 var fragShader string
 
-//go:embed shaders/model.vert.glsl
+//go:embed shaders/rg35xx.model.vert.glsl
 var modelVertShader string
 
-//go:embed shaders/model.frag.glsl
+//go:embed shaders/rg35xx.model.frag.glsl
 var modelFragShader string
 
-//go:embed shaders/ident.vert.glsl
+//go:embed shaders/rg35xx.ident.vert.glsl
 var identVertShader string
 
-//go:embed shaders/ident.frag.glsl
+//go:embed shaders/rg35xx.ident.frag.glsl
 var identFragShader string
 
 // Render initialization.
 // Creates the default shaders, the framebuffer and enables MSAA.
 func (r *Renderer) Init() {
 	chk(gl.Init())
-	sys.errLog.Printf("Using OpenGL %v (%v)", gl.GoStr(gl.GetString(gl.VERSION)), gl.GoStr(gl.GetString(gl.RENDERER)))
+	sys.errLog.Printf("Using %v (%v)", gl.GoStr(gl.GetString(gl.VERSION)), gl.GoStr(gl.GetString(gl.RENDERER)))
 
 	r.postShaderSelect = make([]*ShaderProgram, 1+len(sys.externalShaderList))
 
@@ -297,15 +299,17 @@ func (r *Renderer) Init() {
 	gl.GenBuffers(1, &r.stageIndexBuffer)
 
 	// Sprite shader
+	sys.errLog.Printf("Compile shaders/sprite..glsl\n")
 	r.spriteShader = newShaderProgram(vertShader, fragShader, "Main Shader")
-	r.spriteShader.RegisterAttributes("position", "uv")
+	r.spriteShader.RegisterAttributes("position", "uv", "FragColor")
 	r.spriteShader.RegisterUniforms("modelview", "projection", "x1x2x4x3",
 		"alpha", "tint", "mask", "neg", "gray", "add", "mult", "isFlat", "isRgba", "isTrapez", "hue")
 	r.spriteShader.RegisterTextures("pal", "tex")
 
 	// 3D model shader
+	sys.errLog.Printf("Compile shaders/model..glsl\n")
 	r.modelShader = newShaderProgram(modelVertShader, modelFragShader, "Model Shader")
-	r.modelShader.RegisterAttributes("position", "uv", "vertColor", "joints_0", "joints_1", "weights_0", "weights_1", "morphTargets_0")
+	r.modelShader.RegisterAttributes("position", "uv", "vertColor", "joints_0", "joints_1", "weights_0", "weights_1", "morphTargets_0", "FragColor")
 	r.modelShader.RegisterUniforms("modelview", "projection", "baseColorFactor", "add", "mult", "textured", "neg", "gray", "hue", "enableAlpha", "alphaThreshold", "numJoints", "morphTargetWeight", "positionTargetCount", "uvTargetCount")
 	r.modelShader.RegisterTextures("tex", "jointMatrices")
 
@@ -315,11 +319,13 @@ func (r *Renderer) Init() {
 	r.postShaderSelect = make([]*ShaderProgram, 1+len(sys.externalShaderList))
 
 	// Ident shader (no postprocessing)
+	sys.errLog.Printf("Compile shaders/ident..glsl\n")
 	r.postShaderSelect[0] = newShaderProgram(identVertShader, identFragShader, "Identity Postprocess")
-	r.postShaderSelect[0].RegisterAttributes("VertCoord")
+	r.postShaderSelect[0].RegisterAttributes("texcoord", "FragColor")
 	r.postShaderSelect[0].RegisterUniforms("Texture", "TextureSize")
 
 	// External Shaders
+	sys.errLog.Printf("Compile external shaders\n")
 	for i := 0; i < len(sys.externalShaderList); i++ {
 		r.postShaderSelect[1+i] = newShaderProgram(sys.externalShaders[0][i],
 			sys.externalShaders[1][i], fmt.Sprintf("Postprocess Shader #%v", i+1))
@@ -327,14 +333,14 @@ func (r *Renderer) Init() {
 	}
 
 	if sys.multisampleAntialiasing {
-		gl.Enable(gl.MULTISAMPLE)
+		// gl.Enable(gl.MULTISAMPLE)
 	}
 
 	gl.ActiveTexture(gl.TEXTURE0)
 	gl.GenTextures(1, &r.fbo_texture)
 
 	if sys.multisampleAntialiasing {
-		gl.BindTexture(gl.TEXTURE_2D_MULTISAMPLE, r.fbo_texture)
+		// gl.BindTexture(gl.TEXTURE_2D_MULTISAMPLE, r.fbo_texture)
 	} else {
 		gl.BindTexture(gl.TEXTURE_2D, r.fbo_texture)
 	}
@@ -345,7 +351,7 @@ func (r *Renderer) Init() {
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
 
 	if sys.multisampleAntialiasing {
-		gl.TexImage2DMultisample(gl.TEXTURE_2D_MULTISAMPLE, 16, gl.RGBA, sys.scrrect[2], sys.scrrect[3], true)
+		// gl.TexImage2DMultisample(gl.TEXTURE_2D_MULTISAMPLE, 16, gl.RGBA, sys.scrrect[2], sys.scrrect[3], true)
 
 	} else {
 		gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGBA, sys.scrrect[2], sys.scrrect[3], 0, gl.RGBA, gl.UNSIGNED_BYTE, nil)
@@ -359,7 +365,7 @@ func (r *Renderer) Init() {
 	gl.BindRenderbuffer(gl.RENDERBUFFER, r.rbo_depth)
 	if sys.multisampleAntialiasing {
 		//gl.RenderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, int(sys.scrrect[2]), int(sys.scrrect[3]))
-		gl.RenderbufferStorageMultisample(gl.RENDERBUFFER, 16, gl.DEPTH_COMPONENT16, sys.scrrect[2], sys.scrrect[3])
+		// gl.RenderbufferStorageMultisample(gl.RENDERBUFFER, 16, gl.DEPTH_COMPONENT16, sys.scrrect[2], sys.scrrect[3])
 	} else {
 		gl.RenderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, sys.scrrect[2], sys.scrrect[3])
 	}
@@ -413,9 +419,9 @@ func (r *Renderer) BeginFrame(clearColor bool) {
 
 func (r *Renderer) EndFrame() {
 	if sys.multisampleAntialiasing {
-		gl.BindFramebuffer(gl.DRAW_FRAMEBUFFER, r.fbo_f)
-		gl.BindFramebuffer(gl.READ_FRAMEBUFFER, r.fbo)
-		gl.BlitFramebuffer(0, 0, sys.scrrect[2], sys.scrrect[3], 0, 0, sys.scrrect[2], sys.scrrect[3], gl.COLOR_BUFFER_BIT, gl.LINEAR)
+		// gl.BindFramebuffer(gl.DRAW_FRAMEBUFFER, r.fbo_f)
+		// gl.BindFramebuffer(gl.READ_FRAMEBUFFER, r.fbo)
+		// gl.BlitFramebuffer(0, 0, sys.scrrect[2], sys.scrrect[3], 0, 0, sys.scrrect[2], sys.scrrect[3], gl.COLOR_BUFFER_BIT, gl.LINEAR)
 	}
 
 	gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
@@ -439,7 +445,7 @@ func (r *Renderer) EndFrame() {
 
 	loc := r.modelShader.a["VertCoord"]
 	gl.EnableVertexAttribArray(uint32(loc))
-	gl.VertexAttribPointerWithOffset(uint32(loc), 2, gl.FLOAT, false, 0, 0)
+	gl.VertexAttribPointer(uint32(loc), 2, gl.FLOAT, false, 0, gl.PtrOffset(0))
 
 	gl.DrawArrays(gl.TRIANGLE_STRIP, 0, 4)
 
@@ -457,10 +463,10 @@ func (r *Renderer) SetPipeline(eq BlendEquation, src, dst BlendFunc) {
 	gl.BindBuffer(gl.ARRAY_BUFFER, r.vertexBuffer)
 	loc := r.spriteShader.a["position"]
 	gl.EnableVertexAttribArray(uint32(loc))
-	gl.VertexAttribPointerWithOffset(uint32(loc), 2, gl.FLOAT, false, 16, 0)
+	gl.VertexAttribPointer(uint32(loc), 2, gl.FLOAT, false, 16, gl.PtrOffset(0))
 	loc = r.spriteShader.a["uv"]
 	gl.EnableVertexAttribArray(uint32(loc))
-	gl.VertexAttribPointerWithOffset(uint32(loc), 2, gl.FLOAT, false, 16, 8)
+	gl.VertexAttribPointer(uint32(loc), 2, gl.FLOAT, false, 16, gl.PtrOffset(8))
 }
 
 func (r *Renderer) ReleasePipeline() {
@@ -493,12 +499,12 @@ func (r *Renderer) SetModelPipeline(eq BlendEquation, src, dst BlendFunc, depthM
 	gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, r.stageIndexBuffer)
 	loc := r.modelShader.a["position"]
 	gl.EnableVertexAttribArray(uint32(loc))
-	gl.VertexAttribPointerWithOffset(uint32(loc), 3, gl.FLOAT, false, 0, uintptr(vertAttrOffset))
+	gl.VertexAttribPointer(uint32(loc), 3, gl.FLOAT, false, 0, gl.PtrOffset(int(vertAttrOffset)))
 	offset := vertAttrOffset + 12*numVertices
 	if useUV {
 		loc = r.modelShader.a["uv"]
 		gl.EnableVertexAttribArray(uint32(loc))
-		gl.VertexAttribPointerWithOffset(uint32(loc), 2, gl.FLOAT, false, 0, uintptr(offset))
+		gl.VertexAttribPointer(uint32(loc), 2, gl.FLOAT, false, 0, gl.PtrOffset(int(offset)))
 		offset += 8 * numVertices
 	} else {
 		loc = r.modelShader.a["uv"]
@@ -507,7 +513,7 @@ func (r *Renderer) SetModelPipeline(eq BlendEquation, src, dst BlendFunc, depthM
 	if useVertColor {
 		loc = r.modelShader.a["vertColor"]
 		gl.EnableVertexAttribArray(uint32(loc))
-		gl.VertexAttribPointerWithOffset(uint32(loc), 4, gl.FLOAT, false, 0, uintptr(offset))
+		gl.VertexAttribPointer(uint32(loc), 4, gl.FLOAT, false, 0, gl.PtrOffset(int(offset)))
 		offset += 16 * numVertices
 	} else {
 		loc = r.modelShader.a["vertColor"]
@@ -516,20 +522,20 @@ func (r *Renderer) SetModelPipeline(eq BlendEquation, src, dst BlendFunc, depthM
 	if useJoint0 {
 		loc = r.modelShader.a["joints_0"]
 		gl.EnableVertexAttribArray(uint32(loc))
-		gl.VertexAttribPointerWithOffset(uint32(loc), 4, gl.FLOAT, false, 0, uintptr(offset))
+		gl.VertexAttribPointer(uint32(loc), 4, gl.FLOAT, false, 0, gl.PtrOffset(int(offset)))
 		offset += 16 * numVertices
 		loc = r.modelShader.a["weights_0"]
 		gl.EnableVertexAttribArray(uint32(loc))
-		gl.VertexAttribPointerWithOffset(uint32(loc), 4, gl.FLOAT, false, 0, uintptr(offset))
+		gl.VertexAttribPointer(uint32(loc), 4, gl.FLOAT, false, 0, gl.PtrOffset(int(offset)))
 		offset += 16 * numVertices
 		if useJoint1 {
 			loc = r.modelShader.a["joints_1"]
 			gl.EnableVertexAttribArray(uint32(loc))
-			gl.VertexAttribPointerWithOffset(uint32(loc), 4, gl.FLOAT, false, 0, uintptr(offset))
+			gl.VertexAttribPointer(uint32(loc), 4, gl.FLOAT, false, 0, gl.PtrOffset(int(offset)))
 			offset += 16 * numVertices
 			loc = r.modelShader.a["weights_1"]
 			gl.EnableVertexAttribArray(uint32(loc))
-			gl.VertexAttribPointerWithOffset(uint32(loc), 4, gl.FLOAT, false, 0, uintptr(offset))
+			gl.VertexAttribPointer(uint32(loc), 4, gl.FLOAT, false, 0, gl.PtrOffset(int(offset)))
 			offset += 16 * numVertices
 		} else {
 			loc = r.modelShader.a["joints_1"]
@@ -586,7 +592,7 @@ func (r *Renderer) SetModelMorphTarget(offsets [8]uint32, weights [8]float32, po
 		if offset != 0 {
 			loc := r.modelShader.a["morphTargets_0"] + int32(i)
 			gl.EnableVertexAttribArray(uint32(loc))
-			gl.VertexAttribPointerWithOffset(uint32(loc), 4, gl.FLOAT, false, 0, uintptr(offset))
+			gl.VertexAttribPointer(uint32(loc), 4, gl.FLOAT, false, 0, gl.PtrOffset(int(offset)))
 		}
 	}
 
@@ -714,5 +720,5 @@ func (r *Renderer) RenderQuad() {
 	gl.DrawArrays(gl.TRIANGLE_STRIP, 0, 4)
 }
 func (r *Renderer) RenderElements(mode PrimitiveMode, count, offset int) {
-	gl.DrawElementsWithOffset(PrimitiveModeLUT[mode], int32(count), gl.UNSIGNED_INT, uintptr(offset))
+	gl.DrawElements(PrimitiveModeLUT[mode], int32(count), gl.UNSIGNED_INT, gl.PtrOffset(offset))
 }

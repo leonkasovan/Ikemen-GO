@@ -24,14 +24,24 @@ attribute vec4 morphTargets_7;
 varying vec2 texcoord;
 varying vec4 vColor;
 
+mat4 transpose(mat4 m) {
+    return mat4(
+        m[0][0], m[1][0], m[2][0], m[3][0],
+        m[0][1], m[1][1], m[2][1], m[3][1],
+        m[0][2], m[1][2], m[2][2], m[3][2],
+        m[0][3], m[1][3], m[2][3], m[3][3]
+    );
+}
 
 mat4 getMatrixFromTexture(float index){
 	mat4 mat;
-	mat[0] = texture2D(jointMatrices,vec2(0.5/3.0,(index+0.5)/numJoints));
-	mat[1] = texture2D(jointMatrices,vec2(1.5/3.0,(index+0.5)/numJoints));
-	mat[2] = texture2D(jointMatrices,vec2(2.5/3.0,(index+0.5)/numJoints));
+	mat4 res;
+	mat[0] = texture2D(jointMatrices,vec2(0.5/3.0,(index+0.5)/float(numJoints)));
+	mat[1] = texture2D(jointMatrices,vec2(1.5/3.0,(index+0.5)/float(numJoints)));
+	mat[2] = texture2D(jointMatrices,vec2(2.5/3.0,(index+0.5)/float(numJoints)));
 	mat[3] = vec4(0,0,0,1);
-	return transpose(mat);
+	res = transpose(mat);
+	return res;
 }
 
 mat4 getJointMatrix(){
@@ -53,7 +63,7 @@ void main(void) {
 	texcoord = uv;
 	vColor = vertColor;
 	vec4 pos = vec4(position, 1.0);
-	if(morphTargetWeight[0][0] != 0){
+	if(morphTargetWeight[0][0] != 0.0){
 		int idx = 0;
 		if(idx < positionTargetCount){
 			pos += morphTargetWeight[0][0] * morphTargets_0;
@@ -120,7 +130,7 @@ void main(void) {
 		}
 		idx++;
 	}
-	if(weights_0.x+weights_0.y+weights_0.z+weights_0.w+weights_1.x+weights_1.y+weights_1.z+weights_1.w > 0){
+	if(weights_0.x+weights_0.y+weights_0.z+weights_0.w+weights_1.x+weights_1.y+weights_1.z+weights_1.w > 0.0){
 		mat4 tmp = getJointMatrix();
 		gl_Position = projection * (modelview * tmp * pos);
 	}else{

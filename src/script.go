@@ -858,6 +858,7 @@ func systemScriptInit(l *lua.LState) {
 			height = int32(numArg(l, 2))
 		}
 		filename := SearchFile(strArg(l, 1), []string{"font/", sys.motifDir, "", "data/"})
+		sys.errLog.Printf("[script.go] Loading font %v\n", filename)
 		fnt, err := loadFnt(filename, height)
 		if err != nil {
 			sys.errLog.Printf("failed to load %v (screenpack font): %v", filename, err)
