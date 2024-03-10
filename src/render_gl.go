@@ -1,4 +1,4 @@
-//go:build !kinc && !gles2
+//go:build !kinc && !gles2 && !rg353p
 
 package main
 
