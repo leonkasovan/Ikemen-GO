@@ -3,8 +3,11 @@
 Ikemen GO is an open source fighting game engine that supports resources from the [M.U.G.E.N](https://en.wikipedia.org/wiki/Mugen_(game_engine)) engine, written in Google’s programming language, [Go](https://go.dev/). It is a complete rewrite of a prior engine known simply as Ikemen.
 
 ## Ikemen Resource
-Download stages from here:   
+Download 3D stages from here:   
 https://www.mediafire.com/folder/syh6wacfmskeg/MBTL_Stages  
+
+## How to make 3D stages
+https://mugenguild.com/forum/topics/3d-stages-are-here-fairly-comprehensive-guide-198642.0.html  
 
 ### Building
 You can find instructions for building Ikemen GO on our wiki. Instructions are available for [Windows](https://github.com/ikemen-engine/Ikemen-GO/wiki/Building,-Installing-and-Distributing#building-on-windows), [macOS](https://github.com/ikemen-engine/Ikemen-GO/wiki/Building,-Installing-and-Distributing#building-on-macos), and [Linux](https://github.com/ikemen-engine/Ikemen-GO/wiki/Building,-Installing-and-Distributing#building-on-linux).
