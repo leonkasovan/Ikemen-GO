@@ -26,6 +26,7 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/qmuntal/gltf v0.24.2 // indirect
 	github.com/samhocevar/go-meltysynth v0.0.0-20230403180939-aca4a036cb16 // indirect
+	github.com/veandco/go-sdl2 v0.4.38 // indirect
 	golang.org/x/exp v0.0.0-20200224162631-6cc2880d07d6 // indirect
 	golang.org/x/image v0.14.0 // indirect
 	golang.org/x/sys v0.5.0 // indirect
