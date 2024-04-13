@@ -107,13 +107,23 @@ function varLinuxARM() {
 function build() {
 	#echo "buildNormal"
 	#echo "$binName"
-	go build -trimpath -v -trimpath -o ./bin/$binName ./src
+
+	# echo "Linux Build Release with GLFW"
+	# go build -tags=glfw -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/$binName ./src
+
+	echo "Linux Build Release with SDL2"
+	go build -tags=sdl -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/$binName ./src
 }
 
 function buildWin() {
 	#echo "buildWin"
 	#echo "$binName"
-	go build -trimpath -v -trimpath -ldflags "-H windowsgui" -o ./bin/$binName ./src
+
+	# echo "Win64 Build Release with GLFW"
+	# go build -tags=glfw -trimpath -v -trimpath -ldflags "-s -w -H windowsgui" -o ./bin/$binName ./src
+	
+	echo "Win64 Build Release with SDL2"
+	go build -tags=sdl,static -trimpath -v -trimpath -ldflags "-s -w -H windowsgui" -o ./bin/$binName ./src
 }
 
 # Determine the target OS.

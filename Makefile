@@ -39,3 +39,7 @@ Ikemen_GO_Linux: ${srcFiles}
 # MacOS x64 target
 Ikemen_GO_MacOS: ${srcFiles}
 	cd ./build && bash ./build.sh MacOS
+
+# Linux target
+RG353P: ${srcFiles}
+	cd ./build && ./build.sh LinuxArm	

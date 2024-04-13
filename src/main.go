@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"strconv"
@@ -48,11 +49,22 @@ func closeLog(f *os.File) {
 }
 
 func main() {
+	processCommandLine()
+	if _, ok := sys.cmdFlags["-game"]; ok {
+		dir := filepath.Dir(sys.cmdFlags["-game"])
+		base := filepath.Base(sys.cmdFlags["-game"])
+		name := base[:len(base)-len(filepath.Ext(base))] // Remove the extension from the base name
+
+		err := os.Chdir(filepath.Join(dir, name))
+		if err != nil {
+			fmt.Println("Error changing directory:", err)
+			panic(err)
+		}
+	}
+
 	// Make save directories, if they don't exist
 	os.Mkdir("save", os.ModeSticky|0755)
 	os.Mkdir("save/replays", os.ModeSticky|0755)
-
-	processCommandLine()
 
 	// Try reading stats
 	if _, err := os.ReadFile("save/stats.json"); err != nil {

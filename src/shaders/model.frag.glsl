@@ -31,14 +31,14 @@ void main(void) {
 		if(gl_FragColor.a < alphaThreshold){
 			discard;
 		}else{
-			gl_FragColor.a = 1;
+			gl_FragColor.a = 1.0;
 		}
 	}else if(gl_FragColor.a<=0.0){
 		discard;
 	}
 	vec3 neg_base = vec3(1.0);
 	neg_base *= gl_FragColor.a;
-	if (hue != 0) {
+	if (hue != 0.0) {
 		gl_FragColor.rgb = hue_shift(gl_FragColor.rgb,hue);			
 	}
 	if (neg) gl_FragColor.rgb = neg_base - gl_FragColor.rgb;

@@ -1,6 +1,6 @@
 uniform mat4 modelview, projection;
 uniform sampler2D jointMatrices;
-uniform int numJoints;
+uniform float numJoints;
 uniform vec4 morphTargetWeight[2];
 uniform int positionTargetCount;
 uniform int uvTargetCount;
@@ -53,7 +53,7 @@ void main(void) {
 	texcoord = uv;
 	vColor = vertColor;
 	vec4 pos = vec4(position, 1.0);
-	if(morphTargetWeight[0][0] != 0){
+	if(morphTargetWeight[0][0] != 0.0){
 		int idx = 0;
 		if(idx < positionTargetCount){
 			pos += morphTargetWeight[0][0] * morphTargets_0;
@@ -120,7 +120,7 @@ void main(void) {
 		}
 		idx++;
 	}
-	if(weights_0.x+weights_0.y+weights_0.z+weights_0.w+weights_1.x+weights_1.y+weights_1.z+weights_1.w > 0){
+	if(weights_0.x+weights_0.y+weights_0.z+weights_0.w+weights_1.x+weights_1.y+weights_1.z+weights_1.w > 0.0){
 		mat4 tmp = getJointMatrix();
 		gl_Position = projection * (modelview * tmp * pos);
 	}else{

@@ -53,7 +53,7 @@ void main(void) {
 				c = texture2D(pal, vec2(c.r*0.9966, 0.5));
 			}
 		}
-		if (hue != 0) {
+		if (hue != 0.0) {
 			c.rgb = hue_shift(c.rgb,hue);			
 		}
 		if (neg) c.rgb = neg_base - c.rgb;
