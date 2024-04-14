@@ -10,7 +10,7 @@ import (
 	"runtime"
 	"unsafe"
 
-	gl "github.com/leonkasovan/gl/v2.1/gl"
+	gl "github.com/go-gl/gl/v2.1/gl"
 	"golang.org/x/mobile/exp/f32"
 )
 

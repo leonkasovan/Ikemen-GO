@@ -48,6 +48,21 @@ function main() {
 			varLinux
 			build
 		;;
+		rg353p)
+			export GOOS=linux
+			export GOARCH=arm64
+			export CC=aarch64-buildroot-linux-gnu-gcc
+			export CXX=aarch64-buildroot-linux-gnu-g++
+			binName="Ikemen_GO_RG353P"
+			echo "Linux Build Release for RG353P(Recalbox) with SDL and GLES"
+			go build -tags=sdl,gles2 -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/$binName ./src
+		;;
+		steamdeck)
+			export GOOS=linux
+			binName="Ikemen_GO_Steamdeck"
+			echo "Linux Build Release for Steamdeck(SteamOS) with GLFW and OpenGL"
+			go build -tags=glfw,gl -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/$binName ./src
+		;;
 	esac
 
 	if [[ "${binName}" == "Default" ]]; then
@@ -108,18 +123,15 @@ function build() {
 	#echo "buildNormal"
 	#echo "$binName"
 
-	# echo "Linux Build Release with GLFW"
-	# go build -tags=glfw,gl -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/$binName ./src
-
-	echo "Linux Build Release with SDL2"
-	go build -tags=sdl,gles2 -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/$binName ./src
+	echo "Linux Build Release with GLFW"
+	go build -tags=glfw,gl -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/$binName ./src
 }
 
 function buildWin() {
 	#echo "buildWin"
 	#echo "$binName"
 
-	echo "Win64 Build Release with GLFW"
+	echo "Win64 Build Release with GLFW and OpenGL"
 	go build -tags=glfw,gl -trimpath -v -trimpath -ldflags "-s -w -H windowsgui" -o ./bin/$binName ./src
 	
 	# echo "Win64 Build Release with SDL2"

@@ -40,6 +40,10 @@ Ikemen_GO_Linux: ${srcFiles}
 Ikemen_GO_MacOS: ${srcFiles}
 	cd ./build && bash ./build.sh MacOS
 
-# Linux target
-RG353P: ${srcFiles}
-	cd ./build && ./build.sh LinuxArm	
+# Anbernic RG353P (Recalbox) target
+rg353p: ${srcFiles}
+	cd ./build && ./build.sh rg353p
+
+# Steamdeck (SteamOS) target
+steamdeck: ${srcFiles}
+	cd ./build && ./build.sh steamdeck

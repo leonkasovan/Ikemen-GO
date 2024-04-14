@@ -4,7 +4,16 @@ Ikemen GO is an open source fighting game engine that supports resources from th
 
 ```
 git clone -b SDL2 https://github.com/leonkasovan/Ikemen-GO.git
+sudo apt install gcc-mingw-w64-x86-64-posix
+source ~/start_golang.sh
 make
+
+source ~/start_golang.sh
+source ~/start_recalbox_toolchain.sh
+make rg353p
+
+source ~/start_golang.sh
+make steamdeck
 ```
 
 ```
