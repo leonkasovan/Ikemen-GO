@@ -7,7 +7,7 @@ import (
 	"os"
 
 	findfont "github.com/flopp/go-findfont"
-	"github.com/ikemen-engine/glfont"
+	"github.com/leonkasovan/glfont"
 	// "github.com/sqweek/dialog"
 )
 
@@ -45,6 +45,9 @@ func LoadFntTtf(f *Fnt, fontfile string, filename string, height int32) {
 		height = int32(f.Size[1])
 	} else {
 		f.Size[1] = uint16(height)
+	}
+	if Renderer_API == 2 {	// 2=>OpenGLES
+		sys.fontShaderVer = 300
 	}
 	ttf, err := glfont.LoadFont(fileDir, height, int(sys.gameWidth), int(sys.gameHeight), sys.fontShaderVer)
 	if err != nil {

@@ -101,7 +101,7 @@ func (w *Window) pollEvents() {
 	case *sdl.JoyDeviceAddedEvent:
 		input.joysticks[int(t.Which)] = sdl.JoystickOpen(int(t.Which))
 		if input.joysticks[int(t.Which)] != nil {
-			sys.errLog.Printf("Joystick (%v) %v connected\n", input.joysticks[int(t.Which)].Name(), t.Which)
+			sys.errLog.Printf("Joystick (%v) id=%v connected\n", input.joysticks[int(t.Which)].Name(), t.Which)
 		}
 		break
 	case *sdl.JoyDeviceRemovedEvent:
