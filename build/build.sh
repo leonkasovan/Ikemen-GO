@@ -134,6 +134,7 @@ function buildWin() {
 
 	echo "Win64 Build Release with GLFW and OpenGL"
 	go build -tags=glfw,gl -trimpath -v -trimpath -ldflags "-s -w -H windowsgui" -o ./bin/$binName ./src
+	cp bin/Ikemen_GO.exe /mnt/c/PortableApps/Ikemen_Go\(Dev\)/
 	
 	# echo "Win64 Build Release with SDL2"
 	# go build -tags=sdl,static,gles2 -trimpath -v -trimpath -ldflags "-s -w -H windowsgui" -o ./bin/$binName ./src
