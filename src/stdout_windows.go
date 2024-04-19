@@ -30,7 +30,8 @@ func init() {
 	os.Stdout = os.NewFile(uintptr(hout), "/dev/stdout")
 	os.Stderr = os.NewFile(uintptr(herr), "/dev/stderr")
 	log.SetOutput(os.Stderr)
-	log.Println("Ikemen, GO!")
-	log.Println(Version, BuildTime)
+	sys.errLog = log.New(os.Stderr, "", log.LstdFlags)
+	log.Println(" ");
+	log.Printf("Ikemen Go version: %v (%v)\n", Version, BuildTime)
 	runtime.LockOSThread()
 }
