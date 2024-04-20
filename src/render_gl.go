@@ -281,7 +281,7 @@ var identFragShader string
 // Creates the default shaders, the framebuffer and enables MSAA.
 func (r *Renderer) Init() {
 	chk(gl.Init())
-	sys.errLog.Printf("Using OpenGL %v (%v)", gl.GetString(gl.VERSION), gl.GetString(gl.RENDERER))
+	sys.errLog.Printf("Using %v (%v)", gl.GoStr(gl.GetString(gl.VERSION)), gl.GoStr(gl.GetString(gl.RENDERER)))
 
 	// Store current timestamp
 	sys.prevTimestamp = glfw.GetTime()
