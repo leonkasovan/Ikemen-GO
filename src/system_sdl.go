@@ -48,12 +48,23 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 	if s.vRetrace >= 0 {
 		sdl.GLSetSwapInterval(s.vRetrace)
 	}
+	// Store current timestamp
+	s.prevTimestampUint = sdl.GetTicks64()
 	ret := &Window{window, s.windowTitle, true, false, 0, 0, w, h}
 	return ret, err
 }
 
 func (w *Window) SwapBuffers() {
 	w.Window.GLSwap()
+	// Retrieve GL timestamp now
+	sdlNow := sdl.GetTicks64()
+	delta := sdlNow-sys.prevTimestampUint
+	if delta >= 1000 {
+		// sys.gameFPS = float32(sys.absTickCount) / float32(delta/1000)
+		sys.gameFPS = float32(sys.absTickCount)
+		sys.absTickCount = 0
+		sys.prevTimestampUint = sdlNow
+	}
 }
 
 func (w *Window) SetIcon(icon []image.Image) {

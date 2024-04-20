@@ -28,13 +28,29 @@ function main() {
 	
 	# Build
 	case "${targetOS}" in
-		[wW][iI][nN]64)
-			varWin64
-			buildWin
+		win64)
+			export GOOS=windows
+			export GOARCH=amd64
+			export CC=x86_64-w64-mingw32-gcc
+			export CXX=x86_64-w64-mingw32-g++
+			binName="Ikemen_Go.exe"
+			echo "Win64 Build Release with GLFW and OpenGL"
+			go build -tags=glfw,gl -trimpath -v -trimpath -ldflags "-s -w -H windowsgui" -o ./bin/$binName ./src
+			# echo "Win64 Build Release with SDL2 and OpenGL"
+			# go build -tags=sdl,static,gl -trimpath -v -trimpath -ldflags "-s -w -H windowsgui" -o ./bin/$binName ./src
+			cp bin/$binName /mnt/c/PortableApps/Ikemen_Go\(Dev\)/
 		;;
-		[wW][iI][nN]32)
-			varWin32
-			buildWin
+		win32)
+			export GOOS=windows
+			export GOARCH=386
+			export CC=i686-w64-mingw32-gcc
+			export CXX=i686-w64-mingw32-g++
+			binName="Ikemen_Go_x86.exe"
+			echo "Win32 Build Release with GLFW and OpenGL"
+			go build -tags=glfw,gl -trimpath -v -trimpath -ldflags "-s -w -H windowsgui" -o ./bin/$binName ./src
+			# echo "Win32 Build Release with SDL2 and OpenGL"
+			# go build -tags=sdl,static,gl -trimpath -v -trimpath -ldflags "-s -w -H windowsgui" -o ./bin/$binName ./src
+			cp bin/$binName /mnt/c/PortableApps/Ikemen_Go\(Dev\)/
 		;;
 		[mM][aA][cC][oO][sS])
 			varMacOS
@@ -51,18 +67,25 @@ function main() {
 		rg353p)
 			export GOOS=linux
 			export GOARCH=arm64
-			export CC=aarch64-buildroot-linux-gnu-gcc
-			export CXX=aarch64-buildroot-linux-gnu-g++
-			binName="Ikemen_GO_RG353P"
+			# export CC=aarch64-buildroot-linux-gnu-gcc
+			# export CXX=aarch64-buildroot-linux-gnu-g++
+			binName="Ikemen_Go_RG353P"
 			echo "Linux Build Release for RG353P(Recalbox) with SDL and GLES"
 			go build -tags=sdl,gles2 -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/$binName ./src
 		;;
 		steamdeck)
 			export GOOS=linux
-			binName="Ikemen_GO_Steamdeck"
+			binName="Ikemen_Go_Steamdeck"
 			echo "Linux Build Release for Steamdeck(SteamOS) with GLFW and OpenGL"
 			go build -tags=glfw,gl -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/$binName ./src
 			cp bin/Ikemen_GO_Steamdeck ~/Applications/IkemenGoDev
+		;;
+		pi4)
+			export GOOS=linux
+			export GOARCH=arm64
+			binName="Ikemen_Go_Pi4"
+			echo "Linux Build Release for Raspberry Pi4 (Raspberry Pi OS 64) with SDL and GLES"
+			go build -tags=sdl,gles2 -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/$binName ./src
 		;;
 	esac
 
@@ -73,26 +96,6 @@ function main() {
 }
 
 # Export Variables
-function varWin32() {
-	export GOOS=windows
-	export GOARCH=386
-	if [[ "${currentOS,,}" != "win32" ]]; then
-		export CC=i686-w64-mingw32-gcc
-		export CXX=i686-w64-mingw32-g++
-	fi
-	binName="Ikemen_GO_x86.exe"
-}
-
-function varWin64() {
-	export GOOS=windows
-	export GOARCH=amd64
-	if [[ "${currentOS,,}" != "win64" ]]; then
-		export CC=x86_64-w64-mingw32-gcc
-		export CXX=x86_64-w64-mingw32-g++
-	fi
-	binName="Ikemen_GO.exe"
-}
-
 function varMacOS() {
 	export GOOS=darwin
 	case "${currentOS}" in
@@ -134,7 +137,6 @@ function buildWin() {
 
 	echo "Win64 Build Release with GLFW and OpenGL"
 	go build -tags=glfw,gl -trimpath -v -trimpath -ldflags "-s -w -H windowsgui" -o ./bin/$binName ./src
-	cp bin/Ikemen_GO.exe /mnt/c/PortableApps/Ikemen_Go\(Dev\)/
 	
 	# echo "Win64 Build Release with SDL2"
 	# go build -tags=sdl,static,gles2 -trimpath -v -trimpath -ldflags "-s -w -H windowsgui" -o ./bin/$binName ./src
