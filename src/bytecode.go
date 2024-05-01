@@ -601,6 +601,15 @@ const (
 	OC_ex_selfcommand
 	OC_ex_guardcount
 	OC_ex_gamefps
+	OC_ex_fightscreenvar_info_author
+	OC_ex_fightscreenvar_info_name
+	OC_ex_fightscreenvar_round_ctrl_time
+	OC_ex_fightscreenvar_round_over_hittime
+	OC_ex_fightscreenvar_round_over_time
+	OC_ex_fightscreenvar_round_over_waittime
+	OC_ex_fightscreenvar_round_over_wintime
+	OC_ex_fightscreenvar_round_slow_time
+	OC_ex_fightscreenvar_round_start_waittime
 )
 const (
 	NumVar     = 60
@@ -1330,14 +1339,16 @@ func (be BytecodeExp) run(c *Char) BytecodeValue {
 				sys.bcStack.PushB(false)
 			} else {
 				cmdName := sys.stringPool[sys.workingState.playerNo].List[*(*int32)(unsafe.Pointer(&be[i]))]
-				pno := sys.workingState.playerNo
-				// Engine version is checked in state owner rather than working state
-				if cmdName == "recovery" || oc.stOgi().ikemenver[0] != 0 || oc.stOgi().ikemenver[1] != 0 {
-					// Command is checked by name, rather than by command list order (MUGEN 1.1)
-					pno = c.playerNo
+				redir := c.playerNo
+				pno := c.playerNo
+				// For a Mugen character, the command position is checked in the redirecting char
+				// Recovery command is an exception in that its position is always checked in the final char
+				if cmdName != "recovery" && oc.stWgi().ikemenver[0] == 0 && oc.stWgi().ikemenver[1] == 0 {
+					redir = oc.ss.sb.playerNo
+					pno = c.ss.sb.playerNo
 				}
-				cmd, ok := c.cmd[pno].Names[cmdName]
-				ok = ok && c.command(c.playerNo, cmd)
+				cmdPos, ok := c.cmd[redir].Names[cmdName]
+				ok = ok && c.command(pno, cmdPos)
 				sys.bcStack.PushB(ok)
 			}
 			i += 4
@@ -1986,7 +1997,7 @@ func (be BytecodeExp) run_ex(c *Char, i *int, oc *Char) {
 	case OC_ex_ishometeam:
 		sys.bcStack.PushB(c.teamside == sys.home)
 	case OC_ex_tickspersecond:
-		sys.bcStack.PushI(int32(FPS))
+		sys.bcStack.PushI(int32(float32(FPS) * sys.gameSpeed * sys.accel))
 	case OC_ex_const240p:
 		*sys.bcStack.Top() = c.constp(320, sys.bcStack.Top().ToF())
 	case OC_ex_const480p:
@@ -2239,6 +2250,28 @@ func (be BytecodeExp) run_ex(c *Char, i *int, oc *Char) {
 		sys.bcStack.PushI(c.dizzyPointsMax)
 	case OC_ex_drawpalno:
 		sys.bcStack.PushI(c.gi().drawpalno)
+	case OC_ex_fightscreenvar_info_author:
+		sys.bcStack.PushB(sys.lifebar.authorLow ==
+			sys.stringPool[sys.workingState.playerNo].List[*(*int32)(unsafe.Pointer(&be[*i]))])
+		*i += 4
+	case OC_ex_fightscreenvar_info_name:
+		sys.bcStack.PushB(sys.lifebar.nameLow ==
+			sys.stringPool[sys.workingState.playerNo].List[*(*int32)(unsafe.Pointer(&be[*i]))])
+		*i += 4
+	case OC_ex_fightscreenvar_round_ctrl_time:
+		sys.bcStack.PushI(sys.lifebar.ro.ctrl_time)
+	case OC_ex_fightscreenvar_round_over_hittime:
+		sys.bcStack.PushI(sys.lifebar.ro.over_hittime)
+	case OC_ex_fightscreenvar_round_over_time:
+		sys.bcStack.PushI(sys.lifebar.ro.over_time)
+	case OC_ex_fightscreenvar_round_over_waittime:
+		sys.bcStack.PushI(sys.lifebar.ro.over_waittime)
+	case OC_ex_fightscreenvar_round_over_wintime:
+		sys.bcStack.PushI(sys.lifebar.ro.over_wintime)
+	case OC_ex_fightscreenvar_round_slow_time:
+		sys.bcStack.PushI(sys.lifebar.ro.slow_time)
+	case OC_ex_fightscreenvar_round_start_waittime:
+		sys.bcStack.PushI(sys.lifebar.ro.start_waittime)
 	case OC_ex_fighttime:
 		sys.bcStack.PushI(sys.gameTime)
 	case OC_ex_firstattack:
@@ -5956,7 +5989,7 @@ func (sc targetDrop) Run(c *Char, _ []int32) bool {
 	if len(tar) == 0 {
 		return false
 	}
-	crun.targetDrop(eid, ko)
+	crun.targetDrop(eid, -1, ko)
 	return false
 }
 
@@ -8541,6 +8574,114 @@ func (sc modifyBGCtrl) Run(c *Char, _ []int32) bool {
 		return true
 	})
 	sys.stage.modifyBGCtrl(cid, t, v, x, y, src, dst, add, mul, sinadd, sinmul, sincolor, sinhue, invall, invblend, color, hue)
+	return false
+}
+
+type modifySnd StateControllerBase
+
+const (
+	modifySnd_channel = iota
+	modifySnd_pan
+	modifySnd_abspan
+	modifySnd_volume
+	modifySnd_volumescale
+	modifySnd_freqmul
+	modifySnd_redirectid
+	modifySnd_priority
+)
+
+func (sc modifySnd) Run(c *Char, _ []int32) bool {
+	if sys.noSoundFlg {
+		return false
+	}
+	crun := c
+	snd := crun.soundChannels.Get(-1)
+	var ch, pri int32 = -1, 0
+	var vo, fr float32 = 100, 1.0
+	freqMulSet, volumeSet, prioritySet, panSet := false, false, false, false
+	var p float32 = 0
+	x := &c.pos[0]
+	ls := crun.localscl
+	StateControllerBase(sc).run(c, func(id byte, exp []BytecodeExp) bool {
+		switch id {
+		case modifySnd_channel:
+			ch = exp[0].evalI(c)
+		case modifySnd_pan:
+			p = exp[0].evalF(c)
+			panSet = true
+		case modifySnd_abspan:
+			x = nil
+			ls = 1
+			p = exp[0].evalF(c)
+			panSet = true
+		case modifySnd_volume:
+			vo = (vo + float32(exp[0].evalI(c))*(25.0/64.0)) * (64.0 / 25.0)
+			volumeSet = true
+		case modifySnd_volumescale:
+			vo = float32(crun.gi().data.volume * exp[0].evalI(c) / 100)
+			volumeSet = true
+		case modifySnd_freqmul:
+			fr = ClampF(exp[0].evalF(c), 0.01, 5)
+			freqMulSet = true
+		case modifySnd_priority:
+			pri = exp[0].evalI(c)
+			prioritySet = true
+		case modifySnd_redirectid:
+			if rid := sys.playerID(exp[0].evalI(c)); rid != nil {
+				crun = rid
+				x = &crun.pos[0]
+				ls = crun.localscl
+				snd = crun.soundChannels.Get(ch)
+			} else {
+				return false
+			}
+		}
+		return true
+	})
+	// Grab the correct sound channel now
+	channelCount := 1
+	if ch < 0 {
+		channelCount = len(crun.soundChannels.channels)
+	}
+	for i := channelCount - 1; i >= 0; i-- {
+		if ch < 0 {
+			snd = &crun.soundChannels.channels[i]
+		} else {
+			snd = crun.soundChannels.Get(ch)
+		}
+
+		if snd != nil && snd.sfx != nil {
+			// If we didn't set the values, default them to current values.
+			if !freqMulSet {
+				fr = snd.sfx.freqmul
+			}
+			if !volumeSet {
+				vo = snd.sfx.volume
+			}
+			if !prioritySet {
+				pri = snd.sfx.priority
+			}
+			if !panSet {
+				p = snd.sfx.p
+				ls = snd.sfx.ls
+				x = snd.sfx.x
+			}
+
+			// Now set the values if they're different
+			if snd.sfx.freqmul != fr {
+				snd.SetFreqMul(fr)
+			}
+			if pri != snd.sfx.priority {
+				snd.SetPriority(pri)
+			}
+			if p != snd.sfx.p || ls != snd.sfx.ls || x != snd.sfx.x {
+				snd.SetPan(p*crun.facing, ls, x)
+			}
+			if vo != snd.sfx.volume {
+				snd.SetVolume(vo)
+			}
+		}
+	}
 	return false
 }
 

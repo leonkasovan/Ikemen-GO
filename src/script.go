@@ -4157,6 +4157,31 @@ func triggerFunctions(l *lua.LState) {
 		l.Push(lua.LNumber(sys.debugWC.dizzyPointsMax))
 		return 1
 	})
+	luaRegister(l, "fightscreenvar", func(*lua.LState) int {
+		switch strArg(l, 1) {
+		case "info.name":
+			l.Push(lua.LString(sys.lifebar.name))
+		case "info.author":
+			l.Push(lua.LString(sys.lifebar.author))
+		case "round.ctrl.time":
+			l.Push(lua.LNumber(sys.lifebar.ro.ctrl_time))
+		case "round.over.hittime":
+			l.Push(lua.LNumber(sys.lifebar.ro.over_hittime))
+		case "round.over.time":
+			l.Push(lua.LNumber(sys.lifebar.ro.over_time))
+		case "round.over.waittime":
+			l.Push(lua.LNumber(sys.lifebar.ro.over_waittime))
+		case "round.over.wintime":
+			l.Push(lua.LNumber(sys.lifebar.ro.over_wintime))
+		case "round.slow.time":
+			l.Push(lua.LNumber(sys.lifebar.ro.slow_time))
+		case "round.start.waittime":
+			l.Push(lua.LNumber(sys.lifebar.ro.start_waittime))
+		default:
+			l.Push(lua.LString(""))
+		}
+		return 1
+	})
 	luaRegister(l, "fighttime", func(*lua.LState) int {
 		l.Push(lua.LNumber(sys.gameTime))
 		return 1
@@ -4580,6 +4605,14 @@ func triggerFunctions(l *lua.LState) {
 	})
 	luaRegister(l, "localcoord", func(*lua.LState) int {
 		l.Push(lua.LNumber(sys.debugWC.localcoord))
+		return 1
+	})
+	luaRegister(l, "localcoordX", func(*lua.LState) int {
+		l.Push(lua.LNumber(sys.cgi[sys.debugWC.playerNo].localcoord[0]))
+		return 1
+	})
+	luaRegister(l, "localcoordY", func(*lua.LState) int {
+		l.Push(lua.LNumber(sys.cgi[sys.debugWC.playerNo].localcoord[1]))
 		return 1
 	})
 	luaRegister(l, "matchtime", func(*lua.LState) int {

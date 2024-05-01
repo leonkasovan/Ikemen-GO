@@ -3735,7 +3735,7 @@ func (c *Char) turn() {
 	}
 }
 func (c *Char) stateChange1(no int32, pn int) bool {
-	if sys.changeStateNest >= 2500 {
+	if sys.changeStateNest > 2500 {
 		sys.appendToConsole(c.warn() + fmt.Sprintf("state machine stuck in loop (stopped after 2500 loops): %v -> %v -> %v", c.ss.prevno, c.ss.no, no))
 		sys.errLog.Printf("2500 loops: %v, %v -> %v -> %v\n",
 			c.name, c.ss.prevno, c.ss.no, no)
@@ -3745,7 +3745,7 @@ func (c *Char) stateChange1(no int32, pn int) bool {
 	//if c.ss.sb.playerNo != c.playerNo && pn != c.ss.sb.playerNo {
 	//	c.enemyExplodsRemove(c.ss.sb.playerNo)
 	//}
-	// Update scale in the same frame
+	// If the new state uses a different localcoord, some values need to be updated in the same frame
 	if newLs := 320 / sys.chars[pn][0].localcoord; c.localscl != newLs {
 		lsRatio := c.localscl / newLs
 		c.pos[0] *= lsRatio
@@ -3771,10 +3771,19 @@ func (c *Char) stateChange1(no int32, pn int) bool {
 		c.height[0] *= lsRatio
 		c.height[1] *= lsRatio
 
+		c.bindPos[0] *= lsRatio
+		c.bindPos[1] *= lsRatio
+
 		c.localscl = newLs
 	}
 	var ok bool
-	if c.ss.sb, ok = sys.cgi[pn].states[no]; !ok {
+	// Check if user is trying to change to a negative state.
+	if no < 0 {
+		sys.appendToConsole(c.warn() + "attempted to change to negative state")
+		sys.errLog.Printf("Attempted to change to negative state: P%v:%v\n", pn+1, no)
+	}
+	// Always attempt to change to the state we set to.
+	if c.ss.sb, ok = sys.cgi[pn].states[c.ss.no]; !ok {
 		sys.appendToConsole(c.warn() + fmt.Sprintf("changed to invalid state %v (from state %v)", no, c.ss.prevno))
 		sys.errLog.Printf("Invalid state: P%v:%v\n", pn+1, no)
 		c.ss.sb = *newStateBytecode(pn)
@@ -4805,8 +4814,24 @@ func (c *Char) targetVelAddY(tar []int32, y float32) {
 		}
 	}
 }
-func (c *Char) targetDrop(excludeid int32, keepone bool) {
+func (c *Char) targetDrop(excludeid int32, excludechar int32, keepone bool) {
 	var tg []int32
+	// Keep the player with this "player ID". Used with "HitOnce" attacks such as throws
+	if keepone && excludechar > 0 {
+		for _, tid := range c.targets {
+			if t := sys.playerID(tid); t != nil {
+				if t.id == excludechar {
+					tg = append(tg, tid)
+				} else {
+					t.gethitBindClear()
+					t.ghv.dropId(c.id)
+				}
+			}
+		}
+		c.targets = tg
+		return
+	}
+	// Keep the players with this "hit ID". Used with "TargetDrop" state controller
 	if excludeid < 0 {
 		tg = c.targets
 	} else {
@@ -4821,6 +4846,7 @@ func (c *Char) targetDrop(excludeid int32, keepone bool) {
 			}
 		}
 	}
+	// If more than one target still remains and "keepone" is true, pick one to keep at random
 	if (keepone || excludeid < 0) && len(tg) > 0 {
 		c.targets = nil
 		r := -1
@@ -5052,11 +5078,11 @@ func (c *Char) bodyDistX(opp *Char, oc *Char) float32 {
 	dist := c.distX(opp, oc)
 	var oppw float32
 	if dist == 0 || (dist < 0) != (opp.facing < 0) {
-		oppw = opp.facing * opp.width[0] * ((320 / opp.localcoord) / oc.localscl)
+		oppw = opp.facing * opp.width[0] * (opp.localscl / oc.localscl)
 	} else {
-		oppw = -opp.facing * opp.width[1] * ((320 / opp.localcoord) / oc.localscl)
+		oppw = -opp.facing * opp.width[1] * (opp.localscl / oc.localscl)
 	}
-	return dist + oppw - c.facing*c.width[0]
+	return dist + oppw - c.facing*c.width[0]*(c.localscl/oc.localscl)
 }
 func (c *Char) bodyDistY(opp *Char, oc *Char) float32 {
 	ctop := (c.pos[1] - c.height[0]) * c.localscl
@@ -6121,9 +6147,6 @@ func (c *Char) actionPrepare() {
 				c.setSCF(SCF_over)
 			}
 			c.specialFlag = 0
-			// The following AssertSpecial flags are only reset later in the code
-			flagtemp := (c.assertFlag&ASF_nostandguard | c.assertFlag&ASF_nocrouchguard | c.assertFlag&ASF_noairguard)
-			c.assertFlag = flagtemp
 			c.inputFlag = 0
 			c.setCSF(CSF_stagebound)
 			if c.player {
@@ -6158,24 +6181,19 @@ func (c *Char) actionPrepare() {
 				c.pauseMovetime--
 			}
 		}
-		c.unsetASF(ASF_noautoturn)
+		// This flag is special in that it must always reset regardless of hitpause
 		c.unsetASF(ASF_animatehitpause)
 		// Reset hitbox scale
 		// This used to be only in changeAnimEx(), but because it can now be dynamically changed it was also placed here
 		c.clsnScale = [...]float32{sys.chars[c.animPN][0].size.xscale, sys.chars[c.animPN][0].size.yscale}
 		c.angleRescaleClsn = false
-		// In WinMugen these flags persist during hitpause
-		if c.stWgi().ikemenver[0] != 0 || c.stWgi().ikemenver[1] != 0 || c.stWgi().mugenver[0] == 1 {
-			c.unsetCSF(CSF_angledraw | CSF_offset)
-			// The following AssertSpecial flags are only reset later in the code
-			flagtemp := (c.assertFlag&ASF_nostandguard | c.assertFlag&ASF_nocrouchguard | c.assertFlag&ASF_noairguard)
-			c.assertFlag = flagtemp
+		// In WinMugen all of these flags persisted during hitpause
+		if !c.hitPause() || c.stWgi().ikemenver[0] != 0 || c.stWgi().ikemenver[1] != 0 || c.stWgi().mugenver[0] == 1 {
+			c.unsetCSF(CSF_angledraw | CSF_offset | CSF_trans)
 			c.angleScale = [...]float32{1, 1}
 			c.offset = [2]float32{}
-		}
-		//Trans reset during hitpause if ignorehitpause = 0 fix
-		if c.csf(CSF_trans) && c.hitPause() {
-			c.unsetCSF(CSF_trans)
+			// Reset all AssertSpecial flags except the following, which are reset elsewhere in the code
+			c.assertFlag = (c.assertFlag&ASF_nostandguard | c.assertFlag&ASF_nocrouchguard | c.assertFlag&ASF_noairguard)
 		}
 	}
 	c.dropTargets()
@@ -7086,6 +7104,8 @@ func (cl *CharList) clsn(getter *Char, proj bool) {
 			c.mhv.uniqhit = int32(len(c.targetsOfHitdef))
 		}
 		ghvset := !getter.stchtmp || p2s || !getter.csf(CSF_gethit)
+		// This flag determines if juggle points will be subtracted further down
+		jchk := getter.ghv.fallf
 		// Variables that are set even if Hitdef type is "None"
 		if ghvset {
 			if !proj {
@@ -7574,7 +7594,8 @@ func (cl *CharList) clsn(getter *Char, proj bool) {
 			return
 		}
 		if !proj && hd.hitonce > 0 {
-			c.targetDrop(-1, false)
+			// Drop all targets except the current one
+			c.targetDrop(-1, getter.id, true)
 		}
 		if c.helperIndex != 0 {
 			//update parent's or root's target list, add to the their juggle points
@@ -7621,7 +7642,9 @@ func (cl *CharList) clsn(getter *Char, proj bool) {
 			if hd.p1stateno >= 0 && c.stateChange1(hd.p1stateno, hd.playerNo) {
 				c.setCtrl(false)
 			}
-			if getter.ghv.fallf && !c.asf(ASF_nojugglecheck) {
+			// Juggle points are subtracted if the target was falling either before or after the hit
+			jchk = jchk || getter.ghv.fallf
+			if jchk && !c.asf(ASF_nojugglecheck) {
 				jug := &getter.ghv.hitBy[len(getter.ghv.hitBy)-1][1]
 				if proj {
 					*jug -= hd.air_juggle
