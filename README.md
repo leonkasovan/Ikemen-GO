@@ -5,43 +5,15 @@ Ikemen GO is an open source fighting game engine that supports resources from th
 ```
 git clone -b SDL2 https://github.com/leonkasovan/Ikemen-GO.git
 sudo apt install gcc-mingw-w64-x86-64-posix
-source ~/start_golang.sh
+export PATH="/opt/host/bin:/usr/local/go/bin:$PATH"
 make
 
-source ~/start_golang.sh
-source ~/start_recalbox_toolchain.sh
+export PATH="/opt/host/bin:/usr/local/go/bin:$PATH"
+export CC=aarch64-buildroot-linux-gnu-gcc
+export CXX=aarch64-buildroot-linux-gnu-g++
 make rg353p
 
-source ~/start_golang.sh
+export PATH="/opt/host/bin:/usr/local/go/bin:$PATH"
 make steamdeck
 ```
 
-```
-/home/ark/go/pkg/mod/github.com/veandco/go-sdl2@v0.4.38/_libs/include/SDL2/SDL_config.h
-line 22: #	include "SDL_config_linux_arm.h"
-
-/home/ark/go/pkg/mod/github.com/go-gl/gl@v0.0.0-20231021071112-07e5d0ea2e71/v2.1/gl/procaddr.go
-/*
-#cgo gl pkg-config: gl
-#cgo gl LDFLAGS: -ldl
-#cgo gl CFLAGS: -DNOX11 -DNOEGL
-#include <dlfcn.h>
-#include <stdlib.h>
-static void* libHandle = NULL;
-void* GlowGetProcAddress(const char* name) {
-        if (libHandle == NULL)
-                libHandle = dlopen("/usr/lib/libGL.so", RTLD_LAZY);
-        if (libHandle == NULL)
-                libHandle = dlopen("/lib/x86_64-linux-gnu/libGL.so", RTLD_LAZY);
-        if (libHandle == NULL)
-                libHandle = dlopen("/lib/aarch64-linux-gnu/libGL.so", RTLD_LAZY);
-        if (libHandle)
-                return dlsym(libHandle, name);
-}
-*/
-
-/home/ark/go/pkg/mod/github.com/go-gl/gl@v0.0.0-20231021071112-07e5d0ea2e71/v2.1/gl/package.go
-Line 32428: add comment for function that are not called
-gpUniformMatrix2x3fv = (C.GPUNIFORMMATRIX2X3FV)(getProcAddr("glUniformMatrix2x3fv"))
-dst
-```
