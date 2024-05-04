@@ -16,4 +16,19 @@ make rg353p
 export PATH="/opt/host/bin:/usr/local/go/bin:$PATH"
 make steamdeck
 ```
+# Build for Steamdeck
+Enter desktop mode in Steamdeck and run Konsole:
+```
+sudo steamos-readonly disable
+sudo nano /etc/pacman.conf
+sudo pacman -Sy gcc cmake make autoconf binutils pkg-config
+sudo pacman -Sy gcc glibc linux-api-headers alsa-lib libx11 xorgproto gtk3 glib2 libxcursor libxrandr pango libxrender libxinerama harfbuzz libxi cairo gdk-pixbuf2 libxext libxfixes at-spi2-core libglvnd sdl2
+wget https://go.dev/dl/go1.22.2.linux-amd64.tar.gz
+sudo tar -C /usr/local -xzf go1.22.2.linux-amd64.tar.gz
+export PATH=$PATH:/usr/local/go/bin
+nano .bashrc
 
+git clone -b SDL2 https://github.com/leonkasovan/Ikemen-GO.git
+make steamdeck
+cp bin/Ikemen_Go_Steamdeck /home/deck/Games/Ikemen_GO_Default/
+```
