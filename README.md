@@ -19,6 +19,7 @@ make steamdeck
 # Build for Steamdeck
 Enter desktop mode in Steamdeck and run Konsole:
 ```
+# prepare build environtment
 sudo steamos-readonly disable
 sudo sed -i '/^SigLevel/ s/.*/SigLevel = Never/' /etc/pacman.conf
 sudo pacman -Sy gcc cmake make autoconf binutils pkg-config
@@ -29,7 +30,9 @@ export PATH=$PATH:/usr/local/go/bin
 sed -i '$a\export PATH=$PATH:/usr/local/go/bin' ~/.bashrc
 sudo steamos-readonly enable
 
+# clone repo and build it
 git clone -b SDL2 https://github.com/leonkasovan/Ikemen-GO.git
+cd Ikemen-GO
 make steamdeck
 ls -l bin/
 # cp bin/Ikemen_Go_Steamdeck /home/deck/Games/Ikemen_GO_Default/
