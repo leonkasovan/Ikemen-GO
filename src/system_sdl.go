@@ -36,7 +36,7 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 	}
 	// Create main window.
 	window, err = sdl.CreateWindow(s.windowTitle, sdl.WINDOWPOS_UNDEFINED, sdl.WINDOWPOS_UNDEFINED,
-		int32(w), int32(h), sdl.WINDOW_OPENGL)
+		int32(w), int32(h), sdl.WINDOW_OPENGL|sdl.WINDOW_FULLSCREEN)
 	if err != nil {
 		return nil, fmt.Errorf("\nfailed to sdl.CreateWindow: %w\n", err)
 	}
