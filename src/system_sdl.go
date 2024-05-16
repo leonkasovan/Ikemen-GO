@@ -87,9 +87,9 @@ func (w *Window) GetClipboardString() string {
 
 func (w *Window) toggleFullscreen() {
 	if w.fullscreen {
-		// sdl.SetWindowFullscreen(w.Window, sdl.WINDOW_FULLSCREEN)
+		// w.Window.SetFullscreen(sdl.WINDOW_FULLSCREEN)
 	} else {
-		// sdl.SetWindowFullscreen(w.Window, 0)
+		// w.Window.SetFullscreen(0)
 	}
 	w.fullscreen = !w.fullscreen
 }
