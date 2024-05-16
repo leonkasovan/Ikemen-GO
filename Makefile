@@ -47,3 +47,7 @@ rg353p: ${srcFiles}
 # Steamdeck (SteamOS) target
 steamdeck: ${srcFiles}
 	cd ./build && ./build.sh steamdeck
+
+# PSC target
+psc: ${srcFiles}
+	cd ./build && ./build.sh psc
