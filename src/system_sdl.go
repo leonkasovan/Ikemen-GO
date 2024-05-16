@@ -86,7 +86,12 @@ func (w *Window) GetClipboardString() string {
 }
 
 func (w *Window) toggleFullscreen() {
-	// not implemented in KMS DRM
+	if w.fullscreen {
+		sdl.SetWindowFullscreen(w.Window, sdl.WINDOW_FULLSCREEN)
+	} else {
+		sdl.SetWindowFullscreen(w.Window, 0)
+	}
+	w.fullscreen = !w.fullscreen
 }
 
 func (w *Window) pollEvents() {
