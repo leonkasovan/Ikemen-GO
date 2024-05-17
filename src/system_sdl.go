@@ -53,17 +53,19 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 		return nil, fmt.Errorf("\nfailed to window.GLCreateContext: %w\n", err)
 	}
 
-	if !s.fullscreen { // Center it
-		mode, err = sdl.GetCurrentDisplayMode(0)
-		window.SetPosition((mode.W-int32(w))/2, (mode.H-int32(h))/2)
-	}
+	// Set Window in center
+	mode, err = sdl.GetCurrentDisplayMode(0)
+	sys.errLog.Printf("GetCurrentDisplayMode: %vx%v", mode.W, mode.H)
+	var x, y = (int(mode.W) - w) / 2, (int(mode.H) - h) / 2
+	window.SetPosition(int32(x), int32(y))
+
 	// V-Sync
 	if s.vRetrace >= 0 {
 		sdl.GLSetSwapInterval(s.vRetrace)
 	}
 	// Store current timestamp
 	s.prevTimestampUint = sdl.GetTicks64()
-	ret := &Window{window, s.windowTitle, s.fullscreen, false, 0, 0, w, h}
+	ret := &Window{window, s.windowTitle, s.fullscreen, false, x, y, w, h}
 	return ret, err
 }
 

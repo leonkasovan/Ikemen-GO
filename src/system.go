@@ -371,11 +371,11 @@ type System struct {
 	loopContinue      bool
 
 	// for avg. FPS calculations
-	gameFPS       float32
-	prevTimestamp float64
-	absTickCountF float32
+	gameFPS           float32
+	prevTimestamp     float64
+	absTickCountF     float32
 	prevTimestampUint uint64
-	absTickCount uint64
+	absTickCount      uint64
 }
 
 // Initialize stuff, this is called after the config int at main.go
@@ -486,14 +486,29 @@ func (s *System) shutdown() {
 	speaker.Close()
 }
 func (s *System) setWindowSize(w, h int32) {
-	s.scrrect[2], s.scrrect[3] = w, h
-	if s.scrrect[2]*3 > s.scrrect[3]*4 {
-		s.gameWidth, s.gameHeight = s.scrrect[2]*3*320/(s.scrrect[3]*4), 240
+	if s.fullscreen && w == 320 && h == 240 {
+		// s.scrrect[2] = 1280
+		// s.scrrect[3] = 720
+		// s.gameWidth = 426
+		// s.gameHeight = 240
+		// s.widthScale = 3.004695
+		// s.heightScale = 3
+		s.scrrect[2] = 960
+		s.scrrect[3] = 720
+		s.gameWidth = 320
+		s.gameHeight = 240
+		s.widthScale = 3
+		s.heightScale = 3
 	} else {
-		s.gameWidth, s.gameHeight = 320, s.scrrect[3]*4*240/(s.scrrect[2]*3)
+		s.scrrect[2], s.scrrect[3] = w, h
+		if s.scrrect[2]*3 > s.scrrect[3]*4 {
+			s.gameWidth, s.gameHeight = s.scrrect[2]*3*320/(s.scrrect[3]*4), 240
+		} else {
+			s.gameWidth, s.gameHeight = 320, s.scrrect[3]*4*240/(s.scrrect[2]*3)
+		}
+		s.widthScale = float32(s.scrrect[2]) / float32(s.gameWidth)
+		s.heightScale = float32(s.scrrect[3]) / float32(s.gameHeight)
 	}
-	s.widthScale = float32(s.scrrect[2]) / float32(s.gameWidth)
-	s.heightScale = float32(s.scrrect[3]) / float32(s.gameHeight)
 }
 func (s *System) eventUpdate() bool {
 	s.esc = false
