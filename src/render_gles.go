@@ -281,6 +281,7 @@ var identFragShader string
 func (r *Renderer) Init() {
 	chk(gl.Init())
 	sys.errLog.Printf("Using %v (%v)", gl.GoStr(gl.GetString(gl.VERSION)), gl.GoStr(gl.GetString(gl.RENDERER)))
+	sys.errLog.Printf("Fullscreen: %v (%v x %v)", sys.fullscreen, sys.fullscreenWidth, sys.fullscreenHeight)
 	sys.errLog.Printf("scrrect: %v,%v - %v,%v", sys.scrrect[0], sys.scrrect[1], sys.scrrect[2], sys.scrrect[3])
 	sys.errLog.Printf("gameWidth x gameHeight: %v,%v", sys.gameWidth, sys.gameHeight)
 	sys.errLog.Printf("widthScale x heightScale: %v,%v", sys.widthScale, sys.heightScale)
