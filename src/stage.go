@@ -702,57 +702,61 @@ type stagePlayer struct {
 	startx, starty, startz int32
 }
 type Stage struct {
-	def             string
-	bgmusic         string
-	name            string
-	displayname     string
-	author          string
-	nameLow         string
-	displaynameLow  string
-	authorLow       string
-	attachedchardef []string
-	sff             *Sff
-	at              AnimationTable
-	bg              []*backGround
-	bgc             []bgCtrl
-	bgct            bgcTimeLine
-	bga             bgAction
-	sdw             stageShadow
-	p               [2]stagePlayer
-	leftbound       float32
-	rightbound      float32
-	screenleft      int32
-	screenright     int32
-	zoffsetlink     int32
-	reflection      int32
-	hires           bool
-	resetbg         bool
-	debugbg         bool
-	bgclearcolor    [3]int32
-	localscl        float32
-	scale           [2]float32
-	bgmvolume       int32
-	bgmloopstart    int32
-	bgmloopend      int32
-	bgmratiolife    int32
-	bgmtriggerlife  int32
-	bgmtriggeralt   int32
-	mainstage       bool
-	stageCamera     stageCamera
-	stageTime       int32
-	constants       map[string]float32
-	p1p3dist        float32
-	mugenver        [2]uint16
-	reload          bool
-	stageprops      StageProps
-	model           *Model
-	ikemenver       [3]uint16
+	def              string
+	bgmusic          string
+	name             string
+	displayname      string
+	author           string
+	nameLow          string
+	displaynameLow   string
+	authorLow        string
+	attachedchardef  []string
+	sff              *Sff
+	at               AnimationTable
+	bg               []*backGround
+	bgc              []bgCtrl
+	bgct             bgcTimeLine
+	bga              bgAction
+	sdw              stageShadow
+	p                [2]stagePlayer
+	leftbound        float32
+	rightbound       float32
+	screenleft       int32
+	screenright      int32
+	zoffsetlink      int32
+	reflection       int32
+	hires            bool
+	autoturn         bool
+	resetbg          bool
+	debugbg          bool
+	bgclearcolor     [3]int32
+	localscl         float32
+	scale            [2]float32
+	bgmvolume        int32
+	bgmloopstart     int32
+	bgmloopend       int32
+	bgmstartposition int32
+	bgmfreqmul       float32
+	bgmratiolife     int32
+	bgmtriggerlife   int32
+	bgmtriggeralt    int32
+	mainstage        bool
+	stageCamera      stageCamera
+	stageTime        int32
+	constants        map[string]float32
+	p1p3dist         float32
+	mugenver         [2]uint16
+	reload           bool
+	stageprops       StageProps
+	model            *Model
+	ikemenver        [3]uint16
 }
 
 func newStage(def string) *Stage {
 	s := &Stage{def: def, leftbound: -1000,
 		rightbound: 1000, screenleft: 15, screenright: 15,
-		zoffsetlink: -1, resetbg: true, localscl: 1, scale: [...]float32{float32(math.NaN()), float32(math.NaN())},
+		zoffsetlink: -1, autoturn: true, resetbg: true, localscl: 1,
+		scale:        [...]float32{float32(math.NaN()), float32(math.NaN())},
 		bgmratiolife: 30, stageCamera: *newStageCamera(),
 		constants: make(map[string]float32), p1p3dist: 25, bgmvolume: 100}
 	s.sdw.intensity = 128
@@ -883,6 +887,7 @@ func loadStage(def string, main bool) (*Stage, error) {
 		sec[0].ReadI32("zoffset", &s.stageCamera.zoffset)
 		sec[0].ReadI32("zoffsetlink", &s.zoffsetlink)
 		sec[0].ReadBool("hires", &s.hires)
+		sec[0].ReadBool("autoturn", &s.autoturn)
 		sec[0].ReadBool("resetbg", &s.resetbg)
 		sec[0].readI32ForStage("localcoord", &s.stageCamera.localcoord[0],
 			&s.stageCamera.localcoord[1])
@@ -923,6 +928,8 @@ func loadStage(def string, main bool) (*Stage, error) {
 		sec[0].ReadF32("far", &s.stageCamera.far)
 		sec[0].ReadBool("autocenter", &s.stageCamera.autocenter)
 		sec[0].ReadF32("zoomindelay", &s.stageCamera.zoomindelay)
+		sec[0].ReadF32("boundhighdelta", &s.stageCamera.boundhighdelta)
+		sec[0].ReadBool("lowestcap", &s.stageCamera.lowestcap)
 		if sys.cam.ZoomMax == 0 {
 			sec[0].ReadF32("zoomin", &s.stageCamera.zoomin)
 		} else {
@@ -947,6 +954,8 @@ func loadStage(def string, main bool) (*Stage, error) {
 		sec[0].ReadI32("bgmvolume", &s.bgmvolume)
 		sec[0].ReadI32("bgmloopstart", &s.bgmloopstart)
 		sec[0].ReadI32("bgmloopend", &s.bgmloopend)
+		sec[0].ReadI32("bgmstartposition", &s.bgmstartposition)
+		sec[0].ReadF32("bgmfreqmul", &s.bgmfreqmul)
 		sec[0].ReadI32("bgmratio.life", &s.bgmratiolife)
 		sec[0].ReadI32("bgmtrigger.life", &s.bgmtriggerlife)
 		sec[0].ReadI32("bgmtrigger.alt", &s.bgmtriggeralt)
@@ -1264,8 +1273,10 @@ func (s *Stage) runBgCtrl(bgc *bgCtrl) {
 		if bgc.v[0] == 0 {
 			bgc.v[1] = 0
 		}
-		a := float32(bgc.v[2]) / 360
-		st := int32((a - float32(int32(a))) * float32(bgc.v[1]))
+		// Unlike plain sin.x elements, in the SinX BGCtrl the last parameter is a time offset rather than a phase
+		// https://github.com/ikemen-engine/Ikemen-GO/issues/1790
+		ph := float32(bgc.v[2]) / float32(bgc.v[1])
+		st := int32((ph - float32(int32(ph))) * float32(bgc.v[1]))
 		if st < 0 {
 			st += Abs(bgc.v[1])
 		}
@@ -1430,7 +1441,9 @@ func (s *Stage) draw(top bool, x, y, scl float32) {
 		}
 	}
 	if !top {
-		s.drawModel(pos, yofs, scl)
+		s.drawModel(pos, yofs, scl, 0)
+	} else {
+		s.drawModel(pos, yofs, scl, 1)
 	}
 	for _, b := range s.bg {
 		if b.visible && b.toplayer == top && b.anim.spr != nil {
@@ -2450,8 +2463,8 @@ func drawNode(mdl *Model, n *Node, proj, view mgl.Mat4, drawBlended bool) {
 
 	}
 }
-func (s *Stage) drawModel(pos [2]float32, yofs float32, scl float32) {
-	if s.model == nil || len(s.model.scenes) == 0 {
+func (s *Stage) drawModel(pos [2]float32, yofs float32, scl float32, sceneNumber int) {
+	if s.model == nil || len(s.model.scenes) <= sceneNumber {
 		return
 	}
 
@@ -2473,7 +2486,7 @@ func (s *Stage) drawModel(pos [2]float32, yofs float32, scl float32) {
 	view = view.Mul4(mgl.HomogRotate3DY(rotation[1]))
 	view = view.Mul4(mgl.HomogRotate3DZ(rotation[2]))
 	view = view.Mul4(mgl.Scale3D(scale[0], scale[1], scale[2]))
-	scene := s.model.scenes[0]
+	scene := s.model.scenes[sceneNumber]
 
 	for _, index := range scene.nodes {
 		s.model.nodes[index].calculateWorldTransform(mgl.Ident4(), s.model.nodes)

@@ -354,10 +354,15 @@ const (
 	OC_const_stagevar_camera_tensionhigh
 	OC_const_stagevar_camera_tensionlow
 	OC_const_stagevar_camera_tension
+	OC_const_stagevar_camera_tensionvel
+	OC_const_stagevar_camera_cuthigh
+	OC_const_stagevar_camera_cutlow
 	OC_const_stagevar_camera_startzoom
 	OC_const_stagevar_camera_zoomout
 	OC_const_stagevar_camera_zoomin
+	OC_const_stagevar_camera_zoomindelay
 	OC_const_stagevar_camera_ytension_enable
+	OC_const_stagevar_camera_autocenter
 	OC_const_stagevar_playerinfo_leftbound
 	OC_const_stagevar_playerinfo_rightbound
 	OC_const_stagevar_scaling_topscale
@@ -527,6 +532,8 @@ const (
 	OC_ex_inputtime_D
 	OC_ex_inputtime_F
 	OC_ex_inputtime_U
+	OC_ex_inputtime_L
+	OC_ex_inputtime_R
 	OC_ex_inputtime_a
 	OC_ex_inputtime_b
 	OC_ex_inputtime_c
@@ -2274,6 +2281,18 @@ func (be BytecodeExp) run_ex(c *Char, i *int, oc *Char) {
 		} else {
 			sys.bcStack.PushI(0)
 		}
+	case OC_ex_inputtime_L:
+		if c.keyctrl[0] && c.cmd != nil {
+			sys.bcStack.PushI(c.cmd[0].Buffer.Lb)
+		} else {
+			sys.bcStack.PushI(0)
+		}
+	case OC_ex_inputtime_R:
+		if c.keyctrl[0] && c.cmd != nil {
+			sys.bcStack.PushI(c.cmd[0].Buffer.Rb)
+		} else {
+			sys.bcStack.PushI(0)
+		}
 	case OC_ex_inputtime_a:
 		if c.keyctrl[0] && c.cmd != nil {
 			sys.bcStack.PushI(c.cmd[0].Buffer.ab)
@@ -3151,6 +3170,7 @@ const (
 	changeState_value byte = iota
 	changeState_ctrl
 	changeState_anim
+	changeState_continue
 	changeState_readplayerid
 	changeState_redirectid
 )
@@ -3159,7 +3179,7 @@ func (sc changeState) Run(c *Char, _ []int32) bool {
 	crun := c
 	var v, a, ctrl int32 = -1, -1, -1
 	ffx := ""
-	changeState := true
+	stop := true
 	StateControllerBase(sc).run(c, func(id byte, exp []BytecodeExp) bool {
 		switch id {
 		case changeState_value:
@@ -3171,16 +3191,18 @@ func (sc changeState) Run(c *Char, _ []int32) bool {
 			ffx = string(*(*[]byte)(unsafe.Pointer(&exp[0])))
 		case changeState_redirectid:
 			if rid := sys.playerID(exp[0].evalI(c)); rid != nil {
-				changeState = rid.id == c.id
+				stop = false
 				crun = rid
 			} else {
 				return false
 			}
+		case changeState_continue:
+			stop = !exp[0].evalB(c)
 		}
 		return true
 	})
 	crun.changeState(v, a, ctrl, ffx)
-	return changeState
+	return stop
 }
 
 type selfState changeState
@@ -3189,7 +3211,7 @@ func (sc selfState) Run(c *Char, _ []int32) bool {
 	crun := c
 	var v, a, r, ctrl int32 = -1, -1, -1, -1
 	ffx := ""
-	changeState := true
+	stop := true
 	StateControllerBase(sc).run(c, func(id byte, exp []BytecodeExp) bool {
 		switch id {
 		case changeState_value:
@@ -3207,16 +3229,18 @@ func (sc selfState) Run(c *Char, _ []int32) bool {
 			}
 		case changeState_redirectid:
 			if rid := sys.playerID(exp[0].evalI(c)); rid != nil {
-				changeState = rid.id == c.id
+				stop = false
 				crun = rid
 			} else {
 				return false
 			}
+		case changeState_continue:
+			stop = !exp[0].evalB(c)
 		}
 		return true
 	})
 	crun.selfState(v, a, r, ctrl, ffx)
-	return changeState
+	return stop
 }
 
 type tagIn StateControllerBase
@@ -4227,16 +4251,12 @@ func (sc explod) Run(c *Char, _ []int32) bool {
 				}
 			}
 		case explod_animelem:
-			if c.stWgi().ikemenver[0] != 0 || c.stWgi().ikemenver[1] != 0 {
-				animelem := exp[0].evalI(c)
-				e.animelem = animelem
-				e.anim.Action()
-				e.setAnimElem()
-			}
+			animelem := exp[0].evalI(c)
+			e.animelem = animelem
+			e.anim.Action()
+			e.setAnimElem()
 		case explod_animfreeze:
-			if c.stWgi().ikemenver[0] != 0 || c.stWgi().ikemenver[1] != 0 {
-				e.animfreeze = exp[0].evalB(c)
-			}
+			e.animfreeze = exp[0].evalB(c)
 		case explod_angle:
 			e.anglerot[0] = exp[0].evalF(c)
 		case explod_yangle:
@@ -4263,9 +4283,7 @@ func (sc explod) Run(c *Char, _ []int32) bool {
 			}
 			palFX(sc).runSub(c, &e.palfxdef, id, exp)
 
-			if c.stWgi().ikemenver[0] != 0 || c.stWgi().ikemenver[1] != 0 {
-				explod(sc).setInterpolation(c, e, id, exp, &e.palfxdef)
-			}
+			explod(sc).setInterpolation(c, e, id, exp, &e.palfxdef)
 
 		}
 		return true
@@ -4501,12 +4519,22 @@ func (sc modifyExplod) Run(c *Char, _ []int32) bool {
 				t := exp[0].evalI(c)
 				eachExpl(func(e *Explod) {
 					e.bindtime = t
+					//Bindtime fix(update bindtime according to current explod time)
+					if (crun.stWgi().ikemenver[0] > 0 || crun.stWgi().ikemenver[1] > 0) && t > 0 {
+						e.bindtime = e.time + t
+					}
 					e.setX(e.pos[0])
 					e.setY(e.pos[1])
 				})
 			case explod_removetime:
 				t := exp[0].evalI(c)
-				eachExpl(func(e *Explod) { e.removetime = t })
+				eachExpl(func(e *Explod) {
+					e.removetime = t
+					//Removetime fix(update removetime according to current explod time)
+					if (crun.stWgi().ikemenver[0] > 0 || crun.stWgi().ikemenver[1] > 0) && t > 0 {
+						e.removetime = e.time + t
+					}
+				})
 			case explod_supermove:
 				if exp[0].evalB(c) {
 					eachExpl(func(e *Explod) { e.supermovetime = -1 })
@@ -4515,10 +4543,22 @@ func (sc modifyExplod) Run(c *Char, _ []int32) bool {
 				}
 			case explod_supermovetime:
 				t := exp[0].evalI(c)
-				eachExpl(func(e *Explod) { e.supermovetime = t })
+				eachExpl(func(e *Explod) {
+					e.supermovetime = t
+					//Supermovetime fix(update supermovetime according to current explod time)
+					if (crun.stWgi().ikemenver[0] > 0 || crun.stWgi().ikemenver[1] > 0) && t > 0 {
+						e.supermovetime = e.time + t
+					}
+				})
 			case explod_pausemovetime:
 				t := exp[0].evalI(c)
-				eachExpl(func(e *Explod) { e.pausemovetime = t })
+				eachExpl(func(e *Explod) {
+					e.pausemovetime = t
+					//Pausemovetime fix(update pausemovetime according to current explod time)
+					if (crun.stWgi().ikemenver[0] > 0 || crun.stWgi().ikemenver[1] > 0) && t > 0 {
+						e.pausemovetime = e.time + t
+					}
+				})
 			case explod_sprpriority:
 				t := exp[0].evalI(c)
 				eachExpl(func(e *Explod) { e.sprpriority = t })
@@ -4594,20 +4634,16 @@ func (sc modifyExplod) Run(c *Char, _ []int32) bool {
 					eachExpl(func(e *Explod) { e.anim = anim })
 				}
 			case explod_animelem:
-				if c.stWgi().ikemenver[0] != 0 || c.stWgi().ikemenver[1] != 0 {
-					animelem := exp[0].evalI(c)
-					eachExpl(func(e *Explod) {
-						e.interpolate_animelem[1] = -1
-						e.animelem = animelem
-						e.anim.Action()
-						e.setAnimElem()
-					})
-				}
+				animelem := exp[0].evalI(c)
+				eachExpl(func(e *Explod) {
+					e.interpolate_animelem[1] = -1
+					e.animelem = animelem
+					e.anim.Action()
+					e.setAnimElem()
+				})
 			case explod_animfreeze:
-				if c.stWgi().ikemenver[0] != 0 || c.stWgi().ikemenver[1] != 0 {
-					animfreeze := exp[0].evalB(c)
-					eachExpl(func(e *Explod) { e.animfreeze = animfreeze })
-				}
+				animfreeze := exp[0].evalB(c)
+				eachExpl(func(e *Explod) { e.animfreeze = animfreeze })
 			case explod_angle:
 				a := exp[0].evalF(c)
 				eachExpl(func(e *Explod) { e.anglerot[0] = a })
@@ -4640,7 +4676,7 @@ func (sc modifyExplod) Run(c *Char, _ []int32) bool {
 				if c.stWgi().ikemenver[0] != 0 || c.stWgi().ikemenver[1] != 0 {
 					interpolation := exp[0].evalB(c)
 					eachExpl(func(e *Explod) {
-						if e.interpolate != interpolation {
+						if e.interpolate != interpolation && e.interpolate_time[0] > 0 {
 							e.interpolate_animelem[0] = e.start_animelem
 							e.interpolate_animelem[1] = e.interpolate_animelem[2]
 							if e.ownpal {
@@ -8675,6 +8711,68 @@ func (sc modifyBGCtrl) Run(c *Char, _ []int32) bool {
 	return false
 }
 
+type modifyBgm StateControllerBase
+
+const (
+	modifyBgm_volume = iota
+	modifyBgm_loopstart
+	modifyBgm_loopend
+	modifyBgm_position
+	modifyBgm_freqmul
+	modifyBgm_redirectid
+)
+
+func (sc modifyBgm) Run(c *Char, _ []int32) bool {
+	var volumeSet, loopStartSet, loopEndSet, posSet, freqSet = false, false, false, false, false
+	var volume, loopstart, loopend, position int = 100, 0, 0, 0
+	var freqmul float32 = 1.0
+	StateControllerBase(sc).run(c, func(id byte, exp []BytecodeExp) bool {
+		switch id {
+		case modifyBgm_volume:
+			volume = int(exp[0].evalI(c))
+			volumeSet = true
+		case modifyBgm_loopstart:
+			loopstart = int(exp[0].evalI(c))
+			loopStartSet = true
+		case modifyBgm_loopend:
+			loopend = int(exp[0].evalI(c))
+			loopEndSet = true
+		case modifyBgm_position:
+			position = int(exp[0].evalI(c))
+			posSet = true
+		case modifyBgm_freqmul:
+			freqmul = float32(exp[0].evalF(c))
+			freqSet = true
+		case modifyBgm_redirectid:
+			if rid := sys.playerID(exp[0].evalI(c)); rid != nil {
+
+			} else {
+				return false
+			}
+		}
+		return true
+	})
+	if sys.bgm.ctrl != nil {
+		// Set values that are different only
+		if volumeSet {
+			volumeScaled := int(float64(volume) / 100.0 * float64(sys.maxBgmVolume))
+			sys.bgm.bgmVolume = int(Min(int32(volumeScaled), int32(sys.maxBgmVolume)))
+			sys.bgm.UpdateVolume()
+		}
+		if posSet {
+			sys.bgm.Seek(position)
+		}
+		if (loopStartSet && sys.bgm.bgmLoopStart != loopstart) || (loopEndSet && sys.bgm.bgmLoopEnd != loopend) {
+			sys.bgm.SetLoopPoints(loopstart, loopend)
+		}
+		if freqSet && sys.bgm.freqmul != freqmul {
+			sys.bgm.SetFreqMul(freqmul)
+		}
+		return true
+	}
+	return false
+}
+
 type modifySnd StateControllerBase
 
 const (
@@ -8792,6 +8890,7 @@ const (
 	playBgm_loopstart
 	playBgm_loopend
 	playBgm_startposition
+	playBgm_freqmul
 	playBgm_redirectid
 )
 
@@ -8800,6 +8899,7 @@ func (sc playBgm) Run(c *Char, _ []int32) bool {
 	var b bool
 	var bgm string
 	var loop, volume, loopstart, loopend, startposition int = 1, 100, 0, 0, 0
+	var freqmul float32 = 1.0
 	StateControllerBase(sc).run(c, func(id byte, exp []BytecodeExp) bool {
 		switch id {
 		case playBgm_bgm:
@@ -8821,6 +8921,8 @@ func (sc playBgm) Run(c *Char, _ []int32) bool {
 			loopend = int(exp[0].evalI(c))
 		case playBgm_startposition:
 			startposition = int(exp[0].evalI(c))
+		case playBgm_freqmul:
+			freqmul = exp[0].evalF(c)
 		case playBgm_redirectid:
 			if rid := sys.playerID(exp[0].evalI(c)); rid != nil {
 				crun = rid
@@ -8831,7 +8933,7 @@ func (sc playBgm) Run(c *Char, _ []int32) bool {
 		return true
 	})
 	if b {
-		sys.bgm.Open(bgm, loop, volume, loopstart, loopend, startposition)
+		sys.bgm.Open(bgm, loop, volume, loopstart, loopend, startposition, freqmul)
 		sys.playBgmFlg = true
 	}
 	return false
@@ -9202,10 +9304,15 @@ const (
 	modifyStageVar_camera_tensionhigh
 	modifyStageVar_camera_tensionlow
 	modifyStageVar_camera_tension
+	modifyStageVar_camera_tensionvel
+	modifyStageVar_camera_cuthigh
+	modifyStageVar_camera_cutlow
 	modifyStageVar_camera_startzoom
 	modifyStageVar_camera_zoomout
 	modifyStageVar_camera_zoomin
+	modifyStageVar_camera_zoomindelay
 	modifyStageVar_camera_ytension_enable
+	modifyStageVar_camera_autocenter
 	modifyStageVar_playerinfo_leftbound
 	modifyStageVar_playerinfo_rightbound
 	modifyStageVar_scaling_topscale
@@ -9229,6 +9336,8 @@ func (sc modifyStageVar) Run(c *Char, _ []int32) bool {
 	s := *&sys.stage
 	StateControllerBase(sc).run(c, func(id byte, exp []BytecodeExp) bool {
 		switch id {
+		case modifyStageVar_camera_autocenter:
+			s.stageCamera.autocenter = exp[0].evalB(c)
 		case modifyStageVar_camera_boundleft:
 			s.stageCamera.boundleft = exp[0].evalI(c)
 		case modifyStageVar_camera_boundright:
@@ -9247,12 +9356,20 @@ func (sc modifyStageVar) Run(c *Char, _ []int32) bool {
 			s.stageCamera.tensionlow = exp[0].evalI(c)
 		case modifyStageVar_camera_tension:
 			s.stageCamera.tension = exp[0].evalI(c)
+		case modifyStageVar_camera_tensionvel:
+			s.stageCamera.tensionvel = exp[0].evalF(c)
+		case modifyStageVar_camera_cuthigh:
+			s.stageCamera.cuthigh = exp[0].evalI(c)
+		case modifyStageVar_camera_cutlow:
+			s.stageCamera.cutlow = exp[0].evalI(c)
 		case modifyStageVar_camera_startzoom:
 			s.stageCamera.startzoom = exp[0].evalF(c)
 		case modifyStageVar_camera_zoomout:
 			s.stageCamera.zoomout = exp[0].evalF(c)
 		case modifyStageVar_camera_zoomin:
 			s.stageCamera.zoomin = exp[0].evalF(c)
+		case modifyStageVar_camera_zoomindelay:
+			s.stageCamera.zoomindelay = exp[0].evalF(c)
 		case modifyStageVar_camera_ytension_enable:
 			s.stageCamera.ytensionenable = exp[0].evalB(c)
 		case modifyStageVar_playerinfo_leftbound:

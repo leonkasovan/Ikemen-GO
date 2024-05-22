@@ -13,6 +13,7 @@ type stageCamera struct {
 	floortension         int32
 	tensionhigh          int32
 	tensionlow           int32
+	lowestcap            bool
 	tension              int32
 	tensionvel           float32
 	overdrawhigh         int32 //TODO: not implemented
@@ -29,6 +30,7 @@ type stageCamera struct {
 	ytensionenable       bool
 	autocenter           bool
 	zoomanchor           bool
+	boundhighdelta       float32
 	zoomindelay          float32
 	zoomindelaytime      float32
 	fov                  float32
@@ -51,9 +53,12 @@ type stageCamera struct {
 
 func newStageCamera() *stageCamera {
 	return &stageCamera{verticalfollow: 0.2, tensionvel: 1, tension: 50,
-		cuthigh: 0, cutlow: 0,
+		cuthigh: 0, cutlow: math.MinInt32,
 		localcoord: [...]int32{320, 240}, localscl: float32(sys.gameWidth / 320),
-		ztopscale: 1, startzoom: 1, zoomin: 1, zoomout: 1, ytensionenable: false, fov: 40, yshift: 0, far: 10000, near: 0.1, zoomindelay: 0}
+		ztopscale: 1, startzoom: 1, zoomin: 1, zoomout: 1, ytensionenable: false,
+		tensionhigh: 0, tensionlow: 0,
+		fov: 40, yshift: 0, far: 10000, near: 0.1,
+		zoomindelay: 0, boundhighdelta: 0}
 }
 
 type CameraView int
@@ -92,6 +97,10 @@ func (c *Camera) Reset() {
 	c.XMax = c.boundR + c.halfWidth/c.BaseScale()
 	c.aspectcorrection = 0
 	c.zoomanchorcorrection = 0
+	c.zoomin = MaxF(c.zoomin, c.zoomout)
+	if c.cutlow == math.MinInt32 {
+		c.cutlow = int32(float32(c.localcoord[1]-c.zoffset) - float32(c.localcoord[1])*0.05)
+	}
 	if float32(c.localcoord[1])*c.localscl-float32(sys.gameHeight) < 0 {
 		c.aspectcorrection = MinF(0, (float32(c.localcoord[1])*c.localscl-float32(sys.gameHeight))+MinF((float32(sys.gameHeight)-float32(c.localcoord[1])*c.localscl)/2, float32(c.overdrawlow)*c.localscl))
 	} else if float32(c.localcoord[1])*c.localscl-float32(sys.gameHeight) > 0 {
@@ -111,7 +120,10 @@ func (c *Camera) Reset() {
 	c.boundH = float32(c.boundhigh) * c.localscl
 	c.boundLo = float32(Max(c.boundhigh, c.boundlow)) * c.localscl
 	c.boundlow = Max(c.boundhigh, c.boundlow)
-
+	c.tensionvel = MaxF(MinF(c.tensionvel, 20), 0)
+	if c.verticalfollow < 0 {
+		c.ytensionenable = true
+	}
 	xminscl := float32(sys.gameWidth) / (float32(sys.gameWidth) - c.boundL +
 		c.boundR)
 	//yminscl := float32(sys.gameHeight) / (240 - MinF(0, c.boundH))
@@ -184,6 +196,9 @@ func (c *Camera) action(x, y, scale float32, pause bool) (newX, newY, newScale f
 		switch c.View {
 		case Fighting_View:
 			if c.highest != math.MaxFloat32 && c.lowest != -math.MaxFloat32 {
+				if c.lowestcap {
+					c.lowest = MaxF(c.lowest, float32(c.boundhigh)*c.localscl-(float32(sys.gameHeight)-c.GroundLevel()-float32(c.tensionlow))/c.zoomout)
+				}
 				tension := MaxF(0, float32(c.tension)*c.localscl)
 				oldLeft, oldRight := x-c.halfWidth/scale, x+c.halfWidth/scale
 				targetLeft, targetRight := oldLeft, oldRight
@@ -359,11 +374,23 @@ func (c *Camera) action(x, y, scale float32, pause bool) (newX, newY, newScale f
 					newX = (newLeft + newRight) / 2
 				}
 				newScale = MinF(c.halfWidth*2/(newRight-newLeft), c.zoomin)
-				newY = MinF(MaxF(newY, float32(c.boundhigh)*c.localscl), float32(c.boundlow)*c.localscl) * newScale
+				if c.boundhighdelta > 0 {
+					topBound := float32(c.boundhigh)*c.localscl - c.GroundLevel()/c.zoomout
+					boundHigh := float32(c.boundhigh)*c.localscl + ((topBound+c.GroundLevel()/newScale)-float32(c.boundhigh)*c.localscl)/c.boundhighdelta
+					newY = MinF(MaxF(newY, boundHigh), float32(c.boundlow)*c.localscl) * newScale
+				} else {
+					newY = MinF(MaxF(newY, float32(c.boundhigh)*c.localscl), float32(c.boundlow)*c.localscl) * newScale
+				}
 			} else {
 				newScale = MinF(MaxF(newScale, c.zoomout), c.zoomin)
 				newX = MinF(MaxF(newX, c.minLeft+c.halfWidth/newScale), c.maxRight-c.halfWidth/newScale)
-				newY = MinF(MaxF(newY, float32(c.boundhigh)*c.localscl), float32(c.boundlow)*c.localscl) * newScale
+				if c.boundhighdelta > 0 {
+					topBound := float32(c.boundhigh)*c.localscl - c.GroundLevel()/c.zoomout
+					boundHigh := float32(c.boundhigh)*c.localscl + ((topBound+c.GroundLevel()/newScale)-float32(c.boundhigh)*c.localscl)/c.boundhighdelta
+					newY = MinF(MaxF(newY, boundHigh), float32(c.boundlow)*c.localscl) * newScale
+				} else {
+					newY = MinF(MaxF(newY, float32(c.boundhigh)*c.localscl), float32(c.boundlow)*c.localscl) * newScale
+				}
 			}
 
 		case Follow_View:

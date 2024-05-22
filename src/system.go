@@ -949,7 +949,7 @@ func (s *System) commandUpdate() {
 			}
 			// Having this here makes B and F inputs reverse the same instant the character turns
 			if act && !r.asf(ASF_noautoturn) && (r.scf(SCF_ctrl) || r.roundState() > 2) &&
-				(r.ss.no == 0 || r.ss.no == 11 || r.ss.no == 20 || r.ss.no == 52) {
+				(r.ss.no == 0 || r.ss.no == 11 || r.ss.no == 20 || r.ss.no == 52) && s.stage.autoturn {
 				r.turn()
 			}
 			if r.inputOver() || r.asf(ASF_noinput) {
@@ -1961,7 +1961,7 @@ func (s *System) fight() (reload bool) {
 
 	//default bgm playback, used only in Quick VS or if externalized Lua implementaion is disabled
 	if s.round == 1 && (s.gameMode == "" || len(sys.commonLua) == 0) {
-		s.bgm.Open(s.stage.bgmusic, 1, int(s.stage.bgmvolume), int(s.stage.bgmloopstart), int(s.stage.bgmloopend), 0)
+		s.bgm.Open(s.stage.bgmusic, 1, int(s.stage.bgmvolume), int(s.stage.bgmloopstart), int(s.stage.bgmloopend), int(s.stage.bgmstartposition), s.stage.bgmfreqmul)
 	}
 
 	oldWins, oldDraws := s.wins, s.draws

@@ -283,6 +283,10 @@ func (c *Compiler) changeStateSub(is IniSection,
 	}); err != nil {
 		return err
 	}
+	if err := c.paramValue(is, sc, "continue",
+		changeState_continue, VT_Bool, 1, false); err != nil {
+		return err
+	}
 	if err := c.paramValue(is, sc, "readplayerid",
 		changeState_readplayerid, VT_Int, 1, false); err != nil {
 		return err
@@ -4324,6 +4328,36 @@ func (c *Compiler) modifySnd(is IniSection, sc *StateControllerBase, _ int8) (St
 	})
 	return *ret, err
 }
+func (c *Compiler) modifyBgm(is IniSection, sc *StateControllerBase, _ int8) (StateController, error) {
+	ret, err := (*modifyBgm)(sc), c.stateSec(is, func() error {
+		if err := c.paramValue(is, sc, "redirectid",
+			modifyBgm_redirectid, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "volume",
+			modifyBgm_volume, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "loopstart",
+			modifyBgm_loopstart, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "loopend",
+			modifyBgm_loopend, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "freqmul",
+			modifyBgm_freqmul, VT_Float, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "position",
+			modifyBgm_position, VT_Int, 1, false); err != nil {
+			return err
+		}
+		return nil
+	})
+	return *ret, err
+}
 func (c *Compiler) printToConsole(is IniSection, sc *StateControllerBase, _ int8) (StateController, error) {
 	ret, err := (*printToConsole)(sc), c.stateSec(is, func() error {
 		return c.displayToClipboardSub(is, sc)
@@ -4693,8 +4727,8 @@ func (c *Compiler) modifyStageVar(is IniSection, sc *StateControllerBase, _ int8
 			modifyStageVar_redirectid, VT_Int, 1, false); err != nil {
 			return err
 		}
-		if err := c.paramValue(is, sc, "camera.ytension.enable",
-			modifyStageVar_camera_ytension_enable, VT_Bool, 1, false); err != nil {
+		if err := c.paramValue(is, sc, "camera.autocenter",
+			modifyStageVar_camera_autocenter, VT_Bool, 1, false); err != nil {
 			return err
 		}
 		if err := c.paramValue(is, sc, "camera.boundleft",
@@ -4733,6 +4767,18 @@ func (c *Compiler) modifyStageVar(is IniSection, sc *StateControllerBase, _ int8
 			modifyStageVar_camera_tension, VT_Int, 1, false); err != nil {
 			return err
 		}
+		if err := c.paramValue(is, sc, "camera.tensionvel",
+			modifyStageVar_camera_tensionvel, VT_Float, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "camera.cuthigh",
+			modifyStageVar_camera_cuthigh, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "camera.cutlow",
+			modifyStageVar_camera_cutlow, VT_Int, 1, false); err != nil {
+			return err
+		}
 		if err := c.paramValue(is, sc, "camera.startzoom",
 			modifyStageVar_camera_startzoom, VT_Float, 1, false); err != nil {
 			return err
@@ -4743,6 +4789,18 @@ func (c *Compiler) modifyStageVar(is IniSection, sc *StateControllerBase, _ int8
 		}
 		if err := c.paramValue(is, sc, "camera.zoomin",
 			modifyStageVar_camera_zoomin, VT_Float, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "camera.zoomindelay",
+			modifyStageVar_camera_zoomindelay, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "camera.ytension.enable",
+			modifyStageVar_camera_ytension_enable, VT_Bool, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "camera.autocenter",
+			modifyStageVar_camera_autocenter, VT_Bool, 1, false); err != nil {
 			return err
 		}
 		if err := c.paramValue(is, sc, "playerinfo.leftbound",

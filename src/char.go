@@ -1401,9 +1401,6 @@ func (e *Explod) update(oldVer bool, playerNo int) {
 
 func (e *Explod) Interpolate(act bool, scale *[2]float32, alpha *[2]int32, anglerot *[3]float32, fLength *float32) {
 	if sys.tickNextFrame() && act {
-		if e.interpolate_time[1] > 0 {
-			e.interpolate_time[1]--
-		}
 		t := float32(e.interpolate_time[1]) / float32(e.interpolate_time[0])
 		e.interpolate_fLength[0] = Lerp(e.interpolate_fLength[1], e.start_fLength, t)
 		if e.interpolate_animelem[1] >= 0 {
@@ -1423,6 +1420,9 @@ func (e *Explod) Interpolate(act bool, scale *[2]float32, alpha *[2]int32, angle
 				}
 			}
 			e.interpolate_angle[i] = Lerp(e.interpolate_angle[i+3], e.start_rot[i], t)
+		}
+		if e.interpolate_time[1] > 0 {
+			e.interpolate_time[1]--
 		}
 	}
 	for i := 0; i < 3; i++ {
@@ -2763,7 +2763,11 @@ func (c *Char) loadPalette() {
 					if _, err = io.ReadFull(f, rgb[:]); err != nil {
 						break
 					}
-					pl[i] = uint32(255)<<24 | uint32(rgb[2])<<16 | uint32(rgb[1])<<8 | uint32(rgb[0])
+					var alpha byte = 255
+					if i == 0 {
+						alpha = 0
+					}
+					pl[i] = uint32(alpha)<<24 | uint32(rgb[2])<<16 | uint32(rgb[1])<<8 | uint32(rgb[0])
 				}
 				chk(f.Close())
 				if err == nil {
@@ -3716,7 +3720,6 @@ func (c *Char) playSound(ffx string, lowpriority, loop bool, g, n, chNo, vol int
 	}
 }
 
-// Furimuki = Turn around
 func (c *Char) turn() {
 	if c.helperIndex == 0 {
 		if e := sys.charList.enemyNear(c, 0, true, true, false); c.rdDistX(e, c).ToF() < 0 && !e.asf(ASF_noturntarget) {
@@ -3822,7 +3825,7 @@ func (c *Char) stateChange2() bool {
 }
 func (c *Char) changeStateEx(no int32, pn int, anim, ctrl int32, ffx string) {
 	if c.minus <= 0 && c.scf(SCF_ctrl) && c.roundState() <= 2 &&
-		(c.ss.stateType == ST_S || c.ss.stateType == ST_C) && !c.asf(ASF_noautoturn) {
+		(c.ss.stateType == ST_S || c.ss.stateType == ST_C) && !c.asf(ASF_noautoturn) && sys.stage.autoturn {
 		c.turn()
 	}
 	if anim != -1 {
@@ -6267,8 +6270,17 @@ func (c *Char) actionRun() {
 	}
 	c.unsetASF(ASF_nostandguard | ASF_nocrouchguard | ASF_noairguard)
 	// Run state +1
-	if sb, ok := c.gi().states[-10]; ok { // still minus 0
+	// Uses minus -4 because its properties are similar
+	c.minus = -4
+	if sb, ok := c.gi().states[-10]; ok {
 		sb.run(c)
+	}
+	// Set minus back to normal
+	c.minus = 0
+	// If State +1 changed the current state, run the next one as well
+	if !c.pauseBool && c.stchtmp {
+		c.stateChange2()
+		c.ss.sb.run(c)
 	}
 	if !c.hitPause() {
 		if !c.csf(CSF_frontwidth) {
@@ -6437,7 +6449,7 @@ func (c *Char) actionFinish() {
 }
 func (c *Char) track() {
 	if c.trackableByCamera() {
-		min, max := c.getEdge(c.edge[0], true), -c.getEdge(c.edge[1], true)
+		min, max := c.edge[0], -c.edge[1]
 		if c.facing > 0 {
 			min, max = -max, -min
 		}
@@ -6843,7 +6855,9 @@ func (c *Char) cueDraw() {
 		sdf := func() *SprData {
 			sd := &SprData{c.anim, c.getPalfx(), pos,
 				scl, c.alpha, c.sprPriority, Rotation{agl, 0, 0}, c.angleScale, false,
-				c.playerNo == sys.superplayer, c.gi().mugenver[0] != 1, c.facing, c.localscl / (320 / c.localcoord), 0, 0, [4]float32{0, 0, 0, 0}}
+				c.playerNo == sys.superplayer, c.gi().mugenver[0] != 1, c.facing,
+				c.localcoord / sys.chars[c.animPN][0].localcoord, // https://github.com/ikemen-engine/Ikemen-GO/issues/1459 and 1778
+				0, 0, [4]float32{0, 0, 0, 0}}
 			if !c.csf(CSF_trans) {
 				sd.alpha[0] = -1
 			}
