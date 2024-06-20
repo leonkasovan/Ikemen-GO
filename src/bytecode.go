@@ -221,6 +221,7 @@ const (
 	OC_const_
 	OC_st_
 	OC_ex_
+	OC_ex2_
 )
 const (
 	OC_const_data_life OpCode = iota
@@ -631,6 +632,54 @@ const (
 	OC_ex_fightscreenvar_round_over_wintime
 	OC_ex_fightscreenvar_round_slow_time
 	OC_ex_fightscreenvar_round_start_waittime
+)
+const (
+	OC_ex2_index OpCode = iota
+	OC_ex2_runorder
+	OC_ex2_palfxvar_time
+	OC_ex2_palfxvar_addr
+	OC_ex2_palfxvar_addg
+	OC_ex2_palfxvar_addb
+	OC_ex2_palfxvar_mulr
+	OC_ex2_palfxvar_mulg
+	OC_ex2_palfxvar_mulb
+	OC_ex2_palfxvar_color
+	OC_ex2_palfxvar_hue
+	OC_ex2_palfxvar_invertall
+	OC_ex2_palfxvar_invertblend
+	OC_ex2_palfxvar_bg_time
+	OC_ex2_palfxvar_bg_addr
+	OC_ex2_palfxvar_bg_addg
+	OC_ex2_palfxvar_bg_addb
+	OC_ex2_palfxvar_bg_mulr
+	OC_ex2_palfxvar_bg_mulg
+	OC_ex2_palfxvar_bg_mulb
+	OC_ex2_palfxvar_bg_color
+	OC_ex2_palfxvar_bg_hue
+	OC_ex2_palfxvar_bg_invertall
+	OC_ex2_palfxvar_all_time
+	OC_ex2_palfxvar_all_addr
+	OC_ex2_palfxvar_all_addg
+	OC_ex2_palfxvar_all_addb
+	OC_ex2_palfxvar_all_mulr
+	OC_ex2_palfxvar_all_mulg
+	OC_ex2_palfxvar_all_mulb
+	OC_ex2_palfxvar_all_color
+	OC_ex2_palfxvar_all_hue
+	OC_ex2_palfxvar_all_invertall
+	OC_ex2_palfxvar_all_invertblend
+	OC_ex2_introstate
+	OC_ex2_bgmvar_filename
+	OC_ex2_bgmvar_loopend
+	OC_ex2_bgmvar_loopstart
+	OC_ex2_bgmvar_startposition
+	OC_ex2_bgmvar_volume
+	OC_ex2_gameoption_sound_panningrange
+	OC_ex2_gameoption_sound_wavchannels
+	OC_ex2_gameoption_sound_mastervolume
+	OC_ex2_gameoption_sound_wavvolume
+	OC_ex2_gameoption_sound_bgmvolume
+	OC_ex2_gameoption_sound_maxvolume
 )
 const (
 	NumVar     = 60
@@ -1502,7 +1551,7 @@ func (be BytecodeExp) run(c *Char) BytecodeValue {
 		case OC_rightedge:
 			sys.bcStack.PushF(c.rightEdge() * (c.localscl / oc.localscl))
 		case OC_roundstate:
-			sys.bcStack.PushI(c.roundState())
+			sys.bcStack.PushI(sys.roundState())
 		case OC_screenheight:
 			sys.bcStack.PushF(c.screenHeight())
 		case OC_screenpos_x:
@@ -1543,6 +1592,8 @@ func (be BytecodeExp) run(c *Char) BytecodeValue {
 			be.run_const(c, &i, oc)
 		case OC_ex_:
 			be.run_ex(c, &i, oc)
+		case OC_ex2_:
+			be.run_ex2(c, &i, oc)
 		case OC_var:
 			*sys.bcStack.Top() = c.varGet(sys.bcStack.Top().ToI())
 		case OC_sysvar:
@@ -2132,21 +2183,21 @@ func (be BytecodeExp) run_ex(c *Char, i *int, oc *Char) {
 	case OC_ex_gethitvar_facing:
 		sys.bcStack.PushI(c.ghv.facing)
 	case OC_ex_gethitvar_ground_velocity_x:
-		sys.bcStack.PushF(c.ghv.ground_velocity[0] * (c.localscl / oc.localscl))
+		sys.bcStack.PushF(c.ghv.ground_velocity[0] * c.facing * (c.localscl / oc.localscl))
 	case OC_ex_gethitvar_ground_velocity_y:
 		sys.bcStack.PushF(c.ghv.ground_velocity[1] * (c.localscl / oc.localscl))
 	case OC_ex_gethitvar_air_velocity_x:
-		sys.bcStack.PushF(c.ghv.air_velocity[0] * (c.localscl / oc.localscl))
+		sys.bcStack.PushF(c.ghv.air_velocity[0] * c.facing * (c.localscl / oc.localscl))
 	case OC_ex_gethitvar_air_velocity_y:
 		sys.bcStack.PushF(c.ghv.air_velocity[1] * (c.localscl / oc.localscl))
 	case OC_ex_gethitvar_down_velocity_x:
-		sys.bcStack.PushF(c.ghv.down_velocity[0] * (c.localscl / oc.localscl))
+		sys.bcStack.PushF(c.ghv.down_velocity[0] * c.facing * (c.localscl / oc.localscl))
 	case OC_ex_gethitvar_down_velocity_y:
 		sys.bcStack.PushF(c.ghv.down_velocity[1] * (c.localscl / oc.localscl))
 	case OC_ex_gethitvar_guard_velocity_x:
-		sys.bcStack.PushF(c.ghv.guard_velocity * (c.localscl / oc.localscl))
+		sys.bcStack.PushF(c.ghv.guard_velocity * c.facing * (c.localscl / oc.localscl))
 	case OC_ex_gethitvar_airguard_velocity_x:
-		sys.bcStack.PushF(c.ghv.airguard_velocity[0] * (c.localscl / oc.localscl))
+		sys.bcStack.PushF(c.ghv.airguard_velocity[0] * c.facing * (c.localscl / oc.localscl))
 	case OC_ex_gethitvar_airguard_velocity_y:
 		sys.bcStack.PushF(c.ghv.airguard_velocity[1] * (c.localscl / oc.localscl))
 	case OC_ex_gethitvar_frame:
@@ -2416,7 +2467,6 @@ func (be BytecodeExp) run_ex(c *Char, i *int, oc *Char) {
 		sys.bcStack.PushI(c.guardPointsMax)
 	case OC_ex_helperid:
 		sys.bcStack.PushI(c.helperId)
-		*i += 4
 	case OC_ex_helpername:
 		sys.bcStack.PushB(c.helperIndex != 0 && strings.ToLower(c.name) ==
 			sys.stringPool[sys.workingState.playerNo].List[*(*int32)(
@@ -2613,6 +2663,117 @@ func (be BytecodeExp) run_ex(c *Char, i *int, oc *Char) {
 		sys.bcStack.PushF(c.mhv.sparkxy[1] * (c.localscl / oc.localscl))
 	case OC_ex_movehitvar_uniqhit:
 		sys.bcStack.PushI(c.mhv.uniqhit)
+	default:
+		sys.errLog.Printf("%v\n", be[*i-1])
+		c.panic()
+	}
+}
+func (be BytecodeExp) run_ex2(c *Char, i *int, oc *Char) {
+	(*i)++
+	switch be[*i-1] {
+	case OC_ex2_index:
+		sys.bcStack.PushI(c.index)
+	case OC_ex2_runorder:
+		sys.bcStack.PushI(c.runorder)
+	case OC_ex2_palfxvar_time:
+		sys.bcStack.PushI(c.palfxvar(0))
+	case OC_ex2_palfxvar_addr:
+		sys.bcStack.PushI(c.palfxvar(1))
+	case OC_ex2_palfxvar_addg:
+		sys.bcStack.PushI(c.palfxvar(2))
+	case OC_ex2_palfxvar_addb:
+		sys.bcStack.PushI(c.palfxvar(3))
+	case OC_ex2_palfxvar_mulr:
+		sys.bcStack.PushI(c.palfxvar(4))
+	case OC_ex2_palfxvar_mulg:
+		sys.bcStack.PushI(c.palfxvar(5))
+	case OC_ex2_palfxvar_mulb:
+		sys.bcStack.PushI(c.palfxvar(6))
+	case OC_ex2_palfxvar_color:
+		sys.bcStack.PushF(c.palfxvar2(1))
+	case OC_ex2_palfxvar_hue:
+		sys.bcStack.PushF(c.palfxvar2(2))
+	case OC_ex2_palfxvar_invertall:
+		sys.bcStack.PushI(c.palfxvar(-1))
+	case OC_ex2_palfxvar_invertblend:
+		sys.bcStack.PushI(c.palfxvar(-2))
+	case OC_ex2_palfxvar_bg_time:
+		sys.bcStack.PushI(sys.palfxvar(0, 1))
+	case OC_ex2_palfxvar_bg_addr:
+		sys.bcStack.PushI(sys.palfxvar(1, 1))
+	case OC_ex2_palfxvar_bg_addg:
+		sys.bcStack.PushI(sys.palfxvar(2, 1))
+	case OC_ex2_palfxvar_bg_addb:
+		sys.bcStack.PushI(sys.palfxvar(3, 1))
+	case OC_ex2_palfxvar_bg_mulr:
+		sys.bcStack.PushI(sys.palfxvar(4, 1))
+	case OC_ex2_palfxvar_bg_mulg:
+		sys.bcStack.PushI(sys.palfxvar(5, 1))
+	case OC_ex2_palfxvar_bg_mulb:
+		sys.bcStack.PushI(sys.palfxvar(6, 1))
+	case OC_ex2_palfxvar_bg_color:
+		sys.bcStack.PushF(sys.palfxvar2(1, 1))
+	case OC_ex2_palfxvar_bg_hue:
+		sys.bcStack.PushF(sys.palfxvar2(2, 1))
+	case OC_ex2_palfxvar_bg_invertall:
+		sys.bcStack.PushI(sys.palfxvar(-1, 1))
+	case OC_ex2_palfxvar_all_time:
+		sys.bcStack.PushI(sys.palfxvar(0, 2))
+	case OC_ex2_palfxvar_all_addr:
+		sys.bcStack.PushI(sys.palfxvar(1, 2))
+	case OC_ex2_palfxvar_all_addg:
+		sys.bcStack.PushI(sys.palfxvar(2, 2))
+	case OC_ex2_palfxvar_all_addb:
+		sys.bcStack.PushI(sys.palfxvar(3, 2))
+	case OC_ex2_palfxvar_all_mulr:
+		sys.bcStack.PushI(sys.palfxvar(4, 2))
+	case OC_ex2_palfxvar_all_mulg:
+		sys.bcStack.PushI(sys.palfxvar(5, 2))
+	case OC_ex2_palfxvar_all_mulb:
+		sys.bcStack.PushI(sys.palfxvar(6, 2))
+	case OC_ex2_palfxvar_all_color:
+		sys.bcStack.PushF(sys.palfxvar2(1, 2))
+	case OC_ex2_palfxvar_all_hue:
+		sys.bcStack.PushF(sys.palfxvar2(2, 2))
+	case OC_ex2_palfxvar_all_invertall:
+		sys.bcStack.PushI(sys.palfxvar(-1, 2))
+	case OC_ex2_palfxvar_all_invertblend:
+		sys.bcStack.PushI(sys.palfxvar(-2, 2))
+	case OC_ex2_introstate:
+		sys.bcStack.PushI(sys.introState())
+	case OC_ex2_bgmvar_loopstart:
+		if sys.bgm.volctrl != nil {
+			if sl, ok := sys.bgm.volctrl.Streamer.(*StreamLooper); ok {
+				sys.bcStack.PushI(int32(sl.loopstart))
+			}
+		}
+	case OC_ex2_bgmvar_loopend:
+		if sys.bgm.volctrl != nil {
+			if sl, ok := sys.bgm.volctrl.Streamer.(*StreamLooper); ok {
+				sys.bcStack.PushI(int32(sl.loopend))
+			}
+		}
+	case OC_ex2_bgmvar_startposition:
+		sys.bcStack.PushI(int32(sys.bgm.startPos))
+	case OC_ex2_bgmvar_volume:
+		sys.bcStack.PushI(int32(sys.bgm.bgmVolume))
+	case OC_ex2_bgmvar_filename:
+		sys.bcStack.PushB(sys.bgm.filename ==
+			sys.stringPool[sys.workingState.playerNo].List[*(*int32)(
+				unsafe.Pointer(&be[*i]))])
+		*i += 4
+	case OC_ex2_gameoption_sound_bgmvolume:
+		sys.bcStack.PushI(int32(sys.bgmVolume))
+	case OC_ex2_gameoption_sound_mastervolume:
+		sys.bcStack.PushI(int32(sys.masterVolume))
+	case OC_ex2_gameoption_sound_maxvolume:
+		sys.bcStack.PushI(int32(sys.maxBgmVolume))
+	case OC_ex2_gameoption_sound_panningrange:
+		sys.bcStack.PushI(int32(sys.panningRange))
+	case OC_ex2_gameoption_sound_wavchannels:
+		sys.bcStack.PushI(int32(sys.wavChannels))
+	case OC_ex2_gameoption_sound_wavvolume:
+		sys.bcStack.PushI(int32(sys.wavVolume))
 	default:
 		sys.errLog.Printf("%v\n", be[*i-1])
 		c.panic()
@@ -3109,6 +3270,12 @@ const (
 	playSnd_loop
 	playSnd_redirectid
 	playSnd_priority
+	playSnd_loopstart
+	playSnd_loopend
+	playSnd_startposition
+	playSnd_loopcount
+	playSnd_stopongethit
+	playSnd_stoponchangestate
 )
 
 func (sc playSnd) Run(c *Char, _ []int32) bool {
@@ -3116,8 +3283,9 @@ func (sc playSnd) Run(c *Char, _ []int32) bool {
 		return false
 	}
 	crun := c
-	f, lw, lp := "", false, false
+	f, lw, lp, stopgh, stopcs := "", false, false, false, false
 	var g, n, ch, vo, pri int32 = -1, 0, -1, 100, 0
+	var loopstart, loopend, startposition, lc = 0, 0, 0, 0
 	var p, fr float32 = 0, 1
 	x := &c.pos[0]
 	ls := c.localscl
@@ -3131,6 +3299,9 @@ func (sc playSnd) Run(c *Char, _ []int32) bool {
 			}
 		case playSnd_channel:
 			ch = exp[0].evalI(c)
+			if ch == 0 {
+				stopgh = true
+			}
 		case playSnd_lowpriority:
 			lw = exp[0].evalB(c)
 		case playSnd_pan:
@@ -3149,6 +3320,18 @@ func (sc playSnd) Run(c *Char, _ []int32) bool {
 			lp = exp[0].evalB(c)
 		case playSnd_priority:
 			pri = exp[0].evalI(c)
+		case playSnd_loopstart:
+			loopstart = int(exp[0].evalI64(c))
+		case playSnd_loopend:
+			loopend = int(exp[0].evalI64(c))
+		case playSnd_startposition:
+			startposition = int(exp[0].evalI64(c))
+		case playSnd_loopcount:
+			lc = int(exp[0].evalI(c))
+		case playSnd_stopongethit:
+			stopgh = exp[0].evalB(c)
+		case playSnd_stoponchangestate:
+			stopcs = exp[0].evalB(c)
 		case playSnd_redirectid:
 			if rid := sys.playerID(exp[0].evalI(c)); rid != nil {
 				crun = rid
@@ -3160,7 +3343,17 @@ func (sc playSnd) Run(c *Char, _ []int32) bool {
 		}
 		return true
 	})
-	crun.playSound(f, lw, lp, g, n, ch, vo, p, fr, ls, x, true, pri)
+	// Read the loop parameter if loopcount not specified
+	if lc == 0 {
+		if lp {
+			crun.playSound(f, lw, -1, g, n, ch, vo, p, fr, ls, x, true, pri, loopstart, loopend, startposition, stopgh, stopcs)
+		} else {
+			crun.playSound(f, lw, 0, g, n, ch, vo, p, fr, ls, x, true, pri, loopstart, loopend, startposition, stopgh, stopcs)
+		}
+		// Use the loopcount directly if it's been specified
+	} else {
+		crun.playSound(f, lw, lc, g, n, ch, vo, p, fr, ls, x, true, pri, loopstart, loopend, startposition, stopgh, stopcs)
+	}
 	return false
 }
 
@@ -6152,6 +6345,7 @@ func (sc lifeAdd) Run(c *Char, _ []int32) bool {
 				a = true
 			}
 			crun.lifeAdd(float64(v), k, a)
+			crun.ghv.kill = k // The kill GetHitVar must currently be set here because c.lifeAdd is also used internally
 		case lifeAdd_redirectid:
 			if rid := sys.playerID(exp[0].evalI(c)); rid != nil {
 				crun = rid
@@ -6541,8 +6735,8 @@ func (sc superPause) Run(c *Char, _ []int32) bool {
 			}
 			vo := int32(100)
 			ffx := string(*(*[]byte)(unsafe.Pointer(&exp[0])))
-			crun.playSound(ffx, false, false, exp[1].evalI(c), n, -1,
-				vo, 0, 1, 1, nil, false, 0)
+			crun.playSound(ffx, false, 0, exp[1].evalI(c), n, -1,
+				vo, 0, 1, 1, nil, false, 0, 0, 0, 0, false, false)
 		case superPause_redirectid:
 			if rid := sys.playerID(exp[0].evalI(c)); rid != nil {
 				crun = rid
@@ -7423,8 +7617,8 @@ func (sc bindToParent) Run(c *Char, _ []int32) bool {
 	}
 	crun.bindPos[0] = x
 	crun.bindPos[1] = y
-	crun.setBindTime(time)
 	crun.setBindToId(p)
+	crun.setBindTime(time)
 	return false
 }
 
@@ -7467,8 +7661,8 @@ func (sc bindToRoot) Run(c *Char, _ []int32) bool {
 	}
 	crun.bindPos[0] = x
 	crun.bindPos[1] = y
-	crun.setBindTime(time)
 	crun.setBindToId(r)
+	crun.setBindTime(time)
 	return false
 }
 
@@ -8732,13 +8926,13 @@ func (sc modifyBgm) Run(c *Char, _ []int32) bool {
 			volume = int(exp[0].evalI(c))
 			volumeSet = true
 		case modifyBgm_loopstart:
-			loopstart = int(exp[0].evalI(c))
+			loopstart = int(exp[0].evalI64(c))
 			loopStartSet = true
 		case modifyBgm_loopend:
-			loopend = int(exp[0].evalI(c))
+			loopend = int(exp[0].evalI64(c))
 			loopEndSet = true
 		case modifyBgm_position:
-			position = int(exp[0].evalI(c))
+			position = int(exp[0].evalI64(c))
 			posSet = true
 		case modifyBgm_freqmul:
 			freqmul = float32(exp[0].evalF(c))
@@ -8762,13 +8956,14 @@ func (sc modifyBgm) Run(c *Char, _ []int32) bool {
 		if posSet {
 			sys.bgm.Seek(position)
 		}
-		if (loopStartSet && sys.bgm.bgmLoopStart != loopstart) || (loopEndSet && sys.bgm.bgmLoopEnd != loopend) {
-			sys.bgm.SetLoopPoints(loopstart, loopend)
+		if sl, ok := sys.bgm.volctrl.Streamer.(*StreamLooper); ok {
+			if (loopStartSet && sl.loopstart != loopstart) || (loopEndSet && sl.loopend != loopend) {
+				sys.bgm.SetLoopPoints(loopstart, loopend)
+			}
 		}
 		if freqSet && sys.bgm.freqmul != freqmul {
 			sys.bgm.SetFreqMul(freqmul)
 		}
-		return true
 	}
 	return false
 }
@@ -8784,6 +8979,13 @@ const (
 	modifySnd_freqmul
 	modifySnd_redirectid
 	modifySnd_priority
+	modifySnd_loopstart
+	modifySnd_loopend
+	modifySnd_position
+	modifySnd_loop
+	modifySnd_loopcount
+	modifySnd_stopongethit
+	modifySnd_stoponchangestate
 )
 
 func (sc modifySnd) Run(c *Char, _ []int32) bool {
@@ -8794,7 +8996,10 @@ func (sc modifySnd) Run(c *Char, _ []int32) bool {
 	snd := crun.soundChannels.Get(-1)
 	var ch, pri int32 = -1, 0
 	var vo, fr float32 = 100, 1.0
-	freqMulSet, volumeSet, prioritySet, panSet := false, false, false, false
+	stopgh, stopcs := false, false
+	freqMulSet, volumeSet, prioritySet, panSet, loopStartSet, loopEndSet, posSet, lcSet, loopSet := false, false, false, false, false, false, false, false, false
+	stopghSet, stopcsSet := false, false
+	var loopstart, loopend, position, lc int = 0, 0, 0, 0
 	var p float32 = 0
 	x := &c.pos[0]
 	ls := crun.localscl
@@ -8822,6 +9027,31 @@ func (sc modifySnd) Run(c *Char, _ []int32) bool {
 		case modifySnd_priority:
 			pri = exp[0].evalI(c)
 			prioritySet = true
+		case modifySnd_loopstart:
+			loopstart = int(exp[0].evalI64(c))
+			loopStartSet = true
+		case modifySnd_loopend:
+			loopend = int(exp[0].evalI64(c))
+			loopEndSet = true
+		case modifySnd_position:
+			position = int(exp[0].evalI64(c))
+			posSet = true
+		case modifySnd_loop:
+			if lc == 0 {
+				if bool(exp[0].evalB(c)) {
+					lc = -1
+				} else {
+					lc = 0
+				}
+				loopSet = true
+			}
+		case modifySnd_loopcount:
+			lc = int(exp[0].evalI(c))
+			lcSet = true
+		case modifySnd_stopongethit:
+			stopgh = exp[0].evalB(c)
+		case modifySnd_stoponchangestate:
+			stopcs = exp[0].evalB(c)
 		case modifySnd_redirectid:
 			if rid := sys.playerID(exp[0].evalI(c)); rid != nil {
 				crun = rid
@@ -8870,11 +9100,31 @@ func (sc modifySnd) Run(c *Char, _ []int32) bool {
 			if pri != snd.sfx.priority {
 				snd.SetPriority(pri)
 			}
+			if posSet {
+				snd.streamer.Seek(position)
+			}
+			if lcSet || loopSet {
+				if sl, ok := snd.sfx.streamer.(*StreamLooper); ok {
+					sl.loopcount = lc
+				}
+			}
+			if sl, ok := snd.sfx.streamer.(*StreamLooper); ok {
+				if (loopStartSet && sl.loopstart != loopstart) || (loopEndSet && sl.loopend != loopend) {
+					snd.SetLoopPoints(loopstart, loopend)
+				}
+			}
 			if p != snd.sfx.p || ls != snd.sfx.ls || x != snd.sfx.x {
 				snd.SetPan(p*crun.facing, ls, x)
 			}
 			if vo != snd.sfx.volume {
 				snd.SetVolume(vo)
+			}
+			// These flags can be updated regardless since there are no calculations involved
+			if stopghSet {
+				snd.stopOnGetHit = stopgh
+			}
+			if stopcsSet {
+				snd.stopOnChangeState = stopcs
 			}
 		}
 	}

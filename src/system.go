@@ -241,10 +241,14 @@ type System struct {
 	topSprites              DrawList
 	bottomSprites           DrawList
 	shadows                 ShadowList
-	drawc1                  ClsnRect
+	drawc1hit               ClsnRect
+	drawc1rev               ClsnRect
+	drawc1not               ClsnRect
 	drawc2                  ClsnRect
-	drawc2sp                ClsnRect
+	drawc2hb                ClsnRect
 	drawc2mtk               ClsnRect
+	drawc2grd               ClsnRect
+	drawc2stb               ClsnRect
 	drawwh                  ClsnRect
 	drawch                  ClsnRect
 	autoguard               [MaxSimul*2 + MaxAttachedChar]bool
@@ -654,6 +658,62 @@ func (s *System) playerIndexExist(id BytecodeValue) BytecodeValue {
 func (s *System) playercount() int32 {
 	return int32(len(s.charList.runOrder))
 }
+func (s *System) palfxvar(x int32, y int32) int32 {
+	n := int32(0)
+	if x >= 4 {
+		n = 256
+	}
+	pfx := s.bgPalFX
+	if y == 2 {
+		pfx = s.allPalFX
+	}
+	if pfx.enable {
+		switch x {
+		case -2:
+			n = pfx.eInvertblend
+		case -1:
+			n = Btoi(pfx.eInvertall)
+		case 0:
+			n = pfx.time
+		case 1:
+			n = pfx.eAdd[0]
+		case 2:
+			n = pfx.eAdd[1]
+		case 3:
+			n = pfx.eAdd[2]
+		case 4:
+			n = pfx.eMul[0]
+		case 5:
+			n = pfx.eMul[1]
+		case 6:
+			n = pfx.eMul[2]
+		default:
+			n = 0
+		}
+	}
+	return n
+}
+func (s *System) palfxvar2(x int32, y int32) float32 {
+	n := float32(1)
+	if x > 1 {
+		n = 0
+	}
+	pfx := s.bgPalFX
+	if y == 2 {
+		pfx = s.allPalFX
+	}
+	if pfx.enable {
+		switch x {
+		case 1:
+			n = pfx.eColor
+		case 2:
+			n = pfx.eHue
+		default:
+			n = 0
+		}
+	}
+	return n * 256
+}
 func (s *System) screenHeight() float32 {
 	return 240
 }
@@ -662,6 +722,53 @@ func (s *System) screenWidth() float32 {
 }
 func (s *System) roundEnd() bool {
 	return s.intro < -s.lifebar.ro.over_hittime
+}
+
+// Characters cannot hurt each other between lifebar timers over.hittime and over.waittime
+func (s *System) roundNoDamage() bool {
+	return sys.intro < 0 && sys.intro <= -sys.lifebar.ro.over_hittime && sys.intro >= -sys.lifebar.ro.over_waittime
+}
+func (s *System) roundState() int32 {
+	switch {
+	case sys.postMatchFlg:
+		return -1
+	case sys.intro > sys.lifebar.ro.ctrl_time+1:
+		return 0
+	case sys.lifebar.ro.cur == 0:
+		return 1
+	case sys.intro >= 0 || sys.finish == FT_NotYet:
+		return 2
+	case sys.intro < -sys.lifebar.ro.over_waittime:
+		return 4
+	default:
+		return 3
+	}
+}
+func (s *System) introState() int32 {
+	switch {
+	// Implements discussion #1172
+	case sys.intro > sys.lifebar.ro.ctrl_time+1:
+		// roundstate = 0
+		return 1
+	case sys.intro > sys.lifebar.ro.ctrl_time:
+		// characters are doing their intros
+		return 2
+	case sys.lifebar.ro.cur == 1 && sys.intro > 0:
+		// fight!
+		return 4
+	case sys.lifebar.ro.cur == 0:
+		// dialogueFlg doesn't work here :(
+		for _, p := range sys.chars {
+			if len(p) > 0 && len(p[0].dialogue) > 0 {
+				return 2
+			}
+		}
+		// round <n>
+		return 3
+	default:
+		// players have gained ctrl, or not applicable
+		return 0
+	}
 }
 func (s *System) roundWinTime() bool {
 	return s.wintime < 0
@@ -948,7 +1055,7 @@ func (s *System) commandUpdate() {
 				act = false
 			}
 			// Having this here makes B and F inputs reverse the same instant the character turns
-			if act && !r.asf(ASF_noautoturn) && (r.scf(SCF_ctrl) || r.roundState() > 2) &&
+			if act && !r.asf(ASF_noautoturn) && (r.scf(SCF_ctrl) || sys.roundState() > 2) &&
 				(r.ss.no == 0 || r.ss.no == 11 || r.ss.no == 20 || r.ss.no == 52) && s.stage.autoturn {
 				r.turn()
 			}
@@ -982,7 +1089,7 @@ func (s *System) commandUpdate() {
 				cc := int32(-1)
 				// AI Scaling
 				// TODO: Balance AI Scaling
-				if r.roundState() == 2 && RandF32(0, sys.com[i]/2+32) > 32 {
+				if sys.roundState() == 2 && RandF32(0, sys.com[i]/2+32) > 32 {
 					cc = Rand(0, int32(len(r.cmd[r.ss.sb.playerNo].Commands))-1)
 				} else {
 					cc = -1
@@ -1016,7 +1123,7 @@ func (s *System) charUpdate() {
 				}
 			}
 		}
-		s.charList.getHit()
+		s.charList.hitDetection()
 		for i, pr := range s.projs {
 			for j, p := range pr {
 				if p.id != IErr {
@@ -1039,10 +1146,14 @@ func (s *System) action() {
 	s.topSprites = s.topSprites[:0]
 	s.bottomSprites = s.bottomSprites[:0]
 	s.shadows = s.shadows[:0]
-	s.drawc1 = s.drawc1[:0]
+	s.drawc1hit = s.drawc1hit[:0]
+	s.drawc1rev = s.drawc1rev[:0]
+	s.drawc1not = s.drawc1not[:0]
 	s.drawc2 = s.drawc2[:0]
-	s.drawc2sp = s.drawc2sp[:0]
+	s.drawc2hb = s.drawc2hb[:0]
 	s.drawc2mtk = s.drawc2mtk[:0]
+	s.drawc2grd = s.drawc2grd[:0]
+	s.drawc2stb = s.drawc2stb[:0]
 	s.drawwh = s.drawwh[:0]
 	s.drawch = s.drawch[:0]
 	s.clsnText = nil
@@ -1618,13 +1729,21 @@ func (s *System) drawTop() {
 	s.brightness = s.brightnessOld
 	if s.clsnDraw {
 		s.clsnSpr.Pal[0] = 0xff0000ff
-		s.drawc1.draw(0x3feff)
+		s.drawc1hit.draw(0x3feff)
+		s.clsnSpr.Pal[0] = 0xff0040c0
+		s.drawc1rev.draw(0x3feff)
+		s.clsnSpr.Pal[0] = 0xff000080
+		s.drawc1not.draw(0x3feff)
 		s.clsnSpr.Pal[0] = 0xffff0000
 		s.drawc2.draw(0x3feff)
-		s.clsnSpr.Pal[0] = 0xff00ff00
-		s.drawc2sp.draw(0x3feff)
-		s.clsnSpr.Pal[0] = 0xff002000
+		s.clsnSpr.Pal[0] = 0xff808000
+		s.drawc2hb.draw(0x3feff)
+		s.clsnSpr.Pal[0] = 0xff004000
 		s.drawc2mtk.draw(0x3feff)
+		s.clsnSpr.Pal[0] = 0xffc00040
+		s.drawc2grd.draw(0x3feff)
+		s.clsnSpr.Pal[0] = 0xff404040
+		s.drawc2stb.draw(0x3feff)
 		s.clsnSpr.Pal[0] = 0xff303030
 		s.drawwh.draw(0x3feff)
 		s.clsnSpr.Pal[0] = 0xffffffff

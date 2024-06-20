@@ -495,8 +495,9 @@ func systemScriptInit(l *lua.LState) {
 		if pn < 1 || pn > len(sys.chars) || len(sys.chars[pn-1]) == 0 {
 			l.RaiseError("\nPlayer not found: %v\n", pn)
 		}
-		f, lw, lp := false, false, false
+		f, lw, lp, stopgh, stopcs := false, false, false, false, false
 		var g, n, ch, vo, priority int32 = -1, 0, -1, 100, 0
+		var loopstart, loopend, startposition, lc int = 0, 0, 0, 0
 		var p, fr float32 = 0, 1
 		x := &sys.chars[pn-1][0].pos[0]
 		ls := sys.chars[pn-1][0].localscl
@@ -530,11 +531,41 @@ func systemScriptInit(l *lua.LState) {
 		if l.GetTop() >= 11 {
 			priority = int32(numArg(l, 11))
 		}
+		if l.GetTop() >= 12 {
+			loopstart = int(numArg(l, 12))
+		}
+		if l.GetTop() >= 13 {
+			loopend = int(numArg(l, 13))
+		}
+		if l.GetTop() >= 14 {
+			startposition = int(numArg(l, 14))
+		}
+		if l.GetTop() >= 15 {
+			lc = int(numArg(l, 15))
+		}
+		if l.GetTop() >= 15 { // StopOnGetHit
+			stopgh = boolArg(l, 16)
+		}
+		if l.GetTop() >= 16 { // StopOnChangeState
+			stopcs = boolArg(l, 17)
+		}
 		preffix := ""
 		if f {
 			preffix = "f"
 		}
-		sys.chars[pn-1][0].playSound(preffix, lw, lp, g, n, ch, vo, p, fr, ls, x, false, priority)
+
+		// If the loopcount is 0, then read the loop parameter
+		if lc == 0 {
+			if lp {
+				sys.chars[pn-1][0].playSound(preffix, lw, -1, g, n, ch, vo, p, fr, ls, x, false, priority, loopstart, loopend, startposition, stopgh, stopcs)
+			} else {
+				sys.chars[pn-1][0].playSound(preffix, lw, 0, g, n, ch, vo, p, fr, ls, x, false, priority, loopstart, loopend, startposition, stopgh, stopcs)
+			}
+
+			// Otherwise, read the loopcount parameter directly
+		} else {
+			sys.chars[pn-1][0].playSound(preffix, lw, lc, g, n, ch, vo, p, fr, ls, x, false, priority, loopstart, loopend, startposition, stopgh, stopcs)
+		}
 		return 0
 	})
 	luaRegister(l, "charSndStop", func(l *lua.LState) int {
@@ -2373,7 +2404,17 @@ func systemScriptInit(l *lua.LState) {
 		if l.GetTop() >= 5 {
 			pan = float32(numArg(l, 5))
 		}
-		s.play([...]int32{int32(numArg(l, 2)), int32(numArg(l, 3))}, volumescale, pan)
+		var loopstart, loopend, startposition int
+		if l.GetTop() >= 6 {
+			loopstart = int(numArg(l, 6))
+		}
+		if l.GetTop() >= 7 {
+			loopend = int(numArg(l, 7))
+		}
+		if l.GetTop() >= 8 {
+			startposition = int(numArg(l, 8))
+		}
+		s.play([...]int32{int32(numArg(l, 2)), int32(numArg(l, 3))}, volumescale, pan, loopstart, loopend, startposition)
 		return 0
 	})
 	luaRegister(l, "sndPlaying", func(*lua.LState) int {
@@ -2656,7 +2697,7 @@ func systemScriptInit(l *lua.LState) {
 		if !ok {
 			userDataError(l, 1, s)
 		}
-		sys.soundChannels.Play(s, 100, 0.0)
+		sys.soundChannels.Play(s, 100, 0.0, 0, 0, 0)
 		return 0
 	})
 }
@@ -2848,6 +2889,43 @@ func triggerFunctions(l *lua.LState) {
 			l.Push(lua.LNumber(0))
 		} else {
 			l.Push(lua.LNumber(int32(sys.bgm.streamer.Position())))
+		}
+		return 1
+	})
+	luaRegister(l, "bgmvar", func(*lua.LState) int {
+
+		arg := strings.ToLower(strArg(l, 1))
+
+		// If the streamer is nil, return nil for strings
+		if arg == "filename" {
+			if sys.bgm.streamer == nil {
+				l.Push(lua.LNil)
+			} else {
+				l.Push(lua.LString(sys.bgm.filename))
+			}
+			// Return a number
+		} else {
+			ln := lua.LNumber(0)
+
+			if sys.bgm.streamer != nil {
+				switch arg {
+				case "length":
+					ln = lua.LNumber(int32(sys.bgm.streamer.Len()))
+				case "loopend":
+					if sl, ok := sys.bgm.volctrl.Streamer.(*StreamLooper); ok {
+						ln = lua.LNumber(sl.loopend)
+					}
+				case "loopstart":
+					if sl, ok := sys.bgm.volctrl.Streamer.(*StreamLooper); ok {
+						ln = lua.LNumber(sl.loopstart)
+					}
+				case "position":
+					ln = lua.LNumber(int32(sys.bgm.streamer.Position()))
+				case "startposition":
+					ln = lua.LNumber(int32(sys.bgm.startPos))
+				}
+			}
+			l.Push(ln)
 		}
 		return 1
 	})
@@ -3167,6 +3245,28 @@ func triggerFunctions(l *lua.LState) {
 		l.Push(lua.LNumber(sys.debugWC.gameHeight()))
 		return 1
 	})
+	luaRegister(l, "gameoption", func(*lua.LState) int {
+		arg := strings.ToLower(strArg(l, 1))
+		ln := lua.LNumber(0)
+
+		switch arg {
+		case "sound.panningrange":
+			ln = lua.LNumber(int32(sys.bgm.streamer.Len()))
+		case "sound.wavchannels":
+			ln = lua.LNumber(sys.wavChannels)
+		case "sound.mastervolume":
+			ln = lua.LNumber(sys.masterVolume)
+		case "sound.wavvolume":
+			ln = lua.LNumber(int32(sys.wavVolume))
+		case "sound.bgmvolume":
+			ln = lua.LNumber(int32(sys.bgmVolume))
+		case "sound.maxvolume":
+			ln = lua.LNumber(int32(sys.maxBgmVolume))
+		}
+
+		l.Push(ln)
+		return 1
+	})
 	luaRegister(l, "gametime", func(*lua.LState) int {
 		l.Push(lua.LNumber(sys.gameTime + sys.preFightTime))
 		return 1
@@ -3416,6 +3516,10 @@ func triggerFunctions(l *lua.LState) {
 		l.Push(lua.LBool(sys.debugWC.teamside == sys.home))
 		return 1
 	})
+	luaRegister(l, "index", func(*lua.LState) int {
+		l.Push(lua.LNumber(sys.debugWC.index))
+		return 1
+	})
 	luaRegister(l, "leftedge", func(*lua.LState) int {
 		l.Push(lua.LNumber(sys.debugWC.leftEdge()))
 		return 1
@@ -3566,6 +3670,79 @@ func triggerFunctions(l *lua.LState) {
 			id = int32(numArg(l, 1))
 		}
 		l.Push(lua.LNumber(sys.debugWC.numTarget(BytecodeInt(id)).ToI()))
+		return 1
+	})
+	luaRegister(l, "palfxvar", func(*lua.LState) int {
+		var ln lua.LNumber
+		switch strArg(l, 1) {
+		case "time":
+			ln = lua.LNumber(sys.debugWC.palfxvar(0))
+		case "add.r":
+			ln = lua.LNumber(sys.debugWC.palfxvar(1))
+		case "add.g":
+			ln = lua.LNumber(sys.debugWC.palfxvar(2))
+		case "add.b":
+			ln = lua.LNumber(sys.debugWC.palfxvar(3))
+		case "mul.r":
+			ln = lua.LNumber(sys.debugWC.palfxvar(4))
+		case "mul.g":
+			ln = lua.LNumber(sys.debugWC.palfxvar(5))
+		case "mul.b":
+			ln = lua.LNumber(sys.debugWC.palfxvar(6))
+		case "color":
+			ln = lua.LNumber(sys.debugWC.palfxvar2(1))
+		case "hue":
+			ln = lua.LNumber(sys.debugWC.palfxvar2(2))
+		case "invertall":
+			ln = lua.LNumber(sys.debugWC.palfxvar(-1))
+		case "invertblend":
+			ln = lua.LNumber(sys.debugWC.palfxvar(-2))
+		case "bg.time":
+			ln = lua.LNumber(sys.palfxvar(0, 1))
+		case "bg.add.r":
+			ln = lua.LNumber(sys.palfxvar(1, 1))
+		case "bg.add.g":
+			ln = lua.LNumber(sys.palfxvar(2, 1))
+		case "bg.add.b":
+			ln = lua.LNumber(sys.palfxvar(3, 1))
+		case "bg.mul.r":
+			ln = lua.LNumber(sys.palfxvar(4, 1))
+		case "bg.mul.g":
+			ln = lua.LNumber(sys.palfxvar(5, 1))
+		case "bg.mul.b":
+			ln = lua.LNumber(sys.palfxvar(6, 1))
+		case "bg.color":
+			ln = lua.LNumber(sys.palfxvar2(1, 1))
+		case "bg.hue":
+			ln = lua.LNumber(sys.palfxvar2(2, 1))
+		case "bg.invertall":
+			ln = lua.LNumber(sys.palfxvar(-1, 1))
+		case "all.time":
+			ln = lua.LNumber(sys.palfxvar(0, 2))
+		case "all.add.r":
+			ln = lua.LNumber(sys.palfxvar(1, 2))
+		case "all.add.g":
+			ln = lua.LNumber(sys.palfxvar(2, 2))
+		case "all.add.b":
+			ln = lua.LNumber(sys.palfxvar(3, 2))
+		case "all.mul.r":
+			ln = lua.LNumber(sys.palfxvar(4, 2))
+		case "all.mul.g":
+			ln = lua.LNumber(sys.palfxvar(5, 2))
+		case "all.mul.b":
+			ln = lua.LNumber(sys.palfxvar(6, 2))
+		case "all.color":
+			ln = lua.LNumber(sys.palfxvar2(1, 2))
+		case "all.hue":
+			ln = lua.LNumber(sys.palfxvar2(2, 2))
+		case "all.invertall":
+			ln = lua.LNumber(sys.palfxvar(-1, 2))
+		case "all.invertblend":
+			ln = lua.LNumber(sys.palfxvar(-2, 2))
+		default:
+			l.RaiseError("\nInvalid argument: %v\n", strArg(l, 1))
+		}
+		l.Push(ln)
 		return 1
 	})
 	//p1name and other variants can be checked via name
@@ -3731,6 +3908,10 @@ func triggerFunctions(l *lua.LState) {
 			BytecodeInt(int32(numArg(l, 1)))).ToI()))
 		return 1
 	})
+	luaRegister(l, "runorder", func(*lua.LState) int {
+		l.Push(lua.LNumber(sys.debugWC.runorder))
+		return 1
+	})
 	//random (dedicated functionality already exists in Lua)
 	luaRegister(l, "reversaldefattr", func(*lua.LState) int {
 		attr, str := sys.debugWC.hitdef.reversal_attr, ""
@@ -3796,7 +3977,11 @@ func triggerFunctions(l *lua.LState) {
 		return 1
 	})
 	luaRegister(l, "roundstate", func(*lua.LState) int {
-		l.Push(lua.LNumber(sys.debugWC.roundState()))
+		l.Push(lua.LNumber(sys.roundState()))
+		return 1
+	})
+	luaRegister(l, "introstate", func(*lua.LState) int {
+		l.Push(lua.LNumber(sys.introState()))
 		return 1
 	})
 	luaRegister(l, "screenheight", func(*lua.LState) int {
@@ -4781,7 +4966,7 @@ func triggerFunctions(l *lua.LState) {
 				} else {
 					winp = 0
 				}
-			} else if sys.winTeam >= 0 || sys.debugWC.roundState() >= 3 {
+			} else if sys.winTeam >= 0 || sys.roundState() >= 3 {
 				winp = int32(sys.winTeam) + 1
 			}
 		}

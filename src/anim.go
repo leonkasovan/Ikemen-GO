@@ -398,18 +398,21 @@ func (a *Animation) drawFrame() *AnimFrame {
 }
 func (a *Animation) SetAnimElem(elem int32) {
 	a.current = Max(0, elem-1)
+	// If trying to set an element higher than the last one in the animation
 	if int(a.current) >= len(a.frames) {
-		if a.totaltime == -1 {
-			a.current = int32(len(a.frames)) - 1
-		} else {
-			a.current = a.loopstart +
-				(a.current-a.loopstart)%(int32(len(a.frames))-a.loopstart)
-		}
+		//if a.totaltime == -1 {
+		//	a.current = int32(len(a.frames)) - 1
+		//} else if int32(len(a.frames))-a.loopstart > 0 { // Prevent division by zero crash
+		//	a.current = a.loopstart +
+		//		(a.current-a.loopstart)%(int32(len(a.frames))-a.loopstart)
+		//}
+		// Mugen merely sets the element to 1
+		a.current = 0
 	}
 	a.drawidx, a.time, a.newframe = a.current, 0, true
 	a.UpdateSprite()
 	a.loopend = false
-	a.sumtime = 0 // AnimElemTime 内で使用
+	a.sumtime = 0 // AnimElemTime 内で使用 // "Used within AnimElemTime"
 	a.sumtime = -a.AnimElemTime(a.current + 1)
 }
 func (a *Animation) animSeek(elem int32) {
@@ -721,7 +724,7 @@ func (a *Animation) Draw(window *[4]int32, x, y, xcs, ycs, xs, xbs, ys,
 		a.spr.Tex, paltex, a.spr.Size,
 		x * sys.widthScale,
 		y * sys.heightScale, a.tile, xs * sys.widthScale, xcs * xbs * h * sys.widthScale,
-		ys * sys.heightScale, 1, xcs * rxadd * sys.widthScale / sys.heightScale, rot,
+		ys * sys.heightScale, 1, xcs * rxadd * sys.widthScale / sys.heightScale, h, v, rot,
 		0, trans, mask, pfx, window, rcx, rcy, projectionMode, fLength * sys.heightScale,
 		xs * posLocalscl * (float32(a.frames[a.drawidx].X) + a.interpolate_offset_x) * a.start_scale[0] * (1 / a.scale_x) * sys.widthScale,
 		ys * posLocalscl * (float32(a.frames[a.drawidx].Y) + a.interpolate_offset_y) * a.start_scale[1] * (1 / a.scale_y) * sys.heightScale,
@@ -744,7 +747,7 @@ func (a *Animation) ShadowDraw(window *[4]int32, x, y, xscl, yscl, vscl, rxadd f
 		AbsF(xscl*h) * float32(a.spr.Offset[0]) * sys.widthScale,
 		AbsF(yscl*v) * float32(a.spr.Offset[1]) * sys.heightScale, a.tile,
 		xscl * h * sys.widthScale, xscl * h * sys.widthScale,
-		yscl * v * sys.heightScale, vscl, rxadd, rot, color | 0xff000000, 0, mask, nil, window,
+		yscl * v * sys.heightScale, vscl, rxadd, h, v, rot, color | 0xff000000, 0, mask, nil, window,
 		(x + float32(sys.gameWidth)/2) * sys.widthScale, y * sys.heightScale,
 		projectionMode, fLength,
 		xscl * posLocalscl * h * (float32(a.frames[a.drawidx].X) + a.interpolate_offset_x) * (1 / a.scale_x),

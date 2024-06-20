@@ -406,15 +406,18 @@ func (bg backGround) draw(pos [2]float32, scl, bgscl, lclscl float32,
 		ys3 = ((scl + (1-scl)*(1-bg.zoomscaledelta[1])) / scly)
 	}
 	// This handles the flooring of the camera position in MUGEN versions earlier than 1.0.
+	var x, yScrollPos float32
 	if bg.roundpos {
+		x = bg.start[0] + bg.xofs - float32(Floor(pos[0]/stgscl[0]))*bg.delta[0] + bg.bga.offset[0]
+		yScrollPos = float32(Floor(pos[1]/scl/stgscl[1])) * bg.delta[1]
 		for i := 0; i < 2; i++ {
 			pos[i] = float32(math.Floor(float64(pos[i])))
 		}
+	} else {
+		x = bg.start[0] + bg.xofs - pos[0]/stgscl[0]*bg.delta[0] + bg.bga.offset[0]
+		// Hires breaks ydelta scrolling vel, so bgscl was commented from here.
+		yScrollPos = (pos[1] / scl / stgscl[1]) * bg.delta[1] // * bgscl
 	}
-	x := bg.start[0] + bg.xofs - (pos[0]/stgscl[0])*bg.delta[0] +
-		bg.bga.offset[0]
-	// Hires breaks ydelta scrolling vel, so bgscl was commented from here.
-	yScrollPos := (pos[1] / scl / stgscl[1]) * bg.delta[1] // * bgscl
 	y := bg.start[1] - yScrollPos + bg.bga.offset[1]
 	ys2 := bg.scaledelta[1] * pos[1] * bg.delta[1] * bgscl
 	ys := ((100-(pos[1])*bg.yscaledelta)*bgscl/bg.yscalestart)*bg.scalestart[1] + ys2
@@ -928,7 +931,11 @@ func loadStage(def string, main bool) (*Stage, error) {
 		sec[0].ReadF32("far", &s.stageCamera.far)
 		sec[0].ReadBool("autocenter", &s.stageCamera.autocenter)
 		sec[0].ReadF32("zoomindelay", &s.stageCamera.zoomindelay)
-		sec[0].ReadF32("boundhighdelta", &s.stageCamera.boundhighdelta)
+		sec[0].ReadF32("zoominspeed", &s.stageCamera.zoominspeed)
+		sec[0].ReadF32("zoomoutspeed", &s.stageCamera.zoomoutspeed)
+		sec[0].ReadF32("yscrollspeed", &s.stageCamera.yscrollspeed)
+		sec[0].ReadF32("boundhighzoomdelta", &s.stageCamera.boundhighzoomdelta)
+		sec[0].ReadF32("verticalfollowzoomdelta", &s.stageCamera.verticalfollowzoomdelta)
 		sec[0].ReadBool("lowestcap", &s.stageCamera.lowestcap)
 		if sys.cam.ZoomMax == 0 {
 			sec[0].ReadF32("zoomin", &s.stageCamera.zoomin)
