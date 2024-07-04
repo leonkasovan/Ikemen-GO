@@ -95,6 +95,32 @@ func (w *Window) GetSize() (int, int) {
 	return int(ww), int(hh)
 }
 
+func (w *Window) GetScaledViewportSize() (int32, int32, int32, int32) {
+	// calculates a position and size for the viewport to fill the window while centered (see render_gl.go)
+	// returns x, y, width, height respectively
+	winWidth, winHeight := w.GetSize()
+	ratioWidth := float32(winWidth) / float32(sys.gameWidth)
+	ratioHeight := float32(winHeight) / float32(sys.gameHeight)
+	var ratio float32
+	var x, y int32 = 0, 0
+
+	if ratioWidth < ratioHeight {
+	    ratio = ratioWidth
+	} else {
+	    ratio = ratioHeight
+	}
+
+	resizedWidth := int32(float32(sys.gameWidth)*ratio)
+	resizedHeight := int32(float32(sys.gameHeight)*ratio)
+
+	// calculate an X offset for the resized width to center it to the window
+	if (resizedWidth < int32(winWidth)) {
+	    x = (int32(winWidth) - resizedWidth) / 2
+	}
+
+	return x, y, resizedWidth, resizedHeight
+}
+
 func (w *Window) GetClipboardString() string {
 	res, _ := sdl.GetClipboardText()
 	return res
