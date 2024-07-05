@@ -2047,9 +2047,9 @@ func (be BytecodeExp) run_ex(c *Char, i *int, oc *Char) {
 	case OC_ex_winperfect:
 		sys.bcStack.PushB(c.winPerfect())
 	case OC_ex_winspecial:
-		sys.bcStack.PushB(c.winType(WT_S))
+		sys.bcStack.PushB(c.winType(WT_Special))
 	case OC_ex_winhyper:
-		sys.bcStack.PushB(c.winType(WT_H))
+		sys.bcStack.PushB(c.winType(WT_Hyper))
 	case OC_ex_lose:
 		sys.bcStack.PushB(c.lose())
 	case OC_ex_loseko:
@@ -3284,8 +3284,8 @@ func (sc playSnd) Run(c *Char, _ []int32) bool {
 	}
 	crun := c
 	f, lw, lp, stopgh, stopcs := "", false, false, false, false
-	var g, n, ch, vo, pri int32 = -1, 0, -1, 100, 0
-	var loopstart, loopend, startposition, lc = 0, 0, 0, 0
+	var g, n, ch, vo, pri, lc int32 = -1, 0, -1, 100, 0, 0
+	var loopstart, loopend, startposition = 0, 0, 0
 	var p, fr float32 = 0, 1
 	x := &c.pos[0]
 	ls := c.localscl
@@ -3327,7 +3327,7 @@ func (sc playSnd) Run(c *Char, _ []int32) bool {
 		case playSnd_startposition:
 			startposition = int(exp[0].evalI64(c))
 		case playSnd_loopcount:
-			lc = int(exp[0].evalI(c))
+			lc = exp[0].evalI(c)
 		case playSnd_stopongethit:
 			stopgh = exp[0].evalB(c)
 		case playSnd_stoponchangestate:

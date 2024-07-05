@@ -232,6 +232,7 @@ type configSettings struct {
 	InputButtonAssist          bool
 	InputSOCDResolution        int32
 	IP                         map[string]string
+	KeepAspect                 bool
 	LifeMul                    float32
 	ListenPort                 string
 	LoseSimul                  bool
@@ -381,6 +382,7 @@ func setupConfig() configSettings {
 	sys.gameWidth = tmp.GameWidth
 	sys.gameHeight = tmp.GameHeight
 	sys.gameSpeed = tmp.GameFramerate / float32(tmp.Framerate)
+	sys.keepAspect = tmp.KeepAspect
 	sys.helperMax = tmp.MaxHelper
 	sys.inputButtonAssist = tmp.InputButtonAssist
 	sys.inputSOCDresolution = Clamp(tmp.InputSOCDResolution, 0, 4)
