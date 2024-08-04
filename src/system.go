@@ -39,6 +39,7 @@ var sys = System{
 	gameWidth:         320,
 	gameHeight:        240,
 	keepAspect:        true,
+	windowScaleMode:   true,
 	widthScale:        1,
 	heightScale:       1,
 	brightness:        256,
@@ -86,6 +87,7 @@ var sys = System{
 	pngFilter:            false,
 	clsnDarken:           true,
 	maxBgmVolume:         100,
+	pauseMasterVolume:    0,
 	stereoEffects:        true,
 	panningRange:         30,
 	windowCentered:       true,
@@ -108,6 +110,7 @@ type System struct {
 	gameWidth, gameHeight   int32
 	widthScale, heightScale float32
 	keepAspect              bool
+	windowScaleMode         bool
 	window                  *Window
 	gameEnd, frameSkip      bool
 	redrawWait              struct{ nextTime, lastDraw time.Time }
@@ -118,7 +121,7 @@ type System struct {
 	turnsRecoveryRate       float32
 	debugFont               *TextSprite
 	debugDraw               bool
-	debugRef                [2]int
+	debugRef                [2]int // player number, helper index
 	soundMixer              *beep.Mixer
 	bgm                     Bgm
 	soundChannels           *SoundChannels
@@ -370,6 +373,7 @@ type System struct {
 	brightnessOld     int32
 	clsnDarken        bool
 	maxBgmVolume      int
+	pauseMasterVolume int
 	stereoEffects     bool
 	panningRange      float32
 	windowCentered    bool
@@ -584,7 +588,22 @@ func (s *System) tickSound() {
 		}
 	}
 
-	s.bgm.SetPaused(s.nomusic || s.paused)
+	// Always pause if noMusic flag set or pause master volume is 0.
+	s.bgm.SetPaused(s.nomusic || (s.paused && s.pauseMasterVolume == 0))
+
+	// Set BGM volume if paused
+	if s.paused && s.bgm.volRestore == 0 {
+		s.bgm.volRestore = s.bgm.bgmVolume
+		s.bgm.bgmVolume = int(s.pauseMasterVolume * s.bgm.bgmVolume / 100.0)
+		s.bgm.UpdateVolume()
+		s.softenAllSound()
+	} else if !s.paused && s.bgm.volRestore > 0 {
+		// Restore all volume
+		s.bgm.bgmVolume = s.bgm.volRestore
+		s.bgm.volRestore = 0
+		s.bgm.UpdateVolume()
+		s.restoreAllVolume()
+	}
 
 	//if s.FLAC_FrameWait >= 0 {
 	//	if s.FLAC_FrameWait == 0 {
@@ -814,6 +833,9 @@ func (s *System) loadTime(start time.Time, str string, shell, console bool) {
 }
 func (s *System) clsnOverlap(clsn1 []float32, scl1, pos1 [2]float32, facing1 float32,
 	clsn2 []float32, scl2, pos2 [2]float32, facing2 float32) bool {
+	if clsn1 == nil || clsn2 == nil {
+		return false
+	}
 	if scl1[0] < 0 {
 		facing1 *= -1
 		scl1[0] *= -1
@@ -823,19 +845,19 @@ func (s *System) clsnOverlap(clsn1 []float32, scl1, pos1 [2]float32, facing1 flo
 		scl2[0] *= -1
 	}
 	for i1 := 0; i1+3 < len(clsn1); i1 += 4 {
-		l1, r1 := clsn1[i1], clsn1[i1+2]+1
+		l1, r1 := clsn1[i1], clsn1[i1+2]
 		if facing1 < 0 {
 			l1, r1 = -r1, -l1
 		}
 		for i2 := 0; i2+3 < len(clsn2); i2 += 4 {
-			l2, r2 := clsn2[i2], clsn2[i2+2]+1
+			l2, r2 := clsn2[i2], clsn2[i2+2]
 			if facing2 < 0 {
 				l2, r2 = -r2, -l2
 			}
-			if l1*scl1[0]+pos1[0] < r2*scl2[0]+pos2[0] &&
-				l2*scl2[0]+pos2[0] < r1*scl1[0]+pos1[0] &&
-				clsn1[i1+1]*scl1[1]+pos1[1] < (clsn2[i2+3]+1)*scl2[1]+pos2[1] &&
-				clsn2[i2+1]*scl2[1]+pos2[1] < (clsn1[i1+3]+1)*scl1[1]+pos1[1] {
+			if l1*scl1[0]+pos1[0] <= r2*scl2[0]+pos2[0] && // Left Clsn1 <= Right Clsn2
+				l2*scl2[0]+pos2[0] <= r1*scl1[0]+pos1[0] && // Left Clsn2 <= Right Clsn1
+				clsn1[i1+1]*scl1[1]+pos1[1] <= (clsn2[i2+3])*scl2[1]+pos2[1] && // Top Clsn1 <= Bottom Clsn2
+				clsn2[i2+1]*scl2[1]+pos2[1] <= (clsn1[i1+3])*scl1[1]+pos1[1] { // Top Clsn2 <= Bottom Clsn1
 				return true
 			}
 		}
@@ -860,6 +882,42 @@ func (s *System) stopAllSound() {
 	for _, p := range s.chars {
 		for _, c := range p {
 			c.soundChannels.SetSize(0)
+		}
+	}
+}
+func (s *System) softenAllSound() {
+	for _, p := range s.chars {
+		for _, c := range p {
+			for i := 0; i < int(c.soundChannels.count()); i++ {
+				// Temporarily store the volume so it can be recalled later.
+				if c.soundChannels.channels[i].sfx != nil && c.soundChannels.channels[i].ctrl != nil {
+					c.soundChannels.volResume[i] = c.soundChannels.channels[i].sfx.volume
+					c.soundChannels.channels[i].SetVolume(float32(c.gi().data.volume * int32(s.pauseMasterVolume) / 100))
+
+					// Pause if pause master volume is 0
+					if s.pauseMasterVolume == 0 {
+						c.soundChannels.channels[i].SetPaused(true)
+					}
+				}
+			}
+		}
+	}
+	// Don't pause motif sounds
+}
+func (s *System) restoreAllVolume() {
+	for _, p := range s.chars {
+		for _, c := range p {
+			for i := 0; i < int(c.soundChannels.count()); i++ {
+				// Restore the volume we had.
+				if c.soundChannels.channels[i].sfx != nil && c.soundChannels.channels[i].ctrl != nil {
+					c.soundChannels.channels[i].SetVolume(c.soundChannels.volResume[i])
+
+					// Unpause
+					if c.soundChannels.channels[i].ctrl.Paused {
+						c.soundChannels.channels[i].SetPaused(false)
+					}
+				}
+			}
 		}
 	}
 }
@@ -986,7 +1044,6 @@ func (s *System) nextRound() {
 				}
 			}
 			s.cgi[i].clearPCTime()
-			s.cgi[i].unhittable = 0
 		}
 	}
 	for _, p := range s.chars {
@@ -1121,11 +1178,11 @@ func (s *System) charUpdate() {
 		for i, pr := range s.projs {
 			for j, p := range pr {
 				if p.id >= 0 {
-					s.projs[i][j].clsn(i)
+					s.projs[i][j].tradeDetection(i)
 				}
 			}
 		}
-		s.charList.hitDetection()
+		s.charList.collisionDetection()
 		for i, pr := range s.projs {
 			for j, p := range pr {
 				if p.id != IErr {
@@ -1396,7 +1453,7 @@ func (s *System) action() {
 					}
 					for _, p := range s.chars {
 						if len(p) > 0 {
-							//default life recovery, used only if externalized Lua implementaion is disabled
+							// default life recovery, used only if externalized Lua implementation is disabled
 							if len(sys.commonLua) == 0 && s.waitdown >= 0 && s.time > 0 && p[0].win() &&
 								p[0].alive() && !s.matchOver() &&
 								(s.tmode[0] == TM_Turns || s.tmode[1] == TM_Turns) {
@@ -1483,7 +1540,7 @@ func (s *System) action() {
 		if s.superanim != nil {
 			s.superanim.Action()
 		}
-		s.charList.action(x)
+		s.charList.action()
 		s.nomusic = s.gsf(GSF_nomusic) && !sys.postMatchFlg
 	} else {
 		s.charUpdate()
@@ -1535,7 +1592,7 @@ func (s *System) action() {
 		}
 	}
 	if !s.cam.ZoomEnable {
-		// Pos X の誤差が出ないように精度を落とす
+		// Lower the precision to prevent errors in Pos X.
 		x = float32(math.Ceil(float64(x)*4-0.5) / 4)
 	}
 	s.cam.Update(scl, x, y)
@@ -1639,13 +1696,13 @@ func (s *System) draw(x, y, scl float32) {
 			}
 			s.stage.draw(false, bgx, bgy, scl)
 		}
-		s.bottomSprites.draw(x, y, scl*s.cam.BaseScale())
 		if !s.gsf(GSF_globalnoshadow) {
 			if s.stage.reflection > 0 {
 				s.shadows.drawReflection(x, y, scl*s.cam.BaseScale())
 			}
 			s.shadows.draw(x, y, scl*s.cam.BaseScale())
 		}
+		s.bottomSprites.draw(x, y, scl*s.cam.BaseScale())
 		//off := s.envShake.getOffset()
 		//yofs, yofs2 := float32(s.gameHeight), float32(0)
 		//if scl > 1 && s.cam.verticalfollow > 0 {
@@ -1731,6 +1788,7 @@ func (s *System) drawTop() {
 		fade(rect, s.lifebar.ro.shutter_col, 255)
 	}
 	s.brightness = s.brightnessOld
+	// Draw Clsn boxes
 	if s.clsnDraw {
 		s.clsnSpr.Pal[0] = 0xff0000ff
 		s.drawc1hit.draw(0x3feff)
@@ -1754,7 +1812,7 @@ func (s *System) drawTop() {
 		s.drawch.draw(0x3feff)
 	}
 }
-func (s *System) drawDebug() {
+func (s *System) drawDebugText() {
 	put := func(x, y *float32, txt string) {
 		for txt != "" {
 			w, drawTxt := int32(0), ""
@@ -1775,7 +1833,7 @@ func (s *System) drawDebug() {
 		}
 	}
 	if s.debugDraw {
-		//Player Info
+		// Player Info on top of screen
 		x := (320-float32(s.gameWidth))/2 + 1
 		y := 240 - float32(s.gameHeight)
 		if s.statusLFunc != nil {
@@ -1794,13 +1852,15 @@ func (s *System) drawDebug() {
 				}
 			}
 		}
-		//Console
+		// Console
 		y = MaxF(y, 48+240-float32(s.gameHeight))
 		s.debugFont.SetColor(255, 255, 255)
 		for _, s := range s.consoleText {
 			put(&x, &y, s)
 		}
-		//Data
+		// Data
+		y = float32(s.gameHeight) - float32(s.debugFont.fnt.Size[1])*sys.debugFont.yscl/s.heightScale*
+			(float32(len(s.listLFunc))+float32(s.clipboardRows)) - 1*s.heightScale
 		pn := s.debugRef[0]
 		hn := s.debugRef[1]
 		if pn >= len(s.chars) || hn >= len(s.chars[pn]) {
@@ -1808,8 +1868,6 @@ func (s *System) drawDebug() {
 			s.debugRef[1] = 0
 		}
 		s.debugWC = s.chars[s.debugRef[0]][s.debugRef[1]]
-		y = float32(s.gameHeight) - float32(s.debugFont.fnt.Size[1])*sys.debugFont.yscl/s.heightScale*
-			(float32(len(s.listLFunc))+float32(s.clipboardRows)) - 1*s.heightScale
 		for i, f := range s.listLFunc {
 			if f != nil {
 				if i == 1 {
@@ -1835,21 +1893,22 @@ func (s *System) drawDebug() {
 				s.luaLState.SetTop(top)
 			}
 		}
-		//Clipboard
+		// Clipboard
 		s.debugFont.SetColor(255, 255, 255)
 		for _, s := range s.debugWC.clipboardText {
 			put(&x, &y, s)
 		}
 	}
-	//Clsn
-	if s.clsnDraw {
-		for _, t := range s.clsnText {
-			s.debugFont.SetColor(t.r, t.g, t.b)
-			s.debugFont.fnt.Print(t.text, t.x, t.y, s.debugFont.xscl/s.widthScale,
-				s.debugFont.yscl/s.heightScale, 0, 0, &s.scrrect,
-				s.debugFont.palfx, s.debugFont.frgba)
-		}
+	// Draw Clsn text
+	// Unlike Mugen, this is drawn separately from the Clsn boxes themselves, making debug more flexible
+	//if s.clsnDraw {
+	for _, t := range s.clsnText {
+		s.debugFont.SetColor(t.r, t.g, t.b)
+		s.debugFont.fnt.Print(t.text, t.x, t.y, s.debugFont.xscl/s.widthScale,
+			s.debugFont.yscl/s.heightScale, 0, 0, &s.scrrect,
+			s.debugFont.palfx, s.debugFont.frgba)
 	}
+	//}
 }
 
 // Starts and runs gameplay
@@ -1873,7 +1932,7 @@ func (s *System) fight() (reload bool) {
 		s.wincnt.update()
 	}()
 	var oldStageVars Stage
-	oldStageVars.copyStageVars(s.stage)
+	oldStageVars.copyStageVars(s.stage) // NOTE: This save and restore of stage variables makes ModifyStageVar not persist. Maybe that should not be the case?
 	var life, lifeMax, power, powerMax [len(s.chars)]int32
 	var guardPoints, guardPointsMax, dizzyPoints, dizzyPointsMax, redLife [len(s.chars)]int32
 	var teamside [len(s.chars)]int
@@ -2055,6 +2114,7 @@ func (s *System) fight() (reload bool) {
 						p[0].power = 0
 					}
 				}
+				p[0].power = Clamp(p[0].power, 0, p[0].powerMax) // Because of Turns mode
 				p[0].dialogue = []string{}
 				p[0].mapArray = make(map[string]float32)
 				for k, v := range p[0].mapDefault {
@@ -2082,7 +2142,7 @@ func (s *System) fight() (reload bool) {
 		}
 	}
 
-	//default bgm playback, used only in Quick VS or if externalized Lua implementaion is disabled
+	// default bgm playback, used only in Quick VS or if externalized Lua implementaion is disabled
 	if s.round == 1 && (s.gameMode == "" || len(sys.commonLua) == 0) {
 		s.bgm.Open(s.stage.bgmusic, 1, int(s.stage.bgmvolume), int(s.stage.bgmloopstart), int(s.stage.bgmloopend), int(s.stage.bgmstartposition), s.stage.bgmfreqmul)
 	}
@@ -2295,8 +2355,8 @@ func (s *System) fight() (reload bool) {
 			}
 		}
 		// Render debug elements
-		if !s.frameSkip {
-			s.drawDebug()
+		if !s.frameSkip && s.debugDraw {
+			s.drawDebugText()
 		}
 		// Break if finished
 		if fin && (!s.postMatchFlg || len(sys.commonLua) == 0) {
@@ -2651,7 +2711,7 @@ func (s *Select) addChar(def string) {
 		listSpr[[...]int16{k[0], k[1]}] = true
 	}
 	sff := newSff()
-	//read size values
+	// read size values
 	LoadFile(&cns, []string{def, "", "data/"}, func(filename string) error {
 		str, err := LoadText(filename)
 		if err != nil {
@@ -2673,7 +2733,7 @@ func (s *Select) addChar(def string) {
 		}
 		return nil
 	})
-	//preload animations
+	// preload animations
 	LoadFile(&anim, []string{def, "", "data/"}, func(filename string) error {
 		str, err := LoadText(filename)
 		if err != nil {
@@ -2691,7 +2751,7 @@ func (s *Select) addChar(def string) {
 		}
 		return nil
 	})
-	//preload portion of sff file
+	// preload portion of sff file
 	fp := fmt.Sprintf("%v_preload.sff", strings.TrimSuffix(def, filepath.Ext(def)))
 	if fp = FileExist(fp); len(fp) == 0 {
 		fp = sprite
@@ -2720,14 +2780,14 @@ func (s *Select) addChar(def string) {
 			sc.anims.addSprite(sc.sff, k[0], k[1])
 		}
 	}
-	//read movelist
+	// read movelist
 	if len(movelist) > 0 {
 		LoadFile(&movelist, []string{def, "", "data/"}, func(file string) error {
 			sc.movelist, _ = LoadText(file)
 			return nil
 		})
 	}
-	//preload fonts
+	// preload fonts
 	for i, f := range fnt {
 		if len(f[0]) > 0 {
 			LoadFile(&f[0], []string{def, sys.motifDir, "", "data/", "font/"}, func(filename string) error {
@@ -2814,7 +2874,7 @@ func (s *Select) AddStage(def string) error {
 			listSpr[[...]int16{k[0], k[1]}] = true
 		}
 		sff := newSff()
-		//preload animations
+		// preload animations
 		i = 0
 		at := ReadAnimationTable(sff, &sff.palList, lines, &i)
 		for _, v := range s.stageAnimPreload {
@@ -2825,7 +2885,7 @@ func (s *Select) AddStage(def string) error {
 				}
 			}
 		}
-		//preload portion of sff file
+		// preload portion of sff file
 		LoadFile(&spr, []string{def, "", "data/"}, func(file string) error {
 			var err error
 			ss.sff, _, err = preloadSff(file, false, listSpr)

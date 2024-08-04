@@ -172,6 +172,11 @@ func newCompiler() *Compiler {
 		"gethitvarset":         c.getHitVarSet,
 		"modifysnd":            c.modifySnd,
 		"modifybgm":            c.modifyBgm,
+		"groundleveloffset":    c.groundLevelOffset,
+		"targetadd":            c.targetAdd,
+		"modifyhitdef":         c.modifyHitDef,
+		"modifyreversaldef":    c.modifyReversalDef,
+		"modifyprojectile":     c.modifyProjectile,
 	}
 	return c
 }
@@ -1881,8 +1886,8 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 				out.append(OC_ex_gethitvar_slidetime)
 			case "ctrltime":
 				out.append(OC_ex_gethitvar_ctrltime)
-			case "recovertime":
-				out.append(OC_ex_gethitvar_recovertime)
+			case "recovertime", "down.recovertime": // Added second term for consistency
+				out.append(OC_ex_gethitvar_down_recovertime)
 			case "xoff":
 				out.append(OC_ex_gethitvar_xoff)
 			case "yoff":
@@ -1975,6 +1980,8 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 				out.append(OC_ex_gethitvar_airguard_velocity_y)
 			case "frame":
 				out.append(OC_ex_gethitvar_frame)
+			case "down.recover":
+				out.append(OC_ex_gethitvar_down_recover)
 			default:
 				return bvNone(), Error("Invalid data: " + c.token)
 			}
@@ -1983,6 +1990,8 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 		if err := c.checkClosingBracket(); err != nil {
 			return bvNone(), err
 		}
+	case "groundlevel":
+		out.append(OC_ex2_, OC_ex2_groundlevel)
 	case "guardcount":
 		out.append(OC_ex_, OC_ex_guardcount)
 	case "helperindexexist":
@@ -2422,10 +2431,18 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 			opc = OC_const_stagevar_camera_zoomin
 		case "camera.zoomindelay":
 			opc = OC_const_stagevar_camera_zoomindelay
+		case "camera.zoominspeed":
+			opc = OC_const_stagevar_camera_zoominspeed
+		case "camera.zoomoutspeed":
+			opc = OC_const_stagevar_camera_zoomoutspeed
+		case "camera.yscrollspeed":
+			opc = OC_const_stagevar_camera_yscrollspeed
 		case "camera.ytension.enable":
 			opc = OC_const_stagevar_camera_ytension_enable
 		case "camera.autocenter":
 			opc = OC_const_stagevar_camera_autocenter
+		case "camera.lowestcap":
+			opc = OC_const_stagevar_camera_lowestcap
 		case "playerinfo.leftbound":
 			opc = OC_const_stagevar_playerinfo_leftbound
 		case "playerinfo.rightbound":
@@ -3193,6 +3210,7 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 		}
 		out.append(OC_ex_)
 		switch c.token {
+		// Mugen char flags
 		case "nostandguard":
 			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_nostandguard))
 		case "nocrouchguard":
@@ -3211,6 +3229,30 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_noautoturn))
 		case "nowalk":
 			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_nowalk))
+		case "noko":
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_noko))
+		// Mugen global flags
+		case "globalnoshadow":
+			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_globalnoshadow))
+		case "intro":
+			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_intro))
+		case "roundnotover":
+			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_roundnotover))
+		case "nobardisplay":
+			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_nobardisplay))
+		case "nobg":
+			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_nobg))
+		case "nofg":
+			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_nofg))
+		case "nokoslow":
+			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_nokoslow))
+		case "nokosnd":
+			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_nokosnd))
+		case "nomusic":
+			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_nomusic))
+		case "timerfreeze":
+			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_timerfreeze))
+		// Ikemen char flags
 		case "nobrake":
 			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_nobrake))
 		case "nocrouch":
@@ -3257,8 +3299,6 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_noredlifedamage))
 		case "nomakedust":
 			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_nomakedust))
-		case "noko":
-			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_noko))
 		case "noguardko":
 			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_noguardko))
 		case "nokovelocity":
@@ -3271,28 +3311,11 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_ignoreclsn2push))
 		case "immovable":
 			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_immovable))
-		case "intro":
-			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_intro))
-		case "roundnotover":
-			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_roundnotover))
-		case "nomusic":
-			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_nomusic))
-		case "nobardisplay":
-			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_nobardisplay))
-		case "nobg":
-			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_nobg))
-		case "nofg":
-			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_nofg))
-		case "globalnoshadow":
-			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_globalnoshadow))
-		case "timerfreeze":
-			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_timerfreeze))
-		case "nokosnd":
-			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_nokosnd))
-		case "nokoslow":
-			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_nokoslow))
+		case "cornerpriority":
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_cornerpriority))
+		// Ikemen global flags
 		case "globalnoko":
-			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_noko))
+			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_globalnoko))
 		case "roundnotskip":
 			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_roundnotskip))
 		case "roundfreeze":
@@ -3411,7 +3434,7 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 		out.append(OC_ex_, OC_ex_selfstatenoexist)
 	case "sprpriority":
 		out.append(OC_ex_, OC_ex_sprpriority)
-	case "stagebackedgedist", "stagebackedge": //Latter is deprecated
+	case "stagebackedgedist", "stagebackedge": // Latter is deprecated
 		out.append(OC_ex_, OC_ex_stagebackedgedist)
 	case "stageconst":
 		if err := c.checkOpeningBracket(in); err != nil {
@@ -3425,7 +3448,7 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 			return bvNone(), Error("Missing ')' before " + c.token)
 		}
 		*in = (*in)[1:]
-	case "stagefrontedgedist", "stagefrontedge": //Latter is deprecated
+	case "stagefrontedgedist", "stagefrontedge": // Latter is deprecated
 		out.append(OC_ex_, OC_ex_stagefrontedgedist)
 	case "stagetime":
 		out.append(OC_ex_, OC_ex_stagetime)
@@ -4142,14 +4165,15 @@ func (c *Compiler) stateSec(is IniSection, f func() error) error {
 	}
 	return nil
 }
-func (c *Compiler) stateParam(is IniSection, name string,
-	f func(string) error) error {
+func (c *Compiler) stateParam(is IniSection, name string, mandatory bool, f func(string) error) error {
 	data, ok := is[name]
 	if ok {
 		if err := f(data); err != nil {
 			return Error(data + "\n" + name + ": " + err.Error())
 		}
 		delete(is, name)
+	} else if mandatory {
+		return Error(name + " not specified")
 	}
 	return nil
 }
@@ -4206,21 +4230,21 @@ func (c *Compiler) scAdd(sc *StateControllerBase, id byte,
 }
 func (c *Compiler) paramValue(is IniSection, sc *StateControllerBase,
 	paramname string, id byte, vt ValueType, numArg int, mandatory bool) error {
-	f := false
-	if err := c.stateParam(is, paramname, func(data string) error {
-		f = true
+	found := false
+	if err := c.stateParam(is, paramname, false, func(data string) error {
+		found = true
 		return c.scAdd(sc, id, data, vt, numArg)
 	}); err != nil {
 		return err
 	}
-	if mandatory && !f {
+	if mandatory && !found {
 		return Error(paramname + " not specified")
 	}
 	return nil
 }
 func (c *Compiler) paramPostype(is IniSection, sc *StateControllerBase,
 	id byte) error {
-	return c.stateParam(is, "postype", func(data string) error {
+	return c.stateParam(is, "postype", false, func(data string) error {
 		if len(data) == 0 {
 			return Error("Value not specified")
 		}
@@ -4252,7 +4276,7 @@ func (c *Compiler) paramPostype(is IniSection, sc *StateControllerBase,
 
 func (c *Compiler) paramSpace(is IniSection, sc *StateControllerBase,
 	id byte) error {
-	return c.stateParam(is, "space", func(data string) error {
+	return c.stateParam(is, "space", false, func(data string) error {
 		if len(data) <= 1 {
 			return Error("Value not specified")
 		}
@@ -4271,7 +4295,7 @@ func (c *Compiler) paramSpace(is IniSection, sc *StateControllerBase,
 
 func (c *Compiler) paramProjection(is IniSection, sc *StateControllerBase,
 	id byte) error {
-	return c.stateParam(is, "projection", func(data string) error {
+	return c.stateParam(is, "projection", false, func(data string) error {
 		if len(data) <= 1 {
 			return Error("Value not specified")
 		}
@@ -4295,7 +4319,7 @@ func (c *Compiler) paramProjection(is IniSection, sc *StateControllerBase,
 
 func (c *Compiler) paramSaveData(is IniSection, sc *StateControllerBase,
 	id byte) error {
-	return c.stateParam(is, "savedata", func(data string) error {
+	return c.stateParam(is, "savedata", false, func(data string) error {
 		if len(data) <= 1 {
 			return Error("Value not specified")
 		}
@@ -4317,7 +4341,7 @@ func (c *Compiler) paramSaveData(is IniSection, sc *StateControllerBase,
 
 func (c *Compiler) paramTrans(is IniSection, sc *StateControllerBase,
 	prefix string, id byte, afterImage bool) error {
-	return c.stateParam(is, prefix+"trans", func(data string) error {
+	return c.stateParam(is, prefix+"trans", false, func(data string) error {
 		if len(data) == 0 {
 			return Error("Value not specified")
 		}
@@ -4357,7 +4381,7 @@ func (c *Compiler) paramTrans(is IniSection, sc *StateControllerBase,
 		var exp []BytecodeExp
 		b := false
 		if !afterImage || sys.cgi[c.playerNo].mugenver[0] == 1 {
-			if err := c.stateParam(is, prefix+"alpha", func(data string) error {
+			if err := c.stateParam(is, prefix+"alpha", false, func(data string) error {
 				b = true
 				bes, err := c.exprs(data, VT_Int, 2)
 				if err != nil {
@@ -4366,10 +4390,10 @@ func (c *Compiler) paramTrans(is IniSection, sc *StateControllerBase,
 				// TODO: Based on my tests add1 doesn't need special alpha[1] handling
 				// Remove unused code if there won't be regression.
 				//if tt == TT_add1 {
-				//	exp = make([]BytecodeExp, 4) // 長さ4にする
+				//	exp = make([]BytecodeExp, 4)
 				//} else if tt == TT_add || tt == TT_alpha {
 				if tt == TT_add || tt == TT_alpha || tt == TT_add1 {
-					exp = make([]BytecodeExp, 3) // 長さ3にする
+					exp = make([]BytecodeExp, 3)
 				} else {
 					exp = make([]BytecodeExp, 2)
 				}
@@ -4437,7 +4461,7 @@ func (c *Compiler) paramTrans(is IniSection, sc *StateControllerBase,
 func (c *Compiler) stateDef(is IniSection, sbc *StateBytecode) error {
 	return c.stateSec(is, func() error {
 		sc := newStateControllerBase()
-		if err := c.stateParam(is, "type", func(data string) error {
+		if err := c.stateParam(is, "type", false, func(data string) error {
 			if len(data) == 0 {
 				return Error("Value not specified")
 			}
@@ -4459,7 +4483,7 @@ func (c *Compiler) stateDef(is IniSection, sbc *StateBytecode) error {
 		}); err != nil {
 			return err
 		}
-		if err := c.stateParam(is, "movetype", func(data string) error {
+		if err := c.stateParam(is, "movetype", false, func(data string) error {
 			if len(data) == 0 {
 				return Error("Value not specified")
 			}
@@ -4479,7 +4503,7 @@ func (c *Compiler) stateDef(is IniSection, sbc *StateBytecode) error {
 		}); err != nil {
 			return err
 		}
-		if err := c.stateParam(is, "physics", func(data string) error {
+		if err := c.stateParam(is, "physics", false, func(data string) error {
 			if len(data) == 0 {
 				return Error("Value not specified")
 			}
@@ -4502,7 +4526,7 @@ func (c *Compiler) stateDef(is IniSection, sbc *StateBytecode) error {
 			return err
 		}
 		b := false
-		if err := c.stateParam(is, "hitcountpersist", func(data string) error {
+		if err := c.stateParam(is, "hitcountpersist", false, func(data string) error {
 			b = true
 			return c.scAdd(sc, stateDef_hitcountpersist, data, VT_Bool, 1)
 		}); err != nil {
@@ -4512,7 +4536,7 @@ func (c *Compiler) stateDef(is IniSection, sbc *StateBytecode) error {
 			sc.add(stateDef_hitcountpersist, sc.iToExp(0))
 		}
 		b = false
-		if err := c.stateParam(is, "movehitpersist", func(data string) error {
+		if err := c.stateParam(is, "movehitpersist", false, func(data string) error {
 			b = true
 			return c.scAdd(sc, stateDef_movehitpersist, data, VT_Bool, 1)
 		}); err != nil {
@@ -4522,7 +4546,7 @@ func (c *Compiler) stateDef(is IniSection, sbc *StateBytecode) error {
 			sc.add(stateDef_movehitpersist, sc.iToExp(0))
 		}
 		b = false
-		if err := c.stateParam(is, "hitdefpersist", func(data string) error {
+		if err := c.stateParam(is, "hitdefpersist", false, func(data string) error {
 			b = true
 			return c.scAdd(sc, stateDef_hitdefpersist, data, VT_Bool, 1)
 		}); err != nil {
@@ -4539,7 +4563,7 @@ func (c *Compiler) stateDef(is IniSection, sbc *StateBytecode) error {
 			stateDef_facep2, VT_Bool, 1, false); err != nil {
 			return err
 		}
-		if err := c.stateParam(is, "juggle", func(data string) error {
+		if err := c.stateParam(is, "juggle", false, func(data string) error {
 			return c.scAdd(sc, stateDef_juggle, data, VT_Int, 1)
 		}); err != nil {
 			return err
@@ -4548,7 +4572,7 @@ func (c *Compiler) stateDef(is IniSection, sbc *StateBytecode) error {
 			stateDef_velset, VT_Float, 3, false); err != nil {
 			return err
 		}
-		if err := c.stateParam(is, "anim", func(data string) error {
+		if err := c.stateParam(is, "anim", false, func(data string) error {
 			prefix := c.getDataPrefix(&data, false)
 			return c.scAdd(sc, stateDef_anim, data, VT_Int, 1,
 				sc.beToExp(BytecodeExp(prefix))...)
@@ -5664,16 +5688,16 @@ func (c *Compiler) stateBlock(line *string, bl *StateBlock, root bool,
 			continue
 		default:
 			scf, ok := c.scmap[c.token]
-			//helperはステコンとリダイレクトの両方で使う名称なのでチェックする
+			// Check the usage of the name 'helper' since it is used in both the State Controller and Redirect
 			if c.token == "helper" {
-				//peek ahead to see if this is a redirect
+				// peek ahead to see if this is a redirect
 				c.scan(line)
 				if len(c.token) > 0 {
 					if c.token[0] == ',' || c.token[0] == '(' {
 						ok = false
 					}
 				}
-				//reset things to "undo" the peek ahead
+				// reset things to "undo" the peek ahead
 				*line = (c.token + (*line))
 				c.token = "helper"
 			}

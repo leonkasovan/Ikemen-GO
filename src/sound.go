@@ -156,6 +156,7 @@ func (b *StreamLooper) Seek(p int) error {
 type Bgm struct {
 	filename   string
 	bgmVolume  int
+	volRestore int
 	loop       int
 	streamer   beep.StreamSeekCloser
 	ctrl       *beep.Ctrl
@@ -188,7 +189,7 @@ func (bgm *Bgm) Open(filename string, loop, bgmVolume, bgmLoopStart, bgmLoopEnd,
 
 	f, err := os.Open(bgm.filename)
 	if err != nil {
-		sys.bgm = *newBgm()
+		// sys.bgm = *newBgm() // removing this gets pause step playsnd to work correctly 100% of the time
 		sys.errLog.Printf("Failed to open bgm: %v", err)
 		return
 	}
@@ -564,6 +565,14 @@ func (s *SoundChannel) Play(sound *Sound, loop int32, freqmul float32, loopStart
 func (s *SoundChannel) IsPlaying() bool {
 	return s.sound != nil
 }
+func (s *SoundChannel) SetPaused(pause bool) {
+	if s.ctrl == nil || s.ctrl.Paused == pause {
+		return
+	}
+	speaker.Lock()
+	s.ctrl.Paused = pause
+	speaker.Unlock()
+}
 func (s *SoundChannel) Stop() {
 	if s.ctrl != nil {
 		speaker.Lock()
@@ -635,7 +644,8 @@ func (s *SoundChannel) SetLoopPoints(loopstart, loopend int) {
 // SoundChannels (collection of prioritised sound channels)
 
 type SoundChannels struct {
-	channels []SoundChannel
+	channels  []SoundChannel
+	volResume []float32
 }
 
 func newSoundChannels(size int32) *SoundChannels {
@@ -646,12 +656,15 @@ func newSoundChannels(size int32) *SoundChannels {
 func (s *SoundChannels) SetSize(size int32) {
 	if size > s.count() {
 		c := make([]SoundChannel, size-s.count())
+		v := make([]float32, size-s.count())
 		s.channels = append(s.channels, c...)
+		s.volResume = append(s.volResume, v...)
 	} else if size < s.count() {
 		for i := s.count() - 1; i >= size; i-- {
 			s.channels[i].Stop()
 		}
 		s.channels = s.channels[:size]
+		s.volResume = s.volResume[:size]
 	}
 }
 func (s *SoundChannels) count() int32 {
