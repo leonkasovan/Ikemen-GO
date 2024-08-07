@@ -1,3 +1,8 @@
+```
+git clone -b SDL2 https://github.com/leonkasovan/Ikemen-GO.git
+make steamdeck
+```
+
 https://mugenguild.com/forum/  
 
 Character  
