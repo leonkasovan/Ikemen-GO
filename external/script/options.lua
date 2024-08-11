@@ -150,6 +150,8 @@ options.t_itemname = {
 			config.GameHeight = 480
 			config.GameFramerate = 60
 			--config.IP = {}
+			config.KeepAspect = true
+			config.Language = "en"
 			config.LifeMul = 100
 			config.ListenPort = "7500"
 			config.LoseSimul = true
@@ -162,7 +164,7 @@ options.t_itemname = {
 			config.MaxPlayerProjectile = 256
 			--config.Modules = {}
 			--config.Motif = "data/system.def"
-			config.MSAA = false
+			config.MSAA = 0
 			config.NumSimul = {2, 4}
 			config.NumTag = {2, 4}
 			config.NumTurns = {2, 4}
@@ -194,6 +196,7 @@ options.t_itemname = {
 			config.VolumeMaster = 80
 			config.VolumeSfx = 80
 			config.VRetrace = 1
+			config.WindowScaleMode = true
 			--config.WavChannels = 32
 			--config.WindowCentered = true
 			--config.WindowIcon = {"external/icons/IkemenCylia.png"}
@@ -237,6 +240,8 @@ options.t_itemname = {
 			--setZoomSpeed(config.ZoomSpeed)
 			toggleFullscreen(config.Fullscreen)
 			toggleVsync(config.VRetrace)
+			toggleWindowScaleMode(config.WindowScaleMode)
+			toggleKeepAspect(config.KeepAspect)
 			options.modified = true
 			options.needReload = true
 		end
@@ -269,6 +274,45 @@ options.t_itemname = {
 			config.RoundTime = config.RoundTime - 1
 			t.items[item].vardisplay = options.f_definedDisplay(config.RoundTime, {[-1] = motif.option_info.menu_valuename_none}, config.RoundTime)
 			options.modified = true
+		end
+		return true
+	end,
+	--Language Setting
+	['language'] = function(t, item, cursorPosY, moveTxt)
+		if main.f_input(main.t_players, {'$F'}) then
+			languageCounter = 0
+			for x, c in ipairs(motif.languages.languages) do
+				if c == config.Language then
+					currentLanguage = x
+				end
+				languageCounter = languageCounter + 1
+			end
+			if languageCounter == currentLanguage then
+				config.Language = motif.languages.languages[1]
+			else
+				config.Language = motif.languages.languages[currentLanguage + 1]
+			end
+			options.modified = true
+			options.needReload = true
+			loadstring("sfs = " .. "motif.languages." .. config.Language)()
+			t.items[item].vardisplay = sfs or config.Language
+		elseif main.f_input(main.t_players, {'$B'}) then
+			languageCounter = 0
+			for x, c in ipairs(motif.languages.languages) do
+				if c == config.Language then
+					currentLanguage = x
+				end
+				languageCounter = languageCounter + 1
+			end
+			if currentLanguage == 1 then
+				config.Language = motif.languages.languages[languageCounter]
+			else
+				config.Language = motif.languages.languages[currentLanguage - 1]
+			end
+			options.modified = true
+			options.needReload = true
+			loadstring("sfs = " .. "motif.languages." .. config.Language)()
+			t.items[item].vardisplay = sfs or config.Language
 		end
 		return true
 	end,
@@ -840,16 +884,56 @@ options.t_itemname = {
 	end,
 	--MSAA
 	['msaa'] = function(t, item, cursorPosY, moveTxt)
-		if main.f_input(main.t_players, {'$F', '$B', 'pal', 's'}) then
+		if main.f_input(main.t_players, {'$F'}) and config.MSAA < 16 then
 			sndPlay(motif.files.snd_data, motif.option_info.cursor_move_snd[1], motif.option_info.cursor_move_snd[2])
-			if config.MSAA then
-				config.MSAA = false
+			if config.MSAA == 0 then
+				config.MSAA = 2
 			else
-				config.MSAA = true
+				config.MSAA = config.MSAA * 2
 			end
-			t.items[item].vardisplay = options.f_boolDisplay(config.MSAA, motif.option_info.menu_valuename_enabled, motif.option_info.menu_valuename_disabled)
+			t.items[item].vardisplay = config.MSAA .. 'x'
 			options.modified = true
 			options.needReload = true
+		elseif main.f_input(main.t_players, {'$B'}) and config.MSAA > 1 then
+			sndPlay(motif.files.snd_data, motif.option_info.cursor_move_snd[1], motif.option_info.cursor_move_snd[2])
+			if config.MSAA == 2 then
+				config.MSAA = 0
+			else
+				config.MSAA = config.MSAA / 2
+			end
+			t.items[item].vardisplay = options.f_definedDisplay(config.MSAA, {[0] = motif.option_info.menu_valuename_disabled}, config.MSAA .. 'x')
+			options.modified = true
+			options.needReload = true
+		end
+		return true
+	end,
+	--Window scaling mode
+	['windowscalemode'] = function(t, item, cursorPosY, moveTxt)
+		if main.f_input(main.t_players, {'$F', '$B', 'pal', 's'}) then
+			sndPlay(motif.files.snd_data, motif.option_info.cursor_move_snd[1], motif.option_info.cursor_move_snd[2])
+			if config.WindowScaleMode then
+				config.WindowScaleMode = false
+			else
+				config.WindowScaleMode = true
+			end
+			toggleWindowScaleMode(config.WindowScaleMode)
+			t.items[item].vardisplay = options.f_boolDisplay(config.WindowScaleMode, motif.option_info.menu_valuename_enabled, motif.option_info.menu_valuename_disabled)
+			options.modified = true
+		end
+		return true
+	end,
+	--Keep Aspect Ratio
+	['keepaspect'] = function(t, item, cursorPosY, moveTxt)
+		if main.f_input(main.t_players, {'$F', '$B', 'pal', 's'}) then
+			sndPlay(motif.files.snd_data, motif.option_info.cursor_move_snd[1], motif.option_info.cursor_move_snd[2])
+			if config.KeepAspect then
+				config.KeepAspect = false
+			else
+				config.KeepAspect = true
+			end
+			toggleKeepAspect(config.KeepAspect)
+			t.items[item].vardisplay = options.f_boolDisplay(config.KeepAspect, motif.option_info.menu_valuename_enabled, motif.option_info.menu_valuename_disabled)
+			options.modified = true
 		end
 		return true
 	end,
@@ -1313,6 +1397,13 @@ options.t_vardisplay = {
 	['helpermax'] = function()
 		return config.MaxHelper
 	end,
+	['keepaspect'] = function()
+		return options.f_boolDisplay(config.KeepAspect, motif.option_info.menu_valuename_enabled, motif.option_info.menu_valuename_disabled)
+	end,
+	['language'] = function()
+		loadstring("sfs = " .. "motif.languages." .. config.Language)()
+		return sfs or config.Language
+	end,
 	['lifemul'] = function()
 		return config.LifeMul .. '%'
 	end,
@@ -1347,7 +1438,7 @@ options.t_vardisplay = {
 		return config.NumTurns[1]
 	end,
 	['msaa'] = function()
-		return options.f_boolDisplay(config.MSAA, motif.option_info.menu_valuename_enabled, motif.option_info.menu_valuename_disabled)
+		return options.f_definedDisplay(config.MSAA, {[0] = motif.option_info.menu_valuename_disabled}, config.MSAA .. 'x')
 	end,
 	['panningrange'] = function()
 		return config.PanningRange .. '%'
@@ -1444,6 +1535,9 @@ options.t_vardisplay = {
 	end,
 	['vretrace'] = function()
 		return options.f_definedDisplay(config.VRetrace, {[1] = motif.option_info.menu_valuename_enabled}, motif.option_info.menu_valuename_disabled)
+	end,
+	['windowscalemode'] = function()
+		return options.f_boolDisplay(config.WindowScaleMode, motif.option_info.menu_valuename_enabled, motif.option_info.menu_valuename_disabled)
 	end,
 }
 

@@ -234,6 +234,7 @@ type configSettings struct {
 	IP                         map[string]string
 	KeepAspect                 bool
 	WindowScaleMode            bool
+	Language                   string
 	LifeMul                    float32
 	ListenPort                 string
 	LoseSimul                  bool
@@ -246,7 +247,7 @@ type configSettings struct {
 	MaxPlayerProjectile        int
 	Modules                    []string
 	Motif                      string
-	MSAA                       bool
+	MSAA                       int32
 	NumSimul                   [2]int
 	NumTag                     [2]int
 	NumTurns                   [2]int
@@ -390,12 +391,16 @@ func setupConfig() configSettings {
 	sys.helperMax = tmp.MaxHelper
 	sys.inputButtonAssist = tmp.InputButtonAssist
 	sys.inputSOCDresolution = Clamp(tmp.InputSOCDResolution, 0, 4)
+	sys.language = tmp.Language
 	sys.lifeMul = tmp.LifeMul / 100
 	sys.lifeShare = [...]bool{tmp.TeamLifeShare, tmp.TeamLifeShare}
 	sys.listenPort = tmp.ListenPort
 	sys.loseSimul = tmp.LoseSimul
 	sys.loseTag = tmp.LoseTag
 	sys.masterVolume = tmp.VolumeMaster
+	if tmp.MSAA <= -1 {
+		tmp.MSAA = 0
+	}
 	sys.multisampleAntialiasing = tmp.MSAA
 	sys.pauseMasterVolume = tmp.PauseMasterVolume
 	sys.panningRange = tmp.PanningRange
