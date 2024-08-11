@@ -9,6 +9,7 @@ import (
 	"image"
 	"image/draw"
 	_ "image/jpeg"
+	"log"
 	"math"
 	"os"
 	"regexp"
@@ -770,8 +771,23 @@ func newStage(def string) *Stage {
 	return s
 }
 func loadStage(def string, main bool) (*Stage, error) {
+	var str, zipDef, zipFileName string
+	var err error
+	fmt.Printf("[DEBUG][stage.go] loadStage: def=%v main=%v\n", def, main)
+	if strings.Index(def, ".zip") == -1 {
+		zipFileName = ""
+		zipDef = ""
+	} else {
+		lines := SplitAndTrim(def, "|")
+		zipFileName = lines[0]
+		zipDef = lines[1]
+	}
 	s := newStage(def)
-	str, err := LoadText(def)
+	if zipFileName == "" {
+		str, err = LoadText(def)
+	} else {
+		str, err = LoadTextFromZip(zipFileName, zipDef)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -1018,6 +1034,18 @@ func loadStage(def string, main bool) (*Stage, error) {
 	if sectionExists {
 		sectionExists = false
 		s.bgmusic = sec[0]["bgmusic"]
+		if zipFileName != "" {
+			path := FileExist("tmp/stages/" + s.bgmusic)
+			if path == "" {
+				err = ExtractFileFromZip(zipFileName, s.bgmusic, "tmp/stages")
+				path = "tmp/stages/" + s.bgmusic
+			}
+			if err != nil {
+				log.Fatal(err)
+			}
+			s.bgmusic = path
+		}
+		fmt.Printf("[DEBUG][stage.go] loadStage: s.bgmusic=%v\n", s.bgmusic)
 		sec[0].ReadI32("bgmvolume", &s.bgmvolume)
 		sec[0].ReadI32("bgmloopstart", &s.bgmloopstart)
 		sec[0].ReadI32("bgmloopend", &s.bgmloopend)
@@ -1037,7 +1065,23 @@ func loadStage(def string, main bool) (*Stage, error) {
 	if sectionExists {
 		sectionExists = false
 		if sec[0].LoadFile("spr", []string{def, "", sys.motifDir, "data/"}, func(filename string) error {
-			sff, err := loadSff(filename, false)
+			var sff *Sff
+			var err error
+			fmt.Printf("[DEBUG][stage.go] loadStage.loadSff: filename=%v\n", filename)
+			if zipFileName == "" {
+				sff, err = loadSff(filename, false)
+			} else {
+				path := FileExist("tmp/stages/" + filename)
+				if path == "" {
+					err = ExtractFileFromZip(zipFileName, filename, "tmp/stages")
+					path = "tmp/stages/" + filename
+				}
+				if err != nil {
+					log.Fatal(err)
+				} else {
+					sff, err = loadSff(path, false)
+				}
+			}
 			if err != nil {
 				return err
 			}
@@ -1052,7 +1096,23 @@ func loadStage(def string, main bool) (*Stage, error) {
 			return nil, err
 		}
 		if err = sec[0].LoadFile("model", []string{def, "", sys.motifDir, "data/"}, func(filename string) error {
-			model, err := loadglTFStage(filename)
+			var model *Model
+			var err error
+			fmt.Printf("[DEBUG][stage.go] loadStage.loadglTFStage: filename=%v\n", filename)
+			if zipFileName == "" {
+				model, err = loadglTFStage(filename)
+			} else {
+				path := FileExist("tmp/stages/" + filename)
+				if path == "" {
+					err = ExtractFileFromZip(zipFileName, filename, "tmp/stages")
+					path = "tmp/stages/" + filename
+				}
+				if err != nil {
+					log.Fatal(err)
+				} else {
+					model, err = loadglTFStage(path)
+				}
+			}
 			if err != nil {
 				return err
 			}

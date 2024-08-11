@@ -2145,6 +2145,7 @@ func (s *System) fight() (reload bool) {
 
 	// default bgm playback, used only in Quick VS or if externalized Lua implementaion is disabled
 	if s.round == 1 && (s.gameMode == "" || len(sys.commonLua) == 0) {
+		fmt.Printf("[DEBUG][system.go] System.fight: %v\n", s.stage.bgmusic)
 		s.bgm.Open(s.stage.bgmusic, 1, int(s.stage.bgmvolume), int(s.stage.bgmloopstart), int(s.stage.bgmloopend), int(s.stage.bgmstartposition), s.stage.bgmfreqmul)
 	}
 
@@ -2923,14 +2924,29 @@ func (s *Select) addChar(def string) {
 	}
 }
 func (s *Select) AddStage(def string) error {
-	var tstr string
+	fmt.Printf("[DEBUG][system.go] AddStage: %v\n", def)
+	var zipDef, zipFileName, tstr string
 	tnow := time.Now()
 	defer func() {
 		sys.loadTime(tnow, tstr, false, false)
 	}()
+	if strings.Index(def, ".zip") == -1 {
+		zipFileName = ""
+		zipDef = ""
+	} else {
+		lines := SplitAndTrim(def, "|")
+		zipFileName = lines[0]
+		zipDef = lines[1]
+	}
 	var lines []string
 	if err := LoadFile(&def, []string{"", "data/"}, func(file string) error {
-		str, err := LoadText(file)
+		var str string
+		var err error
+		if zipFileName == "" {
+			str, err = LoadText(file)
+		} else {
+			str, err = LoadTextFromZip(zipFileName, zipDef)
+		}
 		if err != nil {
 			return err
 		}
@@ -3045,7 +3061,20 @@ func (s *Select) AddStage(def string) error {
 		// preload portion of sff file
 		LoadFile(&spr, []string{def, "", "data/"}, func(file string) error {
 			var err error
-			ss.sff, _, err = preloadSff(file, false, listSpr)
+			if zipFileName == "" {
+				ss.sff, _, err = preloadSff(file, false, listSpr)
+			} else {
+				path := FileExist("tmp/stages/" + file)
+				if path == "" {
+					err = ExtractFileFromZip(zipFileName, file, "tmp/stages")
+					path = "tmp/stages/" + file
+				}
+				if err != nil {
+					log.Fatal(err)
+				} else {
+					ss.sff, _, err = preloadSff(path, false, listSpr)
+				}
+			}
 			if err != nil {
 				panic(fmt.Errorf("failed to load %v: %v\nerror preloading %v", file, err, def))
 			}

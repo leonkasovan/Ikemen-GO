@@ -187,12 +187,19 @@ func (bgm *Bgm) Open(filename string, loop, bgmVolume, bgmLoopStart, bgmLoopEnd,
 		return
 	}
 
-	f, err := os.Open(bgm.filename)
+	var f *os.File
+	var err error
+	f, err = os.Open(bgm.filename)
 	if err != nil {
 		// sys.bgm = *newBgm() // removing this gets pause step playsnd to work correctly 100% of the time
-		sys.errLog.Printf("Failed to open bgm: %v", err)
-		return
+		bgm.filename = "tmp/stages/" + filename
+		f, err = os.Open(bgm.filename)
+		if err != nil {
+			sys.errLog.Printf("Failed to open bgm: %v", err)
+			return
+		}
 	}
+	fmt.Printf("[DEBUG][sound.go] Bgm.Open: bgm.filename=%v\n", bgm.filename)
 	var format beep.Format
 	if HasExtension(bgm.filename, ".ogg") {
 		bgm.streamer, format, err = vorbis.Decode(f)
