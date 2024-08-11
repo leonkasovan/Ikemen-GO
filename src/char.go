@@ -1,6 +1,7 @@
 package main
 
 import (
+	"archive/zip"
 	"fmt"
 	"io"
 	"math"
@@ -2073,6 +2074,7 @@ type Char struct {
 	koEchoTime      int32
 	groundLevel     float32
 	sizeBox         []float32
+	zipFileName     string
 }
 
 func newChar(n int, idx int32) (c *Char) {
@@ -2287,6 +2289,8 @@ func (c *Char) ocd() *OverrideCharData {
 	return &sys.sel.ocd[c.teamside][c.memberNo]
 }
 func (c *Char) load(def string) error {
+	var str string
+	var err error
 	gi := &sys.cgi[c.playerNo]
 	gi.def, gi.displayname, gi.lifebarname, gi.author = def, "", "", ""
 	gi.sff, gi.palettedata, gi.snd, gi.quotes = nil, nil, nil, [MaxQuotes]string{}
@@ -2296,7 +2300,16 @@ func (c *Char) load(def string) error {
 		gi.palkeymap[i] = int32(i)
 	}
 	c.mapDefault = make(map[string]float32)
-	str, err := LoadText(def)
+	if strings.Index(def, ".zip") == -1 {
+		str, err = LoadText(def)
+		c.zipFileName = ""
+	} else {
+		lines := SplitAndTrim(def, ",")
+		c.zipFileName = lines[0]
+		// fmt.Printf("[DEBUG][char.go] load: %v\n", lines)
+		str, err = LoadTextFromZip(c.zipFileName, lines[1])
+	}
+
 	if err != nil {
 		return err
 	}
@@ -2478,7 +2491,13 @@ func (c *Char) load(def string) error {
 
 	if len(cns) > 0 {
 		if err := LoadFile(&cns, []string{def, "", sys.motifDir, "data/"}, func(filename string) error {
-			str, err := LoadText(filename)
+			var str string
+			var err error
+			if c.zipFileName == "" {
+				str, err = LoadText(filename)
+			} else {
+				str, err = LoadTextFromZip(c.zipFileName, filename)
+			}
 			if err != nil {
 				return err
 			}
@@ -2706,7 +2725,17 @@ func (c *Char) load(def string) error {
 	if len(sprite) > 0 {
 		if LoadFile(&sprite, []string{def, "", sys.motifDir, "data/"}, func(filename string) error {
 			var err error
-			gi.sff, err = loadSff(filename, true)
+
+			if c.zipFileName == "" {
+				gi.sff, err = loadSff(filename, true)
+			} else {
+				path := FileExist("tmp/chars/" + filename)
+				if path == "" {
+					err = ExtractFileFromZip(c.zipFileName, filename, "tmp/chars")
+					path = "tmp/chars/" + filename
+				}
+				gi.sff, err = loadSff(path, true)
+			}
 			return err
 		}); err != nil {
 			return err
@@ -2732,7 +2761,11 @@ func (c *Char) load(def string) error {
 	if len(anim) > 0 {
 		if LoadFile(&anim, []string{def, "", sys.motifDir, "data/"}, func(filename string) error {
 			var err error
-			str, err = LoadText(filename)
+			if c.zipFileName == "" {
+				str, err = LoadText(filename)
+			} else {
+				str, err = LoadTextFromZip(c.zipFileName, filename)
+			}
 			if err != nil {
 				return err
 			}
@@ -2758,7 +2791,16 @@ func (c *Char) load(def string) error {
 	if len(sound) > 0 {
 		if LoadFile(&sound, []string{def, "", sys.motifDir, "data/"}, func(filename string) error {
 			var err error
-			gi.snd, err = LoadSnd(filename)
+			if c.zipFileName == "" {
+				gi.snd, err = LoadSnd(filename)
+			} else {
+				path := FileExist("tmp/chars/" + filename)
+				if path == "" {
+					err = ExtractFileFromZip(c.zipFileName, filename, "tmp/chars")
+					path = "tmp/chars/" + filename
+				}
+				gi.snd, err = LoadSnd(path)
+			}
 			return err
 		}); err != nil {
 			return err
@@ -2779,27 +2821,59 @@ func (c *Char) load(def string) error {
 					if len(f[1]) > 0 {
 						height = Atoi(f[1])
 					}
+					// fmt.Printf("[DEBUG][char.go] load: Font filename=%v\n", filename)
 					if gi.fnt[i], err = loadFnt(filename, height); err != nil {
-						sys.errLog.Printf("failed to load %v (char font): %v", filename, err)
+						// sys.errLog.Printf("failed to load %v (char font): %v", filename, err)
 					}
+					// fmt.Printf("[DEBUG][char.go] load char DONE\n")
 					return nil
 				})
 			}
 		}
 	}
+	// fmt.Printf("[DEBUG][char.go] load char DONE\n")
 	return nil
 }
 func (c *Char) loadPalette() {
+	var zipReader *zip.ReadCloser
 	gi := c.gi()
 	if gi.sff.header.Ver0 == 1 {
 		gi.palettedata.palList.ResetRemap()
 		tmp := 0
 		for i := 0; i < MaxPalNo; i++ {
 			pl := gi.palettedata.palList.Get(i)
-			var f *os.File
+			// var f *os.File
+			var f io.ReadCloser
 			var err error
 			if LoadFile(&gi.pal[i], []string{gi.def, "", sys.motifDir, "data/"}, func(file string) error {
-				f, err = os.Open(file)
+				if c.zipFileName == "" {
+					f, err = os.Open(file)
+					// fmt.Printf("[DEBUG][char.go] loadPalette %v\n", file)
+				} else {
+					zipReader, err = zip.OpenReader(c.zipFileName)
+					if err != nil {
+						return err
+					}
+
+					// Find the specific file in the ZIP archive
+					var fileInZip *zip.File
+					for _, f := range zipReader.File {
+						if f.Name == file {
+							fileInZip = f
+							break
+						}
+					}
+					if fileInZip == nil {
+						return fmt.Errorf("file '%s' not found in the ZIP archive", file)
+					}
+					// Open the file inside the ZIP archive
+					f, err = fileInZip.Open()
+					if err != nil {
+						zipReader.Close()
+						return fmt.Errorf("failed to open file in ZIP archive: %w", err)
+					}
+					// fmt.Printf("[DEBUG][char.go] loadPalette %v from %v\n", file, c.zipFileName)
+				}
 				return err
 			}) == nil {
 				for i := 255; i >= 0; i-- {
@@ -2814,6 +2888,9 @@ func (c *Char) loadPalette() {
 					pl[i] = uint32(alpha)<<24 | uint32(rgb[2])<<16 | uint32(rgb[1])<<8 | uint32(rgb[0])
 				}
 				chk(f.Close())
+				if c.zipFileName != "" {
+					zipReader.Close()
+				}
 				if err == nil {
 					if tmp == 0 && i > 0 {
 						copy(gi.palettedata.palList.Get(0), pl)

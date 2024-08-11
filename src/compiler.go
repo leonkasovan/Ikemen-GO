@@ -4634,17 +4634,31 @@ func cnsStringArray(arg string) ([]string, error) {
 }
 
 // Compile a state file
-func (c *Compiler) stateCompile(states map[int32]StateBytecode,
+func (c *Compiler) stateCompile(def string, states map[int32]StateBytecode,
 	filename string, dirs []string, negoverride bool, constants map[string]float32) error {
-	var str string
+	var zipFileName, str string
 	zss := HasExtension(filename, ".zss")
 	fnz := filename
+
+	if strings.Index(def, ".zip") == -1 {
+		zipFileName = ""
+	} else {
+		lines := SplitAndTrim(def, ",")
+		zipFileName = lines[0]
+	}
 	// Load state file
 	if err := LoadFile(&filename, dirs, func(filename string) error {
 		var err error
+
 		// If this is a zss file
 		if zss {
-			b, err := os.ReadFile(filename)
+			var b []byte
+			var err error
+			if zipFileName == "" {
+				b, err = os.ReadFile(filename)
+			} else {
+				b, err = ReadFileFromZip(zipFileName, filename)
+			}
 			if err != nil {
 				return err
 			}
@@ -4653,13 +4667,22 @@ func (c *Compiler) stateCompile(states map[int32]StateBytecode,
 		}
 
 		// Try reading as an st file
-		str, err = LoadText(filename)
+		if zipFileName == "" {
+			str, err = LoadText(filename)
+		} else {
+			str, err = LoadTextFromZip(zipFileName, filename)
+		}
 		return err
 	}); err != nil {
 		// If filename doesn't exist, see if a zss file exists
 		fnz += ".zss"
 		if err := LoadFile(&fnz, dirs, func(filename string) error {
-			b, err := os.ReadFile(filename)
+			var b []byte
+			if zipFileName == "" {
+				b, err = os.ReadFile(filename)
+			} else {
+				b, err = ReadFileFromZip(zipFileName, filename)
+			}
 			if err != nil {
 				return err
 			}
@@ -5947,11 +5970,20 @@ func (c *Compiler) stateCompileZ(states map[int32]StateBytecode,
 
 // Compile a character definition file
 func (c *Compiler) Compile(pn int, def string, constants map[string]float32) (map[int32]StateBytecode, error) {
+	var str, zipFileName string
+	var err error
+	// fmt.Printf("[DEBUG][compiler.go] Compile: dev=[%v]\n", def)
 	c.playerNo = pn
 	states := make(map[int32]StateBytecode)
 
 	/* Load initial data from definition file */
-	str, err := LoadText(def)
+	if strings.Index(def, ".zip") == -1 {
+		str, err = LoadText(def)
+	} else {
+		lines := SplitAndTrim(def, ",")
+		zipFileName = lines[0]
+		str, err = LoadTextFromZip(zipFileName, lines[1])
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -6020,7 +6052,11 @@ func (c *Compiler) Compile(pn int, def string, constants map[string]float32) (ma
 	if len(cmd) > 0 {
 		if err := LoadFile(&cmd, []string{def, "", sys.motifDir, "data/"}, func(filename string) error {
 			var err error
-			str, err = LoadText(filename)
+			if zipFileName == "" {
+				str, err = LoadText(filename)
+			} else {
+				str, err = LoadTextFromZip(zipFileName, filename)
+			}
 			if err != nil {
 				return err
 			}
@@ -6143,7 +6179,8 @@ func (c *Compiler) Compile(pn int, def string, constants map[string]float32) (ma
 	// Compile state files
 	for _, s := range st {
 		if len(s) > 0 {
-			if err := c.stateCompile(states, s, []string{def, "", sys.motifDir, "data/"},
+			// fmt.Printf("[DEBUG][compiler.go] Compile: Compile state files [%v]\n", s)
+			if err := c.stateCompile(def, states, s, []string{def, "", sys.motifDir, "data/"},
 				sys.cgi[pn].ikemenver[0] == 0 &&
 					sys.cgi[pn].ikemenver[1] == 0, constants); err != nil {
 				return nil, err
@@ -6152,7 +6189,8 @@ func (c *Compiler) Compile(pn int, def string, constants map[string]float32) (ma
 	}
 	// Compile states in command file
 	if len(cmd) > 0 {
-		if err := c.stateCompile(states, cmd, []string{def, "", sys.motifDir, "data/"},
+		// fmt.Printf("[DEBUG][compiler.go] Compile: Compile states in command file [%v]\n", cmd)
+		if err := c.stateCompile(def, states, cmd, []string{def, "", sys.motifDir, "data/"},
 			sys.cgi[pn].ikemenver[0] == 0 &&
 				sys.cgi[pn].ikemenver[1] == 0, constants); err != nil {
 			return nil, err
@@ -6160,7 +6198,8 @@ func (c *Compiler) Compile(pn int, def string, constants map[string]float32) (ma
 	}
 	// Compile states in stcommon state file
 	if len(stcommon) > 0 {
-		if err := c.stateCompile(states, stcommon, []string{def, "", sys.motifDir, "data/"},
+		// fmt.Printf("[DEBUG][compiler.go] Compile: Compile states in stcommon state file [%v]\n", stcommon)
+		if err := c.stateCompile("", states, stcommon, []string{def, "", sys.motifDir, "data/"},
 			sys.cgi[pn].ikemenver[0] == 0 &&
 				sys.cgi[pn].ikemenver[1] == 0, constants); err != nil {
 			return nil, err
@@ -6168,7 +6207,8 @@ func (c *Compiler) Compile(pn int, def string, constants map[string]float32) (ma
 	}
 	// Compile common states
 	for _, s := range sys.commonStates {
-		if err := c.stateCompile(states, s, []string{def, sys.motifDir, sys.lifebar.def, "", "data/"},
+		// fmt.Printf("[DEBUG][compiler.go] Compile: Compile common states [%v]\n", s)
+		if err := c.stateCompile("", states, s, []string{def, sys.motifDir, sys.lifebar.def, "", "data/"},
 			false, constants); err != nil {
 			return nil, err
 		}

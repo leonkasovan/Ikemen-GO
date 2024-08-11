@@ -381,11 +381,11 @@ type System struct {
 	loopContinue      bool
 
 	// for avg. FPS calculations
-	gameFPS       float32
-	prevTimestamp float64
-	absTickCountF float32
+	gameFPS           float32
+	prevTimestamp     float64
+	absTickCountF     float32
 	prevTimestampUint uint64
-	absTickCount uint64
+	absTickCount      uint64
 }
 
 // Initialize stuff, this is called after the config int at main.go
@@ -2597,7 +2597,8 @@ func (s *Select) GetStage(n int) *SelectStage {
 	return &s.stagelist[n-1]
 }
 func (s *Select) addChar(def string) {
-	var tstr string
+	var zipFileName, tstr, str string
+	var err error
 	tnow := time.Now()
 	defer func() {
 		sys.loadTime(tnow, tstr, false, false)
@@ -2615,34 +2616,50 @@ func (s *Select) addChar(def string) {
 		sc.def, sc.name = "randomselect", "Random"
 		return
 	}
-	idx := strings.Index(def, "/")
-	if len(def) >= 4 && strings.ToLower(def[len(def)-4:]) == ".def" {
-		if idx < 0 {
+	if strings.Index(def, ".zip") == -1 {
+		zipFileName = ""
+		idx := strings.Index(def, "/")
+		if len(def) >= 4 && strings.ToLower(def[len(def)-4:]) == ".def" {
+			if idx < 0 {
+				sc.name = "dummyslot"
+				return
+			}
+		} else if idx < 0 {
+			def += "/" + def + ".def"
+		} else {
+			def += ".def"
+		}
+		if chk := FileExist(def); len(chk) != 0 {
+			def = chk
+		} else {
+			if strings.ToLower(def[0:6]) != "chars/" && strings.ToLower(def[1:3]) != ":/" && (def[0] != '/' || idx > 0 && !strings.Contains(def[:idx], ":")) {
+				def = "chars/" + def
+			}
+			if def = FileExist(def); len(def) == 0 {
+				sc.name = "dummyslot"
+				return
+			}
+		}
+		str, err = LoadText(def)
+		if err != nil {
 			sc.name = "dummyslot"
 			return
 		}
-	} else if idx < 0 {
-		def += "/" + def + ".def"
-	} else {
-		def += ".def"
-	}
-	if chk := FileExist(def); len(chk) != 0 {
-		def = chk
-	} else {
-		if strings.ToLower(def[0:6]) != "chars/" && strings.ToLower(def[1:3]) != ":/" && (def[0] != '/' || idx > 0 && !strings.Contains(def[:idx], ":")) {
-			def = "chars/" + def
-		}
-		if def = FileExist(def); len(def) == 0 {
+		sc.def = def
+		// fmt.Printf("[standar] sc.def=[%v]\n", sc.def)
+	} else { // load from zip
+		zipFileName = "chars/" + filepath.Base(def)
+		sc.def = strings.TrimSuffix(filepath.Base(zipFileName), ".zip") + ".def"
+		// fmt.Printf("[zip] [%v] sc.def=[%v]\n", def, sc.def)
+		str, err = LoadTextFromZip(zipFileName, sc.def)
+		sc.def = zipFileName + "," + sc.def
+		if err != nil {
 			sc.name = "dummyslot"
+			fmt.Printf("[Error] %v\n", err)
 			return
 		}
+		// fmt.Printf("[zip] sc.def=[%v]\n", sc.def)
 	}
-	str, err := LoadText(def)
-	if err != nil {
-		sc.name = "dummyslot"
-		return
-	}
-	sc.def = def
 	lines, i, info, files, keymap, arcade := SplitAndTrim(str, "\n"), 0, true, true, true, true
 	var cns, sprite, anim, movelist string
 	var fnt [10][2]string
@@ -2713,10 +2730,19 @@ func (s *Select) addChar(def string) {
 	sff := newSff()
 	// read size values
 	LoadFile(&cns, []string{def, "", "data/"}, func(filename string) error {
-		str, err := LoadText(filename)
+		// fmt.Printf("Load CNS=[%v]\n", filename)
+		var str string
+		var err error
+		if zipFileName == "" {
+			str, err = LoadText(filename)
+		} else {
+			str, err = LoadTextFromZip(zipFileName, filename)
+		}
 		if err != nil {
+			fmt.Printf("[ERROR] Load CNS=[%v]\n%v", filename, err)
 			return err
 		}
+		// fmt.Printf("[SUCCESS] Load CNS=[%v]", filename)
 		lines, i := SplitAndTrim(str, "\n"), 0
 		for i < len(lines) {
 			is, name, _ := ReadIniSection(lines, &i)
@@ -2735,10 +2761,19 @@ func (s *Select) addChar(def string) {
 	})
 	// preload animations
 	LoadFile(&anim, []string{def, "", "data/"}, func(filename string) error {
-		str, err := LoadText(filename)
+		var str string
+		var err error
+		// fmt.Printf("Load Anim=[%v]\n", filename)
+		if zipFileName == "" {
+			str, err = LoadText(filename)
+		} else {
+			str, err = LoadTextFromZip(zipFileName, filename)
+		}
 		if err != nil {
+			fmt.Printf("[ERROR] Load Anim=[%v]\n%v", filename, err)
 			return err
 		}
+		// fmt.Printf("[SUCCESS] Load Anim=[%v]\n", filename)
 		lines, i := SplitAndTrim(str, "\n"), 0
 		at := ReadAnimationTable(sff, &sff.palList, lines, &i)
 		for _, v := range s.charAnimPreload {
@@ -2756,11 +2791,25 @@ func (s *Select) addChar(def string) {
 	if fp = FileExist(fp); len(fp) == 0 {
 		fp = sprite
 	}
+	// fmt.Printf("Load SFF=[%v] sprite=[%v]\n", fp, sprite)
 	if len(fp) > 0 {
 		LoadFile(&fp, []string{def, "", "data/"}, func(file string) error {
 			var selPal []int32
-			var err error
-			sc.sff, selPal, err = preloadSff(file, true, listSpr)
+			var err error = nil
+			if zipFileName == "" {
+				sc.sff, selPal, err = preloadSff(file, true, listSpr)
+			} else {
+				path := FileExist("tmp/chars/" + file)
+				if path == "" {
+					err = ExtractFileFromZip(zipFileName, file, "tmp/chars")
+					path = "tmp/chars/" + file
+				}
+				if err != nil {
+					log.Fatal(err)
+				} else {
+					sc.sff, selPal, err = preloadSff(path, true, listSpr)
+				}
+			}
 			if err != nil {
 				panic(fmt.Errorf("failed to load %v: %v\nerror preloading %v", file, err, def))
 			}
@@ -2783,13 +2832,23 @@ func (s *Select) addChar(def string) {
 	// read movelist
 	if len(movelist) > 0 {
 		LoadFile(&movelist, []string{def, "", "data/"}, func(file string) error {
-			sc.movelist, _ = LoadText(file)
+			var err error
+			if zipFileName == "" {
+				sc.movelist, err = LoadText(file)
+			} else {
+				sc.movelist, err = LoadTextFromZip(zipFileName, file)
+			}
+			if err != nil {
+				fmt.Printf("[ERROR] Load Movelist=[%v]\n%v", file, err)
+				return err
+			}
 			return nil
 		})
 	}
 	// preload fonts
 	for i, f := range fnt {
 		if len(f[0]) > 0 {
+			fmt.Printf("Load Font=[%v]\n", f[0])
 			LoadFile(&f[0], []string{def, sys.motifDir, "", "data/", "font/"}, func(filename string) error {
 				var err error
 				var height int32 = -1
