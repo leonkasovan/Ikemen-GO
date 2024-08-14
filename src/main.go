@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	_ "embed" // Support for go:embed resources
 	"encoding/json"
 	"fmt"
@@ -47,7 +48,69 @@ func createLog(p string) *os.File {
 func closeLog(f *os.File) {
 	f.Close()
 }
+func fixConfig(filename string) error {
+	// Create a map to associate strings with integers
+	boolMap := map[string]int{
+		"false": 0,
+		"true":  1,
+	}
 
+	// Open the file
+	file, err := os.Open(filename)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	// Open or create the file
+	file2, err := os.Create("config.fix.json")
+	if err != nil {
+		return err
+	}
+	defer file2.Close()
+
+	// Create a buffered writer
+	writer := bufio.NewWriter(file)
+
+	re1 := regexp.MustCompile(`"CommonAir": "(\S+)",`)
+	re2 := regexp.MustCompile(`"CommonCmd": "(\S+)",`)
+	re3 := regexp.MustCompile(`"CommonConst": "(\S+)",`)
+	re4 := regexp.MustCompile(`"MSAA": (\S+),`)
+
+	// Create a new scanner
+	scanner := bufio.NewScanner(file)
+
+	// Loop through each line
+	var result []string
+	for scanner.Scan() {
+		result = re1.FindStringSubmatch(scanner.Text())
+		if result != nil {
+			writer.WriteString(fmt.Sprintf("\"CommonAir\": [\"%v\"],\n", result[1]))
+			continue
+		}
+		result = re2.FindStringSubmatch(scanner.Text())
+		if result != nil {
+			writer.WriteString(fmt.Sprintf("\"CommonCmd\": [\"%v\"],\n", result[1]))
+			continue
+		}
+		result = re3.FindStringSubmatch(scanner.Text())
+		if result != nil {
+			writer.WriteString(fmt.Sprintf("\"CommonConst\": [\"%v\"],\n", result[1]))
+			continue
+		}
+		result = re4.FindStringSubmatch(scanner.Text())
+		if result != nil {
+			writer.WriteString(fmt.Sprintf("\"MSAA\": %v,\n", boolMap[result[1]]))
+			continue
+		}
+		// fmt.Println(scanner.Text())
+		writer.WriteString(scanner.Text() + "\n")
+	}
+	writer.Flush()
+	os.Rename(filename, "config.bak.json")
+	os.Rename("config.fix.json", filename)
+	return scanner.Err()
+}
 func main() {
 	processCommandLine()
 	if _, ok := sys.cmdFlags["-game"]; ok {
@@ -318,7 +381,13 @@ func setupConfig() configSettings {
 			bytes[0] == 0xef && bytes[1] == 0xbb && bytes[2] == 0xbf {
 			bytes = bytes[3:]
 		}
-		chkEX(json.Unmarshal(bytes, &tmp), "Error while loading the config file.\n")
+		// chkEX(json.Unmarshal(bytes, &tmp), "Error while loading the config file.\n")
+		if json.Unmarshal(bytes, &tmp) != nil {
+			if err := fixConfig(cfgPath); err != nil {
+				ShowErrorDialog(err.Error())
+				panic(err)
+			}
+		}
 	}
 	// Fix incorrect settings (default values saved into config.json)
 	switch tmp.AudioSampleRate {
