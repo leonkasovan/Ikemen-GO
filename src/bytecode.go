@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/binary"
 	"encoding/gob"
-	"fmt"
 	"math"
 	"os"
 	"path/filepath"

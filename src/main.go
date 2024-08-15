@@ -63,14 +63,14 @@ func fixConfig(filename string) error {
 	defer file.Close()
 
 	// Open or create the file
-	file2, err := os.Create("config.fix.json")
+	file2, err := os.Create("save/config.fix.json")
 	if err != nil {
 		return err
 	}
 	defer file2.Close()
 
 	// Create a buffered writer
-	writer := bufio.NewWriter(file)
+	writer := bufio.NewWriter(file2)
 
 	re1 := regexp.MustCompile(`"CommonAir": "(\S+)",`)
 	re2 := regexp.MustCompile(`"CommonCmd": "(\S+)",`)
@@ -95,6 +95,8 @@ func fixConfig(filename string) error {
 		}
 		result = re3.FindStringSubmatch(scanner.Text())
 		if result != nil {
+			// fmt.Printf("[DEBUG][main.go][fixConfig]1: %v\n", scanner.Text())
+			// fmt.Printf("[DEBUG][main.go][fixConfig]2: %v\n", fmt.Sprintf("\"CommonConst\": [\"%v\"],\n", result[1]))
 			writer.WriteString(fmt.Sprintf("\"CommonConst\": [\"%v\"],\n", result[1]))
 			continue
 		}
@@ -103,13 +105,11 @@ func fixConfig(filename string) error {
 			writer.WriteString(fmt.Sprintf("\"MSAA\": %v,\n", boolMap[result[1]]))
 			continue
 		}
-		// fmt.Println(scanner.Text())
 		writer.WriteString(scanner.Text() + "\n")
 	}
 	writer.Flush()
-	// os.Rename(filename, "config.bak.json")
-	os.Remove(filename)
-	os.Rename("config.fix.json", filename)
+	os.Rename(filename, "save/config.bak.json")
+	os.Rename("save/config.fix.json", filename)
 	return scanner.Err()
 }
 func main() {
@@ -377,17 +377,29 @@ func setupConfig() configSettings {
 		cfgPath = sys.cmdFlags["-config"]
 	}
 	// Load the config file, overwriting the defaults
-	if bytes, err := os.ReadFile(cfgPath); err == nil {
-		if len(bytes) >= 3 &&
-			bytes[0] == 0xef && bytes[1] == 0xbb && bytes[2] == 0xbf {
-			bytes = bytes[3:]
-		}
-		// chkEX(json.Unmarshal(bytes, &tmp), "Error while loading the config file.\n")
-		if json.Unmarshal(bytes, &tmp) != nil {
-			fmt.Printf("[DEBUG][main.go] setupConfig fix %v\n", cfgPath)
-			if err := fixConfig(cfgPath); err != nil {
-				ShowErrorDialog(err.Error())
-				panic(err)
+	counter := 0
+	for {
+		// fmt.Printf("[DEBUG][main.go]1 tmp.CommonConst=%v counter=%v\n", tmp.CommonConst, counter)
+		if bytes, err := os.ReadFile(cfgPath); err == nil {
+			if len(bytes) >= 3 &&
+				bytes[0] == 0xef && bytes[1] == 0xbb && bytes[2] == 0xbf {
+				bytes = bytes[3:]
+			}
+			// chkEX(json.Unmarshal(bytes, &tmp), "Error while loading the config file.\n")
+			if json.Unmarshal(bytes, &tmp) != nil {
+				fmt.Printf("[DEBUG][main.go] setupConfig fix %v\n", cfgPath)
+				if err := fixConfig(cfgPath); err != nil {
+					ShowErrorDialog(err.Error())
+					panic(err)
+				}
+			} else {
+				// fmt.Printf("[DEBUG][main.go]2 tmp.CommonConst=%v counter=%v\n", tmp.CommonConst, counter)
+				counter = 1
+			}
+			counter = counter + 1
+			if counter > 1 {
+				// fmt.Printf("[DEBUG][main.go]3 tmp.CommonConst=%v counter=%v\n", tmp.CommonConst, counter)
+				break
 			}
 		}
 	}

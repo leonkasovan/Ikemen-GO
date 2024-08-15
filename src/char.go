@@ -2301,13 +2301,13 @@ func (c *Char) load(def string) error {
 	}
 	c.mapDefault = make(map[string]float32)
 	if strings.Index(def, ".zip") == -1 {
-		fmt.Printf("[DEBUG][char.go][load]: %v\n", def)
+		fmt.Printf("[DEBUG][char.go][load] def=%v\n", def)
 		str, err = LoadText(def)
 		c.zipFileName = ""
 	} else {
 		lines := SplitAndTrim(def, ",")
 		c.zipFileName = lines[0]
-		fmt.Printf("[DEBUG][char.go] load: %v\n", lines)
+		fmt.Printf("[DEBUG][char.go][load] def=%v\n", lines)
 		str, err = LoadTextFromZip(c.zipFileName, lines[1])
 	}
 
@@ -2463,9 +2463,9 @@ func (c *Char) load(def string) error {
 	for _, s := range sys.commonConst {
 		if err := LoadFile(&s, []string{def, sys.motifDir, sys.lifebar.def, "", "data/"}, func(filename string) error {
 			str, err = LoadText(filename)
-			fmt.Printf("[DEBUG][char.go][load] common const filename=%v\n", filename)
+			// fmt.Printf("[DEBUG][char.go][load] common const filename=%v\n", filename)
 			if err != nil {
-				fmt.Printf("[DEBUG][char.go][load] common const err=%v\n", err)
+				// fmt.Printf("[DEBUG][char.go][load] common const err=%v\n", err)
 				return err
 			}
 			lines, i = SplitAndTrim(str, "\n"), 0
@@ -2558,10 +2558,10 @@ func (c *Char) load(def string) error {
 			var str string
 			var err error
 			if c.zipFileName == "" {
-				fmt.Printf("[DEBUG][char.go][load] cns filename=%v\n", filename)
+				// fmt.Printf("[DEBUG][char.go][load] cns filename=%v\n", filename)
 				str, err = LoadText(filename)
 			} else {
-				fmt.Printf("[DEBUG][char.go][load] cns c.zipFileName=%v filename=%v\n", c.zipFileName, filename)
+				// fmt.Printf("[DEBUG][char.go][load] cns c.zipFileName=%v filename=%v\n", c.zipFileName, filename)
 				str, err = LoadTextFromZip(c.zipFileName, filename)
 			}
 			if err != nil {
@@ -2800,7 +2800,7 @@ func (c *Char) load(def string) error {
 	}
 	if len(sprite) > 0 {
 		if LoadFile(&sprite, []string{def, "", sys.motifDir, "data/"}, func(filename string) error {
-			fmt.Printf("[DEBUG][char.go][load] sprite filename=%v\n", filename)
+			// fmt.Printf("[DEBUG][char.go][load] sprite filename=%v\n", filename)
 			var err error
 			if c.zipFileName == "" {
 				gi.sff, err = loadSff(filename, true)
@@ -2836,7 +2836,7 @@ func (c *Char) load(def string) error {
 	str = ""
 	if len(anim) > 0 {
 		if LoadFile(&anim, []string{def, "", sys.motifDir, "data/"}, func(filename string) error {
-			fmt.Printf("[DEBUG][char.go][load] anim filename=%v\n", filename)
+			// fmt.Printf("[DEBUG][char.go][load] anim filename=%v\n", filename)
 			var err error
 			if c.zipFileName == "" {
 				str, err = LoadText(filename)
@@ -2853,7 +2853,7 @@ func (c *Char) load(def string) error {
 	}
 	for _, s := range sys.commonAir {
 		if err := LoadFile(&s, []string{def, sys.motifDir, sys.lifebar.def, "", "data/"}, func(filename string) error {
-			fmt.Printf("[DEBUG][char.go][load] common air filename=%v\n", filename)
+			// fmt.Printf("[DEBUG][char.go][load] common air filename=%v\n", filename)
 			txt, err := LoadText(filename)
 			if err != nil {
 				return err
@@ -2869,7 +2869,7 @@ func (c *Char) load(def string) error {
 	if len(sound) > 0 {
 		if LoadFile(&sound, []string{def, "", sys.motifDir, "data/"}, func(filename string) error {
 			var err error
-			fmt.Printf("[DEBUG][char.go][load] sound filename=%v\n", filename)
+			// fmt.Printf("[DEBUG][char.go][load] sound filename=%v\n", filename)
 			if c.zipFileName == "" {
 				gi.snd, err = LoadSnd(filename)
 			} else {
