@@ -107,7 +107,8 @@ func fixConfig(filename string) error {
 		writer.WriteString(scanner.Text() + "\n")
 	}
 	writer.Flush()
-	os.Rename(filename, "config.bak.json")
+	// os.Rename(filename, "config.bak.json")
+	os.Remove(filename)
 	os.Rename("config.fix.json", filename)
 	return scanner.Err()
 }

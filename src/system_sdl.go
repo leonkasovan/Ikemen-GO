@@ -24,6 +24,7 @@ type Window struct {
 func (s *System) newWindow(w, h int) (*Window, error) {
 	var err error
 	var window *sdl.Window
+	var mode sdl.DisplayMode
 	// Initialize OpenGL
 	chk(sdl.Init(sdl.INIT_EVERYTHING))
 	if Renderer_API == 2 {	// OpenGL ES
@@ -35,8 +36,13 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 		sdl.GLSetAttribute(sdl.GL_CONTEXT_MINOR_VERSION, 1)
 	}
 	// Create main window.
-	window, err = sdl.CreateWindow(s.windowTitle, sdl.WINDOWPOS_UNDEFINED, sdl.WINDOWPOS_UNDEFINED,
-		int32(w), int32(h), sdl.WINDOW_OPENGL)
+	if s.fullscreen {
+		window, err = sdl.CreateWindow(s.windowTitle, sdl.WINDOWPOS_UNDEFINED, sdl.WINDOWPOS_UNDEFINED,
+			int32(w), int32(h), sdl.WINDOW_OPENGL|sdl.WINDOW_FULLSCREEN)
+	} else {
+		window, err = sdl.CreateWindow(s.windowTitle, sdl.WINDOWPOS_UNDEFINED, sdl.WINDOWPOS_UNDEFINED,
+			int32(w), int32(h), sdl.WINDOW_OPENGL|sdl.WINDOW_RESIZABLE|sdl.WINDOW_SHOWN)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("\nfailed to sdl.CreateWindow: %w\n", err)
 	}
@@ -44,6 +50,13 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 	if err != nil {
 		return nil, fmt.Errorf("\nfailed to window.GLCreateContext: %w\n", err)
 	}
+
+	// Set Window in center
+	mode, err = sdl.GetCurrentDisplayMode(0)
+	sys.errLog.Printf("GetCurrentDisplayMode: %vx%v", mode.W, mode.H)
+	var x, y = (int(mode.W) - w) / 2, (int(mode.H) - h) / 2
+	window.SetPosition(int32(x), int32(y))
+
 	// V-Sync
 	if s.vRetrace >= 0 {
 		sdl.GLSetSwapInterval(s.vRetrace)
@@ -122,6 +135,12 @@ func (w *Window) GetClipboardString() string {
 
 func (w *Window) toggleFullscreen() {
 	// not implemented in KMS DRM
+	w.fullscreen = !w.fullscreen
+	if w.fullscreen {
+		w.Window.SetFullscreen(sdl.WINDOW_FULLSCREEN)
+	} else {
+		w.Window.SetFullscreen(0)
+	}
 }
 
 func (w *Window) pollEvents() {
