@@ -2145,7 +2145,7 @@ func (s *System) fight() (reload bool) {
 
 	// default bgm playback, used only in Quick VS or if externalized Lua implementaion is disabled
 	if s.round == 1 && (s.gameMode == "" || len(sys.commonLua) == 0) {
-		fmt.Printf("[DEBUG][system.go] System.fight: %v\n", s.stage.bgmusic)
+		// fmt.Printf("[DEBUG][system.go] System.fight: %v\n", s.stage.bgmusic)
 		s.bgm.Open(s.stage.bgmusic, 1, int(s.stage.bgmvolume), int(s.stage.bgmloopstart), int(s.stage.bgmloopend), int(s.stage.bgmstartposition), s.stage.bgmfreqmul)
 	}
 
@@ -2924,7 +2924,7 @@ func (s *Select) addChar(def string) {
 	}
 }
 func (s *Select) AddStage(def string) error {
-	fmt.Printf("[DEBUG][system.go] AddStage: %v\n", def)
+	// fmt.Printf("[DEBUG][system.go] AddStage: %v\n", def)
 	var zipDef, zipFileName, tstr string
 	tnow := time.Now()
 	defer func() {

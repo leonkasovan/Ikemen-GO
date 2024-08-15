@@ -1654,7 +1654,7 @@ func systemScriptInit(l *lua.LState) {
 		if l.GetTop() >= 7 {
 			freqmul = ClampF(float32(numArg(l, 7)), 0.01, 5.0)
 		}
-		fmt.Printf("[DEBUG][script.go] systemScriptInit: %v\n", strArg(l, 1))
+		// fmt.Printf("[DEBUG][script.go] systemScriptInit: %v\n", strArg(l, 1))
 		sys.bgm.Open(strArg(l, 1), loop, volume, loopstart, loopend, startposition, freqmul)
 		return 0
 	})

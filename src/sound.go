@@ -199,7 +199,7 @@ func (bgm *Bgm) Open(filename string, loop, bgmVolume, bgmLoopStart, bgmLoopEnd,
 			return
 		}
 	}
-	fmt.Printf("[DEBUG][sound.go] Bgm.Open: bgm.filename=%v\n", bgm.filename)
+	// fmt.Printf("[DEBUG][sound.go] Bgm.Open: bgm.filename=%v\n", bgm.filename)
 	var format beep.Format
 	if HasExtension(bgm.filename, ".ogg") {
 		bgm.streamer, format, err = vorbis.Decode(f)

@@ -773,7 +773,7 @@ func newStage(def string) *Stage {
 func loadStage(def string, main bool) (*Stage, error) {
 	var str, zipDef, zipFileName string
 	var err error
-	fmt.Printf("[DEBUG][stage.go] loadStage: def=%v main=%v\n", def, main)
+	// fmt.Printf("[DEBUG][stage.go] loadStage: def=%v main=%v\n", def, main)
 	if strings.Index(def, ".zip") == -1 {
 		zipFileName = ""
 		zipDef = ""
@@ -1045,7 +1045,7 @@ func loadStage(def string, main bool) (*Stage, error) {
 			}
 			s.bgmusic = path
 		}
-		fmt.Printf("[DEBUG][stage.go] loadStage: s.bgmusic=%v\n", s.bgmusic)
+		// fmt.Printf("[DEBUG][stage.go] loadStage: s.bgmusic=%v\n", s.bgmusic)
 		sec[0].ReadI32("bgmvolume", &s.bgmvolume)
 		sec[0].ReadI32("bgmloopstart", &s.bgmloopstart)
 		sec[0].ReadI32("bgmloopend", &s.bgmloopend)
@@ -1067,7 +1067,7 @@ func loadStage(def string, main bool) (*Stage, error) {
 		if sec[0].LoadFile("spr", []string{def, "", sys.motifDir, "data/"}, func(filename string) error {
 			var sff *Sff
 			var err error
-			fmt.Printf("[DEBUG][stage.go] loadStage.loadSff: filename=%v\n", filename)
+			// fmt.Printf("[DEBUG][stage.go] loadStage.loadSff: filename=%v\n", filename)
 			if zipFileName == "" {
 				sff, err = loadSff(filename, false)
 			} else {
@@ -1098,7 +1098,7 @@ func loadStage(def string, main bool) (*Stage, error) {
 		if err = sec[0].LoadFile("model", []string{def, "", sys.motifDir, "data/"}, func(filename string) error {
 			var model *Model
 			var err error
-			fmt.Printf("[DEBUG][stage.go] loadStage.loadglTFStage: filename=%v\n", filename)
+			// fmt.Printf("[DEBUG][stage.go] loadStage.loadglTFStage: filename=%v\n", filename)
 			if zipFileName == "" {
 				model, err = loadglTFStage(filename)
 			} else {
