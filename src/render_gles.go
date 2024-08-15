@@ -330,14 +330,14 @@ func (r *Renderer) Init() {
 		r.postShaderSelect[1+i].RegisterUniforms("Texture", "TextureSize")
 	}
 
-	if sys.multisampleAntialiasing {
+	if sys.multisampleAntialiasing > 0 {
 		// gl.Enable(gl.MULTISAMPLE)
 	}
 
 	gl.ActiveTexture(gl.TEXTURE0)
 	gl.GenTextures(1, &r.fbo_texture)
 
-	if sys.multisampleAntialiasing {
+	if sys.multisampleAntialiasing > 0 {
 		// gl.BindTexture(gl.TEXTURE_2D_MULTISAMPLE, r.fbo_texture)
 	} else {
 		gl.BindTexture(gl.TEXTURE_2D, r.fbo_texture)
@@ -348,7 +348,7 @@ func (r *Renderer) Init() {
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
 
-	if sys.multisampleAntialiasing {
+	if sys.multisampleAntialiasing > 0 {
 		// gl.TexImage2DMultisample(gl.TEXTURE_2D_MULTISAMPLE, 16, gl.RGBA, sys.scrrect[2], sys.scrrect[3], true)
 
 	} else {
