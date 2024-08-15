@@ -384,6 +384,7 @@ func setupConfig() configSettings {
 		}
 		// chkEX(json.Unmarshal(bytes, &tmp), "Error while loading the config file.\n")
 		if json.Unmarshal(bytes, &tmp) != nil {
+			fmt.Printf("[DEBUG][main.go] setupConfig fix %v\n", cfgPath)
 			if err := fixConfig(cfgPath); err != nil {
 				ShowErrorDialog(err.Error())
 				panic(err)
