@@ -48,7 +48,7 @@
   "ForceStageZoomin": 0,
   "ForceStageZoomout": 0,
   "Framerate": 60,
-  "Fullscreen": false,
+  "Fullscreen": true,
   "FullscreenRefreshRate": 60,
   "FullscreenWidth": -1,
   "FullscreenHeight": -1,
