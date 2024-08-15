@@ -88,6 +88,11 @@ function main() {
 			echo "Linux Build Release for Raspberry Pi4 (Raspberry Pi OS 64) with SDL and GLES"
 			go build -tags=sdl,gles2 -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/$binName ./src
 		;;
+		psc)
+			binName="Ikemen_Go_PSC"
+			echo "Linux Build Release for PSC with SDL and GLES"
+			go build -tags=sdl,gles2 -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/$binName ./src
+   		;;
 	esac
 
 	if [[ "${binName}" == "Default" ]]; then
