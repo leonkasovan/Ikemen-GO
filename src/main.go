@@ -52,7 +52,7 @@ func fixConfig(filename string) error {
 	// Create a map to associate strings with integers
 	boolMap := map[string]int{
 		"false": 0,
-		"true":  1,
+		"true":  16,
 	}
 
 	// Open the file

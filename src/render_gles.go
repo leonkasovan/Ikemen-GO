@@ -320,7 +320,7 @@ func (r *Renderer) Init() {
 
 	// Ident shader (no postprocessing)
 	r.postShaderSelect[0] = newShaderProgram(identVertShader, identFragShader, "Identity Postprocess")
-	r.postShaderSelect[0].RegisterAttributes("texcoord", "FragColor")
+	r.postShaderSelect[0].RegisterAttributes("VertCoord", "FragColor")
 	r.postShaderSelect[0].RegisterUniforms("Texture", "TextureSize")
 
 	// External Shaders
