@@ -444,7 +444,7 @@ func (f *Fnt) drawChar(
 	if len(f.palettes) != 0 && len(f.coldepth) > int(bank) &&
 		f.images[bt][c].img[0].coldepth != 32 &&
 		f.coldepth[bank] != f.images[bt][c].img[0].coldepth {
-		pal = f.images[bt][c].img[0].Pal[:]
+		pal = palfx.getFxPal(f.images[bt][c].img[0].Pal[:], false)
 	}
 
 	x -= xscl * float32(spr.Offset[0])
@@ -512,7 +512,7 @@ func (f *Fnt) DrawText(txt string, x, y, xscl, yscl float32, bank, align int32,
 
 	var pal []uint32
 	if len(f.palettes) != 0 {
-		pal = f.palettes[bank][:]
+		pal = palfx.getFxPal(f.palettes[bank][:], false)
 	}
 
 	f.paltex = nil

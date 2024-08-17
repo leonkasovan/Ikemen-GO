@@ -361,12 +361,33 @@ func setupConfig() configSettings {
 		cfgPath = sys.cmdFlags["-config"]
 	}
 	// Load the config file, overwriting the defaults
-	if bytes, err := os.ReadFile(cfgPath); err == nil {
-		if len(bytes) >= 3 &&
-			bytes[0] == 0xef && bytes[1] == 0xbb && bytes[2] == 0xbf {
-			bytes = bytes[3:]
+	if FileExist(cfgPath) != "" {
+		counter := 0
+		for {
+			// fmt.Printf("[DEBUG][main.go]1 tmp.CommonConst=%v counter=%v\n", tmp.CommonConst, counter)
+			if bytes, err := os.ReadFile(cfgPath); err == nil {
+				if len(bytes) >= 3 &&
+					bytes[0] == 0xef && bytes[1] == 0xbb && bytes[2] == 0xbf {
+					bytes = bytes[3:]
+				}
+				// chkEX(json.Unmarshal(bytes, &tmp), "Error while loading the config file.\n")
+				if json.Unmarshal(bytes, &tmp) != nil {
+					fmt.Printf("[DEBUG][main.go] setupConfig fix %v\n", cfgPath)
+					if err := fixConfig(cfgPath); err != nil {
+						ShowErrorDialog(err.Error())
+						panic(err)
+					}
+				} else {
+					// fmt.Printf("[DEBUG][main.go]2 tmp.CommonConst=%v counter=%v\n", tmp.CommonConst, counter)
+					counter = 1
+				}
+				counter = counter + 1
+				if counter > 1 {
+					// fmt.Printf("[DEBUG][main.go]3 tmp.CommonConst=%v counter=%v\n", tmp.CommonConst, counter)
+					break
+				}
+			}
 		}
-		chkEX(json.Unmarshal(bytes, &tmp), "Error while loading the config file.\n")
 	}
 	// Fix incorrect settings (default values saved into config.json)
 	switch tmp.AudioSampleRate {
