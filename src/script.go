@@ -2623,6 +2623,10 @@ func systemScriptInit(l *lua.LState) {
 		sys.bgm.UpdateVolume()
 		return 0
 	})
+	luaRegister(l, "waveGetLength", func(*lua.LState) int { // dummy function
+		l.Push(lua.LNumber(int32(math.Ceil(float64(0.5 * 60)))))
+		return 1
+	})
 	luaRegister(l, "wavePlay", func(l *lua.LState) int {
 		s, ok := toUserData(l, 1).(*Sound)
 		if !ok {
