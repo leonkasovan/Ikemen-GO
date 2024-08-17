@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	_ "embed" // Support for go:embed resources
 	"encoding/json"
 	"fmt"
@@ -14,8 +15,8 @@ import (
 	lua "github.com/yuin/gopher-lua"
 )
 
-var Version = "development"
-var BuildTime = "2014.04.13"
+var Version = "PSC-dev"
+var BuildTime = "2024.08.17"
 
 func init() {
 	runtime.LockOSThread()
@@ -47,7 +48,58 @@ func createLog(p string) *os.File {
 func closeLog(f *os.File) {
 	f.Close()
 }
+func fixConfig(filename string) error {
+	// Open the file
+	file, err := os.Open(filename)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
 
+	// Open or create the file
+	file2, err := os.Create("save/config.fix.json")
+	if err != nil {
+		return err
+	}
+	defer file2.Close()
+
+	// Create a buffered writer
+	writer := bufio.NewWriter(file2)
+
+	re1 := regexp.MustCompile(`"CommonAir": "(\S+)",`)
+	re2 := regexp.MustCompile(`"CommonCmd": "(\S+)",`)
+	re3 := regexp.MustCompile(`"CommonConst": "(\S+)",`)
+
+	// Create a new scanner
+	scanner := bufio.NewScanner(file)
+
+	// Loop through each line
+	var result []string
+	for scanner.Scan() {
+		result = re1.FindStringSubmatch(scanner.Text())
+		if result != nil {
+			writer.WriteString(fmt.Sprintf("\"CommonAir\": [\"%v\"],\n", result[1]))
+			continue
+		}
+		result = re2.FindStringSubmatch(scanner.Text())
+		if result != nil {
+			writer.WriteString(fmt.Sprintf("\"CommonCmd\": [\"%v\"],\n", result[1]))
+			continue
+		}
+		result = re3.FindStringSubmatch(scanner.Text())
+		if result != nil {
+			// fmt.Printf("[DEBUG][main.go][fixConfig]1: %v\n", scanner.Text())
+			// fmt.Printf("[DEBUG][main.go][fixConfig]2: %v\n", fmt.Sprintf("\"CommonConst\": [\"%v\"],\n", result[1]))
+			writer.WriteString(fmt.Sprintf("\"CommonConst\": [\"%v\"],\n", result[1]))
+			continue
+		}
+		writer.WriteString(scanner.Text() + "\n")
+	}
+	writer.Flush()
+	os.Rename(filename, "save/config.bak.json")
+	os.Rename("save/config.fix.json", filename)
+	return scanner.Err()
+}
 func main() {
 	processCommandLine()
 	if _, ok := sys.cmdFlags["-game"]; ok {
