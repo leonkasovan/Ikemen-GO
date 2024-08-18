@@ -200,18 +200,14 @@ func (c *Compiler) assertSpecial(is IniSection, sc *StateControllerBase, _ int8)
 				sc.add(assertSpecial_flag, sc.i64ToExp(int64(ASF_noailevel)))
 			case "nointroreset":
 				sc.add(assertSpecial_flag, sc.i64ToExp(int64(ASF_nointroreset)))
-			case "ignoreclsn2push":
-				sc.add(assertSpecial_flag, sc.i64ToExp(int64(ASF_ignoreclsn2push)))
+			case "sizepushonly":
+				sc.add(assertSpecial_flag, sc.i64ToExp(int64(ASF_sizepushonly)))
 			case "immovable":
 				sc.add(assertSpecial_flag, sc.i64ToExp(int64(ASF_immovable)))
 			case "animatehitpause":
 				sc.add(assertSpecial_flag, sc.i64ToExp(int64(ASF_animatehitpause)))
 			case "cornerpriority":
 				sc.add(assertSpecial_flag, sc.i64ToExp(int64(ASF_cornerpriority)))
-			case "drawontop":
-				sc.add(assertSpecial_flag, sc.i64ToExp(int64(ASF_drawontop)))
-			case "drawunder":
-				sc.add(assertSpecial_flag, sc.i64ToExp(int64(ASF_drawunder)))
 			case "runfirst":
 				sc.add(assertSpecial_flag, sc.i64ToExp(int64(ASF_runfirst)))
 			case "runlast":
@@ -777,6 +773,10 @@ func (c *Compiler) explodSub(is IniSection,
 	}); err != nil {
 		return err
 	}
+	if err := c.paramValue(is, sc, "layerno",
+		explod_layerno, VT_Int, 1, false); err != nil {
+		return err
+	}
 	if err := c.paramValue(is, sc, "shadow",
 		explod_shadow, VT_Int, 3, false); err != nil {
 		return err
@@ -909,6 +909,10 @@ func (c *Compiler) modifyExplod(is IniSection, sc *StateControllerBase,
 	ret, err := (*modifyExplod)(sc), c.stateSec(is, func() error {
 		if err := c.paramValue(is, sc, "redirectid",
 			explod_redirectid, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "index",
+			modifyexplod_index, VT_Int, 1, false); err != nil {
 			return err
 		}
 		if err := c.explodSub(is, sc); err != nil {
@@ -1439,7 +1443,7 @@ func (c *Compiler) hitDefSub(is IniSection, sc *StateControllerBase) error {
 		return err
 	}
 	if err := c.paramValue(is, sc, "nochainid",
-		hitDef_nochainid, VT_Int, 2, false); err != nil {
+		hitDef_nochainid, VT_Int, MaxSimul*2, false); err != nil {
 		return err
 	}
 	if err := c.paramValue(is, sc, "kill",
@@ -1880,6 +1884,10 @@ func (c *Compiler) hitDefSub(is IniSection, sc *StateControllerBase) error {
 		hitDef_down_recovertime, VT_Int, 1, false); err != nil {
 		return err
 	}
+	if err := c.paramValue(is, sc, "xaccel",
+		hitDef_xaccel, VT_Float, 1, false); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -2049,6 +2057,10 @@ func (c *Compiler) projectileSub(is IniSection, sc *StateControllerBase, ihp int
 		projectile_projsprpriority, VT_Int, 1, false); err != nil {
 		return err
 	}
+	if err := c.paramValue(is, sc, "projlayerno",
+		projectile_projlayerno, VT_Int, 1, false); err != nil {
+		return err
+	}
 	if err := c.paramValue(is, sc, "projstagebound",
 		projectile_projstagebound, VT_Int, 1, false); err != nil {
 		return err
@@ -2111,11 +2123,14 @@ func (c *Compiler) modifyProjectile(is IniSection, sc *StateControllerBase,
 			modifyProjectile_id, VT_Int, 1, false); err != nil {
 			return err
 		}
+		if err := c.paramValue(is, sc, "index",
+			modifyProjectile_index, VT_Int, 1, false); err != nil {
+			return err
+		}
 
 		if err := c.projectileSub(is, sc, ihp); err != nil {
 			return err
 		}
-
 		return nil
 	})
 	return *ret, err
@@ -2160,6 +2175,10 @@ func (c *Compiler) sprPriority(is IniSection, sc *StateControllerBase, _ int8) (
 	ret, err := (*sprPriority)(sc), c.stateSec(is, func() error {
 		if err := c.paramValue(is, sc, "redirectid",
 			sprPriority_redirectid, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "layerno",
+			sprPriority_layerno, VT_Int, 1, false); err != nil {
 			return err
 		}
 		return c.paramValue(is, sc, "value",
@@ -3544,6 +3563,11 @@ func (c *Compiler) removeExplod(is IniSection, sc *StateControllerBase, _ int8) 
 		if err := c.stateParam(is, "id", false, func(data string) error {
 			b = true
 			return c.scAdd(sc, removeExplod_id, data, VT_Int, 1)
+		}); err != nil {
+			return err
+		}
+		if err := c.stateParam(is, "index", false, func(data string) error {
+			return c.scAdd(sc, removeExplod_index, data, VT_Int, 1)
 		}); err != nil {
 			return err
 		}
@@ -5179,7 +5203,7 @@ func (c *Compiler) assertCommand(is IniSection, sc *StateControllerBase, _ int8)
 		}); err != nil {
 			return err
 		}
-		if err := c.paramValue(is, sc, "buffertime",
+		if err := c.paramValue(is, sc, "buffer.time",
 			assertCommand_buffertime, VT_Int, 1, false); err != nil {
 			return err
 		}
@@ -5308,6 +5332,10 @@ func (c *Compiler) getHitVarSet(is IniSection, sc *StateControllerBase, _ int8) 
 		}
 		if err := c.paramValue(is, sc, "xvel",
 			getHitVarSet_xvel, VT_Float, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "xaccel",
+			getHitVarSet_xaccel, VT_Float, 1, false); err != nil {
 			return err
 		}
 		if err := c.paramValue(is, sc, "yaccel",

@@ -144,7 +144,7 @@ type backGround struct {
 	visible            bool
 	active             bool
 	positionlink       bool
-	toplayer           bool
+	layerno            int32
 	autoresizeparallax bool
 	notmaskwindow      int32
 	startrect          [4]int32
@@ -183,12 +183,7 @@ func readBackGround(is IniSection, link *backGround,
 		return bg
 	}
 	var tmp int32
-	if is.ReadI32("layerno", &tmp) {
-		bg.toplayer = tmp == 1
-		if tmp < 0 || tmp > 1 {
-			bg.typ = 3
-		}
-	}
+	is.ReadI32("layerno", &bg.layerno)
 	if bg.typ != 3 {
 		var hasAnim bool
 		if (bg.typ != 0 || len(is["spriteno"]) == 0) &&
@@ -706,54 +701,55 @@ type stagePlayer struct {
 	startx, starty, startz int32
 }
 type Stage struct {
-	def              string
-	bgmusic          string
-	name             string
-	displayname      string
-	author           string
-	nameLow          string
-	displaynameLow   string
-	authorLow        string
-	attachedchardef  []string
-	sff              *Sff
-	at               AnimationTable
-	bg               []*backGround
-	bgc              []bgCtrl
-	bgct             bgcTimeLine
-	bga              bgAction
-	sdw              stageShadow
-	p                [2]stagePlayer
-	leftbound        float32
-	rightbound       float32
-	screenleft       int32
-	screenright      int32
-	zoffsetlink      int32
-	reflection       int32
-	hires            bool
-	autoturn         bool
-	resetbg          bool
-	debugbg          bool
-	bgclearcolor     [3]int32
-	localscl         float32
-	scale            [2]float32
-	bgmvolume        int32
-	bgmloopstart     int32
-	bgmloopend       int32
-	bgmstartposition int32
-	bgmfreqmul       float32
-	bgmratiolife     int32
-	bgmtriggerlife   int32
-	bgmtriggeralt    int32
-	mainstage        bool
-	stageCamera      stageCamera
-	stageTime        int32
-	constants        map[string]float32
-	p1p3dist         float32
-	mugenver         [2]uint16
-	reload           bool
-	stageprops       StageProps
-	model            *Model
-	ikemenver        [3]uint16
+	def               string
+	bgmusic           string
+	name              string
+	displayname       string
+	author            string
+	nameLow           string
+	displaynameLow    string
+	authorLow         string
+	attachedchardef   []string
+	sff               *Sff
+	at                AnimationTable
+	bg                []*backGround
+	bgc               []bgCtrl
+	bgct              bgcTimeLine
+	bga               bgAction
+	sdw               stageShadow
+	p                 [2]stagePlayer
+	leftbound         float32
+	rightbound        float32
+	screenleft        int32
+	screenright       int32
+	zoffsetlink       int32
+	reflection        int32
+	reflectionlayerno int32
+	hires             bool
+	autoturn          bool
+	resetbg           bool
+	debugbg           bool
+	bgclearcolor      [3]int32
+	localscl          float32
+	scale             [2]float32
+	bgmvolume         int32
+	bgmloopstart      int32
+	bgmloopend        int32
+	bgmstartposition  int32
+	bgmfreqmul        float32
+	bgmratiolife      int32
+	bgmtriggerlife    int32
+	bgmtriggeralt     int32
+	mainstage         bool
+	stageCamera       stageCamera
+	stageTime         int32
+	constants         map[string]float32
+	p1p3dist          float32
+	mugenver          [2]uint16
+	reload            bool
+	stageprops        StageProps
+	model             *Model
+	ikemenver         [3]uint16
 }
 
 func newStage(def string) *Stage {
@@ -1198,10 +1194,10 @@ func loadStage(def string, main bool) (*Stage, error) {
 		sec[0].ReadF32("xshear", &s.sdw.xshear)
 	}
 	if reflect {
-		if sec = defmap[fmt.Sprintf("%v.constants", sys.language)]; len(sec) > 0 {
+		if sec = defmap[fmt.Sprintf("%v.reflection", sys.language)]; len(sec) > 0 {
 			sectionExists = true
 		} else {
-			if sec = defmap["constants"]; len(sec) > 0 {
+			if sec = defmap["reflection"]; len(sec) > 0 {
 				sectionExists = true
 			}
 		}
@@ -1210,6 +1206,9 @@ func loadStage(def string, main bool) (*Stage, error) {
 			var tmp int32
 			if sec[0].ReadI32("intensity", &tmp) {
 				s.reflection = Clamp(tmp, 0, 255)
+			}
+			if sec[0].ReadI32("layerno", &tmp) {
+				s.reflectionlayerno = Clamp(tmp, -1, 0)
 			}
 		}
 	}
@@ -1553,7 +1552,8 @@ func (s *Stage) action() {
 		}
 	}
 }
-func (s *Stage) draw(top bool, x, y, scl float32) {
+
+func (s *Stage) draw(layer int32, x, y, scl float32) {
 	bgscl := float32(1)
 	if s.hires {
 		bgscl = 0.5
@@ -1599,17 +1599,18 @@ func (s *Stage) draw(top bool, x, y, scl float32) {
 			pos[i] = float32(math.Ceil(float64(p - 0.5)))
 		}
 	}
-	if !top {
+	if layer == 0 {
 		s.drawModel(pos, yofs, scl, 0)
-	} else {
+	} else if layer == 1 {
 		s.drawModel(pos, yofs, scl, 1)
 	}
 	for _, b := range s.bg {
-		if b.visible && b.toplayer == top && b.anim.spr != nil {
+		if b.layerno == layer && b.visible && b.anim.spr != nil {
 			b.draw(pos, scl, bgscl, s.localscl, s.scale, yofs, true)
 		}
 	}
 }
+
 func (s *Stage) reset() {
 	s.sff.palList.ResetRemap()
 	s.bga.clear()

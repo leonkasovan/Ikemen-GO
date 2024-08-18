@@ -280,6 +280,7 @@ options.t_itemname = {
 	--Language Setting
 	['language'] = function(t, item, cursorPosY, moveTxt)
 		if main.f_input(main.t_players, {'$F'}) then
+			sndPlay(motif.files.snd_data, motif.option_info.cursor_move_snd[1], motif.option_info.cursor_move_snd[2])
 			languageCounter = 0
 			for x, c in ipairs(motif.languages.languages) do
 				if c == config.Language then
@@ -297,6 +298,7 @@ options.t_itemname = {
 			loadstring("sfs = " .. "motif.languages." .. config.Language)()
 			t.items[item].vardisplay = sfs or config.Language
 		elseif main.f_input(main.t_players, {'$B'}) then
+			sndPlay(motif.files.snd_data, motif.option_info.cursor_move_snd[1], motif.option_info.cursor_move_snd[2])
 			languageCounter = 0
 			for x, c in ipairs(motif.languages.languages) do
 				if c == config.Language then
@@ -2014,7 +2016,7 @@ function options.f_keyCfg(cfgType, controller, bgdef, skipClear)
 		clearColor(motif[bgdef].bgclearcolor[1], motif[bgdef].bgclearcolor[2], motif[bgdef].bgclearcolor[3])
 	end
 	--draw layerno = 0 backgrounds
-	bgDraw(motif[bgdef].bg, false)
+	bgDraw(motif[bgdef].bg, 0)
 	--draw menu box
 	if motif.option_info.menu_boxbg_visible == 1 then
 		for i = 1, 2 do
@@ -2261,7 +2263,7 @@ function options.f_keyCfg(cfgType, controller, bgdef, skipClear)
 		end
 	end
 	--draw layerno = 1 backgrounds
-	bgDraw(motif[bgdef].bg, true)
+	bgDraw(motif[bgdef].bg, 1)
 	main.f_cmdInput()
 	if not skipClear then
 		refresh()
