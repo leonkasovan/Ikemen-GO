@@ -393,10 +393,19 @@ func systemScriptInit(l *lua.LState) {
 		layer := int32(0)
 		var x, y, scl float32 = 0, 0, 1
 		if l.GetTop() >= 2 {
-			if numArg(l, 2) == 1 {
-				layer = 1
+			num, ok := l.Get(2).(lua.LNumber)
+			if ok {
+				if float64(num) == 1 {
+					layer = 1
+				} else {
+					layer = 0
+				}
 			} else {
-				layer = 0
+				if l.ToBool(2) {
+					layer = 1
+				} else {
+					layer = 0
+				}
 			}
 		}
 		if l.GetTop() >= 3 {
