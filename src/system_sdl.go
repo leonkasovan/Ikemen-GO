@@ -105,17 +105,17 @@ func (w *Window) GetScaledViewportSize() (int32, int32, int32, int32) {
 	var x, y int32 = 0, 0
 
 	if ratioWidth < ratioHeight {
-	    ratio = ratioWidth
+		ratio = ratioWidth
 	} else {
-	    ratio = ratioHeight
+		ratio = ratioHeight
 	}
 
-	resizedWidth := int32(float32(sys.gameWidth)*ratio)
-	resizedHeight := int32(float32(sys.gameHeight)*ratio)
+	resizedWidth := int32(float32(sys.gameWidth) * ratio)
+	resizedHeight := int32(float32(sys.gameHeight) * ratio)
 
 	// calculate an X offset for the resized width to center it to the window
-	if (resizedWidth < int32(winWidth)) {
-	    x = (int32(winWidth) - resizedWidth) / 2
+	if resizedWidth < int32(winWidth) {
+		x = (int32(winWidth) - resizedWidth) / 2
 	}
 
 	return x, y, resizedWidth, resizedHeight
@@ -150,7 +150,17 @@ func (w *Window) pollEvents() {
 		break
 	case *sdl.KeyboardEvent:
 		if t.Type == sdl.KEYDOWN {
-			OnKeyPressed(t.Keysym.Sym, sdl.Keymod(t.Keysym.Mod))
+			if t.Keysym.Scancode == 261 { // 261 = Reset Button in Playstation Classic
+				// Create a quit event
+				quitEvent := sdl.QuitEvent{
+					Type:      sdl.QUIT,
+					Timestamp: sdl.GetTicks(),
+				}
+				// Push the quit event to the SDL event queue
+				sdl.PushEvent(&quitEvent)
+			} else {
+				OnKeyPressed(t.Keysym.Sym, sdl.Keymod(t.Keysym.Mod))
+			}
 		} else if t.Type == sdl.KEYUP {
 			OnKeyReleased(t.Keysym.Sym, sdl.Keymod(t.Keysym.Mod))
 		}
