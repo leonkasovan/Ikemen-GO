@@ -427,6 +427,27 @@ func systemScriptInit(l *lua.LState) {
 		bg.reset()
 		return 0
 	})
+	luaRegister(l, "changeColorPalette", func(*lua.LState) int {
+		preanim := toUserData(l, 1).(*Anim)
+		p := int16(numArg(l, 2))
+		x := 0
+		for x < len(preanim.anim.frames) {
+			value, ok := preanim.anim.sff.sprites[[2]int16{preanim.anim.frames[x].Group, preanim.anim.frames[x].Number}] //Check if frame in animation exists, to avoid a crash
+			if ok {
+				if value.Size[0] != 0 {
+					if value.palidx != -1 { //Avoid crash
+						if preanim.anim.palettedata.PalTable[[2]int16{1, p}] != -1 {
+							preanim.anim.palettedata.paletteMap[preanim.anim.sff.sprites[[2]int16{preanim.anim.frames[x].Group, preanim.anim.frames[x].Number}].palidx] = preanim.anim.palettedata.PalTable[[2]int16{1, p}]
+							break
+						}
+					}
+				}
+			}
+			x = x + 1
+		}
+		l.Push(newUserData(l, preanim))
+		return 1
+	})
 	luaRegister(l, "charChangeAnim", func(l *lua.LState) int {
 		//pn, anim_no, anim_elem, ffx
 		pn := int(numArg(l, 1))
@@ -710,6 +731,50 @@ func systemScriptInit(l *lua.LState) {
 	})
 	luaRegister(l, "connected", func(*lua.LState) int {
 		l.Push(lua.LBool(sys.netInput.IsConnected()))
+		return 1
+	})
+	luaRegister(l, "createUniqueAnim", func(*lua.LState) int {
+		oldPreanim := toUserData(l, 1).(*Anim)
+
+		//Copy information
+		uniqueSff := newSff()
+		uniqueSff.header = oldPreanim.anim.sff.header
+		uniqueSff.sprites = oldPreanim.anim.sff.sprites
+		uniqueSff.palList.palettes = oldPreanim.anim.sff.palList.palettes
+		x := 0
+		uniqueSff.palList.paletteMap = nil
+		for x < len(oldPreanim.anim.sff.palList.paletteMap) { //Copy each value from the palette map individually, without doing this, different sides/members of the same character will share palettes.
+			uniqueSff.palList.paletteMap = append(uniqueSff.palList.paletteMap, x)
+			x = x + 1
+		}
+		uniqueSff.palList.PalTable = oldPreanim.anim.sff.palList.PalTable
+		uniqueSff.palList.numcols = oldPreanim.anim.sff.palList.numcols
+		uniqueSff.palList.PalTex = oldPreanim.anim.sff.palList.PalTex
+		frameAnims := ""
+		x = 0
+		for x < len(oldPreanim.anim.frames) {
+			frameAnims = frameAnims + fmt.Sprint(oldPreanim.anim.frames[x].Group) + "," + fmt.Sprint(oldPreanim.anim.frames[x].Number) + "," + fmt.Sprint(oldPreanim.anim.frames[x].X) + "," + fmt.Sprint(oldPreanim.anim.frames[x].Y) + "," + fmt.Sprint(oldPreanim.anim.frames[x].Time) + "\n"
+			x = x + 1
+		}
+
+		//Create animation and copy animation data
+		newAnim := NewAnim(uniqueSff, frameAnims)
+		newAnim.window = oldPreanim.window
+		newAnim.x = oldPreanim.x
+		newAnim.y = oldPreanim.y
+		newAnim.xscl = oldPreanim.xscl
+		newAnim.yscl = oldPreanim.yscl
+		newAnim.palfx = oldPreanim.palfx
+
+		//Information to match the current frame in the animation
+		newAnim.anim.looptime = oldPreanim.anim.looptime
+		newAnim.anim.loopstart = oldPreanim.anim.loopstart
+		newAnim.anim.current = oldPreanim.anim.current
+		newAnim.anim.sumtime = oldPreanim.anim.sumtime
+		newAnim.anim.frames = oldPreanim.anim.frames
+		newAnim.anim.interpolate_blend_srcalpha = oldPreanim.anim.interpolate_blend_srcalpha
+		newAnim.anim.interpolate_scale = oldPreanim.anim.interpolate_scale
+		l.Push(newUserData(l, newAnim))
 		return 1
 	})
 	luaRegister(l, "dialogueReset", func(*lua.LState) int {

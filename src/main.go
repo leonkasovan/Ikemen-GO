@@ -1,10 +1,12 @@
 package main
 
 import (
+	"archive/zip"
 	"bufio"
 	_ "embed" // Support for go:embed resources
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -17,6 +19,30 @@ import (
 
 var Version = "PSC-dev"
 var BuildTime = "2024.08.17"
+
+//go:embed assets.zip
+var assetsZip []byte
+
+// extractFile extracts a file from the ZIP archive to the specified path
+func extractFile(f *zip.File, filePath string) error {
+	// Open the file inside the ZIP archive
+	srcFile, err := f.Open()
+	if err != nil {
+		return err
+	}
+	defer srcFile.Close()
+
+	// Create the destination file
+	destFile, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
+	if err != nil {
+		return err
+	}
+	defer destFile.Close()
+
+	// Copy the file content
+	_, err = io.Copy(destFile, srcFile)
+	return err
+}
 
 func init() {
 	runtime.LockOSThread()
@@ -101,6 +127,46 @@ func fixConfig(filename string) error {
 	return scanner.Err()
 }
 func main() {
+	fmt.Printf("[DEBUG][main.go][main] Running at OS=[%v] ARCH=[%v]\n", runtime.GOOS, runtime.GOARCH)
+
+	// Check if the "external" directory exists, if not exists then extract assets from embedded
+	if _, err := os.Stat("external"); os.IsNotExist(err) {
+		// Create a temporary file to hold the embedded ZIP data
+		tmpZipPath := "assets_temp.zip"
+		err = os.WriteFile(tmpZipPath, assetsZip, 0644)
+		if err != nil {
+			fmt.Printf("[DEBUG][main.go][main] Failed to write temp ZIP file: %s\n", err)
+			return
+		}
+		defer os.Remove(tmpZipPath) // Clean up the temp file after extraction
+
+		// Open the ZIP file
+		zipReader, err := zip.OpenReader(tmpZipPath)
+		if err != nil {
+			fmt.Printf("[DEBUG][main.go][main] Failed to open ZIP file: %s\n", err)
+			return
+		}
+		defer zipReader.Close()
+
+		// Iterate over each file in the ZIP archive
+		for _, file := range zipReader.File {
+			filePath := file.Name
+
+			if file.FileInfo().IsDir() {
+				// Create directories
+				os.MkdirAll(filePath, os.ModePerm)
+				continue
+			}
+
+			// Extract the file
+			if err = extractFile(file, filePath); err != nil {
+				fmt.Printf("[DEBUG][main.go][main] Failed to extract file: %s\n", err)
+				return
+			}
+		}
+
+		fmt.Println("[DEBUG][main.go][main] Mugen Game detected. Assets extraction completed successfully.")
+	}
 	processCommandLine()
 	if _, ok := sys.cmdFlags["-game"]; ok {
 		dir := filepath.Dir(sys.cmdFlags["-game"])
