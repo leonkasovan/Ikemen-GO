@@ -286,20 +286,20 @@ func (ir *InputReader) LocalInput(in int) (bool, bool, bool, bool, bool, bool, b
 	if in < len(sys.joystickConfig) {
 		joyS := sys.joystickConfig[in].Joy
 		if joyS >= 0 {
-			U = sys.joystickConfig[in].U() || U // Does not override keyboard
-			D = sys.joystickConfig[in].D() || D
-			L = sys.joystickConfig[in].L() || L
-			R = sys.joystickConfig[in].R() || R
-			a = sys.joystickConfig[in].a() || a
-			b = sys.joystickConfig[in].b() || b
-			c = sys.joystickConfig[in].c() || c
-			x = sys.joystickConfig[in].x() || x
-			y = sys.joystickConfig[in].y() || y
-			z = sys.joystickConfig[in].z() || z
-			s = sys.joystickConfig[in].s() || s
-			d = sys.joystickConfig[in].d() || d
-			w = sys.joystickConfig[in].w() || w
-			m = sys.joystickConfig[in].m() || m
+			U = U || sys.joystickConfig[in].U() // Does not override keyboard
+			D = D || sys.joystickConfig[in].D()
+			L = L || sys.joystickConfig[in].L()
+			R = R || sys.joystickConfig[in].R()
+			a = a || sys.joystickConfig[in].a()
+			b = b || sys.joystickConfig[in].b()
+			c = c || sys.joystickConfig[in].c()
+			x = x || sys.joystickConfig[in].x()
+			y = y || sys.joystickConfig[in].y()
+			z = z || sys.joystickConfig[in].z()
+			s = s || sys.joystickConfig[in].s()
+			d = d || sys.joystickConfig[in].d()
+			w = w || sys.joystickConfig[in].w()
+			m = m || sys.joystickConfig[in].m()
 		}
 	}
 	// Button assist is checked locally so the sent inputs are already processed

@@ -2927,7 +2927,7 @@ func (c *Char) load(def string) error {
 					}
 					// fmt.Printf("[DEBUG][char.go] load: Font filename=%v\n", filename)
 					if gi.fnt[i], err = loadFnt(filename, height); err != nil {
-						// sys.errLog.Printf("failed to load %v (char font): %v", filename, err)
+						sys.errLog.Printf("failed to load %v (char font): %v", filename, err)
 					}
 					return nil
 				})

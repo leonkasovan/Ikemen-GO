@@ -1,4 +1,5 @@
 //go:build sdl
+
 package main
 
 /*
@@ -27,7 +28,7 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 	var mode sdl.DisplayMode
 	// Initialize OpenGL
 	chk(sdl.Init(sdl.INIT_EVERYTHING))
-	if Renderer_API == 2 {	// OpenGL ES
+	if Renderer_API == 2 { // OpenGL ES
 		sdl.GLSetAttribute(sdl.GL_CONTEXT_MAJOR_VERSION, 3)
 		sdl.GLSetAttribute(sdl.GL_CONTEXT_MINOR_VERSION, 1)
 		sdl.GLSetAttribute(sdl.GL_CONTEXT_PROFILE_MASK, sdl.GL_CONTEXT_PROFILE_ES)
@@ -35,8 +36,13 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 		sdl.GLSetAttribute(sdl.GL_CONTEXT_MAJOR_VERSION, 2)
 		sdl.GLSetAttribute(sdl.GL_CONTEXT_MINOR_VERSION, 1)
 	}
+
+	// "-windowed" overrides the configuration setting but does not change it
+	_, forceWindowed := sys.cmdFlags["-windowed"]
+	fullscreen := s.fullscreen && !forceWindowed
+
 	// Create main window.
-	if s.fullscreen {
+	if fullscreen && !s.borderless {
 		window, err = sdl.CreateWindow(s.windowTitle, sdl.WINDOWPOS_UNDEFINED, sdl.WINDOWPOS_UNDEFINED,
 			int32(w), int32(h), sdl.WINDOW_OPENGL|sdl.WINDOW_FULLSCREEN)
 	} else {
@@ -63,7 +69,7 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 	}
 	// Store current timestamp
 	s.prevTimestampUint = sdl.GetTicks64()
-	ret := &Window{window, s.windowTitle, true, false, 0, 0, w, h}
+	ret := &Window{window, s.windowTitle, fullscreen, false, x, y, w, h}
 	return ret, err
 }
 
@@ -71,7 +77,7 @@ func (w *Window) SwapBuffers() {
 	w.Window.GLSwap()
 	// Retrieve GL timestamp now
 	sdlNow := sdl.GetTicks64()
-	delta := sdlNow-sys.prevTimestampUint
+	delta := sdlNow - sys.prevTimestampUint
 	if delta >= 1000 {
 		// sys.gameFPS = float32(sys.absTickCount) / float32(delta/1000)
 		sys.gameFPS = float32(sys.absTickCount)
@@ -89,8 +95,8 @@ func (w *Window) SetSwapInterval(interval int) {
 }
 
 func (w *Window) GetSize() (int, int) {
-	ww,hh := w.Window.GetSize()
-	return int(ww),int(hh)
+	ww, hh := w.Window.GetSize()
+	return int(ww), int(hh)
 }
 
 func (w *Window) GetScaledViewportSize() (int32, int32, int32, int32) {
@@ -159,7 +165,7 @@ func (w *Window) pollEvents() {
 	case *sdl.KeyboardEvent:
 		if t.Type == sdl.KEYDOWN {
 			OnKeyPressed(t.Keysym.Sym, sdl.Keymod(t.Keysym.Mod))
-		}else if t.Type == sdl.KEYUP {
+		} else if t.Type == sdl.KEYUP {
 			OnKeyReleased(t.Keysym.Sym, sdl.Keymod(t.Keysym.Mod))
 		}
 		break

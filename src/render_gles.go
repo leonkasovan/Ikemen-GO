@@ -96,7 +96,7 @@ func (s *ShaderProgram) RegisterTextures(names ...string) {
 
 func compileShader(shaderType uint32, src string) (shader uint32) {
 	shader = gl.CreateShader(shaderType)
-	src = "#version 300 es\nprecision mediump float;\n" + src + "\x00"
+	src = "#version 300 es\nprecision highp float;\n" + src + "\x00"
 	s, _ := gl.Strs(src)
 	var l int32 = int32(len(src) - 1)
 	gl.ShaderSource(shader, 1, s, &l)
@@ -302,14 +302,14 @@ func (r *Renderer) Init() {
 
 	// Sprite shader
 	r.spriteShader = newShaderProgram(vertShader, fragShader, "Main Shader")
-	r.spriteShader.RegisterAttributes("position", "uv", "FragColor")
+	r.spriteShader.RegisterAttributes("position", "uv", "texcoord")
 	r.spriteShader.RegisterUniforms("modelview", "projection", "x1x2x4x3",
 		"alpha", "tint", "mask", "neg", "gray", "add", "mult", "isFlat", "isRgba", "isTrapez", "hue")
 	r.spriteShader.RegisterTextures("pal", "tex")
 
 	// 3D model shader
 	r.modelShader = newShaderProgram(modelVertShader, modelFragShader, "Model Shader")
-	r.modelShader.RegisterAttributes("position", "uv", "vertColor", "joints_0", "joints_1", "weights_0", "weights_1", "morphTargets_0", "FragColor")
+	r.modelShader.RegisterAttributes("position", "uv", "vertColor", "joints_0", "joints_1", "weights_0", "weights_1", "texcoord", "vColor")
 	r.modelShader.RegisterUniforms("modelview", "projection", "baseColorFactor", "add", "mult", "textured", "neg", "gray", "hue", "enableAlpha", "alphaThreshold", "numJoints", "morphTargetWeight", "positionTargetCount", "uvTargetCount")
 	r.modelShader.RegisterTextures("tex", "jointMatrices")
 
@@ -320,7 +320,7 @@ func (r *Renderer) Init() {
 
 	// Ident shader (no postprocessing)
 	r.postShaderSelect[0] = newShaderProgram(identVertShader, identFragShader, "Identity Postprocess")
-	r.postShaderSelect[0].RegisterAttributes("VertCoord", "FragColor")
+	r.postShaderSelect[0].RegisterAttributes("VertCoord", "texcoord")
 	r.postShaderSelect[0].RegisterUniforms("Texture", "TextureSize")
 
 	// External Shaders
@@ -426,12 +426,16 @@ func (r *Renderer) EndFrame() {
 	x, y, resizedWidth, resizedHeight := sys.window.GetScaledViewportSize()
 	postShader := r.postShaderSelect[sys.postProcessingShader]
 
-	var scaleMode uint32 // GL enum
+	var scaleMode int32 // GL enum
 	if sys.windowScaleMode == true {
 		scaleMode = gl.LINEAR
 	} else {
 		scaleMode = gl.NEAREST
 	}
+
+	gl.Viewport(x, y, int32(resizedWidth), int32(resizedHeight))
+	gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
+	gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 
 	gl.UseProgram(postShader.program)
 	gl.Disable(gl.BLEND)
@@ -442,11 +446,14 @@ func (r *Renderer) EndFrame() {
 	} else {
 		gl.BindTexture(gl.TEXTURE_2D, r.fbo_texture)
 	}
+
+	// set post-processing parameters
 	gl.Uniform1i(postShader.u["Texture"], 0)
-	gl.Uniform2f(postShader.u["TextureSize"], float32(sys.scrrect[2]), float32(sys.scrrect[3]))
+	gl.Uniform2f(postShader.u["TextureSize"], float32(resizedWidth), float32(resizedHeight))
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, scaleMode)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, scaleMode)
 
 	gl.BindBuffer(gl.ARRAY_BUFFER, r.postVertBuffer)
-	gl.Finish()
 
 	loc := r.modelShader.a["VertCoord"]
 	gl.EnableVertexAttribArray(uint32(loc))
@@ -454,22 +461,6 @@ func (r *Renderer) EndFrame() {
 
 	gl.DrawArrays(gl.TRIANGLE_STRIP, 0, 4)
 	gl.DisableVertexAttribArray(uint32(loc))
-
-	// rebind to prepare frame for blitting to window
-	if sys.multisampleAntialiasing > 0 {
-		gl.BindFramebuffer(gl.READ_FRAMEBUFFER, r.fbo_f)
-	} else {
-		gl.BindFramebuffer(gl.READ_FRAMEBUFFER, r.fbo)
-	}
-	gl.BindFramebuffer(gl.DRAW_FRAMEBUFFER, 0)
-
-	// clear the entire window's contents (prevents garbage data artifacts when resizing)
-	fullw, fullh := sys.window.GetSize()
-	gl.Viewport(0, 0, int32(fullw), int32(fullh))
-	gl.Clear(gl.COLOR_BUFFER_BIT)
-
-	// scale finished frame to window
-	gl.BlitFramebuffer(0, 0, sys.scrrect[2], sys.scrrect[3], x, y, x+resizedWidth, y+resizedHeight, gl.COLOR_BUFFER_BIT, scaleMode)
 }
 
 func (r *Renderer) SetPipeline(eq BlendEquation, src, dst BlendFunc) {

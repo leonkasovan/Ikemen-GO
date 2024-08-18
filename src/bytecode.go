@@ -10352,7 +10352,6 @@ func (sc playBgm) Run(c *Char, _ []int32) bool {
 		return true
 	})
 	if b {
-		// fmt.Printf("[DEBUG][bytecode.go] playBgm.Run: bgm=%v\n", bgm)
 		sys.bgm.Open(bgm, loop, volume, loopstart, loopend, startposition, freqmul)
 		sys.playBgmFlg = true
 	}
