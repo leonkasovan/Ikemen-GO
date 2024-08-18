@@ -16,7 +16,7 @@ import (
 )
 
 var Version = "development"
-var BuildTime = "2014.04.13"
+var BuildTime = "2024.08.18"
 
 func init() {
 	runtime.LockOSThread()

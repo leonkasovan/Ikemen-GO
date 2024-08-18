@@ -1545,10 +1545,12 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 
 		switch vname {
 		case "back":
+		case "left":
 			opc = OC_ex2_clsnvar_left
 		case "top":
 			opc = OC_ex2_clsnvar_top
 		case "front":
+		case "right":
 			opc = OC_ex2_clsnvar_right
 		case "bottom":
 			opc = OC_ex2_clsnvar_bottom
@@ -4981,7 +4983,6 @@ func (c *Compiler) stateCompile(def string, states map[int32]StateBytecode,
 	// Load state file
 	if err := LoadFile(&filename, dirs, func(filename string) error {
 		var err error
-
 		// If this is a zss file
 		if zss {
 			var b []byte
@@ -5007,6 +5008,7 @@ func (c *Compiler) stateCompile(def string, states map[int32]StateBytecode,
 		return err
 	}); err != nil {
 		// If filename doesn't exist, see if a zss file exists
+		fmt.Printf("[DEBUG][compiler.go][stateCompile]1 Err=%v\n", err)
 		fnz += ".zss"
 		if err := LoadFile(&fnz, dirs, func(filename string) error {
 			var b []byte
@@ -5023,6 +5025,7 @@ func (c *Compiler) stateCompile(def string, states map[int32]StateBytecode,
 		}); err == nil {
 			return c.stateCompileZ(states, fnz, str, constants)
 		}
+		fmt.Printf("[DEBUG][compiler.go][stateCompile]2 Err=%v\n", err)
 		return err
 	}
 	c.lines, c.i = SplitAndTrim(str, "\n"), 0
@@ -6129,6 +6132,7 @@ func (c *Compiler) stateBlock(line *string, bl *StateBlock, root bool,
 }
 func (c *Compiler) stateCompileZ(states map[int32]StateBytecode,
 	filename, src string, constants map[string]float32) error {
+	fmt.Printf("[DEBUG][compiler.go][stateCompileZ] filename=%v\n", filename)
 	defer func(oime bool) {
 		sys.ignoreMostErrors = oime
 	}(sys.ignoreMostErrors)
