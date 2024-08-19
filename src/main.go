@@ -129,21 +129,24 @@ func fixConfig(filename string) error {
 func main() {
 	fmt.Printf("[DEBUG][main.go][main] Running at OS=[%v] ARCH=[%v]\n", runtime.GOOS, runtime.GOARCH)
 
-	// Check if the "external" directory exists, if not exists then extract assets from embedded
-	if _, err := os.Stat("external"); os.IsNotExist(err) {
+	// Check if the "external" directory exists and data/mugen.cfg, if not exists then extract assets from embedded
+	_, err1 := os.Stat("external");
+	_, err2 := os.Stat("data/mugen.cfg"); 
+
+	if os.IsNotExist(err1) && os.IsExist(err2) {
 		// Create a temporary file to hold the embedded ZIP data
 		tmpZipPath := "assets_temp.zip"
-		err = os.WriteFile(tmpZipPath, assetsZip, 0644)
-		if err != nil {
-			fmt.Printf("[DEBUG][main.go][main] Failed to write temp ZIP file: %s\n", err)
+		err3 := os.WriteFile(tmpZipPath, assetsZip, 0644)
+		if err3 != nil {
+			fmt.Printf("[DEBUG][main.go][main] Failed to write temp ZIP file: %s\n", err3)
 			return
 		}
 		defer os.Remove(tmpZipPath) // Clean up the temp file after extraction
 
 		// Open the ZIP file
-		zipReader, err := zip.OpenReader(tmpZipPath)
-		if err != nil {
-			fmt.Printf("[DEBUG][main.go][main] Failed to open ZIP file: %s\n", err)
+		zipReader, err4 := zip.OpenReader(tmpZipPath)
+		if err4 != nil {
+			fmt.Printf("[DEBUG][main.go][main] Failed to open ZIP file: %s\n", err4)
 			return
 		}
 		defer zipReader.Close()
@@ -159,8 +162,8 @@ func main() {
 			}
 
 			// Extract the file
-			if err = extractFile(file, filePath); err != nil {
-				fmt.Printf("[DEBUG][main.go][main] Failed to extract file: %s\n", err)
+			if err5 := extractFile(file, filePath); err5 != nil {
+				fmt.Printf("[DEBUG][main.go][main] Failed to extract file: %s\n", err5)
 				return
 			}
 		}
@@ -173,10 +176,10 @@ func main() {
 		base := filepath.Base(sys.cmdFlags["-game"])
 		name := base[:len(base)-len(filepath.Ext(base))] // Remove the extension from the base name
 
-		err := os.Chdir(filepath.Join(dir, name))
-		if err != nil {
-			fmt.Println("Error changing directory:", err)
-			panic(err)
+		err6 := os.Chdir(filepath.Join(dir, name))
+		if err6 != nil {
+			fmt.Println("Error changing directory:", err6)
+			panic(err6)
 		}
 	}
 
@@ -185,10 +188,10 @@ func main() {
 	os.Mkdir("save/replays", os.ModeSticky|0755)
 
 	// Try reading stats
-	if _, err := os.ReadFile("save/stats.json"); err != nil {
+	if _, err7 := os.ReadFile("save/stats.json"); err7 != nil {
 		// If there was an error reading, write an empty json file
-		f, err := os.Create("save/stats.json")
-		chk(err)
+		f, err8 := os.Create("save/stats.json")
+		chk(err8)
 		f.Write([]byte("{}"))
 		chk(f.Close())
 	}
@@ -199,14 +202,14 @@ func main() {
 	//os.Mkdir("debug", os.ModeSticky|0755)
 
 	// Check if the main lua file exists.
-	if ftemp, err1 := os.Open(tmp.System); err1 != nil {
+	if ftemp, err9 := os.Open(tmp.System); err9 != nil {
 		ftemp.Close()
-		var err2 = Error(
+		var err10 = Error(
 			"Main lua file \"" + tmp.System + "\" error." +
-				"\n" + err1.Error(),
+				"\n" + err9.Error(),
 		)
-		ShowErrorDialog(err2.Error())
-		panic(err2)
+		ShowErrorDialog(err10.Error())
+		panic(err10)
 	} else {
 		ftemp.Close()
 	}
