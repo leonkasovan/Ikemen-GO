@@ -153,6 +153,7 @@ func newCompiler() *Compiler {
 		"modifybgctrl":         c.modifyBGCtrl,
 		"playbgm":              c.playBgm,
 		"printtoconsole":       c.printToConsole,
+		"rankadd":              c.rankAdd,
 		"redlifeadd":           c.redLifeAdd,
 		"redlifeset":           c.redLifeSet,
 		"remapsprite":          c.remapSprite,
@@ -4443,6 +4444,7 @@ func cnsStringArray(arg string) ([]string, error) {
 // Compile a state file
 func (c *Compiler) stateCompile(states map[int32]StateBytecode,
 	filename string, dirs []string, negoverride bool, constants map[string]float32) error {
+	// fmt.Printf("[DEBUG][compiler.go][stateCompile] filename=%v\n", filename)
 	var str string
 	zss := HasExtension(filename, ".zss")
 	fnz := filename
@@ -5572,6 +5574,7 @@ func (c *Compiler) stateBlock(line *string, bl *StateBlock, root bool,
 }
 func (c *Compiler) stateCompileZ(states map[int32]StateBytecode,
 	filename, src string, constants map[string]float32) error {
+	// fmt.Printf("[DEBUG][compiler.go][stateCompileZ] filename=%v\n", filename)
 	defer func(oime bool) {
 		sys.ignoreMostErrors = oime
 	}(sys.ignoreMostErrors)

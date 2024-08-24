@@ -66,13 +66,18 @@ func systemScriptInit(l *lua.LState) {
 		return 0
 	})
 	luaRegister(l, "addHotkey", func(*lua.LState) int {
+		// fmt.Printf("[DEBUG][script.go][addHotkey] l.GetTop()=%v\n", l.GetTop())
 		l.Push(lua.LBool(func() bool {
 			k := StringToKey(strArg(l, 1))
 			if k == KeyUnknown {
 				return false
 			}
 			sk := *NewShortcutKey(k, boolArg(l, 2), boolArg(l, 3), boolArg(l, 4))
-			sys.shortcutScripts[sk] = &ShortcutScript{Pause: boolArg(l, 5), DebugKey: boolArg(l, 6), Script: strArg(l, 7)}
+			if l.GetTop() >= 7 {
+				sys.shortcutScripts[sk] = &ShortcutScript{Pause: boolArg(l, 5), DebugKey: boolArg(l, 6), Script: strArg(l, 7)}
+			} else {
+				sys.shortcutScripts[sk] = &ShortcutScript{Pause: boolArg(l, 5), DebugKey: false, Script: strArg(l, 6)}
+			}
 			return true
 		}()))
 		return 1
@@ -134,6 +139,24 @@ func systemScriptInit(l *lua.LState) {
 			//TODO: palette changing depending on palette currently loaded on character
 			a := &Anim{anim: anim, window: sys.scrrect, xscl: 1, yscl: 1, palfx: pfx}
 			if l.GetTop() >= 5 && !boolArg(l, 5) && a.anim.totaltime == a.anim.looptime {
+				a.anim.totaltime = -1
+				a.anim.looptime = 0
+			}
+			l.Push(newUserData(l, a))
+			return 1
+		}
+		return 0
+	})
+	luaRegister(l, "animGetAnimation", func(l *lua.LState) int {
+		var anim *Animation
+		anim = sys.sel.GetChar(int(numArg(l, 1))).anims.get(int16(numArg(l, 2)), int16(numArg(l, 3)))
+		if anim != nil {
+			pfx := newPalFX()
+			pfx.clear()
+			pfx.time = -1
+			//TODO: palette changing depending on palette currently loaded on character
+			a := &Anim{anim: anim, window: sys.scrrect, xscl: 1, yscl: 1, palfx: pfx}
+			if l.GetTop() >= 4 && !boolArg(l, 4) && a.anim.totaltime == a.anim.looptime {
 				a.anim.totaltime = -1
 				a.anim.looptime = 0
 			}
@@ -1534,8 +1557,46 @@ func systemScriptInit(l *lua.LState) {
 		l.Push(lua.LNumber(sys.lifebar.ro.match_wins[tn-1]))
 		return 1
 	})
+	luaRegister(l, "getRank", func(*lua.LState) int {
+		tn := int(numArg(l, 1))
+		if tn < 1 || tn > 2 {
+			l.RaiseError("\nInvalid team side: %v\n", tn)
+		}
+		tbl := l.NewTable()
+		tbl_values := l.NewTable()
+		for k, v := range sys.lifebar.sc[tn-1].rankPoints {
+			tbl_values.RawSetString(k, lua.LNumber(v))
+		}
+		tbl_icons := l.NewTable()
+		for k, v := range sys.lifebar.sc[tn-1].rankIcons {
+			tbl_icons.RawSetInt(k+1, lua.LString(v))
+		}
+		tbl.RawSetString("values", tbl_values)
+		tbl.RawSetString("icons", tbl_icons)
+		l.Push(tbl)
+		return 1
+	})
 	luaRegister(l, "getRoundTime", func(l *lua.LState) int {
 		l.Push(lua.LNumber(sys.roundTime))
+		return 1
+	})
+	luaRegister(l, "getStageName", func(*lua.LState) int {
+		c := sys.sel.GetStage(int(numArg(l, 1)))
+		l.Push(lua.LString(c.name))
+		return 1
+	})
+	luaRegister(l, "getStageAttachedChar", func(*lua.LState) int {
+		c := sys.sel.GetStage(int(numArg(l, 1)))
+		l.Push(lua.LString(c.attachedchardef))
+		return 1
+	})
+	luaRegister(l, "getStageBgm", func(*lua.LState) int {
+		c := sys.sel.GetStage(int(numArg(l, 1)))
+		subt := l.NewTable()
+		for k, v := range c.stagebgm {
+			subt.RawSetString(k, lua.LString(v))
+		}
+		l.Push(subt)
 		return 1
 	})
 	luaRegister(l, "getStageInfo", func(*lua.LState) int {
@@ -1669,22 +1730,40 @@ func systemScriptInit(l *lua.LState) {
 	})
 	luaRegister(l, "playBGM", func(l *lua.LState) int {
 		var loop, volume, loopstart, loopend, startposition int = 1, 100, 0, 0, 0
-		if l.GetTop() >= 2 {
-			loop = int(numArg(l, 2))
+		num, ok := l.Get(2).(lua.LNumber)
+		if !ok {
+			if l.GetTop() >= 3 {
+				loop = int(numArg(l, 3))
+			}
+			if l.GetTop() >= 4 {
+				volume = int(numArg(l, 4))
+			}
+			if l.GetTop() >= 5 {
+				loopstart = int(numArg(l, 5))
+			}
+			if l.GetTop() >= 6 && numArg(l, 6) > 1 {
+				loopend = int(numArg(l, 6))
+			}
+			sys.bgm.Open(strArg(l, 1), loop, volume, loopstart, loopend, startposition)
+		} else {
+			if l.GetTop() >= 2 {
+				// loop = int(numArg(l, 2))
+				loop = int(num)
+			}
+			if l.GetTop() >= 3 {
+				volume = int(numArg(l, 3))
+			}
+			if l.GetTop() >= 4 {
+				loopstart = int(numArg(l, 4))
+			}
+			if l.GetTop() >= 5 && numArg(l, 5) > 1 {
+				loopend = int(numArg(l, 5))
+			}
+			if l.GetTop() >= 6 && numArg(l, 6) > 1 {
+				startposition = int(numArg(l, 6))
+			}
+			sys.bgm.Open(strArg(l, 1), loop, volume, loopstart, loopend, startposition)
 		}
-		if l.GetTop() >= 3 {
-			volume = int(numArg(l, 3))
-		}
-		if l.GetTop() >= 4 {
-			loopstart = int(numArg(l, 4))
-		}
-		if l.GetTop() >= 5 && numArg(l, 5) > 1 {
-			loopend = int(numArg(l, 5))
-		}
-		if l.GetTop() >= 6 && numArg(l, 6) > 1 {
-			startposition = int(numArg(l, 6))
-		}
-		sys.bgm.Open(strArg(l, 1), loop, volume, loopstart, loopend, startposition)
 		return 0
 	})
 	luaRegister(l, "playerBufReset", func(*lua.LState) int {
@@ -1705,6 +1784,32 @@ func systemScriptInit(l *lua.LState) {
 						p[0].setASF(ASF_nohardcodedkeys)
 					}
 				}
+			}
+		}
+		return 0
+	})
+	luaRegister(l, "preloadList", func(*lua.LState) int {
+		if strArg(l, 1) == "canim" {
+			sys.sel.charAnimPreload = append(sys.sel.charAnimPreload, int32(numArg(l, 2)))
+		} else if strArg(l, 1) == "cspr" {
+			sys.sel.charSpritePreload[[...]int16{int16(numArg(l, 2)), int16(numArg(l, 3))}] = true
+		} else if strArg(l, 1) == "sanim" {
+			sys.sel.stageAnimPreload = append(sys.sel.stageAnimPreload, int32(numArg(l, 2)))
+		} else if strArg(l, 1) == "sspr" {
+			sys.sel.stageSpritePreload[[...]int16{int16(numArg(l, 2)), int16(numArg(l, 3))}] = true
+		} else if strArg(l, 1) == "anim" {
+			if l.GetTop() == 2 {
+				sys.sel.charAnimPreload = append(sys.sel.charAnimPreload, int32(numArg(l, 2)))
+			} else {
+				sys.sel.charSpritePreload[[...]int16{int16(numArg(l, 2)), int16(numArg(l, 3))}] = true
+			}
+		} else if strArg(l, 1) == "spr" {
+			if l.GetTop() >= 2 {
+				sys.sel.charSpritePreload[[...]int16{int16(numArg(l, 2)), int16(numArg(l, 3))}] = true
+			}
+		} else if strArg(l, 1) == "stage" {
+			if l.GetTop() >= 2 {
+				sys.sel.stageSpritePreload[[...]int16{int16(numArg(l, 2)), int16(numArg(l, 3))}] = true
 			}
 		}
 		return 0
@@ -2120,6 +2225,7 @@ func systemScriptInit(l *lua.LState) {
 			case lua.LString:
 				switch string(k) {
 				case "active": //enabled by default
+				case "lifebar":
 					sys.lifebar.active = lua.LVAsBool(value)
 				case "bars": //enabled by default
 					sys.lifebar.bars = lua.LVAsBool(value)
@@ -2132,12 +2238,14 @@ func systemScriptInit(l *lua.LState) {
 				case "mode": //enabled by default
 					sys.lifebar.mode = lua.LVAsBool(value)
 				case "p1aiLevel":
+				case "p1ai":
 					sys.lifebar.ai[0].active = lua.LVAsBool(value)
 				case "p1score":
 					sys.lifebar.sc[0].active = lua.LVAsBool(value)
 				case "p1winCount":
 					sys.lifebar.wc[0].active = lua.LVAsBool(value)
 				case "p2aiLevel":
+				case "p2ai":
 					sys.lifebar.ai[1].active = lua.LVAsBool(value)
 				case "p2score":
 					sys.lifebar.sc[1].active = lua.LVAsBool(value)
@@ -2156,6 +2264,18 @@ func systemScriptInit(l *lua.LState) {
 				l.RaiseError("\nInvalid table key type: %v\n", fmt.Sprintf("%T\n", key))
 			}
 		})
+		return 0
+	})
+	luaRegister(l, "setStunBar", func(l *lua.LState) int {
+		sys.lifebar.stunbar = boolArg(l, 1)
+		return 0
+	})
+	luaRegister(l, "setRedLifeBar", func(l *lua.LState) int {
+		sys.lifebar.redlifebar = boolArg(l, 1)
+		return 0
+	})
+	luaRegister(l, "setGuardBar", func(l *lua.LState) int {
+		sys.lifebar.guardbar = boolArg(l, 1)
 		return 0
 	})
 	luaRegister(l, "setLifebarLocalcoord", func(l *lua.LState) int {
@@ -4260,6 +4380,10 @@ func triggerFunctions(l *lua.LState) {
 		return 1
 	})
 	luaRegister(l, "framespercount", func(l *lua.LState) int {
+		l.Push(lua.LNumber(sys.lifebar.ti.framespercount))
+		return 1
+	})
+	luaRegister(l, "getTimeFramesPerCount", func(l *lua.LState) int {
 		l.Push(lua.LNumber(sys.lifebar.ti.framespercount))
 		return 1
 	})

@@ -2670,6 +2670,8 @@ type LifeBarScore struct {
 	min         float32
 	max         float32
 	scorePoints float32
+	rankPoints  map[string]float32
+	rankIcons   []string
 	enabled     map[string]bool
 	active      bool
 }
@@ -2709,6 +2711,8 @@ func (sc *LifeBarScore) reset() {
 	sc.bg.Reset()
 	sc.top.Reset()
 	sc.scorePoints = 0
+	sc.rankPoints = make(map[string]float32)
+	sc.rankIcons = []string{}
 }
 func (sc *LifeBarScore) bgDraw(layerno int16) {
 	if sc.active {
