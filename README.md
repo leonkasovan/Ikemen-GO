@@ -1,8 +1,10 @@
 ```
 git clone -b SDL2 https://github.com/leonkasovan/Ikemen-GO.git
+chmod a+x build/build.sh
 make steamdeck
 
 git clone -b PSC https://github.com/leonkasovan/Ikemen-GO.git
+chmod a+x build/build.sh
 make psc
 ```
 
