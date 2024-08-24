@@ -119,6 +119,18 @@ func fixConfig(filename string) error {
 			writer.WriteString(fmt.Sprintf("\"CommonConst\": [\"%v\"],\n", result[1]))
 			continue
 		}
+		if strings.Contains(scanner.Text(), "external/shaders/") {
+			writer.WriteString(fmt.Sprintf("\n"))
+			continue
+		}
+		if strings.Contains(scanner.Text(), "MSAA") {
+			writer.WriteString(fmt.Sprintf("  \"MSAA\": false,\n"))
+			continue
+		}
+		if strings.Contains(scanner.Text(), "PostProcessingShader") {
+			writer.WriteString(fmt.Sprintf("  \"PostProcessingShader\": 0,\n"))
+			continue
+		}
 		writer.WriteString(scanner.Text() + "\n")
 	}
 	writer.Flush()
@@ -139,7 +151,7 @@ func main() {
 		tmpZipPath := "assets_temp.zip"
 		err := os.WriteFile(tmpZipPath, assetsZip, 0644)
 		if err != nil {
-			fmt.Printf("[DEBUG][main.go][main] Failed to write temp ZIP file: %s\n", err)
+			fmt.Printf("[DEBUG][main.go][main] Failed to write temp ZIP file: %v\n", err)
 			return
 		}
 		defer os.Remove(tmpZipPath) // Clean up the temp file after extraction
@@ -147,7 +159,7 @@ func main() {
 		// Open the ZIP file
 		zipReader, err := zip.OpenReader(tmpZipPath)
 		if err != nil {
-			fmt.Printf("[DEBUG][main.go][main] Failed to open ZIP file: %s\n", err)
+			fmt.Printf("[DEBUG][main.go][main] Failed to open ZIP file: %v\n", err)
 			return
 		}
 		defer zipReader.Close()
@@ -164,7 +176,7 @@ func main() {
 
 			// Extract the file
 			if err := extractFile(file, filePath); err != nil {
-				fmt.Printf("[DEBUG][main.go][main] Failed to extract file: %s\n", err)
+				fmt.Printf("[DEBUG][main.go][main] Failed to extract file: %v\n", err)
 				return
 			}
 		}
@@ -220,6 +232,7 @@ func main() {
 	defer sys.shutdown()
 
 	// Begin processing game using its lua scripts
+	fmt.Printf("[DEBUG][main.go][main]: Running in lua script=[%v]\n", tmp.System)
 	if err := sys.luaLState.DoFile(tmp.System); err != nil {
 		// Display error logs.
 		errorLog := createLog("Ikemen.log")
@@ -229,11 +242,11 @@ func main() {
 		case *lua.ApiError:
 			errstr := strings.Split(err.Error(), "\n")[0]
 			if len(errstr) < 10 || errstr[len(errstr)-10:] != "<game end>" {
-				ShowErrorDialog(fmt.Sprintf("%s\n\nError saved to Ikemen.log", err))
+				ShowErrorDialog(fmt.Sprintf("%v\n\nError saved to Ikemen.log", err))
 				panic(err)
 			}
 		default:
-			ShowErrorDialog(fmt.Sprintf("%s\n\nError saved to Ikemen.log", err))
+			ShowErrorDialog(fmt.Sprintf("%v\n\nError saved to Ikemen.log", err))
 			panic(err)
 		}
 	}
@@ -424,6 +437,7 @@ func setupConfig() configSettings {
 	// Unmarshal default config string into a struct
 	tmp := configSettings{}
 	chk(json.Unmarshal(defaultConfig, &tmp))
+	fmt.Printf("[DEBUG][main.go][setupConfig]1 tmp.JoystickConfig[0]: %v\n", tmp.JoystickConfig[0])
 	// Config file path
 	cfgPath := "save/config.json"
 	// If a different config file is defined in the command line parameters, use it instead
@@ -434,13 +448,15 @@ func setupConfig() configSettings {
 	if FileExist(cfgPath) != "" {
 		counter := 0
 		for {
-			// fmt.Printf("[DEBUG][main.go]1 tmp.CommonConst=%v counter=%v\n", tmp.CommonConst, counter)
+			fmt.Printf("[DEBUG][main.go][setupConfig] tmp.CommonConst=%v counter=%v\n", tmp.CommonConst, counter)
 			if bytes, err := os.ReadFile(cfgPath); err == nil {
 				if len(bytes) >= 3 &&
 					bytes[0] == 0xef && bytes[1] == 0xbb && bytes[2] == 0xbf {
 					bytes = bytes[3:]
 				}
 				// chkEX(json.Unmarshal(bytes, &tmp), "Error while loading the config file.\n")
+				fmt.Printf("[DEBUG][main.go][setupConfig] counter=%v tmp.JoystickConfig[0]: %v\n", counter, tmp.JoystickConfig[0])
+				// fmt.Println(string(bytes))
 				if json.Unmarshal(bytes, &tmp) != nil {
 					fmt.Printf("[DEBUG][main.go] setupConfig fix %v\n", cfgPath)
 					if err := fixConfig(cfgPath); err != nil {
@@ -452,6 +468,7 @@ func setupConfig() configSettings {
 					counter = 1
 				}
 				counter = counter + 1
+				fmt.Printf("[DEBUG][main.go][setupConfig] counter=%v tmp.JoystickConfig[0]: %v\n", counter, tmp.JoystickConfig[0])
 				if counter > 1 {
 					// fmt.Printf("[DEBUG][main.go]3 tmp.CommonConst=%v counter=%v\n", tmp.CommonConst, counter)
 					break
@@ -459,6 +476,7 @@ func setupConfig() configSettings {
 			}
 		}
 	}
+	fmt.Printf("[DEBUG][main.go][setupConfig]2 tmp.JoystickConfig[0]: %v\n", tmp.JoystickConfig[0])
 	// Fix incorrect settings (default values saved into config.json)
 	switch tmp.AudioSampleRate {
 	case 22050, 44100, 48000:
@@ -476,7 +494,13 @@ func setupConfig() configSettings {
 	tmp.WavChannels = Clamp(tmp.WavChannels, 1, 256)
 	// Save config file, indent with two spaces to match calls to json.encode() in the Lua code
 	cfg, _ := json.MarshalIndent(tmp, "", "  ")
+	fmt.Printf("[DEBUG][main.go][setupConfig]3 tmp.JoystickConfig[0]: %v\n", tmp.JoystickConfig[0])
+	// fmt.Println(string(cfg))
+	// os.Remove(cfgPath)
 	chk(os.WriteFile(cfgPath, cfg, 0644))
+	// fmt.Println("after")
+	// chk(os.WriteFile(cfgPath, cfg, 0644))
+	// fmt.Println(string(cfg))
 
 	// If given width/height arguments, override config's width/height here
 	if _, wok := sys.cmdFlags["-width"]; wok {
@@ -576,6 +600,7 @@ func setupConfig() configSettings {
 	}
 	if _, ok := sys.cmdFlags["-nojoy"]; !ok {
 		for _, jc := range tmp.JoystickConfig {
+			fmt.Printf("sys.joystickConfig=%v [%v]\n", jc.Joystick, jc.Buttons)
 			b := jc.Buttons
 			sys.joystickConfig = append(sys.joystickConfig, KeyConfig{jc.Joystick,
 				Atoi(b[0].(string)), Atoi(b[1].(string)), Atoi(b[2].(string)),
