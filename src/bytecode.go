@@ -2384,7 +2384,7 @@ func (be BytecodeExp) run_ex(c *Char, i *int, oc *Char) {
 	case OC_ex_animlength:
 		sys.bcStack.PushI(c.anim.totaltime)
 	case OC_ex_attack:
-		sys.bcStack.PushF(c.attackMul * 100)
+		sys.bcStack.PushF(c.attackMul[0] * 100)
 	case OC_ex_inputtime_B:
 		if c.keyctrl[0] && c.cmd != nil {
 			sys.bcStack.PushI(c.cmd[0].Buffer.Bb)
@@ -4123,7 +4123,7 @@ func (sc helper) Run(c *Char, _ []int32) bool {
 			case 1:
 				h.player = true
 			case 2:
-				h.hprojectile = true
+				h.hprojectile = true // Currently unused
 			}
 		case helper_name:
 			h.name = string(*(*[]byte)(unsafe.Pointer(&exp[0])))
@@ -4602,9 +4602,9 @@ const (
 	explod_pausemovetime
 	explod_sprpriority
 	explod_layerno
+	explod_under
 	explod_ontop
 	explod_strictontop
-	explod_under
 	explod_shadow
 	explod_removeongethit
 	explod_removeonchangestate
@@ -4669,7 +4669,6 @@ func (sc explod) Run(c *Char, _ []int32) bool {
 			if c.stWgi().mugenver[0] == 1 && c.stWgi().mugenver[1] == 1 {
 				e.postype = PT_None
 			}
-			e.layerno = crun.layerNo // Default
 		}
 		switch id {
 		case explod_anim:
@@ -4773,10 +4772,7 @@ func (sc explod) Run(c *Char, _ []int32) bool {
 				e.sprpriority = 0
 			}
 		case explod_under:
-			if exp[0].evalB(c) {
-				e.layerno = 0
-				e.sprpriority = math.MinInt32
-			}
+			e.under = exp[0].evalB(c)
 		case explod_shadow:
 			e.shadow[0] = exp[0].evalI(c)
 			if len(exp) > 1 {
@@ -5171,8 +5167,7 @@ func (sc modifyExplod) Run(c *Char, _ []int32) bool {
 			case explod_under:
 				if exp[0].evalB(c) {
 					eachExpl(func(e *Explod) {
-						e.layerno = 0
-						e.sprpriority = math.MinInt32
+						e.under = exp[0].evalB(c)
 					})
 				}
 			case explod_shadow:
@@ -6071,7 +6066,6 @@ func (sc projectile) Run(c *Char, _ []int32) bool {
 				}
 				p.hitdef.playerNo = sys.workingState.playerNo
 			}
-			p.layerno = crun.layerNo // Default
 		}
 		switch id {
 		case projectile_postype:
@@ -7852,9 +7846,13 @@ func (sc superPause) Run(c *Char, _ []int32) bool {
 	crun := c
 	var t, mt int32 = 30, 0
 	uh := true
-	sys.superanim, sys.superpmap.remap = crun.getAnim(100, "f", true), nil
-	sys.superpos, sys.superfacing = [...]float32{crun.pos[0] * crun.localscl, crun.pos[1] * crun.localscl}, crun.facing
-	sys.superpausebg, sys.superendcmdbuftime, sys.superdarken = true, 0, true
+	animset := false
+	sys.superpmap.remap = nil
+	sys.superpos = [...]float32{crun.pos[0] * crun.localscl, crun.pos[1] * crun.localscl}
+	sys.superfacing = crun.facing
+	sys.superpausebg = true
+	sys.superendcmdbuftime = 0
+	sys.superdarken = true
 	sys.superp2defmul = crun.gi().constants["super.targetdefencemul"]
 	StateControllerBase(sc).run(c, func(id byte, exp []BytecodeExp) bool {
 		switch id {
@@ -7870,7 +7868,9 @@ func (sc superPause) Run(c *Char, _ []int32) bool {
 			sys.superdarken = exp[0].evalB(c)
 		case superPause_anim:
 			ffx := string(*(*[]byte)(unsafe.Pointer(&exp[0])))
-			if sys.superanim = crun.getAnim(exp[1].evalI(c), ffx, true); sys.superanim != nil {
+			num := exp[1].evalI(c)
+			animset = true
+			if sys.superanim = crun.getAnim(num, ffx, true); sys.superanim != nil {
 				if ffx != "" && ffx != "s" {
 					sys.superpmap.remap = nil
 				} else {
@@ -7903,14 +7903,18 @@ func (sc superPause) Run(c *Char, _ []int32) bool {
 		case superPause_redirectid:
 			if rid := sys.playerID(exp[0].evalI(c)); rid != nil {
 				crun = rid
-				sys.superanim, sys.superpmap.remap = crun.getAnim(100, "f", true), nil
-				sys.superpos, sys.superfacing = [...]float32{crun.pos[0] * crun.localscl, crun.pos[1] * crun.localscl}, crun.facing
+				sys.superpmap.remap = nil
+				sys.superpos = [...]float32{crun.pos[0] * crun.localscl, crun.pos[1] * crun.localscl}
+				sys.superfacing = crun.facing
 			} else {
 				return false
 			}
 		}
 		return true
 	})
+	if !animset {
+		sys.superanim = crun.getAnim(100, "f", true) // Default animation
+	}
 	if sys.superanim != nil {
 		sys.superanim.start_scale[0] *= crun.localscl
 		sys.superanim.start_scale[1] *= crun.localscl
@@ -8337,15 +8341,32 @@ type attackMulSet StateControllerBase
 
 const (
 	attackMulSet_value byte = iota
+	attackMulSet_damage
+	attackMulSet_redlife
+	attackMulSet_dizzypoints
+	attackMulSet_guardpoints
 	attackMulSet_redirectid
 )
 
 func (sc attackMulSet) Run(c *Char, _ []int32) bool {
 	crun := c
+	base := float32(crun.gi().data.attack) * crun.ocd().attackRatio / 100
 	StateControllerBase(sc).run(c, func(id byte, exp []BytecodeExp) bool {
 		switch id {
 		case attackMulSet_value:
-			crun.attackMul = float32(crun.gi().data.attack) * crun.ocd().attackRatio / 100 * exp[0].evalF(c)
+			v := exp[0].evalF(c)
+			crun.attackMul[0] = v * base
+			crun.attackMul[1] = v * base
+			crun.attackMul[2] = v * base
+			crun.attackMul[3] = v * base
+		case attackMulSet_damage:
+			crun.attackMul[0] = exp[0].evalF(c) * base
+		case attackMulSet_redlife:
+			crun.attackMul[1] = exp[0].evalF(c) * base
+		case attackMulSet_dizzypoints:
+			crun.attackMul[2] = exp[0].evalF(c) * base
+		case attackMulSet_guardpoints:
+			crun.attackMul[3] = exp[0].evalF(c) * base
 		case attackMulSet_redirectid:
 			if rid := sys.playerID(exp[0].evalI(c)); rid != nil {
 				crun = rid
@@ -10932,6 +10953,7 @@ const (
 	modifyChar_redirectid
 )
 
+// TODO: Undo all effects if a cached character is loaded
 func (sc modifyChar) Run(c *Char, _ []int32) bool {
 	crun := c
 	StateControllerBase(sc).run(c, func(id byte, exp []BytecodeExp) bool {
