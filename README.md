@@ -1,6 +1,9 @@
 ```
 git clone -b SDL2 https://github.com/leonkasovan/Ikemen-GO.git
 make steamdeck
+
+git clone -b PSC https://github.com/leonkasovan/Ikemen-GO.git
+make psc
 ```
 
 https://mugenguild.com/forum/  
