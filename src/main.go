@@ -451,19 +451,7 @@ func setupConfig() configSettings {
 	// Unmarshal default config string into a struct
 	tmp := configSettings{}
 	chk(json.Unmarshal(defaultConfig, &tmp))
-	fmt.Printf("[DEBUG][main.go][setupConfig] Assigning Joystick default setting\n")
-	sys.joystickDefaultConfig = map[string]KeyConfig{} // Initialize empty map for KeyConfig
-	for id, jc := range tmp.JoystickDefaultConfig {
-		fmt.Printf("sys.joystickDefaultConfig[%v]=[%v] %v\n", jc.JoystickName, id, jc.Buttons)
-		b := jc.Buttons
-		sys.joystickDefaultConfig[jc.JoystickName] = KeyConfig{0,
-			Atoi(b[0]), Atoi(b[1]), Atoi(b[2]),
-			Atoi(b[3]), Atoi(b[4]), Atoi(b[5]),
-			Atoi(b[6]), Atoi(b[7]), Atoi(b[8]),
-			Atoi(b[9]), Atoi(b[10]), Atoi(b[11]),
-			Atoi(b[12]), Atoi(b[13])}
-	}
-	fmt.Printf("[DEBUG][main.go][setupConfig] using embedded defaultConfig,json\ntmp.JoystickConfig[0]: %v\ntmp.JoystickConfig[1]: %v\ntmp.JoystickConfig[2]: %v\n", tmp.JoystickConfig[0], tmp.JoystickConfig[1], tmp.JoystickConfig[2])
+	fmt.Printf("[DEBUG][main.go][setupConfig] using embedded defaultConfig.json\ntmp.JoystickConfig[0]: %v\ntmp.JoystickConfig[1]: %v\ntmp.JoystickConfig[2]: %v\n", tmp.JoystickConfig[0], tmp.JoystickConfig[1], tmp.JoystickConfig[2])
 	// Config file path
 	cfgPath := "save/config.json"
 	// If a different config file is defined in the command line parameters, use it instead
@@ -494,6 +482,18 @@ func setupConfig() configSettings {
 				}
 			}
 		}
+	}
+	fmt.Printf("[DEBUG][main.go][setupConfig] Assigning Joystick default setting\n")
+	sys.joystickDefaultConfig = map[string]KeyConfig{} // Initialize empty map for KeyConfig
+	for id, jc := range tmp.JoystickDefaultConfig {
+		fmt.Printf("sys.joystickDefaultConfig[%v]=[%v] %v\n", jc.JoystickName, id, jc.Buttons)
+		b := jc.Buttons
+		sys.joystickDefaultConfig[jc.JoystickName] = KeyConfig{0,
+			Atoi(b[0]), Atoi(b[1]), Atoi(b[2]),
+			Atoi(b[3]), Atoi(b[4]), Atoi(b[5]),
+			Atoi(b[6]), Atoi(b[7]), Atoi(b[8]),
+			Atoi(b[9]), Atoi(b[10]), Atoi(b[11]),
+			Atoi(b[12]), Atoi(b[13])}
 	}
 	fmt.Printf("[DEBUG][main.go][setupConfig] after loading config.json\ntmp.JoystickConfig[0]: %v\ntmp.JoystickConfig[1]: %v\ntmp.JoystickConfig[2]: %v\n", tmp.JoystickConfig[0], tmp.JoystickConfig[1], tmp.JoystickConfig[2])
 	// Fix incorrect settings (default values saved into config.json)
