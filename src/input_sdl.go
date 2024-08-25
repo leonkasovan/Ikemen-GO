@@ -212,12 +212,34 @@ func (input *Input) GetJoystickAxes(joy int) []float32 {
 	return []float32{0.0, 0.0} // dummy, to be define
 }
 
-func (input *Input) GetJoystickButtons(joy int) []byte {
+func (input *Input) GetJoystickButtons(joy int) []byte {	
 	if joy < 0 || joy >= len(input.joysticks) {
 		return []byte{}
 	}
-	return []byte{input.joysticks[joy].Button(0), input.joysticks[joy].Button(1), input.joysticks[joy].Button(2), input.joysticks[joy].Button(3), input.joysticks[joy].Button(4), input.joysticks[joy].Button(5), input.joysticks[joy].Button(6), input.joysticks[joy].Button(7), input.joysticks[joy].Button(8), input.joysticks[joy].Button(9), input.joysticks[joy].Hat(0) & 1, input.joysticks[joy].Hat(0) & 2, input.joysticks[joy].Hat(0) & 4, input.joysticks[joy].Hat(0) & 8, input.joysticks[joy].Button(14), input.joysticks[joy].Button(15)}
-	// return []byte{}	// dummy
+	js := input.joysticks[joy]
+	// Update button status
+	res := []byte{js.Button(0), js.Button(1), js.Button(2), js.Button(3), js.Button(4), js.Button(5) , js.Button(6) , js.Button(7), js.Button(8), js.Button(9), js.Button(10), js.Button(11), js.Button(12),js.Button(13),js.Button(14), js.Button(15), js.Button(16)}
+	
+	// Update direction button with Hat status
+	res[sys.joystickConfig[joy].dU] |= (js.Hat(0) & 1)
+	res[sys.joystickConfig[joy].dR] |= (js.Hat(0) & 2)
+	res[sys.joystickConfig[joy].dD] |= (js.Hat(0) & 4)
+	res[sys.joystickConfig[joy].dL] |= (js.Hat(0) & 8)
+	
+	// Update direction button with Axes status
+	if res[sys.joystickConfig[joy].dU] == 0 && (js.Axis(1) < -16000) {
+		res[sys.joystickConfig[joy].dU] = 1
+	}
+	if res[sys.joystickConfig[joy].dR] == 0 && (js.Axis(0) > 16000) {
+		res[sys.joystickConfig[joy].dR] = 1
+	}
+	if res[sys.joystickConfig[joy].dD] == 0 && (js.Axis(1) > 16000) {
+		res[sys.joystickConfig[joy].dD] = 1
+	}
+	if res[sys.joystickConfig[joy].dL] == 0 && (js.Axis(0) < -16000) {
+		res[sys.joystickConfig[joy].dL] = 1
+	}
+	return res
 }
 
 func JoystickState(joy, button int) bool {
@@ -228,15 +250,16 @@ func JoystickState(joy, button int) bool {
 		return false
 	}
 	if button >= 0 {
+			base := sys.joystickConfig[joy].dU
 			switch button {
-			case 10:	// Up: check axis and d.pad(hat)
-				return (input.joysticks[joy].Axis(1) < -16000) || ((input.joysticks[joy].Hat(0) & (1 << (button-10))) != 0)
-			case 11:	// Right: check axis and d.pad(hat)
-				return (input.joysticks[joy].Axis(0) > 16000) || ((input.joysticks[joy].Hat(0) & (1 << (button-10))) != 0)
-			case 12:	// Down: check axis and d.pad(hat)
-				return (input.joysticks[joy].Axis(1) > 16000) || ((input.joysticks[joy].Hat(0) & (1 << (button-10))) != 0)
-			case 13:	// Left: check axis and d.pad(hat)
-				return (input.joysticks[joy].Axis(0) < -16000) || ((input.joysticks[joy].Hat(0) & (1 << (button-10))) != 0)
+			case sys.joystickConfig[joy].dU:	// Up: check axis and d.pad(hat)
+				return (input.joysticks[joy].Axis(1) < -16000) || (input.joysticks[joy].Button(button) != 0) || ((input.joysticks[joy].Hat(0) & (1 << (button-base))) != 0)
+			case sys.joystickConfig[joy].dR:	// Right: check axis and d.pad(hat)
+				return (input.joysticks[joy].Axis(0) > 16000) || (input.joysticks[joy].Button(button) != 0) || ((input.joysticks[joy].Hat(0) & (1 << (button-base))) != 0)
+			case sys.joystickConfig[joy].dD:	// Down: check axis and d.pad(hat)
+				return (input.joysticks[joy].Axis(1) > 16000) || (input.joysticks[joy].Button(button) != 0) || ((input.joysticks[joy].Hat(0) & (1 << (button-base))) != 0)
+			case sys.joystickConfig[joy].dL:	// Left: check axis and d.pad(hat)
+				return (input.joysticks[joy].Axis(0) < -16000) || (input.joysticks[joy].Button(button) != 0) || ((input.joysticks[joy].Hat(0) & (1 << (button-base))) != 0)
 			default:	// Other (normal) button
 				return input.joysticks[joy].Button(button) != 0
 			}
