@@ -48,12 +48,12 @@
   "ForceStageZoomin": 0,
   "ForceStageZoomout": 0,
   "Framerate": 60,
-  "Fullscreen": true,
+  "Fullscreen": false,
   "FullscreenRefreshRate": 60,
   "FullscreenWidth": 1280,
   "FullscreenHeight": 720,
-  "GameWidth": 320,
-  "GameHeight": 240,
+  "GameWidth": 640,
+  "GameHeight": 480,
   "GameFramerate": 60,
   "InputButtonAssist": true,
   "InputSOCDResolution": 2,
@@ -227,7 +227,7 @@
         "7",
         "9",
         "4",
-        "-10",
+        "8",
         "6"
       ]
     },
@@ -246,7 +246,7 @@
         "7",
         "9",
         "4",
-        "-10",
+        "8",
         "6"
       ]
     },
@@ -257,16 +257,16 @@
         "12",
         "13",
         "11",
-        "2",
         "1",
-        "5",
-        "3",
-        "0",
+        "2",
         "7",
-        "9",
+        "0",
+        "3",
+        "5",
+        "8",
+        "6",
         "4",
-        "-10",
-        "6"
+        "9" 
       ]
     },
     {
@@ -284,8 +284,68 @@
         "7",
         "9",
         "4",
-        "-10",
+        "8",
         "6"
+      ]
+    }
+  ]
+  ,
+  "JoystickDefaultConfig": [
+    {
+      "JoystickName": "Logitech Dual Action",
+      "Buttons": [
+        "10",
+        "12",
+        "13",
+        "11",
+        "1",
+        "2",
+        "7",
+        "0",
+        "3",
+        "5",
+        "9",
+        "4",
+        "6",
+        "8"
+      ]
+    },
+    {
+      "JoystickName": "Steam Deck",
+      "Buttons": [
+        "11",
+        "12",
+        "13",
+        "14",
+        "0",
+        "1",
+        "5",
+        "2",
+        "3",
+        "8",
+        "6",
+        "9",
+        "7",
+        "4"
+      ]
+    },
+    {
+      "JoystickName": "retrogame_joypad",
+      "Buttons": [
+        "10",
+        "12",
+        "13",
+        "11",
+        "0",
+        "1",
+        "7",
+        "3",
+        "2",
+        "5",
+        "9",
+        "4",
+        "6",
+        "8"
       ]
     }
   ]
