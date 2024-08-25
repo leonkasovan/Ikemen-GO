@@ -1693,7 +1693,8 @@ function options.f_keyDefault()
 	resetRemapInput()
 end
 if config.FirstRun then
-	options.f_keyDefault()
+	-- we have default setting at go script, so no need this again
+	-- options.f_keyDefault()
 end
 
 function options.f_keyCfgReset(cfgType)

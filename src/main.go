@@ -250,6 +250,10 @@ func main() {
 			panic(err)
 		}
 	}
+	fmt.Printf("[DEBUG][main.go][setupConfig] Joystick Setting Updated from options.lua\n")
+	for _, jc := range tmp.JoystickConfig {
+		fmt.Printf("sys.joystickConfig=%v [%v]\n", jc.Joystick, jc.Buttons)
+	}
 }
 
 // Loops through given comand line arguments and processes them for later use by the game
@@ -427,6 +431,10 @@ type configSettings struct {
 		Joystick int
 		Buttons  []interface{}
 	}
+	JoystickDefaultConfig []struct {
+		JoystickName string
+		Buttons      []string
+	}
 }
 
 //go:embed resources/defaultConfig.json
@@ -434,10 +442,28 @@ var defaultConfig []byte
 
 // Sets default config settings, then attemps to load existing config from disk
 func setupConfig() configSettings {
+	Atoi := func(key string) int {
+		if i, err := strconv.Atoi(key); err == nil {
+			return i
+		}
+		return 999
+	}
 	// Unmarshal default config string into a struct
 	tmp := configSettings{}
 	chk(json.Unmarshal(defaultConfig, &tmp))
-	fmt.Printf("[DEBUG][main.go][setupConfig]1 tmp.JoystickConfig[0]: %v\n", tmp.JoystickConfig[0])
+	fmt.Printf("[DEBUG][main.go][setupConfig] Assigning Joystick default setting\n")
+	sys.joystickDefaultConfig = map[string]KeyConfig{} // Initialize empty map for KeyConfig
+	for id, jc := range tmp.JoystickDefaultConfig {
+		fmt.Printf("sys.joystickDefaultConfig[%v]=[%v] %v\n", jc.JoystickName, id, jc.Buttons)
+		b := jc.Buttons
+		sys.joystickDefaultConfig[jc.JoystickName] = KeyConfig{0,
+			Atoi(b[0]), Atoi(b[1]), Atoi(b[2]),
+			Atoi(b[3]), Atoi(b[4]), Atoi(b[5]),
+			Atoi(b[6]), Atoi(b[7]), Atoi(b[8]),
+			Atoi(b[9]), Atoi(b[10]), Atoi(b[11]),
+			Atoi(b[12]), Atoi(b[13])}
+	}
+	fmt.Printf("[DEBUG][main.go][setupConfig] using embedded defaultConfig,json\ntmp.JoystickConfig[0]: %v\ntmp.JoystickConfig[1]: %v\ntmp.JoystickConfig[2]: %v\n", tmp.JoystickConfig[0], tmp.JoystickConfig[1], tmp.JoystickConfig[2])
 	// Config file path
 	cfgPath := "save/config.json"
 	// If a different config file is defined in the command line parameters, use it instead
@@ -448,15 +474,11 @@ func setupConfig() configSettings {
 	if FileExist(cfgPath) != "" {
 		counter := 0
 		for {
-			fmt.Printf("[DEBUG][main.go][setupConfig] tmp.CommonConst=%v counter=%v\n", tmp.CommonConst, counter)
 			if bytes, err := os.ReadFile(cfgPath); err == nil {
 				if len(bytes) >= 3 &&
 					bytes[0] == 0xef && bytes[1] == 0xbb && bytes[2] == 0xbf {
 					bytes = bytes[3:]
 				}
-				// chkEX(json.Unmarshal(bytes, &tmp), "Error while loading the config file.\n")
-				fmt.Printf("[DEBUG][main.go][setupConfig] counter=%v tmp.JoystickConfig[0]: %v\n", counter, tmp.JoystickConfig[0])
-				// fmt.Println(string(bytes))
 				if json.Unmarshal(bytes, &tmp) != nil {
 					fmt.Printf("[DEBUG][main.go] setupConfig fix %v\n", cfgPath)
 					if err := fixConfig(cfgPath); err != nil {
@@ -464,19 +486,16 @@ func setupConfig() configSettings {
 						panic(err)
 					}
 				} else {
-					// fmt.Printf("[DEBUG][main.go]2 tmp.CommonConst=%v counter=%v\n", tmp.CommonConst, counter)
 					counter = 1
 				}
 				counter = counter + 1
-				fmt.Printf("[DEBUG][main.go][setupConfig] counter=%v tmp.JoystickConfig[0]: %v\n", counter, tmp.JoystickConfig[0])
 				if counter > 1 {
-					// fmt.Printf("[DEBUG][main.go]3 tmp.CommonConst=%v counter=%v\n", tmp.CommonConst, counter)
 					break
 				}
 			}
 		}
 	}
-	fmt.Printf("[DEBUG][main.go][setupConfig]2 tmp.JoystickConfig[0]: %v\n", tmp.JoystickConfig[0])
+	fmt.Printf("[DEBUG][main.go][setupConfig] after loading config.json\ntmp.JoystickConfig[0]: %v\ntmp.JoystickConfig[1]: %v\ntmp.JoystickConfig[2]: %v\n", tmp.JoystickConfig[0], tmp.JoystickConfig[1], tmp.JoystickConfig[2])
 	// Fix incorrect settings (default values saved into config.json)
 	switch tmp.AudioSampleRate {
 	case 22050, 44100, 48000:
@@ -494,13 +513,7 @@ func setupConfig() configSettings {
 	tmp.WavChannels = Clamp(tmp.WavChannels, 1, 256)
 	// Save config file, indent with two spaces to match calls to json.encode() in the Lua code
 	cfg, _ := json.MarshalIndent(tmp, "", "  ")
-	fmt.Printf("[DEBUG][main.go][setupConfig]3 tmp.JoystickConfig[0]: %v\n", tmp.JoystickConfig[0])
-	// fmt.Println(string(cfg))
-	// os.Remove(cfgPath)
 	chk(os.WriteFile(cfgPath, cfg, 0644))
-	// fmt.Println("after")
-	// chk(os.WriteFile(cfgPath, cfg, 0644))
-	// fmt.Println(string(cfg))
 
 	// If given width/height arguments, override config's width/height here
 	if _, wok := sys.cmdFlags["-width"]; wok {
@@ -583,12 +596,6 @@ func setupConfig() configSettings {
 	stoki := func(key string) int {
 		return int(StringToKey(key))
 	}
-	Atoi := func(key string) int {
-		if i, err := strconv.Atoi(key); err == nil {
-			return i
-		}
-		return 999
-	}
 	for _, kc := range tmp.KeyConfig {
 		b := kc.Buttons
 		sys.keyConfig = append(sys.keyConfig, KeyConfig{kc.Joystick,
@@ -598,9 +605,10 @@ func setupConfig() configSettings {
 			stoki(b[9].(string)), stoki(b[10].(string)), stoki(b[11].(string)),
 			stoki(b[12].(string)), stoki(b[13].(string))})
 	}
+	fmt.Printf("[DEBUG][main.go][setupConfig] Assigning Joystick setting to Engine\n")
 	if _, ok := sys.cmdFlags["-nojoy"]; !ok {
 		for _, jc := range tmp.JoystickConfig {
-			fmt.Printf("sys.joystickConfig=%v [%v]\n", jc.Joystick, jc.Buttons)
+			fmt.Printf("sys.joystickConfig[%v] = %v\n", jc.Joystick, jc.Buttons)
 			b := jc.Buttons
 			sys.joystickConfig = append(sys.joystickConfig, KeyConfig{jc.Joystick,
 				Atoi(b[0].(string)), Atoi(b[1].(string)), Atoi(b[2].(string)),

@@ -168,7 +168,13 @@ func (w *Window) pollEvents() {
 	case *sdl.JoyDeviceAddedEvent:
 		input.joysticks[int(t.Which)] = sdl.JoystickOpen(int(t.Which))
 		if input.joysticks[int(t.Which)] != nil {
-			sys.errLog.Printf("Joystick (%v) id=%v connected\n", input.joysticks[int(t.Which)].Name(), t.Which)
+			id := int(t.Which)
+			sys.errLog.Printf("Joystick (%v) id=%v connected\n", input.joysticks[id].Name(), t.Which)
+			kc, isExist := sys.joystickDefaultConfig[input.joysticks[id].Name()]
+			if isExist {
+				sys.joystickConfig[id] = KeyConfig{id, kc.dU, kc.dD, kc.dL, kc.dR, kc.kA, kc.kB, kc.kC, kc.kX, kc.kY, kc.kZ, kc.kS, kc.kD, kc.kW, kc.kM}
+				sys.errLog.Printf("Joystick [%v] is overwritten with %v\n", input.joysticks[id].Name(), sys.joystickConfig[id])
+			}
 		}
 		break
 	case *sdl.JoyDeviceRemovedEvent:
@@ -177,6 +183,14 @@ func (w *Window) pollEvents() {
 		}
 		sys.errLog.Printf("Joystick %v disconnected\n", t.Which)
 		break
+		// case *sdl.JoyButtonEvent:
+		// 	if t.Button == 8 && t.State == 0 {
+		// 		OnKeyPressed(KeyEscape, 0)
+		// 	}
+		// 	if t.Button == 9 && t.State == 0 {
+		// 		OnKeyPressed(KeyEnter, 0)
+		// 	}
+		// 	break
 	}
 }
 
