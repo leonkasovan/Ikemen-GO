@@ -123,7 +123,7 @@ func updateCharInSelectDef(filename string) error {
 		if len(line) < 2 {
 			continue
 		}
-		if line[0] == ' ' && line[0] == ';' { // skip nested comment
+		if line[0] == ' ' && line[1] == ';' { // skip nested comment
 			writer.WriteString(scanner.Text() + "\n")
 			continue
 		}
@@ -160,6 +160,93 @@ func updateCharInSelectDef(filename string) error {
 				fmt.Printf(" existing char: %v\n", result[1])
 				continue
 			}
+		}
+		writer.WriteString(scanner.Text() + "\n")
+	}
+	writer.Flush()
+	os.Rename(filename, filename+".bak")
+	os.Rename(filename+".update", filename)
+	return scanner.Err()
+}
+
+// Update Section [ExtraStages] in select.def based on files *.def in [stages] directory
+func updateStageInSelectDef(filename string) error {
+	// Open the file
+	file, err := os.Open(filename)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	// Open or create the file
+	file2, err := os.Create(filename + ".update")
+	if err != nil {
+		return err
+	}
+	defer file2.Close()
+
+	// Create a buffered writer
+	writer := bufio.NewWriter(file2)
+
+	// Create a new scanner
+	scanner := bufio.NewScanner(file)
+
+	// Loop through each line
+	var line string
+	stages := make([]string, 0, 20)
+	section := 0
+	for scanner.Scan() {
+		line = strings.ToLower(scanner.Text())
+		if len(line) < 1 {
+			continue
+		}
+		if line[0] == ';' { // skip comment
+			writer.WriteString(scanner.Text() + "\n")
+			continue
+		}
+		if len(line) < 2 {
+			continue
+		}
+		if line[0] == ' ' && line[1] == ';' { // skip nested comment
+			writer.WriteString(scanner.Text() + "\n")
+			continue
+		}
+		if strings.Contains(line, "[characters]") {
+			section = 1
+			writer.WriteString(scanner.Text() + "\n")
+			continue
+		}
+		if strings.Contains(line, "[extrastages]") {
+			section = 2
+			writer.WriteString(scanner.Text() + "\n")
+			continue
+		}
+		if strings.Contains(line, "[options]") {
+			// Combine directory and pattern
+			searchPattern := filepath.Join("stages", "*.def")
+
+			// Get the list of files matching the pattern
+			files, err := filepath.Glob(searchPattern)
+			if err != nil {
+				return err
+			}
+
+			// Print the matching files
+			for _, file := range files {
+				if !stringInSlice(file, stages) {
+					fmt.Printf(" add new stage: %v\n", file)
+					writer.WriteString(file + "\n")
+				}
+			}
+			section = 3
+			writer.WriteString(scanner.Text() + "\n")
+			continue
+		}
+		if section == 2 {
+			writer.WriteString(scanner.Text() + "\n")
+			stages = append(stages, scanner.Text())
+			fmt.Printf(" existing stage: %v\n", scanner.Text())
+			continue
 		}
 		writer.WriteString(scanner.Text() + "\n")
 	}
@@ -773,6 +860,14 @@ func setupConfig(is_mugen_game bool) configSettings {
 	if _, ok := sys.cmdFlags["-updatechar"]; ok {
 		fmt.Printf("[DEBUG][main.go][setupConfig] Update data/select.def based on [char] directory\n")
 		err := updateCharInSelectDef("data/select.def")
+		if err != nil {
+			fmt.Printf("[DEBUG][main.go][setupConfig] %v\n", err)
+		}
+	}
+
+	if _, ok := sys.cmdFlags["-updatestage"]; ok {
+		fmt.Printf("[DEBUG][main.go][setupConfig] Update data/select.def based on [stages] directory\n")
+		err := updateStageInSelectDef("data/select.def")
 		if err != nil {
 			fmt.Printf("[DEBUG][main.go][setupConfig] %v\n", err)
 		}
