@@ -10,6 +10,7 @@ import "C"
 import (
 	"fmt"
 	"image"
+	"os"
 
 	sdl "github.com/veandco/go-sdl2/sdl"
 )
@@ -166,11 +167,21 @@ func (w *Window) pollEvents() {
 		}
 		break
 	case *sdl.JoyDeviceAddedEvent:
+		var isExist bool
+		var kc KeyConfig
 		input.joysticks[int(t.Which)] = sdl.JoystickOpen(int(t.Which))
 		if input.joysticks[int(t.Which)] != nil {
 			id := int(t.Which)
 			sys.errLog.Printf("Joystick (%v) id=%v connected\n", input.joysticks[id].Name(), t.Which)
-			kc, isExist := sys.joystickDefaultConfig[input.joysticks[id].Name()]
+			if os.Getenv("XDG_SESSION_DESKTOP") == "KDE" { // in steamdeck there is 2 env: desktop mode(KDE) and gaming mode(gamescope), which each has spesific controller setting
+				if input.joysticks[id].Name() == "Logitech Dual Action" {
+					kc, isExist = sys.joystickDefaultConfig[input.joysticks[id].Name()+".KDE"]
+				} else {
+					kc, isExist = sys.joystickDefaultConfig[input.joysticks[id].Name()]
+				}
+			} else {
+				kc, isExist = sys.joystickDefaultConfig[input.joysticks[id].Name()]
+			}
 			if isExist {
 				sys.joystickConfig[id] = KeyConfig{id, kc.dU, kc.dD, kc.dL, kc.dR, kc.kA, kc.kB, kc.kC, kc.kX, kc.kY, kc.kZ, kc.kS, kc.kD, kc.kW, kc.kM}
 				sys.errLog.Printf("Joystick [%v] is overwritten with %v\n", input.joysticks[id].Name(), sys.joystickConfig[id])
