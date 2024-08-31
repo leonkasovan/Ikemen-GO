@@ -71,7 +71,6 @@ func createLog(p string) *os.File {
 	}
 	return f
 }
-
 func closeLog(f *os.File) {
 	f.Close()
 }
