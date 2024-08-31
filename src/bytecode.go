@@ -387,7 +387,12 @@ const (
 	OC_const_stagevar_shadow_fade_range_begin
 	OC_const_stagevar_shadow_fade_range_end
 	OC_const_stagevar_shadow_xshear
+	OC_const_stagevar_shadow_offset_x
+	OC_const_stagevar_shadow_offset_y
 	OC_const_stagevar_reflection_intensity
+	OC_const_stagevar_reflection_yscale
+	OC_const_stagevar_reflection_offset_x
+	OC_const_stagevar_reflection_offset_y
 	OC_const_constants
 	OC_const_stage_constants
 )
@@ -638,6 +643,8 @@ const (
 	OC_ex_fightscreenvar_round_over_wintime
 	OC_ex_fightscreenvar_round_slow_time
 	OC_ex_fightscreenvar_round_start_waittime
+	OC_ex_groundlevel
+	OC_ex_layerno
 )
 const (
 	OC_ex2_index OpCode = iota
@@ -686,8 +693,6 @@ const (
 	OC_ex2_gameoption_sound_wavvolume
 	OC_ex2_gameoption_sound_bgmvolume
 	OC_ex2_gameoption_sound_maxvolume
-	OC_ex2_groundlevel
-	OC_ex2_layerno
 	OC_ex2_clsnvar_left
 	OC_ex2_clsnvar_top
 	OC_ex2_clsnvar_right
@@ -2077,8 +2082,18 @@ func (be BytecodeExp) run_const(c *Char, i *int, oc *Char) {
 		sys.bcStack.PushI(sys.stage.sdw.fadeend)
 	case OC_const_stagevar_shadow_xshear:
 		sys.bcStack.PushF(sys.stage.sdw.xshear)
+	case OC_const_stagevar_shadow_offset_x:
+		sys.bcStack.PushF(sys.stage.sdw.offset[0])
+	case OC_const_stagevar_shadow_offset_y:
+		sys.bcStack.PushF(sys.stage.sdw.offset[1])
 	case OC_const_stagevar_reflection_intensity:
-		sys.bcStack.PushI(sys.stage.reflection)
+		sys.bcStack.PushI(sys.stage.reflection.intensity)
+	case OC_const_stagevar_reflection_yscale:
+		sys.bcStack.PushF(sys.stage.reflection.yscale)
+	case OC_const_stagevar_reflection_offset_x:
+		sys.bcStack.PushF(sys.stage.reflection.offset[0])
+	case OC_const_stagevar_reflection_offset_y:
+		sys.bcStack.PushF(sys.stage.reflection.offset[1])
 	case OC_const_constants:
 		sys.bcStack.PushF(c.gi().constants[sys.stringPool[sys.workingState.playerNo].List[*(*int32)(
 			unsafe.Pointer(&be[*i]))]])
@@ -2285,6 +2300,8 @@ func (be BytecodeExp) run_ex(c *Char, i *int, oc *Char) {
 		} else {
 			sys.bcStack.PushI(0)
 		}
+	case OC_ex_airjumpcount:
+		sys.bcStack.PushI(c.airJumpCount)
 	case OC_ex_animelemlength:
 		if f := c.anim.CurrentFrame(); f != nil {
 			sys.bcStack.PushI(f.Time)
@@ -2343,7 +2360,7 @@ func (be BytecodeExp) run_ex(c *Char, i *int, oc *Char) {
 		}
 	case OC_ex_animframe_xoffset:
 		if f := c.anim.CurrentFrame(); f != nil {
-			sys.bcStack.PushI(int32(-f.X))
+			sys.bcStack.PushI(int32(f.X))
 		} else {
 			sys.bcStack.PushI(0)
 		}
@@ -2357,7 +2374,7 @@ func (be BytecodeExp) run_ex(c *Char, i *int, oc *Char) {
 		}
 	case OC_ex_animframe_yoffset:
 		if f := c.anim.CurrentFrame(); f != nil {
-			sys.bcStack.PushI(int32(-f.Y))
+			sys.bcStack.PushI(int32(f.Y))
 		} else {
 			sys.bcStack.PushI(0)
 		}
@@ -2385,6 +2402,92 @@ func (be BytecodeExp) run_ex(c *Char, i *int, oc *Char) {
 		sys.bcStack.PushI(c.anim.totaltime)
 	case OC_ex_attack:
 		sys.bcStack.PushF(c.attackMul[0] * 100)
+	case OC_ex_combocount:
+		sys.bcStack.PushI(c.comboCount())
+	case OC_ex_consecutivewins:
+		sys.bcStack.PushI(c.consecutiveWins())
+	case OC_ex_defence:
+		sys.bcStack.PushF(float32(c.finalDefense * 100))
+	case OC_ex_dizzy:
+		sys.bcStack.PushB(c.scf(SCF_dizzy))
+	case OC_ex_dizzypoints:
+		sys.bcStack.PushI(c.dizzyPoints)
+	case OC_ex_dizzypointsmax:
+		sys.bcStack.PushI(c.dizzyPointsMax)
+	case OC_ex_drawpalno:
+		sys.bcStack.PushI(c.gi().drawpalno)
+	case OC_ex_envshakevar_time:
+		sys.bcStack.PushI(sys.envShake.time)
+	case OC_ex_envshakevar_freq:
+		sys.bcStack.PushF(sys.envShake.freq / float32(math.Pi) * 180)
+	case OC_ex_envshakevar_ampl:
+		sys.bcStack.PushF(float32(math.Abs(float64(sys.envShake.ampl / oc.localscl))))
+	case OC_ex_fightscreenvar_info_author:
+		sys.bcStack.PushB(sys.lifebar.authorLow ==
+			sys.stringPool[sys.workingState.playerNo].List[*(*int32)(unsafe.Pointer(&be[*i]))])
+		*i += 4
+	case OC_ex_fightscreenvar_info_name:
+		sys.bcStack.PushB(sys.lifebar.nameLow ==
+			sys.stringPool[sys.workingState.playerNo].List[*(*int32)(unsafe.Pointer(&be[*i]))])
+		*i += 4
+	case OC_ex_fightscreenvar_round_ctrl_time:
+		sys.bcStack.PushI(sys.lifebar.ro.ctrl_time)
+	case OC_ex_fightscreenvar_round_over_hittime:
+		sys.bcStack.PushI(sys.lifebar.ro.over_hittime)
+	case OC_ex_fightscreenvar_round_over_time:
+		sys.bcStack.PushI(sys.lifebar.ro.over_time)
+	case OC_ex_fightscreenvar_round_over_waittime:
+		sys.bcStack.PushI(sys.lifebar.ro.over_waittime)
+	case OC_ex_fightscreenvar_round_over_wintime:
+		sys.bcStack.PushI(sys.lifebar.ro.over_wintime)
+	case OC_ex_fightscreenvar_round_slow_time:
+		sys.bcStack.PushI(sys.lifebar.ro.slow_time)
+	case OC_ex_fightscreenvar_round_start_waittime:
+		sys.bcStack.PushI(sys.lifebar.ro.start_waittime)
+	case OC_ex_fighttime:
+		sys.bcStack.PushI(sys.gameTime)
+	case OC_ex_firstattack:
+		sys.bcStack.PushB(sys.firstAttack[c.teamside] == c.playerNo)
+	case OC_ex_framespercount:
+		sys.bcStack.PushI(sys.lifebar.ti.framespercount)
+	case OC_ex_float:
+		*sys.bcStack.Top() = BytecodeFloat(sys.bcStack.Top().ToF())
+	case OC_ex_gamefps:
+		sys.bcStack.PushF(sys.gameFPS)
+	case OC_ex_gamemode:
+		sys.bcStack.PushB(strings.ToLower(sys.gameMode) ==
+			sys.stringPool[sys.workingState.playerNo].List[*(*int32)(
+				unsafe.Pointer(&be[*i]))])
+		*i += 4
+	case OC_ex_getplayerid:
+		sys.bcStack.Top().SetI(c.getPlayerID(int(sys.bcStack.Top().ToI())))
+	case OC_ex_groundangle:
+		sys.bcStack.PushF(c.groundAngle)
+	case OC_ex_groundlevel:
+		sys.bcStack.PushF(c.groundLevel * (c.localscl / oc.localscl))
+	case OC_ex_guardbreak:
+		sys.bcStack.PushB(c.scf(SCF_guardbreak))
+	case OC_ex_guardcount:
+		sys.bcStack.PushI(c.guardCount)
+	case OC_ex_guardpoints:
+		sys.bcStack.PushI(c.guardPoints)
+	case OC_ex_guardpointsmax:
+		sys.bcStack.PushI(c.guardPointsMax)
+	case OC_ex_helperid:
+		sys.bcStack.PushI(c.helperId)
+	case OC_ex_helpername:
+		sys.bcStack.PushB(c.helperIndex != 0 && strings.ToLower(c.name) ==
+			sys.stringPool[sys.workingState.playerNo].List[*(*int32)(
+				unsafe.Pointer(&be[*i]))])
+		*i += 4
+	case OC_ex_helperindexexist:
+		*sys.bcStack.Top() = c.helperByIndexExist(*sys.bcStack.Top())
+	case OC_ex_hitoverridden:
+		sys.bcStack.PushB(c.hoIdx >= 0)
+	case OC_ex_incustomstate:
+		sys.bcStack.PushB(c.ss.sb.playerNo != c.playerNo)
+	case OC_ex_indialogue:
+		sys.bcStack.PushB(sys.dialogueFlg)
 	case OC_ex_inputtime_B:
 		if c.keyctrl[0] && c.cmd != nil {
 			sys.bcStack.PushI(c.cmd[0].Buffer.Bb)
@@ -2481,82 +2584,6 @@ func (be BytecodeExp) run_ex(c *Char, i *int, oc *Char) {
 		} else {
 			sys.bcStack.PushI(0)
 		}
-	case OC_ex_combocount:
-		sys.bcStack.PushI(c.comboCount())
-	case OC_ex_consecutivewins:
-		sys.bcStack.PushI(c.consecutiveWins())
-	case OC_ex_defence:
-		sys.bcStack.PushF(float32(c.finalDefense * 100))
-	case OC_ex_dizzy:
-		sys.bcStack.PushB(c.scf(SCF_dizzy))
-	case OC_ex_dizzypoints:
-		sys.bcStack.PushI(c.dizzyPoints)
-	case OC_ex_dizzypointsmax:
-		sys.bcStack.PushI(c.dizzyPointsMax)
-	case OC_ex_drawpalno:
-		sys.bcStack.PushI(c.gi().drawpalno)
-	case OC_ex_fightscreenvar_info_author:
-		sys.bcStack.PushB(sys.lifebar.authorLow ==
-			sys.stringPool[sys.workingState.playerNo].List[*(*int32)(unsafe.Pointer(&be[*i]))])
-		*i += 4
-	case OC_ex_fightscreenvar_info_name:
-		sys.bcStack.PushB(sys.lifebar.nameLow ==
-			sys.stringPool[sys.workingState.playerNo].List[*(*int32)(unsafe.Pointer(&be[*i]))])
-		*i += 4
-	case OC_ex_fightscreenvar_round_ctrl_time:
-		sys.bcStack.PushI(sys.lifebar.ro.ctrl_time)
-	case OC_ex_fightscreenvar_round_over_hittime:
-		sys.bcStack.PushI(sys.lifebar.ro.over_hittime)
-	case OC_ex_fightscreenvar_round_over_time:
-		sys.bcStack.PushI(sys.lifebar.ro.over_time)
-	case OC_ex_fightscreenvar_round_over_waittime:
-		sys.bcStack.PushI(sys.lifebar.ro.over_waittime)
-	case OC_ex_fightscreenvar_round_over_wintime:
-		sys.bcStack.PushI(sys.lifebar.ro.over_wintime)
-	case OC_ex_fightscreenvar_round_slow_time:
-		sys.bcStack.PushI(sys.lifebar.ro.slow_time)
-	case OC_ex_fightscreenvar_round_start_waittime:
-		sys.bcStack.PushI(sys.lifebar.ro.start_waittime)
-	case OC_ex_fighttime:
-		sys.bcStack.PushI(sys.gameTime)
-	case OC_ex_firstattack:
-		sys.bcStack.PushB(sys.firstAttack[c.teamside] == c.playerNo)
-	case OC_ex_framespercount:
-		sys.bcStack.PushI(sys.lifebar.ti.framespercount)
-	case OC_ex_float:
-		*sys.bcStack.Top() = BytecodeFloat(sys.bcStack.Top().ToF())
-	case OC_ex_gamefps:
-		sys.bcStack.PushF(sys.gameFPS)
-	case OC_ex_gamemode:
-		sys.bcStack.PushB(strings.ToLower(sys.gameMode) ==
-			sys.stringPool[sys.workingState.playerNo].List[*(*int32)(
-				unsafe.Pointer(&be[*i]))])
-		*i += 4
-	case OC_ex_getplayerid:
-		sys.bcStack.Top().SetI(c.getPlayerID(int(sys.bcStack.Top().ToI())))
-	case OC_ex_groundangle:
-		sys.bcStack.PushF(c.groundAngle)
-	case OC_ex_guardbreak:
-		sys.bcStack.PushB(c.scf(SCF_guardbreak))
-	case OC_ex_guardpoints:
-		sys.bcStack.PushI(c.guardPoints)
-	case OC_ex_guardpointsmax:
-		sys.bcStack.PushI(c.guardPointsMax)
-	case OC_ex_helperid:
-		sys.bcStack.PushI(c.helperId)
-	case OC_ex_helpername:
-		sys.bcStack.PushB(c.helperIndex != 0 && strings.ToLower(c.name) ==
-			sys.stringPool[sys.workingState.playerNo].List[*(*int32)(
-				unsafe.Pointer(&be[*i]))])
-		*i += 4
-	case OC_ex_helperindexexist:
-		*sys.bcStack.Top() = c.helperByIndexExist(*sys.bcStack.Top())
-	case OC_ex_hitoverridden:
-		sys.bcStack.PushB(c.hoIdx >= 0)
-	case OC_ex_incustomstate:
-		sys.bcStack.PushB(c.ss.sb.playerNo != c.playerNo)
-	case OC_ex_indialogue:
-		sys.bcStack.PushB(sys.dialogueFlg)
 	case OC_ex_isassertedchar:
 		sys.bcStack.PushB(c.asf(AssertSpecialFlag((*(*int64)(unsafe.Pointer(&be[*i]))))))
 		*i += 8
@@ -2567,6 +2594,8 @@ func (be BytecodeExp) run_ex(c *Char, i *int, oc *Char) {
 		sys.bcStack.PushB(c.isHost())
 	case OC_ex_jugglepoints:
 		*sys.bcStack.Top() = c.jugglePoints(*sys.bcStack.Top())
+	case OC_ex_layerno:
+		sys.bcStack.PushI(c.layerNo)
 	case OC_ex_localcoord_x:
 		sys.bcStack.PushF(sys.cgi[c.playerNo].localcoord[0])
 	case OC_ex_localcoord_y:
@@ -2584,6 +2613,22 @@ func (be BytecodeExp) run_ex(c *Char, i *int, oc *Char) {
 	case OC_ex_min:
 		v2 := sys.bcStack.Pop()
 		be.min(sys.bcStack.Top(), v2)
+	case OC_ex_movehitvar_cornerpush:
+		sys.bcStack.PushF(c.mhv.cornerpush)
+	case OC_ex_movehitvar_frame:
+		sys.bcStack.PushB(c.mhv.frame)
+	case OC_ex_movehitvar_id:
+		sys.bcStack.PushI(c.mhv.id)
+	case OC_ex_movehitvar_overridden:
+		sys.bcStack.PushB(c.mhv.overridden)
+	case OC_ex_movehitvar_playerno:
+		sys.bcStack.PushI(int32(c.mhv.playerNo))
+	case OC_ex_movehitvar_spark_x:
+		sys.bcStack.PushF(c.mhv.sparkxy[0] * (c.localscl / oc.localscl))
+	case OC_ex_movehitvar_spark_y:
+		sys.bcStack.PushF(c.mhv.sparkxy[1] * (c.localscl / oc.localscl))
+	case OC_ex_movehitvar_uniqhit:
+		sys.bcStack.PushI(c.mhv.uniqhit)
 	case OC_ex_numplayer:
 		sys.bcStack.PushI(c.numPlayer())
 	case OC_ex_clamp:
@@ -2691,14 +2736,6 @@ func (be BytecodeExp) run_ex(c *Char, i *int, oc *Char) {
 		} else {
 			sys.bcStack.PushI(int32(sys.bgm.streamer.Position()))
 		}
-	case OC_ex_airjumpcount:
-		sys.bcStack.PushI(c.airJumpCount)
-	case OC_ex_envshakevar_time:
-		sys.bcStack.PushI(sys.envShake.time)
-	case OC_ex_envshakevar_freq:
-		sys.bcStack.PushF(sys.envShake.freq / float32(math.Pi) * 180)
-	case OC_ex_envshakevar_ampl:
-		sys.bcStack.PushF(float32(math.Abs(float64(sys.envShake.ampl / oc.localscl))))
 	case OC_ex_angle:
 		sys.bcStack.PushF(c.angleTrg)
 	case OC_ex_scale_x:
@@ -2722,24 +2759,6 @@ func (be BytecodeExp) run_ex(c *Char, i *int, oc *Char) {
 			sys.bcStack.PushB(ok)
 		}
 		*i += 4
-	case OC_ex_guardcount:
-		sys.bcStack.PushI(c.guardCount)
-	case OC_ex_movehitvar_frame:
-		sys.bcStack.PushB(c.mhv.frame)
-	case OC_ex_movehitvar_cornerpush:
-		sys.bcStack.PushF(c.mhv.cornerpush)
-	case OC_ex_movehitvar_id:
-		sys.bcStack.PushI(c.mhv.id)
-	case OC_ex_movehitvar_overridden:
-		sys.bcStack.PushB(c.mhv.overridden)
-	case OC_ex_movehitvar_playerno:
-		sys.bcStack.PushI(int32(c.mhv.playerNo))
-	case OC_ex_movehitvar_spark_x:
-		sys.bcStack.PushF(c.mhv.sparkxy[0] * (c.localscl / oc.localscl))
-	case OC_ex_movehitvar_spark_y:
-		sys.bcStack.PushF(c.mhv.sparkxy[1] * (c.localscl / oc.localscl))
-	case OC_ex_movehitvar_uniqhit:
-		sys.bcStack.PushI(c.mhv.uniqhit)
 	default:
 		sys.errLog.Printf("%v\n", be[*i-1])
 		c.panic()
@@ -2852,16 +2871,12 @@ func (be BytecodeExp) run_ex2(c *Char, i *int, oc *Char) {
 		sys.bcStack.PushI(int32(sys.wavChannels))
 	case OC_ex2_gameoption_sound_wavvolume:
 		sys.bcStack.PushI(int32(sys.wavVolume))
-	case OC_ex2_groundlevel:
-		sys.bcStack.PushF(c.groundLevel)
-	case OC_ex2_layerno:
-		sys.bcStack.PushI(c.layerNo)
 	case OC_ex2_clsnvar_left:
 		idx := int(sys.bcStack.Pop().ToI())
 		id := int(sys.bcStack.Pop().ToI())
 		v := float32(math.NaN())
 		switch id {
-		case 0:
+		case 3: // DON'T ASK WHY BUT 0 CAUSES ERRORS, 3 DOES NOT
 			v = c.sizeBox[0]
 		case 1:
 			cf1 := c.anim.CurrentFrame().Clsn1()
@@ -2874,13 +2889,13 @@ func (be BytecodeExp) run_ex2(c *Char, i *int, oc *Char) {
 				v = cf2[idx*4]
 			}
 		}
-		sys.bcStack.PushF(v)
+		sys.bcStack.PushF(v * c.localscl)
 	case OC_ex2_clsnvar_top:
 		idx := int(sys.bcStack.Pop().ToI())
 		id := int(sys.bcStack.Pop().ToI())
 		v := float32(math.NaN())
 		switch id {
-		case 0:
+		case 3: // DON'T ASK WHY BUT 0 CAUSES ERRORS, 3 DOES NOT
 			v = c.sizeBox[1]
 		case 1:
 			cf1 := c.anim.CurrentFrame().Clsn1()
@@ -2893,13 +2908,13 @@ func (be BytecodeExp) run_ex2(c *Char, i *int, oc *Char) {
 				v = cf2[idx*4+1]
 			}
 		}
-		sys.bcStack.PushF(v)
+		sys.bcStack.PushF(v * c.localscl)
 	case OC_ex2_clsnvar_right:
 		idx := int(sys.bcStack.Pop().ToI())
 		id := int(sys.bcStack.Pop().ToI())
 		v := float32(math.NaN())
 		switch id {
-		case 0:
+		case 3: // DON'T ASK WHY BUT 0 CAUSES ERRORS, 3 DOES NOT
 			v = c.sizeBox[2]
 		case 1:
 			cf1 := c.anim.CurrentFrame().Clsn1()
@@ -2912,13 +2927,13 @@ func (be BytecodeExp) run_ex2(c *Char, i *int, oc *Char) {
 				v = cf2[idx*4+2]
 			}
 		}
-		sys.bcStack.PushF(v)
+		sys.bcStack.PushF(v * c.localscl)
 	case OC_ex2_clsnvar_bottom:
 		idx := int(sys.bcStack.Pop().ToI())
 		id := int(sys.bcStack.Pop().ToI())
 		v := float32(math.NaN())
 		switch id {
-		case 0:
+		case 3: // DON'T ASK WHY BUT 0 CAUSES ERRORS, 3 DOES NOT
 			v = c.sizeBox[3]
 		case 1:
 			cf1 := c.anim.CurrentFrame().Clsn1()
@@ -2931,7 +2946,7 @@ func (be BytecodeExp) run_ex2(c *Char, i *int, oc *Char) {
 				v = cf2[idx*4+3]
 			}
 		}
-		sys.bcStack.PushF(v)
+		sys.bcStack.PushF(v * c.localscl)
 	// BEGIN FALLTHROUGH (explodvar)
 	case OC_ex2_explodvar_anim:
 		fallthrough
@@ -10771,7 +10786,10 @@ const (
 	modifyStageVar_shadow_yscale
 	modifyStageVar_shadow_fade_range
 	modifyStageVar_shadow_xshear
+	modifyStageVar_shadow_offset
 	modifyStageVar_reflection_intensity
+	modifyStageVar_reflection_yscale
+	modifyStageVar_reflection_offset
 	modifyStageVar_redirectid
 )
 
@@ -10861,8 +10879,16 @@ func (sc modifyStageVar) Run(c *Char, _ []int32) bool {
 			s.sdw.fadebgn = exp[1].evalI(c)
 		case modifyStageVar_shadow_xshear:
 			s.sdw.xshear = exp[0].evalF(c)
+		case modifyStageVar_shadow_offset:
+			s.sdw.offset[0] = exp[0].evalF(c)
+			s.sdw.offset[1] = exp[1].evalF(c)
 		case modifyStageVar_reflection_intensity:
-			s.reflection = Clamp(exp[0].evalI(c), 0, 255)
+			s.reflection.intensity = Clamp(exp[0].evalI(c), 0, 255)
+		case modifyStageVar_reflection_yscale:
+			s.reflection.yscale = exp[0].evalF(c)
+		case modifyStageVar_reflection_offset:
+			s.reflection.offset[0] = exp[0].evalF(c)
+			s.reflection.offset[1] = exp[1].evalF(c)
 		case modifyStageVar_redirectid:
 			if rid := sys.playerID(exp[0].evalI(c)); rid != nil {
 				//crun = rid - RedirectID is useless when modifying a stage

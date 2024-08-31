@@ -216,6 +216,8 @@ func (c *Compiler) assertSpecial(is IniSection, sc *StateControllerBase, _ int8)
 				sc.add(assertSpecial_flag, sc.i64ToExp(int64(ASF_runlast)))
 			case "projtypecollision":
 				sc.add(assertSpecial_flag, sc.i64ToExp(int64(ASF_projtypecollision)))
+			case "nofallhitflag":
+				sc.add(assertSpecial_flag, sc.i64ToExp(int64(ASF_nofallhitflag)))
 			// Ikemen global flags
 			case "globalnoko":
 				sc.add(assertSpecial_flag_g, sc.i64ToExp(int64(GSF_globalnoko)))
@@ -5116,8 +5118,20 @@ func (c *Compiler) modifyStageVar(is IniSection, sc *StateControllerBase, _ int8
 			modifyStageVar_shadow_xshear, VT_Float, 1, false); err != nil {
 			return err
 		}
+		if err := c.paramValue(is, sc, "shadow.offset",
+			modifyStageVar_shadow_offset, VT_Float, 2, false); err != nil {
+			return err
+		}
 		if err := c.paramValue(is, sc, "reflection.intensity",
 			modifyStageVar_reflection_intensity, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "reflection.yscale",
+			modifyStageVar_reflection_yscale, VT_Float, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "reflection.offset",
+			modifyStageVar_reflection_offset, VT_Float, 2, false); err != nil {
 			return err
 		}
 		return nil

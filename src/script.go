@@ -794,6 +794,15 @@ func systemScriptInit(l *lua.LState) {
 		sys.fileInput = OpenFileInput(strArg(l, 1))
 		return 0
 	})
+	luaRegister(l, "entityMapSet", func(*lua.LState) int {
+		// map_name, value, map_type
+		var scType int32
+		if l.GetTop() >= 3 && strArg(l, 3) == "add" {
+			scType = 1
+		}
+		sys.debugWC.mapSet(strArg(l, 1), float32(numArg(l, 2)), scType)
+		return 0
+	})
 	luaRegister(l, "esc", func(l *lua.LState) int {
 		if l.GetTop() >= 1 {
 			sys.esc = boolArg(l, 1)
@@ -4305,8 +4314,18 @@ func triggerFunctions(l *lua.LState) {
 			l.Push(lua.LNumber(sys.stage.sdw.fadeend))
 		case "shadow.xshear":
 			l.Push(lua.LNumber(sys.stage.sdw.xshear))
+		case "shadow.offset.x":
+			l.Push(lua.LNumber(sys.stage.sdw.offset[0]))
+		case "shadow.offset.y":
+			l.Push(lua.LNumber(sys.stage.sdw.offset[1]))
 		case "reflection.intensity":
-			l.Push(lua.LNumber(sys.stage.reflection))
+			l.Push(lua.LNumber(sys.stage.reflection.intensity))
+		case "reflection.yscale":
+			l.Push(lua.LNumber(sys.stage.reflection.yscale))
+		case "reflection.offset.x":
+			l.Push(lua.LNumber(sys.stage.reflection.offset[0]))
+		case "reflection.offset.y":
+			l.Push(lua.LNumber(sys.stage.reflection.offset[1]))
 		default:
 			l.Push(lua.LString(""))
 		}
@@ -4490,7 +4509,7 @@ func triggerFunctions(l *lua.LState) {
 	})
 	luaRegister(l, "animframexoffset", func(*lua.LState) int {
 		if f := sys.debugWC.anim.CurrentFrame(); f != nil {
-			l.Push(lua.LNumber(-f.X))
+			l.Push(lua.LNumber(f.X))
 		} else {
 			l.Push(lua.LNumber(0))
 		}
@@ -4508,7 +4527,7 @@ func triggerFunctions(l *lua.LState) {
 	})
 	luaRegister(l, "animframeyoffset", func(*lua.LState) int {
 		if f := sys.debugWC.anim.CurrentFrame(); f != nil {
-			l.Push(lua.LNumber(-f.Y))
+			l.Push(lua.LNumber(f.Y))
 		} else {
 			l.Push(lua.LNumber(0))
 		}
@@ -4823,6 +4842,8 @@ func triggerFunctions(l *lua.LState) {
 			l.Push(lua.LBool(sys.debugWC.asf(ASF_runlast)))
 		case "projtypecollision":
 			l.Push(lua.LBool(sys.debugWC.asf(ASF_projtypecollision)))
+		case "nofallhitflag":
+			l.Push(lua.LBool(sys.debugWC.asf(ASF_nofallhitflag)))
 		// GlobalSpecialFlag
 		case "intro":
 			l.Push(lua.LBool(sys.gsf(GSF_intro)))

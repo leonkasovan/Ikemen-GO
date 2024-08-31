@@ -2645,8 +2645,9 @@ function start.f_selectMenu(side, cmd, player, member, selectState)
 					-- if select anim differs from done anim and coop or pX.face.num allows to display more than 1 portrait or it's the last team member
 					local done_anim = motif.select_info['p' .. side .. '_member' .. member .. '_face_done_anim'] or motif.select_info['p' .. side .. '_face_done_anim']
 					if done_anim ~= -1 and start.p[side].t_selTemp[member].anim ~= done_anim and (main.coop or motif.select_info['p' .. side .. '_face_num'] > 1 or main.f_tableLength(start.p[side].t_selected) + 1 == start.p[side].numChars) then
-						start.p[side].t_selTemp[member].anim_data = start.f_animGet(start.c[player].selRef, side, member, motif.select_info, '_face', '_done', false) or start.p[side].t_selTemp[member].anim_data
-						if start.p[side].t_selTemp[member].anim_data ~= nil then
+						local a = start.f_animGet(start.c[player].selRef, side, member, motif.select_info, '_face', '_done', false)
+						if a then
+							start.p[side].t_selTemp[member].anim_data = a
 							start.p[side].screenDelay = math.min(120, math.max(start.p[side].screenDelay, animGetLength(start.p[side].t_selTemp[member].anim_data)))
 						end
 					end
@@ -2932,6 +2933,12 @@ function start.f_selectVersus(active, t_orderSelect)
 		--draw timer
 		if not done and motif.vs_screen.timer_count ~= -1 and timerActive and counter >= 0 then
 			timerCount, timerActive = main.f_drawTimer(timerCount, motif.vs_screen, 'timer_', txt_timerVS)
+		end
+		--credits
+		if main.credits ~= -1 and getKey(motif.attract_mode.credits_key) then
+			sndPlay(motif.files.snd_data, motif.attract_mode.credits_snd[1], motif.attract_mode.credits_snd[2])
+			main.credits = main.credits + 1
+			resetKey()
 		end
 		-- hook
 		hook.run("start.f_selectVersus")
