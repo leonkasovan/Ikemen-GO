@@ -71,9 +71,106 @@ func createLog(p string) *os.File {
 	}
 	return f
 }
+
 func closeLog(f *os.File) {
 	f.Close()
 }
+
+func stringInSlice(target string, slice []string) bool {
+	for _, str := range slice {
+		if str == target {
+			return true
+		}
+	}
+	return false
+}
+
+// Update Section [Characters] in select.def based on [char] directory
+func updateCharInSelectDef(filename string) error {
+	// Open the file
+	file, err := os.Open(filename)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	// Open or create the file
+	file2, err := os.Create(filename + ".update")
+	if err != nil {
+		return err
+	}
+	defer file2.Close()
+
+	// Create a buffered writer
+	writer := bufio.NewWriter(file2)
+
+	// Create a new scanner
+	scanner := bufio.NewScanner(file)
+
+	// Loop through each line
+	var result []string
+	var line string
+	chars := make([]string, 0, 20)
+	section := 0
+	for scanner.Scan() {
+		line = strings.ToLower(scanner.Text())
+		if len(line) < 1 {
+			continue
+		}
+		if line[0] == ';' { // skip comment
+			writer.WriteString(scanner.Text() + "\n")
+			continue
+		}
+		if len(line) < 2 {
+			continue
+		}
+		if line[0] == ' ' && line[0] == ';' { // skip nested comment
+			writer.WriteString(scanner.Text() + "\n")
+			continue
+		}
+		if strings.Contains(line, "[characters]") {
+			section = 1
+			writer.WriteString(scanner.Text() + "\n")
+			continue
+		}
+		if strings.Contains(line, "[extrastages]") {
+			// Open the directory
+			files, err := os.ReadDir("chars")
+			if err != nil {
+				return err
+			}
+
+			// List only directories
+			for _, file := range files {
+				if file.IsDir() {
+					if !stringInSlice(file.Name(), chars) {
+						fmt.Printf(" add new char: %v\n", file.Name())
+						writer.WriteString(file.Name() + ", random\n")
+					}
+				}
+			}
+			section = 2
+			writer.WriteString(scanner.Text() + "\n")
+			continue
+		}
+		if section == 1 {
+			result = regexp.MustCompile(`^(\S+),`).FindStringSubmatch(scanner.Text())
+			if result != nil {
+				writer.WriteString(scanner.Text() + "\n")
+				chars = append(chars, result[1])
+				fmt.Printf(" existing char: %v\n", result[1])
+				continue
+			}
+		}
+		writer.WriteString(scanner.Text() + "\n")
+	}
+	writer.Flush()
+	os.Rename(filename, filename+".bak")
+	os.Rename(filename+".update", filename)
+	return scanner.Err()
+}
+
+// upgrade config.json from older version (below 0.98.x)
 func fixConfig(filename string) error {
 	// Open the file
 	file, err := os.Open(filename)
@@ -139,6 +236,7 @@ func fixConfig(filename string) error {
 	return scanner.Err()
 }
 func main() {
+	is_mugen_game := false
 	fmt.Printf("[DEBUG][main.go][main] Running at OS=[%v] ARCH=[%v]\n", runtime.GOOS, runtime.GOARCH)
 
 	// Check if the "external" directory exists and data/mugen.cfg, if not exists then extract assets from embedded
@@ -182,6 +280,7 @@ func main() {
 		}
 
 		fmt.Println("[DEBUG][main.go][main] Mugen Game detected. Assets extraction completed successfully.")
+		is_mugen_game = true
 	}
 	processCommandLine()
 	if _, ok := sys.cmdFlags["-game"]; ok {
@@ -210,7 +309,7 @@ func main() {
 	}
 
 	// Setup config values, and get a reference to the config object for the main script and window size
-	tmp := setupConfig()
+	tmp := setupConfig(is_mugen_game)
 
 	//os.Mkdir("debug", os.ModeSticky|0755)
 
@@ -441,7 +540,7 @@ type configSettings struct {
 var defaultConfig []byte
 
 // Sets default config settings, then attemps to load existing config from disk
-func setupConfig() configSettings {
+func setupConfig(is_mugen_game bool) configSettings {
 	Atoi := func(key string) int {
 		if i, err := strconv.Atoi(key); err == nil {
 			return i
@@ -495,7 +594,10 @@ func setupConfig() configSettings {
 			Atoi(b[9]), Atoi(b[10]), Atoi(b[11]),
 			Atoi(b[12]), Atoi(b[13])}
 	}
-	fmt.Printf("[DEBUG][main.go][setupConfig] after loading config.json\ntmp.JoystickConfig[0]: %v\ntmp.JoystickConfig[1]: %v\ntmp.JoystickConfig[2]: %v\n", tmp.JoystickConfig[0], tmp.JoystickConfig[1], tmp.JoystickConfig[2])
+	fmt.Printf("[DEBUG][main.go][setupConfig] after loading config.json\n")
+	for id, jc := range tmp.JoystickConfig {
+		fmt.Printf("tmp.JoystickConfig[%v]: %v\n", id, jc)
+	}
 	// Fix incorrect settings (default values saved into config.json)
 	switch tmp.AudioSampleRate {
 	case 22050, 44100, 48000:
@@ -511,6 +613,56 @@ func setupConfig() configSettings {
 	tmp.PanningRange = ClampF(tmp.PanningRange, 0, 100)
 	tmp.Players = int(Clamp(int32(tmp.Players), 1, int32(MaxSimul)*2))
 	tmp.WavChannels = Clamp(tmp.WavChannels, 1, 256)
+
+	//Import Mugen setting
+	if is_mugen_game {
+		fmt.Printf("[DEBUG][main.go][setupConfig] import data/mugen.cfg\n")
+		file, err := os.Open("data/mugen.cfg")
+		if err != nil {
+			fmt.Printf("[DEBUG][main.go][setupConfig] Error loading data/mugen.cfg\n")
+		}
+		defer file.Close()
+
+		scanner := bufio.NewScanner(file)
+		var result []string
+		var line string
+		for scanner.Scan() {
+			line = scanner.Text()
+			if len(line) < 1 {
+				continue
+			}
+			if line[0] == ';' {
+				continue
+			}
+			result = regexp.MustCompile(`[Mm]otif\s*=\s*(\S+)`).FindStringSubmatch(line)
+			if result != nil {
+				tmp.Motif = strings.ReplaceAll(result[1], "\\", "/")
+				fmt.Printf("[DEBUG][main.go][setupConfig] Import Motif=%v\n", tmp.Motif)
+				continue
+			}
+			result = regexp.MustCompile(`[Ss]tart[Ss]tage\s*=\s*(\S+)`).FindStringSubmatch(line)
+			if result != nil {
+				tmp.StartStage = strings.ReplaceAll(result[1], "\\", "/")
+				fmt.Printf("[DEBUG][main.go][setupConfig] Import StartStage=%v\n", tmp.StartStage)
+				continue
+			}
+			result = regexp.MustCompile(`[Gg]ame[Ww]idth\s*=\s*(\d+)`).FindStringSubmatch(line)
+			if result != nil {
+				tmp.GameWidth = int32(Atoi(result[1]))
+				fmt.Printf("[DEBUG][main.go][setupConfig] Import GameWidth=%v\n", tmp.GameWidth)
+				continue
+			}
+			result = regexp.MustCompile(`[Gg]ame[Hh]eight\s*=\s*(\d+)`).FindStringSubmatch(line)
+			if result != nil {
+				tmp.GameHeight = int32(Atoi(result[1]))
+				fmt.Printf("[DEBUG][main.go][setupConfig] Import GameHeight=%v\n", tmp.GameHeight)
+				continue
+			}
+		}
+	} else {
+		fmt.Printf("[DEBUG][main.go][setupConfig] NOT importing data/mugen.cfg\n")
+	}
+
 	// Save config file, indent with two spaces to match calls to json.encode() in the Lua code
 	cfg, _ := json.MarshalIndent(tmp, "", "  ")
 	chk(os.WriteFile(cfgPath, cfg, 0644))
@@ -616,6 +768,14 @@ func setupConfig() configSettings {
 				Atoi(b[6].(string)), Atoi(b[7].(string)), Atoi(b[8].(string)),
 				Atoi(b[9].(string)), Atoi(b[10].(string)), Atoi(b[11].(string)),
 				Atoi(b[12].(string)), Atoi(b[13].(string))})
+		}
+	}
+
+	if _, ok := sys.cmdFlags["-updatechar"]; ok {
+		fmt.Printf("[DEBUG][main.go][setupConfig] Update data/select.def based on [char] directory\n")
+		err := updateCharInSelectDef("data/select.def")
+		if err != nil {
+			fmt.Printf("[DEBUG][main.go][setupConfig] %v\n", err)
 		}
 	}
 
