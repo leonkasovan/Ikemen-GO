@@ -6,6 +6,14 @@ make steamdeck
 git clone -b PSC https://github.com/leonkasovan/Ikemen-GO.git
 chmod a+x build/build.sh
 make psc
+
+# BUILD FOR WINDOWS 64 (Using MSYS2 https://www.msys2.org/)
+pacman -Syy
+pacman -S mingw-w64-ucrt-x86_64-go
+git clone -b SDL2 https://github.com/leonkasovan/Ikemen-GO.git
+chmod a+x build/build.sh
+go mod tidy
+make win64
 ```
 
 https://mugenguild.com/forum/  
