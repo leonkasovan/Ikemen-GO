@@ -259,22 +259,22 @@ type Renderer struct {
 	stageIndexBuffer  uint32
 }
 
-//go:embed shaders/sprite.vert.320.glsl
+//go:embed shaders/sprite.vert.glsl
 var vertShader string
 
-//go:embed shaders/sprite.frag.320.glsl
+//go:embed shaders/sprite.frag.glsl
 var fragShader string
 
-//go:embed shaders/model.vert.320.glsl
+//go:embed shaders/model.vert.glsl
 var modelVertShader string
 
-//go:embed shaders/model.frag.320.glsl
+//go:embed shaders/model.frag.glsl
 var modelFragShader string
 
-//go:embed shaders/ident.vert.320.glsl
+//go:embed shaders/ident.vert.glsl
 var identVertShader string
 
-//go:embed shaders/ident.frag.320.glsl
+//go:embed shaders/ident.frag.glsl
 var identFragShader string
 
 // Render initialization.
@@ -309,7 +309,7 @@ func (r *Renderer) Init() {
 
 	// 3D model shader
 	r.modelShader = newShaderProgram(modelVertShader, modelFragShader, "Model Shader")
-	r.modelShader.RegisterAttributes("position", "uv", "vertColor", "joints_0", "joints_1", "weights_0", "weights_1", "texcoord", "vColor")
+	r.modelShader.RegisterAttributes("position", "uv", "vertColor", "joints_0", "joints_1", "weights_0", "weights_1", "morphTargets_0", "texcoord", "vColor")
 	r.modelShader.RegisterUniforms("modelview", "projection", "baseColorFactor", "add", "mult", "textured", "neg", "gray", "hue", "enableAlpha", "alphaThreshold", "numJoints", "morphTargetWeight", "positionTargetCount", "uvTargetCount")
 	r.modelShader.RegisterTextures("tex", "jointMatrices")
 

@@ -3,8 +3,9 @@
 package main
 
 import (
-	glfw "github.com/go-gl/glfw/v3.3/glfw"
 	"strings"
+
+	glfw "github.com/go-gl/glfw/v3.3/glfw"
 )
 
 type Input struct {
@@ -217,6 +218,13 @@ func (input *Input) GetJoystickButtons(joy int) []glfw.Action {
 	return input.joystick[joy].GetButtons()
 }
 
+func (input *Input) GetJoystickHats(joy int) []glfw.JoystickHatState {
+	if joy < 0 || joy >= len(input.joystick) {
+		return []glfw.JoystickHatState{}
+	}
+	return input.joystick[joy].GetHats()
+}
+
 func JoystickState(joy, button int) bool {
 	if joy < 0 {
 		return sys.keyState[Key(button)]
@@ -224,17 +232,57 @@ func JoystickState(joy, button int) bool {
 	if joy >= input.GetMaxJoystickCount() {
 		return false
 	}
+	axes := input.GetJoystickAxes(joy)
 	if button >= 0 {
 		// Query button state
 		btns := input.GetJoystickButtons(joy)
+		// fmt.Printf("[input_glfw.go] joy_id=%v len(btns)=%v\n", joy, len(btns))
 		if button >= len(btns) {
+			if len(btns) == 0 {
+				return false
+			} else {
+				if button == sys.joystickConfig[joy].dR {
+					return axes[0] > sys.controllerStickSensitivity
+				}
+				if button == sys.joystickConfig[joy].dL {
+					return -axes[0] > sys.controllerStickSensitivity
+				}
+				if button == sys.joystickConfig[joy].dU {
+					return -axes[1] > sys.controllerStickSensitivity
+				}
+				if button == sys.joystickConfig[joy].dD {
+					return axes[1] > sys.controllerStickSensitivity
+				}
+			}
 			return false
+		}
+
+		// override with axes
+		if button == sys.joystickConfig[joy].dR {
+			if axes[0] > sys.controllerStickSensitivity {
+				btns[button] = 1
+			}
+		}
+		if button == sys.joystickConfig[joy].dL {
+			if -axes[0] > sys.controllerStickSensitivity {
+				btns[button] = 1
+			}
+		}
+		if button == sys.joystickConfig[joy].dU {
+			if -axes[1] > sys.controllerStickSensitivity {
+				btns[button] = 1
+			}
+		}
+		if button == sys.joystickConfig[joy].dD {
+			if axes[1] > sys.controllerStickSensitivity {
+				btns[button] = 1
+			}
 		}
 		return btns[button] != 0
 	} else {
 		// Query axis state
 		axis := -button - 1
-		axes := input.GetJoystickAxes(joy)
+
 		if axis >= len(axes)*2 {
 			return false
 		}

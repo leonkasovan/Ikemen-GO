@@ -5,6 +5,7 @@ package main
 import (
 	"fmt"
 	"image"
+	"os"
 	"runtime"
 
 	glfw "github.com/go-gl/glfw/v3.3/glfw"
@@ -83,6 +84,28 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 	// V-Sync
 	if s.vRetrace >= 0 {
 		glfw.SwapInterval(s.vRetrace)
+	}
+
+	fmt.Printf("[DEBUG][system_glfw.go][newWindow] Overwrite Joystick setting\n")
+	for i := glfw.Joystick1; i <= glfw.JoystickLast; i++ {
+		if i.Present() {
+			var isExist bool
+			var kc KeyConfig
+			// fmt.Printf("Joystick id=%d is present: [%v]\n", i, i.GetGamepadName())
+			if os.Getenv("XDG_SESSION_DESKTOP") == "KDE" { // in steamdeck there is 2 env: desktop mode(KDE) and gaming mode(gamescope), which each has spesific controller setting
+				if i.GetGamepadName() == "Logitech Dual Action" {
+					kc, isExist = sys.joystickDefaultConfig[i.GetGamepadName()+".KDE"]
+				} else {
+					kc, isExist = sys.joystickDefaultConfig[i.GetGamepadName()]
+				}
+			} else {
+				kc, isExist = sys.joystickDefaultConfig[i.GetGamepadName()]
+			}
+			if isExist {
+				sys.joystickConfig[i] = KeyConfig{int(i), kc.dU, kc.dD, kc.dL, kc.dR, kc.kA, kc.kB, kc.kC, kc.kX, kc.kY, kc.kZ, kc.kS, kc.kD, kc.kW, kc.kM}
+				sys.errLog.Printf("%v Joystick id=%d [%v] is overwritten with %v (total button=%v)\n", kc.dU, i, i.GetGamepadName(), sys.joystickConfig[i], len(i.GetButtons()))
+			}
+		}
 	}
 
 	ret := &Window{window, s.windowTitle, fullscreen, x, y, w, h}

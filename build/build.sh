@@ -78,9 +78,10 @@ function main() {
 			binName="Ikemen_Go_Steamdeck"
 			echo "Linux Build Release for Steamdeck(SteamOS) with GLFW and OpenGL"
 			go build -tags=glfw,gl -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/$binName ./src
-			mkdir -p ~/Applications/IkemenGoDev
+			# mkdir -p ~/Applications/IkemenGoDev
 			# cp bin/Ikemen_Go_Steamdeck ~/Applications/IkemenGoDev
-			cp bin/Ikemen_Go_Steamdeck ~/Applications/SFAS\ Ikemen\ Version
+			# cp bin/Ikemen_Go_Steamdeck ~/Applications/SFAS\ Ikemen\ Version
+			cp bin/Ikemen_Go_Steamdeck ~/Applications/mugen-1.1b1
 		;;
 		pi4)
 			export GOOS=linux

@@ -135,6 +135,7 @@ type System struct {
 	aiInput                 [MaxSimul*2 + MaxAttachedChar]AiInput
 	keyConfig               []KeyConfig
 	joystickConfig          []KeyConfig
+	joystickDefaultConfig   map[string]KeyConfig
 	com                     [MaxSimul*2 + MaxAttachedChar]float32
 	autolevel               bool
 	home                    int
@@ -3225,12 +3226,16 @@ func (l *Loader) loadChar(pn int) int {
 		if sys.cgi[pn].ikemenver[0] == 0 && sys.cgi[pn].ikemenver[1] == 0 {
 			if sys.cgi[pn].mugenver[0] == 1 && sys.cgi[pn].mugenver[1] == 1 {
 				sys.appendToConsole("Using Mugen 1.1 compatibility mode.")
+				fmt.Println("[DEBUG][system.go]loadChar: Using Mugen 1.1 compatibility mode.")
 			} else if sys.cgi[pn].mugenver[0] == 1 && sys.cgi[pn].mugenver[1] == 0 {
 				sys.appendToConsole("Using Mugen 1.0 compatibility mode.")
+				fmt.Println("[DEBUG][system.go]loadChar: Using Mugen 1.0 compatibility mode.")
 			} else if sys.cgi[pn].mugenver[0] != 1 {
 				sys.appendToConsole("Using WinMugen compatibility mode.")
+				fmt.Println("[DEBUG][system.go]loadChar: Using WinMugen compatibility mode.")
 			} else {
 				sys.appendToConsole("Character with unknown engine version.")
+				fmt.Println("[DEBUG][system.go]loadChar: Character with unknown engine version.")
 			}
 		}
 	}()
@@ -3281,17 +3286,21 @@ func (l *Loader) loadChar(pn int) int {
 		if l.err = p.load(cdef); l.err != nil {
 			sys.chars[pn] = nil
 			tstr = fmt.Sprintf("WARNING: Failed to load new char: %v", cdef)
+			fmt.Println(tstr)
 			return -1
 		}
 		if sys.cgi[pn].states, l.err =
 			newCompiler().Compile(p.playerNo, cdef, p.gi().constants); l.err != nil {
 			sys.chars[pn] = nil
 			tstr = fmt.Sprintf("WARNING: Failed to compile new char states: %v", cdef)
+			fmt.Println(tstr)
 			return -1
 		}
 		tstr = fmt.Sprintf("New char loaded: %v", cdef)
+		fmt.Println(tstr)
 	} else {
 		tstr = fmt.Sprintf("Cached char loaded: %v", cdef)
+		fmt.Println(tstr)
 	}
 	sys.cgi[pn].palno = pal //sys.cgi[pn].palkeymap[pal-1] + 1
 	if pn < len(sys.lifebar.fa[sys.tmode[pn&1]]) &&
@@ -3376,12 +3385,16 @@ func (l *Loader) loadStage() bool {
 			if sys.stage.ikemenver[0] == 0 && sys.stage.ikemenver[1] == 0 {
 				if sys.stage.mugenver[0] == 1 && sys.stage.mugenver[1] == 1 {
 					sys.appendToConsole("Using Mugen 1.1 compatibility mode.")
+					fmt.Println("Using Mugen 1.1 compatibility mode.")
 				} else if sys.stage.mugenver[0] == 1 && sys.stage.mugenver[1] == 0 {
 					sys.appendToConsole("Using Mugen 1.0 compatibility mode.")
+					fmt.Println("Using Mugen 1.0 compatibility mode.")
 				} else if sys.stage.mugenver[0] != 1 {
 					sys.appendToConsole("Using WinMugen compatibility mode.")
+					fmt.Println("Using WinMugen compatibility mode.")
 				} else {
 					sys.appendToConsole("Stage with unknown engine version.")
+					fmt.Println("Stage with unknown engine version.")
 				}
 			}
 		}()
@@ -3397,6 +3410,7 @@ func (l *Loader) loadStage() bool {
 		}
 		if sys.stage != nil && sys.stage.def == def && sys.stage.mainstage && !sys.stage.reload {
 			tstr = fmt.Sprintf("Cached stage loaded: %v", def)
+			fmt.Println(tstr)
 			return true
 		}
 		sys.stageList = make(map[int32]*Stage)
@@ -3404,6 +3418,7 @@ func (l *Loader) loadStage() bool {
 		sys.stageList[0], l.err = loadStage(def, true)
 		sys.stage = sys.stageList[0]
 		tstr = fmt.Sprintf("New stage loaded: %v", def)
+		fmt.Println(tstr)
 	}
 	return l.err == nil
 }
@@ -3418,10 +3433,16 @@ func (l *Loader) load() {
 		}
 		return true
 	}
+	if sys.sel.selectedStageNo == -1 {
+		l.state = LS_Error
+		fmt.Printf("[DEBUG][system.go][load] No stage: selectedStageNo == -1\n")
+		return
+	}
 	for !stageDone || !allCharDone() {
 		if !stageDone && sys.sel.selectedStageNo >= 0 {
 			if !l.loadStage() {
 				l.state = LS_Error
+				fmt.Printf("[DEBUG][system.go][load] load stage error\n")
 				return
 			}
 			stageDone = true
