@@ -640,7 +640,7 @@ func setupConfig(is_mugen_game bool) configSettings {
 	// Unmarshal default config string into a struct
 	tmp := configSettings{}
 	chk(json.Unmarshal(defaultConfig, &tmp))
-	fmt.Printf("[DEBUG][main.go][setupConfig] using embedded defaultConfig.json\ntmp.JoystickConfig[0]: %v\ntmp.JoystickConfig[1]: %v\ntmp.JoystickConfig[2]: %v\n", tmp.JoystickConfig[0], tmp.JoystickConfig[1], tmp.JoystickConfig[2])
+	// fmt.Printf("[DEBUG][main.go][setupConfig] using embedded defaultConfig.json\ntmp.JoystickConfig[0]: %v\ntmp.JoystickConfig[1]: %v\ntmp.JoystickConfig[2]: %v\n", tmp.JoystickConfig[0], tmp.JoystickConfig[1], tmp.JoystickConfig[2])
 	// Config file path
 	cfgPath := "save/config.json"
 	// If a different config file is defined in the command line parameters, use it instead
