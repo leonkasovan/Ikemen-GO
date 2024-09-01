@@ -38,7 +38,8 @@ function main() {
 			go build -tags=glfw,gl -trimpath -v -trimpath -ldflags "-s -w -H windowsgui" -o ./bin/$binName ./src
 			# echo "Win64 Build Release with SDL2 and OpenGL"
 			# go build -tags=sdl,static,gl -trimpath -v -trimpath -ldflags "-s -w -H windowsgui" -o ./bin/$binName ./src
-			cp bin/$binName /mnt/c/PortableApps/Ikemen_Go\(Dev\)/
+			# cp bin/$binName /mnt/c/PortableApps/Ikemen_Go\(Dev\)/
+			cp bin/$binName /f/PortableApps/MUGEN-1.1bPLUS/
 		;;
 		win32)
 			export GOOS=windows
@@ -74,7 +75,7 @@ function main() {
 			go build -tags=sdl,gles2 -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/$binName ./src
 		;;
 		steamdeck)
-			export GOOS=linux
+			# export GOOS=linux
 			binName="Ikemen_Go_Steamdeck"
 			echo "Linux Build Release for Steamdeck(SteamOS) with GLFW and OpenGL"
 			go build -tags=glfw,gl -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/$binName ./src

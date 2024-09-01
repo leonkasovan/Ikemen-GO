@@ -435,10 +435,10 @@ func main() {
 			panic(err)
 		}
 	}
-	fmt.Printf("[DEBUG][main.go][setupConfig] Joystick Setting Updated from options.lua\n")
-	for _, jc := range tmp.JoystickConfig {
-		fmt.Printf("sys.joystickConfig=%v [%v]\n", jc.Joystick, jc.Buttons)
-	}
+	// fmt.Printf("[DEBUG][main.go][setupConfig] Joystick Setting Updated from options.lua\n")
+	// for _, jc := range tmp.JoystickConfig {
+	// 	fmt.Printf("sys.joystickConfig=%v [%v]\n", jc.Joystick, jc.Buttons)
+	// }
 }
 
 // Loops through given comand line arguments and processes them for later use by the game

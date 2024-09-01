@@ -6153,7 +6153,7 @@ func (c *Compiler) stateBlock(line *string, bl *StateBlock, root bool,
 }
 func (c *Compiler) stateCompileZ(states map[int32]StateBytecode,
 	filename, src string, constants map[string]float32) error {
-	fmt.Printf("[DEBUG][compiler.go][stateCompileZ] filename=%v\n", filename)
+	// fmt.Printf("[DEBUG][compiler.go][stateCompileZ] filename=%v\n", filename)
 	defer func(oime bool) {
 		sys.ignoreMostErrors = oime
 	}(sys.ignoreMostErrors)

@@ -92,7 +92,7 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 		if i.Present() {
 			var isExist bool
 			var kc KeyConfig
-			name := i.GetGamepadName()
+			name := i.GetGamepadName() + "." + runtime.GOOS + "." + runtime.GOARCH
 			if os.Getenv("XDG_CURRENT_DESKTOP") == "KDE" { // in steamdeck there is 2 env: desktop mode(KDE) and gaming mode(gamescope), which each has spesific controller setting
 				if name == "Logitech Dual Action" || name == "Steam Virtual Gamepad" {
 					name = name + ".KDE"
