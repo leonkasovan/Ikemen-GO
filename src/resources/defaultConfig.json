@@ -48,7 +48,7 @@
   "ForceStageZoomin": 0,
   "ForceStageZoomout": 0,
   "Framerate": 60,
-  "Fullscreen": true,
+  "Fullscreen": false,
   "FullscreenRefreshRate": 60,
   "FullscreenWidth": -1,
   "FullscreenHeight": -1,
@@ -380,13 +380,13 @@
         "12",
         "0",
         "1",
-        "5",
+        "4",
         "2",
         "3",
-        "-10",
+        "5",
         "7",
-        "-12",
-        "4",
+        "-1",
+        "-2",
         "6"
       ]
     }

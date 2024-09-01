@@ -32,6 +32,7 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 
 	var mode = monitor.GetVideoMode()
 	var x, y = (mode.Width - w) / 2, (mode.Height - h) / 2
+	fmt.Printf("[system_glfw.go][newWindow] monitor.GetVideoMode() = %v\n", mode)
 
 	// "-windowed" overrides the configuration setting but does not change it
 	_, forceWindowed := sys.cmdFlags["-windowed"]
@@ -86,24 +87,23 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 		glfw.SwapInterval(s.vRetrace)
 	}
 
-	fmt.Printf("[DEBUG][system_glfw.go][newWindow] Overwrite Joystick setting\n")
+	fmt.Printf("[system_glfw.go][newWindow] Overwrite Joystick setting\n")
 	for i := glfw.Joystick1; i <= glfw.JoystickLast; i++ {
 		if i.Present() {
 			var isExist bool
 			var kc KeyConfig
-			// fmt.Printf("Joystick id=%d is present: [%v]\n", i, i.GetGamepadName())
-			if os.Getenv("XDG_SESSION_DESKTOP") == "KDE" { // in steamdeck there is 2 env: desktop mode(KDE) and gaming mode(gamescope), which each has spesific controller setting
-				if i.GetGamepadName() == "Logitech Dual Action" {
-					kc, isExist = sys.joystickDefaultConfig[i.GetGamepadName()+".KDE"]
-				} else {
-					kc, isExist = sys.joystickDefaultConfig[i.GetGamepadName()]
+			name := i.GetGamepadName()
+			if os.Getenv("XDG_CURRENT_DESKTOP") == "KDE" { // in steamdeck there is 2 env: desktop mode(KDE) and gaming mode(gamescope), which each has spesific controller setting
+				if name == "Logitech Dual Action" || name == "Steam Virtual Gamepad" {
+					name = name + ".KDE"
 				}
-			} else {
-				kc, isExist = sys.joystickDefaultConfig[i.GetGamepadName()]
 			}
+			kc, isExist = sys.joystickDefaultConfig[name]
 			if isExist {
 				sys.joystickConfig[i] = KeyConfig{int(i), kc.dU, kc.dD, kc.dL, kc.dR, kc.kA, kc.kB, kc.kC, kc.kX, kc.kY, kc.kZ, kc.kS, kc.kD, kc.kW, kc.kM}
-				sys.errLog.Printf("%v Joystick id=%d [%v] is overwritten with %v (total button=%v)\n", kc.dU, i, i.GetGamepadName(), sys.joystickConfig[i], len(i.GetButtons()))
+				fmt.Printf("[system_glfw.go][newWindow] Joystick id=%d [%v] is overwritten with %v (total button=%v)\n", i, name, sys.joystickConfig[i], len(i.GetButtons()))
+			} else {
+				fmt.Printf("[system_glfw.go][newWindow] Joystick id=%d [%v] is NOT overwritten, using %v (total button=%v)\n", i, name, sys.joystickConfig[i], len(i.GetButtons()))
 			}
 		}
 	}

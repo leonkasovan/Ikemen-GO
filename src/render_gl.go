@@ -281,7 +281,12 @@ var identFragShader string
 // Creates the default shaders, the framebuffer and enables MSAA.
 func (r *Renderer) Init() {
 	chk(gl.Init())
-	sys.errLog.Printf("Using OpenGL %v (%v)", gl.GoStr(gl.GetString(gl.VERSION)), gl.GoStr(gl.GetString(gl.RENDERER)))
+	// sys.errLog.Printf("Using OpenGL %v (%v)", gl.GoStr(gl.GetString(gl.VERSION)), gl.GoStr(gl.GetString(gl.RENDERER)))
+	fmt.Printf("[render_gl.go][Init] Using %v (%v)\n", gl.GoStr(gl.GetString(gl.VERSION)), gl.GoStr(gl.GetString(gl.RENDERER)))
+	fmt.Printf("[render_gl.go][Init] Fullscreen: %v (%v x %v)\n", sys.fullscreen, sys.fullscreenWidth, sys.fullscreenHeight)
+	fmt.Printf("[render_gl.go][Init] scrrect: %v,%v - %v,%v\n", sys.scrrect[0], sys.scrrect[1], sys.scrrect[2], sys.scrrect[3])
+	fmt.Printf("[render_gl.go][Init] gameWidth x gameHeight: %v,%v\n", sys.gameWidth, sys.gameHeight)
+	fmt.Printf("[render_gl.go][Init] widthScale x heightScale: %v,%v\n", sys.widthScale, sys.heightScale)
 
 	// Store current timestamp
 	sys.prevTimestamp = glfw.GetTime()
