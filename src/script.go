@@ -1492,24 +1492,39 @@ func systemScriptInit(l *lua.LState) {
 				// for i := range axes {
 				if axes[0] > sys.controllerStickSensitivity { // right
 					s = strconv.Itoa(2 + base)
-					fmt.Printf("[script.go][systemScriptInit] AXIS joy=%v s: %v\n", joy, s)
+					fmt.Printf("[script.go][systemScriptInit] AXIS for DPAD RIGHT joy=%v s: %v\n", joy, s)
 				} else if -axes[0] > sys.controllerStickSensitivity { // left
 					s = strconv.Itoa(1 + base)
-					fmt.Printf("[script.go][systemScriptInit] AXIS joy=%v s: %v\n", joy, s)
+					fmt.Printf("[script.go][systemScriptInit] AXIS for DPAD LEFT joy=%v s: %v\n", joy, s)
 				}
 				if axes[1] > sys.controllerStickSensitivity { // down
 					s = strconv.Itoa(3 + base)
-					fmt.Printf("[script.go][systemScriptInit] AXIS joy=%v s: %v\n", joy, s)
+					fmt.Printf("[script.go][systemScriptInit] AXIS for DPAD DOWN joy=%v s: %v\n", joy, s)
 				} else if -axes[1] > sys.controllerStickSensitivity { // up
 					s = strconv.Itoa(base)
+					fmt.Printf("[script.go][systemScriptInit] AXIS  for DPAD UP joy=%v s: %v\n", joy, s)
+				}
+				if s != "" {
+					break
+				}
+
+				for i := range axes {
+				if axes[i] < -sys.controllerStickSensitivity {
+					s = strconv.Itoa(-i*2 - 1)
+					fmt.Printf("[script.go][systemScriptInit] AXIS joy=%v s: %v\n", joy, s)
+				} else if axes[i] > sys.controllerStickSensitivity {
+					s = strconv.Itoa(-i*2 - 2)
 					fmt.Printf("[script.go][systemScriptInit] AXIS joy=%v s: %v\n", joy, s)
 				}
+			}
 				if s != "" {
 					break
 				}
 			}
 		}
+		if s != "" {
 		fmt.Printf("[script.go][systemScriptInit] joy=%v s: %v\n", joy, s)
+		}
 		l.Push(lua.LString(s))
 		if s != "" {
 			l.Push(lua.LNumber(joy + 1))
