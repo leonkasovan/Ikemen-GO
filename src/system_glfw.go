@@ -18,6 +18,10 @@ type Window struct {
 	x, y, w, h int
 }
 
+func updateTimeStamp() {
+	sys.prevTimestamp = glfw.GetTime()
+}
+
 func (s *System) newWindow(w, h int) (*Window, error) {
 	var err error
 	var window *glfw.Window

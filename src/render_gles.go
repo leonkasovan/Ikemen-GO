@@ -8,10 +8,10 @@ import (
 	"encoding/binary"
 	"fmt"
 	"runtime"
+	"time"
 	"unsafe"
 
 	gl "github.com/leonkasovan/gl/v3.1/gles2"
-	sdl "github.com/veandco/go-sdl2/sdl"
 	"golang.org/x/mobile/exp/f32"
 )
 
@@ -284,7 +284,8 @@ func (r *Renderer) Init() {
 	sys.errLog.Printf("Using %v (%v)", gl.GoStr(gl.GetString(gl.VERSION)), gl.GoStr(gl.GetString(gl.RENDERER)))
 
 	// Store current timestamp
-	sys.prevTimestampUint = sdl.GetTicks64()
+	// sys.prevTimestampUint = sdl.GetTicks64()
+	updateTimeStamp()
 
 	r.postShaderSelect = make([]*ShaderProgram, 1+len(sys.externalShaderList))
 
@@ -450,6 +451,7 @@ func (r *Renderer) EndFrame() {
 	// set post-processing parameters
 	gl.Uniform1i(postShader.u["Texture"], 0)
 	gl.Uniform2f(postShader.u["TextureSize"], float32(resizedWidth), float32(resizedHeight))
+	gl.Uniform1f(postShader.u["CurrentTime"], float32(time.Now().Unix()))
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, scaleMode)
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, scaleMode)
 

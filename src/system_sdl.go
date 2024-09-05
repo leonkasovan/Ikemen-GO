@@ -22,6 +22,10 @@ type Window struct {
 	x, y, w, h  int
 }
 
+func updateTimeStamp() {
+	sys.prevTimestampUint = sdl.GetTicks64()
+}
+
 func (s *System) newWindow(w, h int) (*Window, error) {
 	var err error
 	var window *sdl.Window

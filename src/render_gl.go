@@ -8,10 +8,10 @@ import (
 	"encoding/binary"
 	"fmt"
 	"runtime"
+	"time"
 	"unsafe"
 
 	gl "github.com/go-gl/gl/v2.1/gl"
-	glfw "github.com/go-gl/glfw/v3.3/glfw"
 	"golang.org/x/mobile/exp/f32"
 )
 
@@ -289,7 +289,8 @@ func (r *Renderer) Init() {
 	fmt.Printf("[render_gl.go][Init] widthScale x heightScale: %v,%v\n", sys.widthScale, sys.heightScale)
 
 	// Store current timestamp
-	sys.prevTimestamp = glfw.GetTime()
+	updateTimeStamp()
+	// sys.prevTimestamp = glfw.GetTime()
 
 	r.postShaderSelect = make([]*ShaderProgram, 1+len(sys.externalShaderList))
 
@@ -455,7 +456,7 @@ func (r *Renderer) EndFrame() {
 	// set post-processing parameters
 	gl.Uniform1i(postShader.u["Texture"], 0)
 	gl.Uniform2f(postShader.u["TextureSize"], float32(resizedWidth), float32(resizedHeight))
-	gl.Uniform1f(postShader.u["CurrentTime"], float32(glfw.GetTime()))
+	gl.Uniform1f(postShader.u["CurrentTime"], float32(time.Now().Unix()))
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, scaleMode)
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, scaleMode)
 
