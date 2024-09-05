@@ -296,12 +296,31 @@
   ,
   "JoystickDefaultConfig": [
     {
-      "JoystickName": "Logitech Dual Action.windows.amd64",
+      "JoystickName": "Logitech Dual Action.windows.amd64.glfw",
       "Buttons": [
         "12",
         "14",
         "15",
         "13",
+        "1",
+        "2",
+        "7",
+        "0",
+        "3",
+        "5",
+        "9",
+        "4",
+        "6",
+        "8"
+      ]
+    },
+    {
+      "JoystickName": "Logitech Dual Action.windows.amd64.sdl",
+      "Buttons": [
+        "10",
+        "12",
+        "13",
+        "11",
         "1",
         "2",
         "7",
