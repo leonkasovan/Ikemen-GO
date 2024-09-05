@@ -332,22 +332,26 @@ func (ir *InputReader) LocalInput(in int) (bool, bool, bool, bool, bool, bool, b
 	}
 	// Joystick
 	if in < len(sys.joystickConfig) {
+		axes := input.GetJoystickAxes(in)
+		use_axes := len(axes) > 0
+		btns := input.GetJoystickButtons(in)
+		use_btns := len(btns) > 0
 		joyS := sys.joystickConfig[in].Joy
 		if joyS >= 0 {
-			U = U || sys.joystickConfig[in].U() // Does not override keyboard
-			D = D || sys.joystickConfig[in].D()
-			L = L || sys.joystickConfig[in].L()
-			R = R || sys.joystickConfig[in].R()
-			a = a || sys.joystickConfig[in].a()
-			b = b || sys.joystickConfig[in].b()
-			c = c || sys.joystickConfig[in].c()
-			x = x || sys.joystickConfig[in].x()
-			y = y || sys.joystickConfig[in].y()
-			z = z || sys.joystickConfig[in].z()
-			s = s || sys.joystickConfig[in].s()
-			d = d || sys.joystickConfig[in].d()
-			w = w || sys.joystickConfig[in].w()
-			m = m || sys.joystickConfig[in].m()
+			U = U || (use_axes && (-axes[1] > sys.controllerStickSensitivity)) || (use_btns && (btns[sys.joystickConfig[in].dU] > 0))
+			D = D || (use_axes && (axes[1] > sys.controllerStickSensitivity)) || (use_btns && (btns[sys.joystickConfig[in].dD] > 0))
+			L = L || (use_axes && (-axes[0] > sys.controllerStickSensitivity)) || (use_btns && (btns[sys.joystickConfig[in].dL] > 0))
+			R = R || (use_axes && (axes[0] > sys.controllerStickSensitivity)) || (use_btns && (btns[sys.joystickConfig[in].dR] > 0))
+			a = a || (use_btns && (btns[sys.joystickConfig[in].kA] > 0))
+			b = b || (use_btns && (btns[sys.joystickConfig[in].kB] > 0))
+			c = c || (use_btns && (btns[sys.joystickConfig[in].kC] > 0))
+			x = x || (use_btns && (btns[sys.joystickConfig[in].kX] > 0))
+			y = y || (use_btns && (btns[sys.joystickConfig[in].kY] > 0))
+			z = z || (use_btns && (btns[sys.joystickConfig[in].kZ] > 0))
+			s = s || (use_btns && (btns[sys.joystickConfig[in].kS] > 0))
+			d = d || (use_btns && (btns[sys.joystickConfig[in].kD] > 0))
+			w = w || (use_btns && (btns[sys.joystickConfig[in].kW] > 0))
+			m = m || (use_btns && (btns[sys.joystickConfig[in].kM] > 0))
 		}
 	}
 	// Button assist is checked locally so the sent inputs are already processed

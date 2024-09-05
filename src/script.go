@@ -1509,21 +1509,21 @@ func systemScriptInit(l *lua.LState) {
 				}
 
 				for i := range axes {
-				if axes[i] < -sys.controllerStickSensitivity {
-					s = strconv.Itoa(-i*2 - 1)
-					fmt.Printf("[script.go][systemScriptInit] AXIS joy=%v s: %v\n", joy, s)
-				} else if axes[i] > sys.controllerStickSensitivity {
-					s = strconv.Itoa(-i*2 - 2)
-					fmt.Printf("[script.go][systemScriptInit] AXIS joy=%v s: %v\n", joy, s)
+					if axes[i] < -sys.controllerStickSensitivity {
+						s = strconv.Itoa(-i*2 - 1)
+						fmt.Printf("[script.go][systemScriptInit] AXIS joy=%v s: %v\n", joy, s)
+					} else if axes[i] > sys.controllerStickSensitivity {
+						s = strconv.Itoa(-i*2 - 2)
+						fmt.Printf("[script.go][systemScriptInit] AXIS joy=%v s: %v\n", joy, s)
+					}
 				}
-			}
 				if s != "" {
 					break
 				}
 			}
 		}
 		if s != "" {
-		fmt.Printf("[script.go][systemScriptInit] joy=%v s: %v\n", joy, s)
+			fmt.Printf("[script.go][systemScriptInit] joy=%v s: %v\n", joy, s)
 		}
 		l.Push(lua.LString(s))
 		if s != "" {
