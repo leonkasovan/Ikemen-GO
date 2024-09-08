@@ -296,6 +296,25 @@
   ,
   "JoystickDefaultConfig": [
     {
+      "JoystickName": "XInput Gamepad (GLFW).windows.amd64.glfw",
+      "Buttons": [
+        "10",
+        "12",
+        "13",
+        "11",
+        "0",
+        "1",
+        "-12",
+        "2",
+        "3",
+        "5",
+        "6",
+        "-10",
+        "4",
+        "7"
+      ]
+    },
+    {
       "JoystickName": "Logitech Dual Action.windows.amd64.glfw",
       "Buttons": [
         "12",
@@ -309,8 +328,8 @@
         "3",
         "5",
         "9",
-        "4",
         "6",
+        "4",
         "8"
       ]
     },
@@ -410,6 +429,25 @@
       ]
     },
     {
+      "JoystickName": "Sony Interactive Entertainment Controller",
+      "Buttons": [
+        "10",
+        "12",
+        "13",
+        "11",
+        "2",
+        "1",
+        "5",
+        "3",
+        "0",
+        "7",
+        "9",
+        "4",
+        "-10",
+        "6"
+      ]
+    },
+    {
       "JoystickName": "Steam Virtual Gamepad",
       "Buttons": [
         "11",
@@ -424,6 +462,25 @@
         "5",
         "7",
         "-1",
+        "-2",
+        "6"
+      ]
+    },
+    {
+      "JoystickName": "Controller (XBOX 360 For Windows).windows.amd64",
+      "Buttons": [
+        "10",
+        "12",
+        "13",
+        "11",
+        "0",
+        "1",
+        "-5",
+        "2",
+        "3",
+        "5",
+        "7",
+        "4",
         "-2",
         "6"
       ]
