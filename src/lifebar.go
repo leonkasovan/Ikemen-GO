@@ -69,7 +69,7 @@ func newFightFx() *FightFx {
 
 func loadFightFx(def string) error {
 	str, err := LoadText(def)
-	fmt.Printf("[DEBUG][lifebar.go][loadFightFx] def=%v\n", def)
+	// fmt.Printf("[DEBUG][lifebar.go][loadFightFx] def=%v\n", def)
 	if err != nil {
 		fmt.Printf("[DEBUG][lifebar.go][loadFightFx] err=%v\n", err)
 		return err
@@ -111,7 +111,7 @@ func loadFightFx(def string) error {
 				files = false
 				if is.LoadFile("sff", []string{def, sys.motifDir, "", "data/"},
 					func(filename string) error {
-						fmt.Printf("[DEBUG][lifebar.go][loadFightFx] sff filename=%v\n", filename)
+						// fmt.Printf("[DEBUG][lifebar.go][loadFightFx] sff filename=%v\n", filename)
 						s, err := loadSff(filename, false)
 						if err != nil {
 							return err
@@ -123,7 +123,7 @@ func loadFightFx(def string) error {
 				}
 				if is.LoadFile("air", []string{def, sys.motifDir, "", "data/"},
 					func(filename string) error {
-						fmt.Printf("[DEBUG][lifebar.go][loadFightFx] sff filename=%v\n", filename)
+						// fmt.Printf("[DEBUG][lifebar.go][loadFightFx] sff filename=%v\n", filename)
 						str, err := LoadText(filename)
 						if err != nil {
 							fmt.Printf("[DEBUG][lifebar.go][loadFightFx] err=%v\n", err)
@@ -137,7 +137,7 @@ func loadFightFx(def string) error {
 				}
 				if is.LoadFile("snd", []string{def, sys.motifDir, "", "data/"},
 					func(filename string) error {
-						fmt.Printf("[DEBUG][lifebar.go][loadFightFx] sff filename=%v\n", filename)
+						// fmt.Printf("[DEBUG][lifebar.go][loadFightFx] sff filename=%v\n", filename)
 						ffx.fsnd, err = LoadSnd(filename)
 						return err
 					}); err != nil {
@@ -2683,6 +2683,8 @@ type LifeBarScore struct {
 	min         float32
 	max         float32
 	scorePoints float32
+	rankPoints  map[string]float32
+	rankIcons   []string
 	enabled     map[string]bool
 	active      bool
 }
