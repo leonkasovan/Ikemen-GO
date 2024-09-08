@@ -91,7 +91,6 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 		glfw.SwapInterval(s.vRetrace)
 	}
 
-	fmt.Printf("[system_glfw.go][newWindow] Overwrite Joystick setting\n")
 	for i := glfw.Joystick1; i <= glfw.JoystickLast; i++ {
 		if i.Present() {
 			var isExist bool
@@ -102,6 +101,7 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 					name = name + ".KDE"
 				}
 			}
+			fmt.Printf("[system_glfw.go][newWindow] Using Joystick id=%v [%v]\n", i, name)
 			kc, isExist = sys.joystickDefaultConfig[name]
 			if isExist {
 				sys.joystickConfig[i] = KeyConfig{int(i), kc.dU, kc.dD, kc.dL, kc.dR, kc.kA, kc.kB, kc.kC, kc.kX, kc.kY, kc.kZ, kc.kS, kc.kD, kc.kW, kc.kM}

@@ -307,6 +307,25 @@ func JoystickState(joy, button int) bool {
 	}
 }
 
+func checkAxisState(code int, axes *[]float32) bool {
+	var axis int
+	if code&1 == 0 {
+		axis = (-code - 1) / 2
+	} else {
+		axis = -code / 2
+	}
+	if len(*axes) > axis {
+		value := (*axes)[axis]
+		if code&1 == 0 {
+			return value > sys.controllerStickSensitivity
+		} else {
+			return -value > sys.controllerStickSensitivity
+		}
+	} else {
+		return false
+	}
+}
+
 // Reads controllers and converts inputs to letters for later processing
 func (ir *InputReader) LocalInput(in int) (bool, bool, bool, bool, bool, bool, bool, bool, bool, bool, bool, bool, bool, bool) {
 	var U, D, L, R, a, b, c, x, y, z, s, d, w, m bool
@@ -332,26 +351,75 @@ func (ir *InputReader) LocalInput(in int) (bool, bool, bool, bool, bool, bool, b
 	}
 	// Joystick
 	if in < len(sys.joystickConfig) {
+		jc := sys.joystickConfig[in]
 		axes := input.GetJoystickAxes(in)
 		use_axes := len(axes) > 0
 		btns := input.GetJoystickButtons(in)
 		use_btns := len(btns) > 0
-		joyS := sys.joystickConfig[in].Joy
+		joyS := jc.Joy
 		if joyS >= 0 {
-			U = U || (use_axes && (-axes[1] > sys.controllerStickSensitivity)) || (use_btns && (btns[sys.joystickConfig[in].dU] > 0))
-			D = D || (use_axes && (axes[1] > sys.controllerStickSensitivity)) || (use_btns && (btns[sys.joystickConfig[in].dD] > 0))
-			L = L || (use_axes && (-axes[0] > sys.controllerStickSensitivity)) || (use_btns && (btns[sys.joystickConfig[in].dL] > 0))
-			R = R || (use_axes && (axes[0] > sys.controllerStickSensitivity)) || (use_btns && (btns[sys.joystickConfig[in].dR] > 0))
-			a = a || (use_btns && (btns[sys.joystickConfig[in].kA] > 0))
-			b = b || (use_btns && (btns[sys.joystickConfig[in].kB] > 0))
-			c = c || (use_btns && (btns[sys.joystickConfig[in].kC] > 0))
-			x = x || (use_btns && (btns[sys.joystickConfig[in].kX] > 0))
-			y = y || (use_btns && (btns[sys.joystickConfig[in].kY] > 0))
-			z = z || (use_btns && (btns[sys.joystickConfig[in].kZ] > 0))
-			s = s || (use_btns && (btns[sys.joystickConfig[in].kS] > 0))
-			d = d || (use_btns && (btns[sys.joystickConfig[in].kD] > 0))
-			w = w || (use_btns && (btns[sys.joystickConfig[in].kW] > 0))
-			m = m || (use_btns && (btns[sys.joystickConfig[in].kM] > 0))
+			U = U || (use_axes && (-axes[1] > sys.controllerStickSensitivity)) || (use_btns && (btns[jc.dU] > 0))
+			D = D || (use_axes && (axes[1] > sys.controllerStickSensitivity)) || (use_btns && (btns[jc.dD] > 0))
+			L = L || (use_axes && (-axes[0] > sys.controllerStickSensitivity)) || (use_btns && (btns[jc.dL] > 0))
+			R = R || (use_axes && (axes[0] > sys.controllerStickSensitivity)) || (use_btns && (btns[jc.dR] > 0))
+			a = a || (use_btns && (btns[jc.kA] > 0))
+			b = b || (use_btns && (btns[jc.kB] > 0))
+			if jc.kC < 0 {
+				if use_axes {
+					c = c || checkAxisState(jc.kC, &axes)
+				} else {
+					c = c || false
+				}
+			} else {
+				c = c || (use_btns && (btns[jc.kC] > 0))
+			}
+			x = x || (use_btns && (btns[jc.kX] > 0))
+			y = y || (use_btns && (btns[jc.kY] > 0))
+			if jc.kZ < 0 {
+				if use_axes {
+					z = z || checkAxisState(jc.kZ, &axes)
+				} else {
+					z = z || false
+				}
+			} else {
+				z = z || (use_btns && (btns[jc.kZ] > 0))
+			}
+			if jc.kS < 0 {
+				if use_axes {
+					s = s || checkAxisState(jc.kS, &axes)
+				} else {
+					s = s || false
+				}
+			} else {
+				s = s || (use_btns && (btns[jc.kS] > 0))
+			}
+			if jc.kD < 0 {
+				if use_axes {
+					d = d || checkAxisState(jc.kD, &axes)
+				} else {
+					d = d || false
+				}
+			} else {
+				d = d || (use_btns && (btns[jc.kD] > 0))
+			}
+			if jc.kW < 0 {
+				if use_axes {
+					w = w || checkAxisState(jc.kW, &axes)
+				} else {
+					w = w || false
+				}
+			} else {
+				w = w || (use_btns && (btns[jc.kW] > 0))
+			}
+			if jc.kM < 0 {
+				if use_axes {
+					m = m || checkAxisState(jc.kM, &axes)
+				} else {
+					m = m || false
+				}
+			} else {
+				m = m || (use_btns && (btns[jc.kM] > 0))
+			}
 		}
 	}
 	// Button assist is checked locally so the sent inputs are already processed

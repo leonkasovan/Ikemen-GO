@@ -672,10 +672,10 @@ func setupConfig(is_mugen_game bool) configSettings {
 			}
 		}
 	}
-	fmt.Printf("[DEBUG][main.go][setupConfig] Assigning Joystick default setting\n")
+	// fmt.Printf("[DEBUG][main.go][setupConfig] Assigning Joystick default setting\n")
 	sys.joystickDefaultConfig = map[string]KeyConfig{} // Initialize empty map for KeyConfig
-	for id, jc := range tmp.JoystickDefaultConfig {
-		fmt.Printf("sys.joystickDefaultConfig[%v]=[%v] %v\n", jc.JoystickName, id, jc.Buttons)
+	for _, jc := range tmp.JoystickDefaultConfig {
+		// fmt.Printf("sys.joystickDefaultConfig[%v]=[%v] %v\n", jc.JoystickName, id, jc.Buttons)
 		b := jc.Buttons
 		sys.joystickDefaultConfig[jc.JoystickName] = KeyConfig{0,
 			Atoi(b[0]), Atoi(b[1]), Atoi(b[2]),
@@ -684,10 +684,10 @@ func setupConfig(is_mugen_game bool) configSettings {
 			Atoi(b[9]), Atoi(b[10]), Atoi(b[11]),
 			Atoi(b[12]), Atoi(b[13])}
 	}
-	fmt.Printf("[DEBUG][main.go][setupConfig] after loading config.json\n")
-	for id, jc := range tmp.JoystickConfig {
-		fmt.Printf("tmp.JoystickConfig[%v]: %v\n", id, jc)
-	}
+	// fmt.Printf("[DEBUG][main.go][setupConfig] after loading config.json\n")
+	// for id, jc := range tmp.JoystickConfig {
+	// 	fmt.Printf("tmp.JoystickConfig[%v]: %v\n", id, jc)
+	// }
 	// Fix incorrect settings (default values saved into config.json)
 	switch tmp.AudioSampleRate {
 	case 22050, 44100, 48000:
