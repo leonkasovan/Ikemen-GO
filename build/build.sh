@@ -38,8 +38,8 @@ function main() {
 			go build -tags=glfw,gl -trimpath -v -trimpath -ldflags "-s -w -H windowsgui" -o ./bin/$binName ./src
 			# echo "Win64 Build Release with SDL2 and OpenGL"
 			# go build -tags=sdl,static,gl -trimpath -v -trimpath -ldflags "-s -w -H windowsgui" -o ./bin/$binName ./src
-			# cp bin/$binName /mnt/c/PortableApps/Ikemen_Go\(Dev\)/
-			cp bin/$binName /f/PortableApps/MUGEN-1.1bPLUS/
+			# cp bin/$binName /f/PortableApps/MUGEN-1.1bPLUS/
+			cp bin/$binName /f/PortableApps/Mugen\ Ikemen/tmntxjlTurboRB/
 		;;
 		win32)
 			export GOOS=windows
@@ -96,6 +96,12 @@ function main() {
 			echo "Linux Build Release for PSC with SDL and GLES"
 			go build -tags=sdl,gles2 -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/$binName ./src
 			cp bin/$binName ~/Applications/mugen-1.1b1
+   		;;
+		win64_sdl)
+			binName="Ikemen_Go_SDL.exe"
+			echo "Win64 Build Release with SDL and OpenGL"
+			go build -tags=sdl,gl -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/$binName ./src
+			cp bin/$binName /f/PortableApps/MUGEN-1.1bPLUS/
    		;;
 	esac
 

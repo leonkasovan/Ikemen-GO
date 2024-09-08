@@ -28,6 +28,10 @@ srcFiles=src/anim.go \
 win64: ${srcFiles}
 	cd ./build && bash ./build.sh win64
 
+# Windows 64-bit target
+win64_sdl: ${srcFiles}
+	cd ./build && bash ./build.sh win64_sdl
+
 # Windows 32-bit target
 win32: ${srcFiles}
 	cd ./build && bash ./build.sh win32
