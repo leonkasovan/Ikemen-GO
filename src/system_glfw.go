@@ -7,6 +7,7 @@ import (
 	"image"
 	"os"
 	"runtime"
+	"strings"
 
 	glfw "github.com/go-gl/glfw/v3.3/glfw"
 )
@@ -97,17 +98,17 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 			var kc KeyConfig
 			name := i.GetGamepadName() + "." + runtime.GOOS + "." + runtime.GOARCH + ".glfw"
 			if os.Getenv("XDG_CURRENT_DESKTOP") == "KDE" { // in steamdeck there is 2 env: desktop mode(KDE) and gaming mode(gamescope), which each has spesific controller setting
-				if name == "Logitech Dual Action" || name == "Steam Virtual Gamepad" {
+				if strings.Contains(name, "Logitech Dual Action") || strings.Contains(name, "Steam Virtual Gamepad") {
 					name = name + ".KDE"
 				}
 			}
-			fmt.Printf("[system_glfw.go][newWindow] Using Joystick id=%v [%v]\n", i, name)
+			fmt.Printf("[system_glfw.go][newWindow] Using Joystick id=%v [%v]\n\tTotal Buttons=%v\n\tTotal Axes=%v\n\tTotal Hats=%v\n", i, name, len(i.GetButtons()), len(i.GetAxes()), len(i.GetHats()))
 			kc, isExist = sys.joystickDefaultConfig[name]
 			if isExist {
 				sys.joystickConfig[i] = KeyConfig{int(i), kc.dU, kc.dD, kc.dL, kc.dR, kc.kA, kc.kB, kc.kC, kc.kX, kc.kY, kc.kZ, kc.kS, kc.kD, kc.kW, kc.kM}
-				fmt.Printf("[system_glfw.go][newWindow] Joystick id=%d [%v] is overwritten with %v (total button=%v)\n", i, name, sys.joystickConfig[i], len(i.GetButtons()))
+				fmt.Printf("\tConfig is overwritten with %v\n", sys.joystickConfig[i])
 			} else {
-				fmt.Printf("[system_glfw.go][newWindow] Joystick id=%d [%v] is NOT overwritten, using %v (total button=%v)\n", i, name, sys.joystickConfig[i], len(i.GetButtons()))
+				fmt.Printf("\tConfig is NOT overwritten, using %v\n", sys.joystickConfig[i])
 			}
 		}
 	}

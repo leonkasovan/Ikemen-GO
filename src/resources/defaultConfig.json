@@ -31,6 +31,7 @@
     "data/tag.zss",
     "data/training.zss"
   ],
+  "ControllerStickSensitivitySDL": 8000,
   "ControllerStickSensitivity": 0.4,
   "Credits": 10,
   "DebugClipboardRows": 2,
@@ -295,6 +296,44 @@
   ]
   ,
   "JoystickDefaultConfig": [
+    {
+      "JoystickName": "PS4 Controller.windows.amd64.sdl",
+      "Buttons": [
+        "11",
+        "12",
+        "13",
+        "14",
+        "0",
+        "1",
+        "-12",
+        "2",
+        "3",
+        "10",
+        "4",
+        "-10",
+        "9",
+        "6"
+      ]
+    },
+    {
+      "JoystickName": "PS4 Controller.windows.amd64.glfw",
+      "Buttons": [
+        "14",
+        "16",
+        "17",
+        "15",
+        "1",
+        "2",
+        "7",
+        "0",
+        "3",
+        "5",
+        "8",
+        "6",
+        "4",
+        "9"
+      ]
+    },
     {
       "JoystickName": "XInput Gamepad (GLFW).windows.amd64.glfw",
       "Buttons": [

@@ -12,6 +12,7 @@ import (
 	"image"
 	"os"
 	"runtime"
+	"strings"
 
 	sdl "github.com/veandco/go-sdl2/sdl"
 )
@@ -176,23 +177,25 @@ func (w *Window) pollEvents() {
 		}
 		break
 	case *sdl.JoyDeviceAddedEvent:
-		input.joysticks[int(t.Which)] = sdl.JoystickOpen(int(t.Which))
-		if input.joysticks[int(t.Which)] != nil {
-			fmt.Printf("[system_sdl.go][pollEvents] Joystick (%v) id=%v connected\n", input.joysticks[int(t.Which)].Name(), t.Which)
+		jid := int(t.Which)
+		input.joysticks[jid] = sdl.JoystickOpen(jid)
+		if input.joysticks[jid] != nil {
 			var isExist bool
 			var kc KeyConfig
-			name := input.joysticks[int(t.Which)].Name() + "." + runtime.GOOS + "." + runtime.GOARCH + ".sdl"
+			name := input.joysticks[jid].Name() + "." + runtime.GOOS + "." + runtime.GOARCH + ".sdl"
 			if os.Getenv("XDG_CURRENT_DESKTOP") == "KDE" { // in steamdeck there is 2 env: desktop mode(KDE) and gaming mode(gamescope), which each has spesific controller setting
-				if name == "Logitech Dual Action" || name == "Steam Virtual Gamepad" {
+				if strings.Contains(name, "Logitech Dual Action") || strings.Contains(name, "Steam Virtual Gamepad") {
 					name = name + ".KDE"
 				}
 			}
+			fmt.Printf("[system_sdl.go][pollEvents] Using Joystick id=%v [%v]\n\tTotal Button=%v\n\tTotal Axes=%v\n\tTotal Hats=%v\n", t.Which, name, input.joysticks[jid].NumButtons(), input.joysticks[jid].NumAxes(), input.joysticks[jid].NumHats())
 			kc, isExist = sys.joystickDefaultConfig[name]
 			if isExist {
-				sys.joystickConfig[int(t.Which)] = KeyConfig{int(t.Which), kc.dU, kc.dD, kc.dL, kc.dR, kc.kA, kc.kB, kc.kC, kc.kX, kc.kY, kc.kZ, kc.kS, kc.kD, kc.kW, kc.kM}
-				fmt.Printf("[system_sdl.go][pollEvents] Joystick id=%d [%v] is overwritten with %v\n", int(t.Which), name, sys.joystickConfig[int(t.Which)])
+				// sys.joystickConfig[jid] = KeyConfig{jid, kc.dU, kc.dD, kc.dL, kc.dR, kc.kA, kc.kB, kc.kC, kc.kX, kc.kY, kc.kZ, kc.kS, kc.kD, kc.kW, kc.kM}
+				// fmt.Printf("\tConfig is overwritten with %v\n", sys.joystickConfig[jid])
+				fmt.Printf("\tConfig should be overwritten with %v U=%v\n", sys.joystickConfig[jid], kc.dU)
 			} else {
-				fmt.Printf("[system_sdl.go][pollEvents] Joystick id=%d [%v] is NOT overwritten, using %v\n", int(t.Which), name, sys.joystickConfig[int(t.Which)])
+				fmt.Printf("\tConfig is NOT overwritten, using %v\n", sys.joystickConfig[jid])
 			}
 		}
 		break

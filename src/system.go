@@ -303,10 +303,11 @@ type System struct {
 	fullscreenHeight      int32
 
 	// Input variables
-	controllerStickSensitivity float32
-	inputButtonAssist          bool
-	inputSOCDresolution        int32
-	xinputTriggerSensitivity   float32
+	controllerStickSensitivitySDL int16
+	controllerStickSensitivity    float32
+	inputButtonAssist             bool
+	inputSOCDresolution           int32
+	xinputTriggerSensitivity      float32
 
 	// Localcoord sceenpack
 	luaLocalcoord    [2]int32

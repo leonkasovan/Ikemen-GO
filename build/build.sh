@@ -101,7 +101,9 @@ function main() {
 			binName="Ikemen_Go_SDL.exe"
 			echo "Win64 Build Release with SDL and OpenGL"
 			go build -tags=sdl,gl -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/$binName ./src
-			cp bin/$binName /f/PortableApps/MUGEN-1.1bPLUS/
+			# cp bin/$binName /f/PortableApps/MUGEN-1.1bPLUS/
+			# cp bin/$binName /f/PortableApps/Mugen\ Ikemen/tmntxjlTurboRB/
+			cp bin/$binName /f/PortableApps/Mugen\ Ikemen/MUGEN-1.1bPLUS/
    		;;
 	esac
 
