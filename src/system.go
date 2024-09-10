@@ -304,7 +304,7 @@ type System struct {
 
 	// Input variables
 	controllerStickSensitivitySDL int16
-	controllerStickSensitivity    float32
+	controllerStickSensitivityGLFW    float32
 	inputButtonAssist             bool
 	inputSOCDresolution           int32
 	xinputTriggerSensitivity      float32
@@ -386,9 +386,9 @@ type System struct {
 	// for avg. FPS calculations
 	gameFPS           float32
 	prevTimestamp     float64
-	absTickCountF     float32
+	absTickCountGLFW     float32
 	prevTimestampUint uint64
-	absTickCount      uint64
+	absTickCountSDL      uint64
 }
 
 // Initialize stuff, this is called after the config int at main.go
@@ -1103,7 +1103,7 @@ func (s *System) addFrameTime(t float32) bool {
 	return true
 }
 func (s *System) resetFrameTime() {
-	s.tickCount, s.oldTickCount, s.tickCountF, s.lastTick, s.absTickCountF, s.absTickCount = 0, -1, 0, 0, 0, 0
+	s.tickCount, s.oldTickCount, s.tickCountF, s.lastTick, s.absTickCountGLFW, s.absTickCountSDL = 0, -1, 0, 0, 0, 0
 	s.nextAddTime, s.oldNextAddTime = 1, 1
 }
 func (s *System) commandUpdate() {

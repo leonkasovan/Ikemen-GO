@@ -792,7 +792,7 @@ func setupConfig(is_mugen_game bool) configSettings {
 	sys.clipboardRows = tmp.DebugClipboardRows
 	sys.clsnDarken = tmp.DebugClsnDarken
 	sys.consoleRows = tmp.DebugConsoleRows
-	sys.controllerStickSensitivity = tmp.ControllerStickSensitivity
+	sys.controllerStickSensitivityGLFW = tmp.ControllerStickSensitivity
 	sys.controllerStickSensitivitySDL = tmp.ControllerStickSensitivitySDL
 	sys.explodMax = tmp.MaxExplod
 	sys.externalShaderList = tmp.ExternalShaders

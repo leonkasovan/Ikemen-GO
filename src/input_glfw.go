@@ -3,8 +3,10 @@
 package main
 
 import (
+	"fmt"
+	"runtime"
 	"strings"
-
+	"strconv"
 	glfw "github.com/go-gl/glfw/v3.3/glfw"
 )
 
@@ -242,16 +244,16 @@ func JoystickState(joy, button int) bool {
 				return false
 			} else {
 				if button == sys.joystickConfig[joy].dR {
-					return axes[0] > sys.controllerStickSensitivity
+					return axes[0] > sys.controllerStickSensitivityGLFW
 				}
 				if button == sys.joystickConfig[joy].dL {
-					return -axes[0] > sys.controllerStickSensitivity
+					return -axes[0] > sys.controllerStickSensitivityGLFW
 				}
 				if button == sys.joystickConfig[joy].dU {
-					return -axes[1] > sys.controllerStickSensitivity
+					return -axes[1] > sys.controllerStickSensitivityGLFW
 				}
 				if button == sys.joystickConfig[joy].dD {
-					return axes[1] > sys.controllerStickSensitivity
+					return axes[1] > sys.controllerStickSensitivityGLFW
 				}
 			}
 			return false
@@ -259,22 +261,22 @@ func JoystickState(joy, button int) bool {
 
 		// override with axes
 		if button == sys.joystickConfig[joy].dR {
-			if axes[0] > sys.controllerStickSensitivity {
+			if axes[0] > sys.controllerStickSensitivityGLFW {
 				btns[button] = 1
 			}
 		}
 		if button == sys.joystickConfig[joy].dL {
-			if -axes[0] > sys.controllerStickSensitivity {
+			if -axes[0] > sys.controllerStickSensitivityGLFW {
 				btns[button] = 1
 			}
 		}
 		if button == sys.joystickConfig[joy].dU {
-			if -axes[1] > sys.controllerStickSensitivity {
+			if -axes[1] > sys.controllerStickSensitivityGLFW {
 				btns[button] = 1
 			}
 		}
 		if button == sys.joystickConfig[joy].dD {
-			if axes[1] > sys.controllerStickSensitivity {
+			if axes[1] > sys.controllerStickSensitivityGLFW {
 				btns[button] = 1
 			}
 		}
@@ -303,7 +305,7 @@ func JoystickState(joy, button int) bool {
 			return false
 		}
 
-		return val > sys.controllerStickSensitivity
+		return val > sys.controllerStickSensitivityGLFW
 	}
 }
 
@@ -317,9 +319,9 @@ func checkAxisState(code int, axes *[]float32) bool {
 	if len(*axes) > axis {
 		value := (*axes)[axis]
 		if code&1 == 0 {
-			return value > sys.controllerStickSensitivity
+			return value > sys.controllerStickSensitivityGLFW
 		} else {
-			return -value > sys.controllerStickSensitivity
+			return -value > sys.controllerStickSensitivityGLFW
 		}
 	} else {
 		return false
@@ -358,10 +360,10 @@ func (ir *InputReader) LocalInput(in int) (bool, bool, bool, bool, bool, bool, b
 		use_btns := len(btns) > 0
 		joyS := jc.Joy
 		if joyS >= 0 {
-			U = U || (use_axes && (-axes[1] > sys.controllerStickSensitivity)) || (use_btns && (btns[jc.dU] > 0))
-			D = D || (use_axes && (axes[1] > sys.controllerStickSensitivity)) || (use_btns && (btns[jc.dD] > 0))
-			L = L || (use_axes && (-axes[0] > sys.controllerStickSensitivity)) || (use_btns && (btns[jc.dL] > 0))
-			R = R || (use_axes && (axes[0] > sys.controllerStickSensitivity)) || (use_btns && (btns[jc.dR] > 0))
+			U = U || (use_axes && (-axes[1] > sys.controllerStickSensitivityGLFW)) || (use_btns && (btns[jc.dU] > 0))
+			D = D || (use_axes && (axes[1] > sys.controllerStickSensitivityGLFW)) || (use_btns && (btns[jc.dD] > 0))
+			L = L || (use_axes && (-axes[0] > sys.controllerStickSensitivityGLFW)) || (use_btns && (btns[jc.dL] > 0))
+			R = R || (use_axes && (axes[0] > sys.controllerStickSensitivityGLFW)) || (use_btns && (btns[jc.dR] > 0))
 			a = a || (use_btns && (btns[jc.kA] > 0))
 			b = b || (use_btns && (btns[jc.kB] > 0))
 			if jc.kC < 0 {
@@ -427,4 +429,46 @@ func (ir *InputReader) LocalInput(in int) (bool, bool, bool, bool, bool, bool, b
 		a, b, c, x, y, z, s, d, w = ir.ButtonAssistCheck(a, b, c, x, y, z, s, d, w)
 	}
 	return U, D, L, R, a, b, c, x, y, z, s, d, w, m
+}
+
+func checkAxisForDpad(joy int, axes *[]float32, base int) string {
+	var s string
+	if (*axes)[0] > sys.controllerStickSensitivityGLFW { // right
+		s = strconv.Itoa(2 + base)
+		fmt.Printf("[input_glfw.go][checkAxisForDpad] AXIS for DPAD RIGHT joy=%v s: %v\n", joy, s)
+	} else if -(*axes)[0] > sys.controllerStickSensitivityGLFW { // left
+		s = strconv.Itoa(1 + base)
+		fmt.Printf("[input_glfw.go][checkAxisForDpad] AXIS for DPAD LEFT joy=%v s: %v\n", joy, s)
+	}
+	if (*axes)[1] > sys.controllerStickSensitivityGLFW { // down
+		s = strconv.Itoa(3 + base)
+		fmt.Printf("[input_glfw.go][checkAxisForDpad] AXIS for DPAD DOWN joy=%v s: %v\n", joy, s)
+	} else if -(*axes)[1] > sys.controllerStickSensitivityGLFW { // up
+		s = strconv.Itoa(base)
+		fmt.Printf("[input_glfw.go][checkAxisForDpad] AXIS  for DPAD UP joy=%v s: %v\n", joy, s)
+	}
+	return s
+}
+
+func checkAxisForTrigger(joy int, axes *[]float32) string {
+	var s string = ""
+	for i := range *axes {
+		if (*axes)[i] < -sys.controllerStickSensitivityGLFW {
+			name := input.GetJoystickName(joy) + "." + runtime.GOOS + "." + runtime.GOARCH + ".sdl"
+			if (i == 4 || i == 5) && name == "XInput Gamepad (GLFW).windows.amd64.sdl" {
+				// do nothing
+			} else if (i == 4 || i == 5) && name == "PS4 Controller.windows.amd64.sdl" {
+				// do nothing
+			} else {
+				s = strconv.Itoa(-i*2 - 1)
+				fmt.Printf("[input_glfw.go][checkAxisForTrigger] 1.AXIS joy=%v i=%v s:%v axes[i]=%v\n", joy, i, s, (*axes)[i])
+				break
+			}
+		} else if (*axes)[i] > sys.controllerStickSensitivityGLFW {
+			s = strconv.Itoa(-i*2 - 2)
+			fmt.Printf("[input_glfw.go][checkAxisForTrigger] 2.AXIS joy=%v i=%v s:%v axes[i]=%v\n", joy, i, s, (*axes)[i])
+			break
+		}
+	}
+	return s
 }

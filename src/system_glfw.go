@@ -122,8 +122,8 @@ func (w *Window) SwapBuffers() {
 	// Retrieve GL timestamp now
 	glNow := glfw.GetTime()
 	if glNow-sys.prevTimestamp >= 1 {
-		sys.gameFPS = sys.absTickCountF / float32(glNow-sys.prevTimestamp)
-		sys.absTickCountF = 0
+		sys.gameFPS = sys.absTickCountGLFW / float32(glNow-sys.prevTimestamp)
+		sys.absTickCountGLFW = 0
 		sys.prevTimestamp = glNow
 	}
 }
@@ -226,4 +226,8 @@ func keyCallback(_ *glfw.Window, key Key, _ int, action glfw.Action, mk Modifier
 
 func charCallback(_ *glfw.Window, char rune, mk ModifierKey) {
 	OnTextEntered(string(char))
+}
+
+func nextTickCount() {
+	sys.absTickCountGLFW++
 }

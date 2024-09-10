@@ -86,9 +86,8 @@ func (w *Window) SwapBuffers() {
 	sdlNow := sdl.GetTicks64()
 	delta := sdlNow - sys.prevTimestampUint
 	if delta >= 1000 {
-		// sys.gameFPS = float32(sys.absTickCount) / float32(delta/1000)
-		sys.gameFPS = float32(sys.absTickCount)
-		sys.absTickCount = 0
+		sys.gameFPS = float32(sys.absTickCountSDL)
+		sys.absTickCountSDL = 0
 		sys.prevTimestampUint = sdlNow
 	}
 }
@@ -215,4 +214,8 @@ func (w *Window) shouldClose() bool {
 func (w *Window) Close() {
 	w.Window.Destroy()
 	sdl.Quit()
+}
+
+func nextTickCount() {
+	sys.absTickCountSDL++
 }

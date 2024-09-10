@@ -407,7 +407,8 @@ func (r *Renderer) Close() {
 }
 
 func (r *Renderer) BeginFrame(clearColor bool) {
-	sys.absTickCount++
+	// sys.absTickCount++
+	nextTickCount()
 	gl.BindFramebuffer(gl.FRAMEBUFFER, r.fbo)
 	gl.Viewport(0, 0, sys.scrrect[2], sys.scrrect[3])
 	if clearColor {
