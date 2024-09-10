@@ -375,10 +375,10 @@
     {
       "JoystickName": "Logitech Dual Action.windows.amd64.sdl",
       "Buttons": [
-        "10",
         "12",
+        "15",
         "13",
-        "11",
+        "14",
         "1",
         "2",
         "7",

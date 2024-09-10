@@ -187,12 +187,12 @@ func (w *Window) pollEvents() {
 					name = name + ".KDE"
 				}
 			}
-			fmt.Printf("[system_sdl.go][pollEvents] Using Joystick id=%v [%v]\n\tTotal Button=%v\n\tTotal Axes=%v\n\tTotal Hats=%v\n", t.Which, name, input.joysticks[jid].NumButtons(), input.joysticks[jid].NumAxes(), input.joysticks[jid].NumHats())
+			fmt.Printf("[system_sdl.go][pollEvents] Using Joystick id=%v [%v]\n\tTotal Button=%v\n\tTotal Axes=%v\n\tTotal Hats=%v\n", jid, name, input.joysticks[jid].NumButtons(), input.joysticks[jid].NumAxes(), input.joysticks[jid].NumHats())
 			kc, isExist = sys.joystickDefaultConfig[name]
 			if isExist {
-				// sys.joystickConfig[jid] = KeyConfig{jid, kc.dU, kc.dD, kc.dL, kc.dR, kc.kA, kc.kB, kc.kC, kc.kX, kc.kY, kc.kZ, kc.kS, kc.kD, kc.kW, kc.kM}
-				// fmt.Printf("\tConfig is overwritten with %v\n", sys.joystickConfig[jid])
-				fmt.Printf("\tConfig should be overwritten with %v U=%v\n", sys.joystickConfig[jid], kc.dU)
+				sys.joystickConfig[jid] = KeyConfig{jid, kc.dU, kc.dD, kc.dL, kc.dR, kc.kA, kc.kB, kc.kC, kc.kX, kc.kY, kc.kZ, kc.kS, kc.kD, kc.kW, kc.kM}
+				fmt.Printf("\tConfig is overwritten with %v\n", sys.joystickConfig[jid])
+				// fmt.Printf("\tConfig should be overwritten with %v U=%v\n", sys.joystickConfig[jid], kc.dU)
 			} else {
 				fmt.Printf("\tConfig is NOT overwritten, using %v\n", sys.joystickConfig[jid])
 			}
