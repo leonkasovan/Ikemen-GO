@@ -5,8 +5,9 @@ package main
 import (
 	"fmt"
 	"runtime"
-	"strings"
 	"strconv"
+	"strings"
+
 	glfw "github.com/go-gl/glfw/v3.3/glfw"
 )
 
@@ -458,6 +459,8 @@ func checkAxisForTrigger(joy int, axes *[]float32) string {
 			if (i == 4 || i == 5) && name == "XInput Gamepad (GLFW).windows.amd64.sdl" {
 				// do nothing
 			} else if (i == 4 || i == 5) && name == "PS4 Controller.windows.amd64.sdl" {
+				// do nothing
+			} else if (i == 2 || i == 2) && name == "Steam Virtual Gamepad.linux.amd64.glfw" {
 				// do nothing
 			} else {
 				s = strconv.Itoa(-i*2 - 1)
