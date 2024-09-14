@@ -455,7 +455,7 @@ func checkAxisForTrigger(joy int, axes *[]float32) string {
 	var s string = ""
 	for i := range *axes {
 		if (*axes)[i] < -sys.controllerStickSensitivityGLFW {
-			name := input.GetJoystickName(joy) + "." + runtime.GOOS + "." + runtime.GOARCH + ".sdl"
+			name := input.GetJoystickName(joy) + "." + runtime.GOOS + "." + runtime.GOARCH + ".glfw"
 			if (i == 4 || i == 5) && name == "XInput Gamepad (GLFW).windows.amd64.sdl" {
 				// do nothing
 			} else if (i == 4 || i == 5) && name == "PS4 Controller.windows.amd64.sdl" {
