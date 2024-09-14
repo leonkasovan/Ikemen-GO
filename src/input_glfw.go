@@ -462,7 +462,7 @@ func checkAxisForTrigger(joy int, axes *[]float32) string {
 				// do nothing
 			} else if (i == 2 || i == 5) && name == "Steam Virtual Gamepad.linux.amd64.glfw" {
 				// do nothing
-			} else if (i == 2 || i == 5) && name == "Steam Virtual Gamepad.linux.amd64.sdl" {
+			} else if (i == 2 || i == 5) && name == "Steam Deck Controller.linux.amd64.sdl" {
 				// do nothing
 			} else {
 				s = strconv.Itoa(-i*2 - 1)

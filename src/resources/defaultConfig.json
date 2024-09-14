@@ -411,25 +411,6 @@
       ]
     },
     {
-      "JoystickName": "Steam Deck Controller",
-      "Buttons": [
-        "10",
-        "12",
-        "13",
-        "11",
-        "0",
-        "1",
-        "-5",
-        "2",
-        "3",
-        "5",
-        "7",
-        "4",
-        "-2",
-        "6"
-      ]
-    },
-    {
       "JoystickName": "Steam Deck",
       "Buttons": [
         "11",
@@ -506,7 +487,7 @@
       ]
     },
     {
-      "JoystickName": "Steam Virtual Gamepad.linux.amd64.sdl.x",
+      "JoystickName": "Steam Deck Controller.linux.amd64.sdl.x",
       "Buttons": [
         "11",
         "13",
