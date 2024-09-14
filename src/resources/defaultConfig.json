@@ -506,6 +506,25 @@
       ]
     },
     {
+      "JoystickName": "Steam Virtual Gamepad.linux.amd64.sdl.x",
+      "Buttons": [
+        "11",
+        "13",
+        "14",
+        "12",
+        "0",
+        "1",
+        "-12",
+        "2",
+        "3",
+        "5",
+        "7",
+        "4",
+        "-6",
+        "6"
+      ]
+    },
+    {
       "JoystickName": "Controller (XBOX 360 For Windows).windows.amd64",
       "Buttons": [
         "10",
