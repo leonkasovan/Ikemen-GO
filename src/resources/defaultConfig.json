@@ -487,7 +487,7 @@
       ]
     },
     {
-      "JoystickName": "Steam Virtual Gamepad",
+      "JoystickName": "Steam Virtual Gamepad.linux.amd64.glfw",
       "Buttons": [
         "11",
         "13",
@@ -495,13 +495,13 @@
         "12",
         "0",
         "1",
-        "4",
+        "-12",
         "2",
         "3",
         "5",
         "7",
-        "-1",
-        "-2",
+        "4",
+        "-6",
         "6"
       ]
     },

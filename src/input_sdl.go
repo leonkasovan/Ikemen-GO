@@ -401,6 +401,8 @@ func checkAxisForTrigger(joy int, axes *[]int16) string {
 				// do nothing
 			} else if (i == 4 || i == 5) && name == "PS4 Controller.windows.amd64.sdl" {
 				// do nothing
+			} else if (i == 2 || i == 5) && name == "Steam Virtual Gamepad.linux.amd64.glfw" {
+				// do nothing
 			} else {
 				s = strconv.Itoa(-i*2 - 1)
 				fmt.Printf("[input_sdl.go][checkAxisForTrigger] 1.AXIS joy=%v i=%v s:%v axes[i]=%v\n", joy, i, s, (*axes)[i])
