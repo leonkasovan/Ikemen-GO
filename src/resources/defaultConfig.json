@@ -392,41 +392,22 @@
       ]
     },
     {
-      "JoystickName": "Logitech Dual Action.linux.amd64.glfw.x",
+      "JoystickName": "Logitech Dual Action.linux.amd64.sdl",
       "Buttons": [
-        "16",
-        "18",
-        "19",
-        "17",
-        "1",
-        "2",
-        "7",
+        "11",
+        "14",
+        "12",
+        "13",
         "0",
+        "1",
+        "-12",
+        "2",
         "3",
         "5",
-        "9",
-        "4",
-        "6",
-        "8"
-      ]
-    },
-    {
-      "JoystickName": "Logitech Dual Action.linux.amd64.sdl.x",
-      "Buttons": [
-        "16",
-        "18",
-        "19",
-        "17",
-        "1",
-        "2",
         "7",
-        "0",
-        "3",
-        "5",
-        "9",
         "4",
-        "6",
-        "8"
+        "-6",
+        "6"
       ]
     },
     {
@@ -507,6 +488,25 @@
     },
     {
       "JoystickName": "Steam Deck Controller.linux.amd64.sdl",
+      "Buttons": [
+        "11",
+        "14",
+        "12",
+        "13",
+        "0",
+        "1",
+        "-12",
+        "2",
+        "3",
+        "5",
+        "7",
+        "4",
+        "-6",
+        "6"
+      ]
+    },
+    {
+      "JoystickName": "PS3 Controller.linux.amd64.sdl",
       "Buttons": [
         "11",
         "14",

@@ -405,7 +405,7 @@ func checkAxisForTrigger(joy int, axes *[]int16) string {
 				// do nothing
 			} else if (i == 2 || i == 5) && name == "Steam Deck Controller.linux.amd64.sdl" {
 				// do nothing
-			} else if (i == 2 || i == 5) && name == "Logitech Dual Action.linux.amd64.glfw" {
+			} else if (i == 2 || i == 5) && name == "PS3 Controller.linux.amd64.sdl" {
 				// do nothing
 			} else if (i == 2 || i == 5) && name == "Logitech Dual Action.linux.amd64.sdl" {
 				// do nothing
