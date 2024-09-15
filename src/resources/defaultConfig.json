@@ -487,12 +487,12 @@
       ]
     },
     {
-      "JoystickName": "Steam Deck Controller.linux.amd64.sdl.x",
+      "JoystickName": "Steam Deck Controller.linux.amd64.sdl",
       "Buttons": [
         "11",
-        "13",
         "14",
         "12",
+        "13",
         "0",
         "1",
         "-12",
