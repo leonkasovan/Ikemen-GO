@@ -6,14 +6,28 @@ make steamdeck
 git clone -b PSC https://github.com/leonkasovan/Ikemen-GO.git
 chmod a+x build/build.sh
 make psc
+```
 
-# BUILD FOR WINDOWS 64 (Using MSYS2 https://www.msys2.org/)
-pacman -Syy
-pacman -S mingw-w64-ucrt-x86_64-go
+# BUILD FOR WINDOWS 64 (Using MSYS2 https://www.msys2.org/)  
+1. Download Golang https://go.dev/dl/
+2. Download Git Standalone Installer https://git-scm.com/download/win
+3. Download MSys2 Installer https://www.msys2.org
+
+Open Terminal UCRT in MSYS2  
+```
+sed -i '$a export PATH=$PATH:/c/Program\\ Files/Go/bin:/c/Program\\ Files/Git/cmd' ~/.bashrc
+source ~/.bashrc
 git clone -b SDL2 https://github.com/leonkasovan/Ikemen-GO.git
 chmod a+x build/build.sh
-go mod tidy
 make win64
+```
+
+Setting MSYS2 binary in Windows Shell:  
+Add `C:\msys64\ucrt64\bin` into environment system variables  
+```
+git clone -b SDL2 https://github.com/leonkasovan/Ikemen-GO.git
+cd Ikemen-GO/build
+build.cmd
 ```
 
 https://mugenguild.com/forum/  
