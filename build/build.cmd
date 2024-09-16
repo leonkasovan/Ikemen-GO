@@ -16,6 +16,7 @@ if not exist bin (
 echo Building Ikemen GO...
 echo. 
 
-go build -trimpath -v -ldflags -H=windowsgui -o ./bin/Ikemen_GO.exe ./src
+go build -tags="glfw,gl" -trimpath -v -ldflags "-s -w -H windowsgui" -o ./bin/Ikemen_Go_GLFW.exe ./src
+rem copy bin\Ikemen_Go_GLFW.exe "f:\PortableApps\Mugen Ikemen\Super Crazy Jam - KOF Multiverse - Season2\"
 
 pause
