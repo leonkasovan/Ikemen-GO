@@ -72,7 +72,11 @@ func systemScriptInit(l *lua.LState) {
 				return false
 			}
 			sk := *NewShortcutKey(k, boolArg(l, 2), boolArg(l, 3), boolArg(l, 4))
-			sys.shortcutScripts[sk] = &ShortcutScript{Pause: boolArg(l, 5), DebugKey: boolArg(l, 6), Script: strArg(l, 7)}
+			if l.GetTop() >= 7 {
+				sys.shortcutScripts[sk] = &ShortcutScript{Pause: boolArg(l, 5), DebugKey: boolArg(l, 6), Script: strArg(l, 7)}
+			} else {
+				sys.shortcutScripts[sk] = &ShortcutScript{Pause: boolArg(l, 5), DebugKey: false, Script: strArg(l, 6)}
+			}
 			return true
 		}()))
 		return 1
@@ -4822,6 +4826,10 @@ func triggerFunctions(l *lua.LState) {
 		return 1
 	})
 	luaRegister(l, "framespercount", func(l *lua.LState) int {
+		l.Push(lua.LNumber(sys.lifebar.ti.framespercount))
+		return 1
+	})
+	luaRegister(l, "getTimeFramesPerCount", func(l *lua.LState) int {
 		l.Push(lua.LNumber(sys.lifebar.ti.framespercount))
 		return 1
 	})

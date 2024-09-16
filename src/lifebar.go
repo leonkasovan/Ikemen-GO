@@ -2724,6 +2724,8 @@ func (sc *LifeBarScore) reset() {
 	sc.bg.Reset()
 	sc.top.Reset()
 	sc.scorePoints = 0
+	sc.rankPoints = make(map[string]float32)
+	sc.rankIcons = []string{}
 }
 func (sc *LifeBarScore) bgDraw(layerno int16) {
 	if sc.active {

@@ -554,6 +554,7 @@ type configSettings struct {
 	GameWidth                     int32
 	GameHeight                    int32
 	GameFramerate                 float32
+	GameSpeed                     float32
 	InputButtonAssist             bool
 	InputSOCDResolution           int32
 	IP                            map[string]string

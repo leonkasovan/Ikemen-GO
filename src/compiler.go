@@ -158,6 +158,7 @@ func newCompiler() *Compiler {
 		"parentmapset":         c.parentMapSet,
 		"playbgm":              c.playBgm,
 		"printtoconsole":       c.printToConsole,
+		"rankadd":              c.rankAdd,
 		"redlifeadd":           c.redLifeAdd,
 		"redlifeset":           c.redLifeSet,
 		"remapsprite":          c.remapSprite,
