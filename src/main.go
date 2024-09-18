@@ -85,20 +85,21 @@ func stringInSlice(target string, slice []string) bool {
 }
 
 // Update Section [Characters] in select.def based on [char] directory
-func updateCharInSelectDef(filename string) error {
+func updateCharInSelectDef(fname string) error {
 	// Open the file
+	filename := NormalizeFile(fname)
+	fmt.Printf("[main.go] fname=%v filename=%v\n", fname, filename)
 	file, err := os.Open(filename)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
 
 	// Open or create the file
 	file2, err := os.Create(filename + ".update")
 	if err != nil {
+		file.Close()
 		return err
 	}
-	defer file2.Close()
 
 	// Create a buffered writer
 	writer := bufio.NewWriter(file2)
@@ -136,6 +137,8 @@ func updateCharInSelectDef(filename string) error {
 			// Open the directory
 			files, err := os.ReadDir("chars")
 			if err != nil {
+				file.Close()
+				file2.Close()
 				return err
 			}
 
@@ -164,26 +167,37 @@ func updateCharInSelectDef(filename string) error {
 		writer.WriteString(scanner.Text() + "\n")
 	}
 	writer.Flush()
-	os.Rename(filename, filename+".bak")
-	os.Rename(filename+".update", filename)
+	file.Close()
+	file2.Close()
+	err = os.Rename(filename, filename+".bak")
+	if err != nil {
+		fmt.Printf("[main.go] '%v' => '%v'\n\terr: %v\n", filename, filename+".bak", err)
+		return err
+	}
+	err = os.Rename(filename+".update", filename)
+	if err != nil {
+		fmt.Printf("[main.go] '%v' => '%v'\n\terr: %v\n", filename+".update", filename, err)
+		return err
+	}
+
 	return scanner.Err()
 }
 
 // Update Section [ExtraStages] in select.def based on files *.def in [stages] directory
-func updateStageInSelectDef(filename string) error {
+func updateStageInSelectDef(fname string) error {
 	// Open the file
+	filename := NormalizeFile(fname)
 	file, err := os.Open(filename)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
 
 	// Open or create the file
 	file2, err := os.Create(filename + ".update")
 	if err != nil {
+		file.Close()
 		return err
 	}
-	defer file2.Close()
 
 	// Create a buffered writer
 	writer := bufio.NewWriter(file2)
@@ -228,6 +242,8 @@ func updateStageInSelectDef(filename string) error {
 			// Get the list of files matching the pattern
 			files, err := filepath.Glob(searchPattern)
 			if err != nil {
+				file.Close()
+				file2.Close()
 				return err
 			}
 
@@ -251,26 +267,28 @@ func updateStageInSelectDef(filename string) error {
 		writer.WriteString(scanner.Text() + "\n")
 	}
 	writer.Flush()
+	file.Close()
+	file2.Close()
 	os.Rename(filename, filename+".bak")
 	os.Rename(filename+".update", filename)
 	return scanner.Err()
 }
 
 // upgrade config.json from older version (below 0.98.x)
-func fixConfig(filename string) error {
+func fixConfig(fname string) error {
 	// Open the file
+	filename := NormalizeFile(fname)
 	file, err := os.Open(filename)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
 
 	// Open or create the file
-	file2, err := os.Create("save/config.fix.json")
+	file2, err := os.Create(NormalizeFile("save/config.fix.json"))
 	if err != nil {
+		file.Close()
 		return err
 	}
-	defer file2.Close()
 
 	// Create a buffered writer
 	writer := bufio.NewWriter(file2)
@@ -317,8 +335,10 @@ func fixConfig(filename string) error {
 		writer.WriteString(scanner.Text() + "\n")
 	}
 	writer.Flush()
-	os.Rename(filename, "save/config.bak.json")
-	os.Rename("save/config.fix.json", filename)
+	file.Close()
+	file2.Close()
+	os.Rename(filename, NormalizeFile("save/config.bak.json"))
+	os.Rename(NormalizeFile("save/config.fix.json"), filename)
 	return scanner.Err()
 }
 func main() {
@@ -644,7 +664,7 @@ func setupConfig(is_mugen_game bool) configSettings {
 	chk(json.Unmarshal(defaultConfig, &tmp))
 	// fmt.Printf("[DEBUG][main.go][setupConfig] using embedded defaultConfig.json\ntmp.JoystickConfig[0]: %v\ntmp.JoystickConfig[1]: %v\ntmp.JoystickConfig[2]: %v\n", tmp.JoystickConfig[0], tmp.JoystickConfig[1], tmp.JoystickConfig[2])
 	// Config file path
-	cfgPath := "save/config.json"
+	cfgPath := NormalizeFile("save/config.json")
 	// If a different config file is defined in the command line parameters, use it instead
 	if _, ok := sys.cmdFlags["-config"]; ok {
 		cfgPath = sys.cmdFlags["-config"]
@@ -878,7 +898,7 @@ func setupConfig(is_mugen_game bool) configSettings {
 
 	if _, ok := sys.cmdFlags["-updatechar"]; ok {
 		fmt.Printf("[DEBUG][main.go][setupConfig] Update data/select.def based on [char] directory\n")
-		err := updateCharInSelectDef("data/select.def")
+		err := updateCharInSelectDef(NormalizeFile("data/select.def"))
 		if err != nil {
 			fmt.Printf("[DEBUG][main.go][setupConfig] %v\n", err)
 		}
@@ -886,7 +906,7 @@ func setupConfig(is_mugen_game bool) configSettings {
 
 	if _, ok := sys.cmdFlags["-updatestage"]; ok {
 		fmt.Printf("[DEBUG][main.go][setupConfig] Update data/select.def based on [stages] directory\n")
-		err := updateStageInSelectDef("data/select.def")
+		err := updateStageInSelectDef(NormalizeFile("data/select.def"))
 		if err != nil {
 			fmt.Printf("[DEBUG][main.go][setupConfig] %v\n", err)
 		}

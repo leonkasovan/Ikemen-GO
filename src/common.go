@@ -414,6 +414,19 @@ func FileExist(filename string) string {
 	return ""
 }
 
+func NormalizeFile(file string) string {
+	var path_sep, native_sep string
+	if runtime.GOOS == "windows" {
+		native_sep = "/"
+		path_sep = "\\"
+	} else {
+		native_sep = "\\"
+		path_sep = "/"
+	}
+
+	return strings.Replace(file, native_sep, path_sep, -1)
+}
+
 // SearchFile returns full path to specified file
 func SearchFile(file string, dirs []string) string {
 	var path_sep, native_sep string
@@ -426,10 +439,10 @@ func SearchFile(file string, dirs []string) string {
 	}
 
 	file = strings.Replace(file, native_sep, path_sep, -1)
-	fmt.Printf("[common.go][SearchFile] file=[%v] in %v\n", file, dirs)
+	// fmt.Printf("[common.go][SearchFile] file=[%v] in %v\n", file, dirs)
 	for _, v := range dirs {
 		defdir := filepath.Dir(strings.Replace(v, native_sep, path_sep, -1))
-		fmt.Printf("\t%v\n", defdir+path_sep+file)
+		// fmt.Printf("\t%v\n", defdir+path_sep+file)
 		if fp := FileExist(defdir + path_sep + file); len(fp) > 0 {
 			return fp
 		}
@@ -439,7 +452,7 @@ func SearchFile(file string, dirs []string) string {
 		lastIndex := strings.LastIndex(file, `/`)
 		if lastIndex == -1 {
 			// If no backslash is found, return the entire string
-			fmt.Printf("[common.go][SearchFile] %v NOT FOUND in %v. Other method(trim filename only) fail too\n", file, dirs)
+			fmt.Printf("[common.go][SearchFile] %v NOT FOUND in %v.\nOther method(trim filename only) fail too\n", file, dirs)
 			return file
 		}
 	}
@@ -450,7 +463,7 @@ func SearchFile(file string, dirs []string) string {
 			return fp
 		}
 	}
-	fmt.Printf("[common.go][SearchFile] %v NOT FOUND in %v. Other method(trim filename only) fail too\n", file, dirs)
+	fmt.Printf("[common.go][SearchFile] %v NOT FOUND in %v.\nOther method(trim filename only) fail too\n", file, dirs)
 	return file
 }
 
