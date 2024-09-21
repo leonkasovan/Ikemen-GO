@@ -468,6 +468,7 @@ func SearchFile(file string, dirs []string) string {
 }
 
 func LoadFile(file *string, dirs []string, load func(string) error) error {
+	// fmt.Printf("[common.go][LoadFile] file=[%v]\n", *file)
 	fp := SearchFile(*file, dirs)
 	if err := load(fp); err != nil {
 		return Error(dirs[0] + ":\n" + fp + "\n" + err.Error())
@@ -746,7 +747,7 @@ func (is IniSection) getText(name string) (str string, ok bool, err error) {
 	if len(str) >= 2 && str[0] == '"' && str[len(str)-1] == '"' {
 		str = str[1 : len(str)-1]
 	} else {
-		err = Error("Not enclosed in \"")
+		// err = Error("Not enclosed in \"")
 	}
 	return
 }

@@ -520,9 +520,12 @@ func (c *Compiler) helper(is IniSection, sc *StateControllerBase, _ int8) (State
 		}
 		if err := c.stateParam(is, "name", false, func(data string) error {
 			if len(data) < 2 || data[0] != '"' || data[len(data)-1] != '"' {
-				return Error("Not enclosed in \"")
+				// return Error("Not enclosed in \"")
+				// sc.add(helper_name, sc.beToExp(BytecodeExp(data[0:len(data)])))
+				sc.add(helper_name, sc.beToExp(BytecodeExp(data)))
+			} else {
+				sc.add(helper_name, sc.beToExp(BytecodeExp(data[1:len(data)-1])))
 			}
-			sc.add(helper_name, sc.beToExp(BytecodeExp(data[1:len(data)-1])))
 			return nil
 		}); err != nil {
 			return err
@@ -4629,9 +4632,11 @@ func (c *Compiler) rankAdd(is IniSection, sc *StateControllerBase, _ int8) (Stat
 		}
 		if err := c.stateParam(is, "type", false, func(data string) error {
 			if len(data) < 2 || data[0] != '"' || data[len(data)-1] != '"' {
-				return Error("Not enclosed in \"")
+				// return Error("Not enclosed in \"")
+				sc.add(rankAdd_type, sc.beToExp(BytecodeExp(data)))
+			} else {
+				sc.add(rankAdd_type, sc.beToExp(BytecodeExp(data[1:len(data)-1])))
 			}
-			sc.add(rankAdd_type, sc.beToExp(BytecodeExp(data[1:len(data)-1])))
 			return nil
 		}); err != nil {
 			return err
@@ -4950,11 +4955,14 @@ func (c *Compiler) createPlatform(is IniSection, sc *StateControllerBase, _ int8
 			is, "name", false,
 			func(data string) error {
 				if data[0] != '"' || data[len(data)-1] != '"' {
-					return Error(`[name] value in [createPlatform] not enclosed in quotation marks.` +
-						"\n" + "Value provided: [" + data + "]",
-					)
+					// return Error(`[name] value in [createPlatform] not enclosed in quotation marks.` +
+					// 	"\n" + "Value provided: [" + data + "]",
+					// )
+					sc.add(helper_name, sc.beToExp(BytecodeExp(data)))
+				} else {
+					sc.add(helper_name, sc.beToExp(BytecodeExp(data[1:len(data)-1])))
 				}
-				sc.add(helper_name, sc.beToExp(BytecodeExp(data[1:len(data)-1])))
+
 				return nil
 			},
 		); err != nil {
@@ -5281,9 +5289,12 @@ func (c *Compiler) assertCommand(is IniSection, sc *StateControllerBase, _ int8)
 		}
 		if err := c.stateParam(is, "name", true, func(data string) error {
 			if len(data) < 2 || data[0] != '"' || data[len(data)-1] != '"' {
-				return Error("Not enclosed in \"")
+				// return Error("Not enclosed in \"")
+				sc.add(assertCommand_name, sc.beToExp(BytecodeExp(data)))
+			} else {
+				sc.add(assertCommand_name, sc.beToExp(BytecodeExp(data[1:len(data)-1])))
 			}
-			sc.add(assertCommand_name, sc.beToExp(BytecodeExp(data[1:len(data)-1])))
+
 			return nil
 		}); err != nil {
 			return err

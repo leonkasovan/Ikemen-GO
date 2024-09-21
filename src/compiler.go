@@ -1152,10 +1152,11 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 	text := func() error {
 		i := strings.Index(*in, "\"")
 		if c.token != "\"" || i < 0 {
-			return Error("Not enclosed in \"")
+			// return Error("Not enclosed in \"")
+		} else {
+			c.token = (*in)[:i]
+			*in = (*in)[i+1:]
 		}
-		c.token = (*in)[:i]
-		*in = (*in)[i+1:]
 		return nil
 	}
 	eqne := func(f func() error) error {
@@ -5377,7 +5378,8 @@ func (c *Compiler) needToken(t string) error {
 func (c *Compiler) readString(line *string) (string, error) {
 	i := strings.Index(*line, "\"")
 	if i < 0 {
-		return "", Error("Not enclosed in \"")
+		// return "", Error("Not enclosed in \"")
+		return *line, nil
 	}
 	s := (*line)[:i]
 	*line = (*line)[i+1:]

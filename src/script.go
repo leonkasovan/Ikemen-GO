@@ -997,6 +997,7 @@ func systemScriptInit(l *lua.LState) {
 		if l.GetTop() >= 2 {
 			height = int32(numArg(l, 2))
 		}
+		// fmt.Printf("[script.go][systemScriptInit][fontNew] filename=[%v]\n", strArg(l, 1))
 		filename := SearchFile(strArg(l, 1), []string{sys.motifDir, "font/", "", "data/"})
 		fnt, err := loadFnt(filename, height)
 		if err != nil {
@@ -1710,6 +1711,15 @@ func systemScriptInit(l *lua.LState) {
 		sys.statusLFunc, _ = sys.luaLState.GetGlobal(strArg(l, 1)).(*lua.LFunction)
 		return 0
 	})
+	luaRegister(l, "loadCommonFx", func(l *lua.LState) int {
+		var err error
+		for _, def := range sys.commonFx {
+			if err = loadFightFx(def); err != nil {
+				l.RaiseError("\nCan't load %v: %v\n", def, err.Error())
+			}
+		}
+		return 0
+	})
 	luaRegister(l, "loading", func(l *lua.LState) int {
 		l.Push(lua.LBool(sys.loader.state == LS_Loading))
 		return 1
@@ -1992,6 +2002,10 @@ func systemScriptInit(l *lua.LState) {
 		return 0
 	})
 	luaRegister(l, "searchFile", func(l *lua.LState) int {
+		if strArg(l, 1) == "" {
+			l.Push(lua.LString(""))
+			return 1
+		}
 		var dirs []string
 		tableArg(l, 2).ForEach(func(key, value lua.LValue) {
 			dirs = append(dirs, lua.LVAsString(value))

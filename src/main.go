@@ -156,7 +156,7 @@ func updateCharInSelectDef(fname string) error {
 			continue
 		}
 		if section == 1 {
-			result = regexp.MustCompile(`^(\S+),`).FindStringSubmatch(scanner.Text())
+			result = regexp.MustCompile(`^(.+),`).FindStringSubmatch(scanner.Text())
 			if result != nil {
 				writer.WriteString(scanner.Text() + "\n")
 				chars = append(chars, result[1])
@@ -437,7 +437,7 @@ func main() {
 	defer sys.shutdown()
 
 	// Begin processing game using its lua scripts
-	fmt.Printf("[DEBUG][main.go][main]: Running in lua script=[%v]\n", tmp.System)
+	fmt.Printf("[main.go][main]: Running in lua script=[%v] using motif=[%v]\n", tmp.System, tmp.Motif)
 	if err := sys.luaLState.DoFile(tmp.System); err != nil {
 		// Display error logs.
 		errorLog := createLog("Ikemen.log")
