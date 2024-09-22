@@ -1036,3 +1036,21 @@ func (ats *AnimTextSnd) End(dt int32, inf bool) bool {
 	}
 	return dt >= ats.displaytime
 }
+
+// ExtractPath extracts the path up to the last backslash
+func ExtractPath(filePath string) string {
+	var path_sep string
+	if runtime.GOOS == "windows" {
+		path_sep = "\\"
+	} else {
+		path_sep = "/"
+	}
+	// Find the last backslash
+	lastIndex := strings.LastIndex(filePath, path_sep)
+	if lastIndex == -1 {
+		// If no backslash is found, return the entire string
+		return filePath
+	}
+	// Return the substring up to and including the last backslash
+	return filePath[:lastIndex+1]
+}

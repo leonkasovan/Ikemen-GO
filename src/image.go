@@ -846,6 +846,67 @@ func (s *Sprite) read(f *os.File, sh *SffHeader, offset int64, datasize uint32,
 	s.SetPxl(s.RlePcxDecode(px))
 	return nil
 }
+
+func (s *Sprite) preloadSetPalRead(f *os.File, sh *SffHeader, offset int64, datasize uint32,
+	nextSubheader uint32, prev *Sprite, pl *PaletteList, c00 bool, current *Sprite) error {
+	if int64(nextSubheader) > offset {
+		// 最後以外datasizeを無視 / Ignore datasize except last
+		datasize = nextSubheader - uint32(offset)
+	}
+	read := func(x interface{}) error {
+		return binary.Read(f, binary.LittleEndian, x)
+	}
+	var ps byte
+	if err := read(&ps); err != nil {
+		return err
+	}
+	paletteSame := ps != 0 && prev != nil
+	if err := s.readPcxHeader(f, offset); err != nil {
+		return err
+	}
+	f.Seek(offset+128, 0)
+	var palSize uint32
+	if c00 || paletteSame {
+		palSize = 0
+	} else {
+		palSize = 768
+	}
+	if datasize < 128+palSize {
+		datasize = 128 + palSize
+	}
+	px := make([]byte, datasize-(128+palSize))
+	if err := read(px); err != nil {
+		return err
+	}
+	if paletteSame {
+		if prev != nil {
+			s.palidx = prev.palidx
+		}
+		if s.palidx < 0 {
+			s.palidx, _ = pl.NewPal()
+		}
+		current.Pal = prev.Pal
+	} else {
+		s.palidx, current.Pal = pl.NewPal()
+		if c00 {
+			f.Seek(offset+int64(datasize)-768, 0)
+		}
+		var rgb [3]byte
+		for i := range current.Pal {
+			if err := read(rgb[:]); err != nil {
+				return err
+			}
+			var alpha byte = 255
+			if i == 0 {
+				alpha = 0
+			}
+			current.Pal[i] = uint32(alpha)<<24 | uint32(rgb[2])<<16 | uint32(rgb[1])<<8 | uint32(rgb[0])
+		}
+	}
+	s.SetPxl(s.RlePcxDecode(px))
+	return nil
+}
+
 func (s *Sprite) readHeaderV2(r io.Reader, ofs *uint32, size *uint32,
 	lofs uint32, tofs uint32, link *uint16) error {
 	read := func(x interface{}) error {
@@ -1359,11 +1420,124 @@ func loadSff(filename string, char bool) (*Sff, error) {
 	})
 	return s, nil
 }
-func preloadSff(filename string, char bool, preloadSpr map[[2]int16]bool) (*Sff, []int32, error) {
+
+func (s *Sprite) preloadRead(f *os.File, sh *SffHeader, offset int64, datasize uint32,
+	nextSubheader uint32, prev *Sprite, pl *PaletteList, c00 bool) error {
+	if int64(nextSubheader) > offset {
+		// 最後以外datasizeを無視 / Ignore datasize except last
+		datasize = nextSubheader - uint32(offset)
+	}
+	read := func(x interface{}) error {
+		return binary.Read(f, binary.LittleEndian, x)
+	}
+	var ps byte
+	if err := read(&ps); err != nil {
+		return err
+	}
+	paletteSame := ps != 0 && prev != nil
+	if err := s.readPcxHeader(f, offset); err != nil {
+		return err
+	}
+	f.Seek(offset+128, 0)
+	var palSize uint32
+	if c00 || paletteSame {
+		palSize = 0
+	} else {
+		palSize = 768
+	}
+	if datasize < 128+palSize {
+		datasize = 128 + palSize
+	}
+	px := make([]byte, datasize-(128+palSize))
+	if err := read(px); err != nil {
+		return err
+	}
+	if paletteSame {
+		if prev != nil {
+			s.palidx = prev.palidx
+		}
+		if s.palidx < 0 {
+			s.palidx, _ = pl.NewPal()
+		}
+	} else {
+		var pal []uint32
+		s.palidx, pal = pl.NewPal()
+		if c00 {
+			f.Seek(offset+int64(datasize)-768, 0)
+		}
+		var rgb [3]byte
+		for i := range pal {
+			if err := read(rgb[:]); err != nil {
+				return err
+			}
+			var alpha byte = 255
+			if i == 0 {
+				alpha = 0
+			}
+			pal[i] = uint32(alpha)<<24 | uint32(rgb[2])<<16 | uint32(rgb[1])<<8 | uint32(rgb[0])
+		}
+	}
+	s.SetPxl(s.RlePcxDecode(px))
+	return nil
+}
+
+func (s *Sprite) preloadPaletteRead(f *os.File, sh *SffHeader, offset int64, datasize uint32,
+	nextSubheader uint32, prev *Sprite, pl *PaletteList, c00 bool) error {
+	if int64(nextSubheader) > offset {
+		// 最後以外datasizeを無視 / Ignore datasize except last
+		datasize = nextSubheader - uint32(offset)
+	}
+	read := func(x interface{}) error {
+		return binary.Read(f, binary.LittleEndian, x)
+	}
+	var ps byte
+	if err := read(&ps); err != nil {
+		return err
+	}
+	paletteSame := ps != 0 && prev != nil
+	if err := s.readPcxHeader(f, offset); err != nil {
+		return err
+	}
+	f.Seek(offset+128, 0)
+	var palSize uint32
+	if c00 || paletteSame {
+		palSize = 0
+	} else {
+		palSize = 768
+	}
+	if datasize < 128+palSize {
+		datasize = 128 + palSize
+	}
+	px := make([]byte, datasize-(128+palSize))
+	if err := read(px); err != nil {
+		return err
+	}
+	if paletteSame {
+		if prev != nil {
+			s.palidx = prev.palidx
+		}
+		if s.palidx < 0 {
+			s.palidx, _ = pl.NewPal()
+		}
+	} else {
+		s.palidx, _ = pl.NewPal()
+		if c00 {
+			f.Seek(offset+int64(datasize)-768, 0)
+		}
+	}
+	s.SetPxl(s.RlePcxDecode(px))
+	return nil
+}
+
+func preloadSff(filename string, char bool, preloadSpr map[[2]int16]bool, s map[[2]int16]bool, palFiles []string, palNumsToGen []int32) (*Sff, []int32, error) {
+	var selPal []int32
 	sff := newSff()
 	f, err := os.Open(filename)
 	if err != nil {
 		return nil, nil, err
+	}
+	read := func(x interface{}) error {
+		return binary.Read(f, binary.LittleEndian, x)
 	}
 	defer func() { chk(f.Close()) }()
 	h := &SffHeader{}
@@ -1375,9 +1549,91 @@ func preloadSff(filename string, char bool, preloadSpr map[[2]int16]bool) (*Sff,
 	sff.header.Ver1 = h.Ver1
 	sff.header.Ver2 = h.Ver2
 	sff.header.Ver3 = h.Ver3
-	read := func(x interface{}) error {
-		return binary.Read(f, binary.LittleEndian, x)
+
+	sff.header.FirstSpriteHeaderOffset = h.FirstSpriteHeaderOffset
+	sff.header.FirstPaletteHeaderOffset = h.FirstPaletteHeaderOffset
+	sff.header.NumberOfSprites = h.NumberOfSprites
+	sff.header.NumberOfPalettes = h.NumberOfPalettes
+	if sff.header.Ver0 == 2 {
+		for i := 1; i <= MaxPalNo; i++ {
+			delete(sff.palList.PalTable, [...]int16{1, int16(i)})
+		}
 	}
+	if sff.header.Ver0 != 1 {
+		uniquePals := make(map[[2]int16]int)
+		for i := 0; i < int(sff.header.NumberOfPalettes); i++ {
+			f.Seek(int64(sff.header.FirstPaletteHeaderOffset)+int64(i*16), 0)
+			var gn_ [3]int16
+			if err := read(gn_[:]); err != nil {
+
+			}
+			var link uint16
+			if err := read(&link); err != nil {
+
+			}
+			var ofs, siz uint32
+			if err := read(&ofs); err != nil {
+
+			}
+			if err := read(&siz); err != nil {
+
+			}
+			var pal []uint32
+			var idx int
+			if old, ok := uniquePals[[...]int16{gn_[0], gn_[1]}]; ok {
+				idx = old
+				pal = sff.palList.Get(old)
+				sys.errLog.Printf("%v duplicated palette: %v,%v (%v/%v)\n", filename, gn_[0], gn_[1], i+1, sff.header.NumberOfPalettes)
+			} else if siz == 0 {
+				idx = int(link)
+				pal = sff.palList.Get(idx)
+			} else {
+				f.Seek(int64(lofs+ofs), 0)
+				if gn_[0] == 1 {
+					pal = make([]uint32, 256)
+					var rgba [4]byte
+					for i := 0; i < int(siz)/4 && i < len(pal); i++ {
+						if err := read(rgba[:]); err != nil {
+
+						}
+						if sff.header.Ver2 == 0 {
+							rgba[3] = 255
+						}
+						pal[i] = uint32(rgba[3])<<24 | uint32(rgba[2])<<16 | uint32(rgba[1])<<8 | uint32(rgba[0])
+					}
+					if sff.header.Ver2 == 0 {
+						pal[0] = uint32(0)
+					}
+					idx = i
+				}
+			}
+			uniquePals[[...]int16{gn_[0], gn_[1]}] = idx
+			sff.palList.SetSource(i, pal)
+			if gn_[0] == 1 && gn_[1] > 0 && gn_[1] <= MaxPalNo {
+				sff.palList.PalTable[[...]int16{gn_[0], gn_[1]}] = idx
+				selPal = append(selPal, int32(gn_[1]))
+			}
+		}
+	}
+
+	//selectable palettes
+	if h.Ver0 != 1 && char {
+		//for i := 0; i < MaxPalNo; i++ {
+		for i := 0; i < int(h.NumberOfPalettes); i++ {
+			f.Seek(int64(h.FirstPaletteHeaderOffset)+int64(i*16), 0)
+			var gn_ [3]int16
+			if err := read(gn_[:]); err != nil {
+				return nil, nil, err
+			}
+			if gn_[0] == 1 && gn_[1] >= 1 && gn_[1] <= MaxPalNo {
+				selPal = append(selPal, int32(gn_[1]))
+			}
+			if len(selPal) >= MaxPalNo {
+				break
+			}
+		}
+	}
+
 	var shofs, xofs, size uint32 = h.FirstSpriteHeaderOffset, 0, 0
 	var indexOfPrevious uint16
 	var plShofs, plXofs, plSize uint32 = h.FirstPaletteHeaderOffset, 0, 0
@@ -1406,7 +1662,8 @@ func preloadSff(filename string, char bool, preloadSpr map[[2]int16]bool) (*Sff,
 			if ok {
 				ok = sff.sprites[[...]int16{spriteList[i].Group, spriteList[i].Number}] == nil
 			}
-			// sprite
+			_, isPortrait := s[[...]int16{spriteList[i].Group, spriteList[i].Number}]
+			//sprite
 			if size == 0 {
 				if ok := preloadRef[int(indexOfPrevious)]; ok {
 					dst, src := spriteList[i], spriteList[int(indexOfPrevious)]
@@ -1417,15 +1674,25 @@ func preloadSff(filename string, char bool, preloadSpr map[[2]int16]bool) (*Sff,
 					//} else if int(indexOfPrevious) < i {
 					// TODO: read previously skipped sprite and palette
 				} else {
-					spriteList[i].palidx = 0 //index out of range
+					if spriteList[i].palidx < 0 {
+						spriteList[i].palidx = 0 //index out of range
+					}
 				}
 			} else {
 				switch h.Ver0 {
 				case 1:
-					if err := spriteList[i].read(f, h, int64(shofs+32), size, xofs, prev,
-						pl, char && (prev == nil || spriteList[i].Group == 0 && spriteList[i].Number == 0)); err != nil {
-						//pl, false); err != nil {
-						return nil, nil, err
+					if len(palNumsToGen) <= 1 || isPortrait {
+						if err := spriteList[i].preloadSetPalRead(f, h, int64(shofs+32), size, xofs, prev,
+							pl, char && (prev == nil || spriteList[i].Group == 0 && spriteList[i].Number == 0), spriteList[i]); err != nil {
+							//pl, false); err != nil {
+							return nil, nil, err
+						}
+					} else {
+						if err := spriteList[i].preloadPaletteRead(f, h, int64(shofs+32), size, xofs, prev,
+							pl, char && (prev == nil || spriteList[i].Group == 0 && spriteList[i].Number == 0)); err != nil {
+							//pl, false); err != nil {
+							return nil, nil, err
+						}
 					}
 				case 2:
 					if err := spriteList[i].readV2(f, int64(xofs), size); err != nil {
@@ -1436,8 +1703,9 @@ func preloadSff(filename string, char bool, preloadSpr map[[2]int16]bool) (*Sff,
 					// palette
 					plXofs = xofs
 					if h.Ver0 == 1 {
-						spriteList[i].Pal = pl.Get(spriteList[i].palidx)
-						if spriteList[i].palidx >= MaxPalNo { //just in case
+						if len(palNumsToGen) <= 1 || isPortrait {
+							//spriteList[i].Pal = pl.Get(spriteList[i].palidx)
+						} else {
 							spriteList[i].palidx = 0
 						}
 					} else if spriteList[i].coldepth <= 8 {
@@ -1459,22 +1727,26 @@ func preloadSff(filename string, char bool, preloadSpr map[[2]int16]bool) (*Sff,
 							}
 						}
 						f.Seek(int64(lofs+plXofs), 0)
-						spriteList[i].Pal = make([]uint32, 256)
-						var rgba [4]byte
-						for j := 0; j < int(plSize)/4 && j < len(spriteList[i].Pal); j++ {
-							if err := read(rgba[:]); err != nil {
-								return nil, nil, err
-							}
-							if h.Ver2 == 0 {
-								if j == 0 {
-									rgba[3] = 0
-								} else {
-									rgba[3] = 255
+						if (sff.header.Ver0 == 1 && spriteList[i].palidx > 0) || (sff.header.Ver0 == 2 && (spriteList[i].palidx != sff.palList.PalTable[[2]int16{1, 1}] || len(selPal) < 1)) || isPortrait {
+							spriteList[i].Pal = make([]uint32, 256)
+							var rgba [4]byte
+							for j := 0; j < int(plSize)/4 && j < len(spriteList[i].Pal); j++ {
+								if err := read(rgba[:]); err != nil {
+									return nil, nil, err
 								}
+								if h.Ver2 == 0 {
+									if j == 0 {
+										rgba[3] = 0
+									} else {
+										rgba[3] = 255
+									}
+								}
+								spriteList[i].Pal[j] = uint32(rgba[3])<<24 | uint32(rgba[2])<<16 | uint32(rgba[1])<<8 | uint32(rgba[0])
 							}
-							spriteList[i].Pal[j] = uint32(rgba[3])<<24 | uint32(rgba[2])<<16 | uint32(rgba[1])<<8 | uint32(rgba[0])
 						}
-						spriteList[i].palidx = 0
+						if sff.header.Ver0 == 1 {
+							spriteList[i].palidx = 0
+						}
 					}
 				}
 				if prev == nil {
@@ -1496,23 +1768,46 @@ func preloadSff(filename string, char bool, preloadSpr map[[2]int16]bool) (*Sff,
 			shofs += 28
 		}
 	}
-	// selectable palettes
-	var selPal []int32
-	if h.Ver0 != 1 && char {
-		//for i := 0; i < MaxPalNo; i++ {
-		for i := 0; i < int(h.NumberOfPalettes); i++ {
-			f.Seek(int64(h.FirstPaletteHeaderOffset)+int64(i*16), 0)
-			var gn_ [3]int16
-			if err := read(gn_[:]); err != nil {
-				return nil, nil, err
+
+	var U *os.File
+	x := 0
+	if h.Ver0 == 1 {
+		var fullpath string
+		filename = NormalizeFile(filename)
+		pathname := ExtractPath(filename)
+
+		// fmt.Printf("[image.go] pathname=[%v] filename=[%v]\n", pathname, filename)
+		go func() {
+			for x < len(palNumsToGen) {
+				replaceCondition := true
+				fullpath = pathname + NormalizeFile(palFiles[x])
+				U, err = os.Open(fullpath)
+				if err != nil {
+					fmt.Printf("[image.go] Failed to open [%v]\n", fullpath)
+					replaceCondition = false
+				} else {
+					for i := 255; i >= 0; i-- {
+						var rgb [3]byte
+						if _, err = io.ReadFull(U, rgb[:]); err != nil {
+							replaceCondition = false
+							break
+						}
+						if i != 0 {
+							sff.palList.palettes[palNumsToGen[x]-1][i] = uint32(255)<<24 | uint32(rgb[2])<<16 | uint32(rgb[1])<<8 | uint32(rgb[0])
+						}
+					}
+					if replaceCondition == true {
+						if sff.palList.PalTable[[2]int16{1, int16(palNumsToGen[x])}] == -1 {
+							sff.palList.PalTable[[2]int16{1, int16(palNumsToGen[x])}] = int(palNumsToGen[x] - 1)
+							selPal = append(selPal, palNumsToGen[x])
+						}
+					}
+					chk(U.Close())
+				}
+				x = x + 1
 			}
-			if gn_[0] == 1 && gn_[1] >= 1 && gn_[1] <= MaxPalNo {
-				selPal = append(selPal, int32(gn_[1]))
-			}
-			if len(selPal) >= MaxPalNo {
-				break
-			}
-		}
+		}()
+		selPal = palNumsToGen
 	}
 	return sff, selPal, nil
 }

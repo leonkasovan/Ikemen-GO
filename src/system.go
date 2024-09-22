@@ -2553,6 +2553,7 @@ type SelectChar struct {
 	pal            []int32
 	pal_defaults   []int32
 	pal_keymap     []int32
+	palfiles	   []string
 	localcoord     int32
 	portrait_scale float32
 	cns_scale      [2]float32
@@ -2764,6 +2765,7 @@ func (s *Select) addChar(def string) {
 				for i := 1; i <= MaxPalNo; i++ {
 					if is[fmt.Sprintf("pal%v", i)] != "" {
 						sc.pal = append(sc.pal, int32(i))
+						sc.palfiles = append(sc.palfiles, is[fmt.Sprintf("pal%v", i)])
 					}
 				}
 				movelist = is["movelist"]
@@ -2908,7 +2910,7 @@ func (s *Select) addChar(def string) {
 			var selPal []int32
 			var err error = nil
 			if zipFileName == "" {
-				sc.sff, selPal, err = preloadSff(file, true, listSpr)
+				sc.sff, selPal, err = preloadSff(file, true, listSpr, s.charSpritePreload, sc.palfiles, sc.pal)
 			} else {
 				path := FileExist("tmp/chars/" + file)
 				if path == "" {
@@ -2918,7 +2920,7 @@ func (s *Select) addChar(def string) {
 				if err != nil {
 					log.Fatal(err)
 				} else {
-					sc.sff, selPal, err = preloadSff(path, true, listSpr)
+					sc.sff, selPal, err = preloadSff(file, true, listSpr, s.charSpritePreload, sc.palfiles, sc.pal)
 				}
 			}
 			if err != nil {
@@ -2931,6 +2933,7 @@ func (s *Select) addChar(def string) {
 			if len(sc.pal) == 0 {
 				sc.pal = selPal
 			}
+			sc.pal = selPal
 			return nil
 		})
 	} else {
@@ -2940,7 +2943,27 @@ func (s *Select) addChar(def string) {
 			sc.anims.addSprite(sc.sff, k[0], k[1])
 		}
 	}
-	// read movelist
+	//Update the animation with palette information
+	if sc.anims[[2]int16{0, -1}] != nil {//Check is in place to avoid crashing when loading match through command line
+		sc.anims[[2]int16{0, -1}].palettedata.palettes = sc.anims[[2]int16{0, -1}].sff.palList.palettes
+		sc.anims[[2]int16{0, -1}].palettedata.paletteMap = sc.anims[[2]int16{0, -1}].sff.palList.paletteMap
+		sc.anims[[2]int16{0, -1}].palettedata.PalTable = sc.anims[[2]int16{0, -1}].sff.palList.PalTable
+		sc.anims[[2]int16{0, -1}].palettedata.PalTex = sc.anims[[2]int16{0, -1}].sff.palList.PalTex
+		value, ok := sc.anims[[2]int16{0, -1}].sff.sprites[[2]int16{sc.anims[[2]int16{0, -1}].frames[0].Group, sc.anims[[2]int16{0, -1}].frames[0].Number}]//This exists to serve the purpose of a try in other languages. If removed characters who have no animation will crash the engine.
+		//Apply palette to preloaded animations, fixes palette issues that occured on some characters
+		if ok {
+			if value.palidx >= 0 {//fuxes an issue discovered on a character that occurs in the scenario that an animation exists but there is no sprite used in the first frame of the animation
+				if sc.anims[[2]int16{0, -1}].palettedata.PalTable[[2]int16{1, 1}] != -1 {//Resolves a crash issue in the event that a character does not have a 1,1 palette
+					if len(sc.pal) > 1 {
+						if sc.anims[[2]int16{0, -1}].sff.header.Ver0 == 1{// 
+							sc.anims[[2]int16{0, -1}].palettedata.paletteMap[sc.anims[[2]int16{0, -1}].sff.sprites[[2]int16{sc.anims[[2]int16{0, -1}].frames[0].Group, sc.anims[[2]int16{0, -1}].frames[0].Number}].palidx] = sc.anims[[2]int16{0, -1}].palettedata.PalTable[[2]int16{1, 1}]
+						}
+					}
+				}
+			}
+		}
+	}
+	//read movelist
 	if len(movelist) > 0 {
 		LoadFile(&movelist, []string{def, "", "data/"}, func(file string) error {
 			var err error
@@ -3113,7 +3136,7 @@ func (s *Select) AddStage(def string) error {
 		LoadFile(&spr, []string{def, "", "data/"}, func(file string) error {
 			var err error
 			if zipFileName == "" {
-				ss.sff, _, err = preloadSff(file, false, listSpr)
+				ss.sff, _, err = preloadSff(file, false, listSpr, nil, nil, nil)
 			} else {
 				path := FileExist("tmp/stages/" + file)
 				if path == "" {
@@ -3123,7 +3146,7 @@ func (s *Select) AddStage(def string) error {
 				if err != nil {
 					log.Fatal(err)
 				} else {
-					ss.sff, _, err = preloadSff(path, false, listSpr)
+					ss.sff, _, err = preloadSff(file, false, listSpr, nil, nil, nil)
 				}
 			}
 			if err != nil {
