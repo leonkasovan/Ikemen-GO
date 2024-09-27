@@ -35,6 +35,7 @@ https://mugenguild.com/forum/
 Character  
 Pots Collection: https://www.mediafire.com/folder/6bji8e36narp6/Characters  
 Karma Charizard Collection: https://www.mediafire.com/folder/f4qxixm5h39cu  
+Lessard Collection https://www.mediafire.com/folder/gf9p2w993dwka/LESSARD_MUGEN
 
 3D Stages  
 https://www.mediafire.com/folder/syh6wacfmskeg/MBTL_Stages  
