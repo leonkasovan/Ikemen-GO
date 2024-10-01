@@ -3,6 +3,7 @@ package main
 import (
 	"archive/zip"
 	"bufio"
+	"bytes"
 	_ "embed" // Support for go:embed resources
 	"encoding/json"
 	"fmt"
@@ -22,6 +23,59 @@ var BuildTime = "2024.08.17"
 
 //go:embed assets.zip
 var assetsZip []byte
+
+//go:embed screenpack.zip
+var screenpackZip []byte
+
+func extractEmbed(content []byte) error {
+	// Open the embedded zip file from the byte slice
+	zipReader, err := zip.NewReader(bytes.NewReader(content), int64(len(content)))
+	if err != nil {
+		return err
+	}
+
+	// Iterate over the files in the zip archive
+	for _, file := range zipReader.File {
+		// fmt.Printf("Extracting: %s\n", file.Name)
+
+		// Open the file inside the zip archive
+		fileReader, err := file.Open()
+		if err != nil {
+			return err
+		}
+		defer fileReader.Close()
+
+		// Handle directories by creating them first
+		if file.FileInfo().IsDir() {
+			err := os.MkdirAll(file.Name, os.ModePerm)
+			if err != nil {
+				return err
+			}
+			continue
+		}
+
+		// Ensure the directory exists before creating the file
+		if err := os.MkdirAll(filepath.Dir(file.Name), os.ModePerm); err != nil {
+			return err
+		}
+
+		// Create the destination file on disk
+		outFile, err := os.Create(file.Name)
+		if err != nil {
+			return err
+		}
+		defer outFile.Close()
+
+		// Copy the file contents to the destination file
+		_, err = io.Copy(outFile, fileReader)
+		if err != nil {
+			return err
+		}
+
+		// fmt.Printf("Successfully extracted: %s\n", file.Name)
+	}
+	return nil
+}
 
 // extractFile extracts a file from the ZIP archive to the specified path
 func extractFile(f *zip.File, filePath string) error {
@@ -315,8 +369,8 @@ func fixConfig(fname string) error {
 		}
 		result = re3.FindStringSubmatch(scanner.Text())
 		if result != nil {
-			// fmt.Printf("[DEBUG][main.go][fixConfig]1: %v\n", scanner.Text())
-			// fmt.Printf("[DEBUG][main.go][fixConfig]2: %v\n", fmt.Sprintf("\"CommonConst\": [\"%v\"],\n", result[1]))
+			// fmt.Printf("[main.go][fixConfig]1: %v\n", scanner.Text())
+			// fmt.Printf("[main.go][fixConfig]2: %v\n", fmt.Sprintf("\"CommonConst\": [\"%v\"],\n", result[1]))
 			writer.WriteString(fmt.Sprintf("\"CommonConst\": [\"%v\"],\n", result[1]))
 			continue
 		}
@@ -343,49 +397,17 @@ func fixConfig(fname string) error {
 }
 func main() {
 	is_mugen_game := false
-	fmt.Printf("[DEBUG][main.go][main] Running at OS=[%v] ARCH=[%v]\n", runtime.GOOS, runtime.GOARCH)
+	fmt.Printf("[main.go][main] Running at OS=[%v] ARCH=[%v]\n", runtime.GOOS, runtime.GOARCH)
 
 	// Check if the "external" directory exists and data/mugen.cfg, if not exists then extract assets from embedded
 	_, err1 := os.Stat("external")
 	_, err2 := os.Stat("data/mugen.cfg")
-	// fmt.Printf("[DEBUG][main.go][main] err1=[%v] err2=[%v]\n", err1, err2)
-
 	if os.IsNotExist(err1) && err2 == nil {
-		// Create a temporary file to hold the embedded ZIP data
-		tmpZipPath := "assets_temp.zip"
-		err := os.WriteFile(tmpZipPath, assetsZip, 0644)
+		err := extractEmbed(assetsZip)
 		if err != nil {
-			fmt.Printf("[DEBUG][main.go][main] Failed to write temp ZIP file: %v\n", err)
-			return
+			fmt.Printf("[main.go][setupConfig] Error extracting asset: %v\n", err)
 		}
-		defer os.Remove(tmpZipPath) // Clean up the temp file after extraction
-
-		// Open the ZIP file
-		zipReader, err := zip.OpenReader(tmpZipPath)
-		if err != nil {
-			fmt.Printf("[DEBUG][main.go][main] Failed to open ZIP file: %v\n", err)
-			return
-		}
-		defer zipReader.Close()
-
-		// Iterate over each file in the ZIP archive
-		for _, file := range zipReader.File {
-			filePath := file.Name
-
-			if file.FileInfo().IsDir() {
-				// Create directories
-				os.MkdirAll(filePath, os.ModePerm)
-				continue
-			}
-
-			// Extract the file
-			if err := extractFile(file, filePath); err != nil {
-				fmt.Printf("[DEBUG][main.go][main] Failed to extract file: %v\n", err)
-				return
-			}
-		}
-
-		fmt.Println("[DEBUG][main.go][main] Mugen Game detected. Assets extraction completed successfully.")
+		fmt.Println("[main.go][main] Mugen Game detected. Assets extraction completed successfully.")
 		is_mugen_game = true
 	}
 	processCommandLine()
@@ -455,7 +477,7 @@ func main() {
 			panic(err)
 		}
 	}
-	// fmt.Printf("[DEBUG][main.go][setupConfig] Joystick Setting Updated from options.lua\n")
+	// fmt.Printf("[main.go][setupConfig] Joystick Setting Updated from options.lua\n")
 	// for _, jc := range tmp.JoystickConfig {
 	// 	fmt.Printf("sys.joystickConfig=%v [%v]\n", jc.Joystick, jc.Buttons)
 	// }
@@ -494,6 +516,12 @@ Quick VS Options:
 -time <num>             Round time (-1 to disable)
 -rounds <num>           Plays for <num> rounds, and then quits
 -s <stagename>          Loads stage <stagename>
+
+Extra Feature (by leonkasovan):
+-updatechar             Add new characters from [chars] directory into select.def
+-updatestage            Add new stages from [stages] directory into select.def
+-install                Install default screenpack and Ikemen's assets
+-audit                  Verify (and fix) integrity of assets included in definition files
 
 Debug Options:
 -nojoy                  Disables joysticks
@@ -662,7 +690,7 @@ func setupConfig(is_mugen_game bool) configSettings {
 	// Unmarshal default config string into a struct
 	tmp := configSettings{}
 	chk(json.Unmarshal(defaultConfig, &tmp))
-	// fmt.Printf("[DEBUG][main.go][setupConfig] using embedded defaultConfig.json\ntmp.JoystickConfig[0]: %v\ntmp.JoystickConfig[1]: %v\ntmp.JoystickConfig[2]: %v\n", tmp.JoystickConfig[0], tmp.JoystickConfig[1], tmp.JoystickConfig[2])
+	// fmt.Printf("[main.go][setupConfig] using embedded defaultConfig.json\ntmp.JoystickConfig[0]: %v\ntmp.JoystickConfig[1]: %v\ntmp.JoystickConfig[2]: %v\n", tmp.JoystickConfig[0], tmp.JoystickConfig[1], tmp.JoystickConfig[2])
 	// Config file path
 	cfgPath := NormalizeFile("save/config.json")
 	// If a different config file is defined in the command line parameters, use it instead
@@ -679,7 +707,7 @@ func setupConfig(is_mugen_game bool) configSettings {
 					bytes = bytes[3:]
 				}
 				if json.Unmarshal(bytes, &tmp) != nil {
-					fmt.Printf("[DEBUG][main.go] setupConfig fix %v\n", cfgPath)
+					fmt.Printf("[main.go] setupConfig fix %v\n", cfgPath)
 					if err := fixConfig(cfgPath); err != nil {
 						ShowErrorDialog(err.Error())
 						panic(err)
@@ -694,7 +722,7 @@ func setupConfig(is_mugen_game bool) configSettings {
 			}
 		}
 	}
-	// fmt.Printf("[DEBUG][main.go][setupConfig] Assigning Joystick default setting\n")
+	// fmt.Printf("[main.go][setupConfig] Assigning Joystick default setting\n")
 	sys.joystickDefaultConfig = map[string]KeyConfig{} // Initialize empty map for KeyConfig
 	for _, jc := range tmp.JoystickDefaultConfig {
 		// fmt.Printf("sys.joystickDefaultConfig[%v]=[%v] %v\n", jc.JoystickName, id, jc.Buttons)
@@ -706,7 +734,7 @@ func setupConfig(is_mugen_game bool) configSettings {
 			Atoi(b[9]), Atoi(b[10]), Atoi(b[11]),
 			Atoi(b[12]), Atoi(b[13])}
 	}
-	// fmt.Printf("[DEBUG][main.go][setupConfig] after loading config.json\n")
+	// fmt.Printf("[main.go][setupConfig] after loading config.json\n")
 	// for id, jc := range tmp.JoystickConfig {
 	// 	fmt.Printf("tmp.JoystickConfig[%v]: %v\n", id, jc)
 	// }
@@ -729,10 +757,10 @@ func setupConfig(is_mugen_game bool) configSettings {
 
 	//Import Mugen setting
 	if is_mugen_game {
-		fmt.Printf("[DEBUG][main.go][setupConfig] import data/mugen.cfg\n")
+		fmt.Printf("[main.go][setupConfig] import data/mugen.cfg\n")
 		file, err := os.Open("data/mugen.cfg")
 		if err != nil {
-			fmt.Printf("[DEBUG][main.go][setupConfig] Error loading data/mugen.cfg\n")
+			fmt.Printf("[main.go][setupConfig] Error loading data/mugen.cfg\n")
 		}
 		defer file.Close()
 
@@ -750,30 +778,30 @@ func setupConfig(is_mugen_game bool) configSettings {
 			result = regexp.MustCompile(`[Mm]otif\s*=\s*(\S+)`).FindStringSubmatch(line)
 			if result != nil {
 				tmp.Motif = strings.ReplaceAll(result[1], "\\", "/")
-				fmt.Printf("[DEBUG][main.go][setupConfig] Import Motif=%v\n", tmp.Motif)
+				fmt.Printf("[main.go][setupConfig] Import Motif=%v\n", tmp.Motif)
 				continue
 			}
 			result = regexp.MustCompile(`[Ss]tart[Ss]tage\s*=\s*(\S+)`).FindStringSubmatch(line)
 			if result != nil {
 				tmp.StartStage = strings.ReplaceAll(result[1], "\\", "/")
-				fmt.Printf("[DEBUG][main.go][setupConfig] Import StartStage=%v\n", tmp.StartStage)
+				fmt.Printf("[main.go][setupConfig] Import StartStage=%v\n", tmp.StartStage)
 				continue
 			}
 			result = regexp.MustCompile(`[Gg]ame[Ww]idth\s*=\s*(\d+)`).FindStringSubmatch(line)
 			if result != nil {
 				tmp.GameWidth = int32(Atoi(result[1]))
-				fmt.Printf("[DEBUG][main.go][setupConfig] Import GameWidth=%v\n", tmp.GameWidth)
+				fmt.Printf("[main.go][setupConfig] Import GameWidth=%v\n", tmp.GameWidth)
 				continue
 			}
 			result = regexp.MustCompile(`[Gg]ame[Hh]eight\s*=\s*(\d+)`).FindStringSubmatch(line)
 			if result != nil {
 				tmp.GameHeight = int32(Atoi(result[1]))
-				fmt.Printf("[DEBUG][main.go][setupConfig] Import GameHeight=%v\n", tmp.GameHeight)
+				fmt.Printf("[main.go][setupConfig] Import GameHeight=%v\n", tmp.GameHeight)
 				continue
 			}
 		}
 	} else {
-		fmt.Printf("[DEBUG][main.go][setupConfig] NOT importing data/mugen.cfg\n")
+		fmt.Printf("[main.go][setupConfig] NOT importing data/mugen.cfg\n")
 	}
 
 	// Save config file, indent with two spaces to match calls to json.encode() in the Lua code
@@ -882,7 +910,7 @@ func setupConfig(is_mugen_game bool) configSettings {
 			stoki(b[9].(string)), stoki(b[10].(string)), stoki(b[11].(string)),
 			stoki(b[12].(string)), stoki(b[13].(string))})
 	}
-	fmt.Printf("[DEBUG][main.go][setupConfig] Assigning Joystick setting to Engine\n")
+	fmt.Printf("[main.go][setupConfig] Assigning Joystick setting to Engine\n")
 	if _, ok := sys.cmdFlags["-nojoy"]; !ok {
 		for _, jc := range tmp.JoystickConfig {
 			fmt.Printf("sys.joystickConfig[%v] = %v\n", jc.Joystick, jc.Buttons)
@@ -897,19 +925,43 @@ func setupConfig(is_mugen_game bool) configSettings {
 	}
 
 	if _, ok := sys.cmdFlags["-updatechar"]; ok {
-		fmt.Printf("[DEBUG][main.go][setupConfig] Update data/select.def based on [char] directory\n")
+		fmt.Printf("[main.go][setupConfig] Update data/select.def based on [char] directory\n")
 		err := updateCharInSelectDef(NormalizeFile("data/select.def"))
 		if err != nil {
-			fmt.Printf("[DEBUG][main.go][setupConfig] %v\n", err)
+			fmt.Printf("[main.go][setupConfig] %v\n", err)
 		}
 	}
 
 	if _, ok := sys.cmdFlags["-updatestage"]; ok {
-		fmt.Printf("[DEBUG][main.go][setupConfig] Update data/select.def based on [stages] directory\n")
+		fmt.Printf("[main.go][setupConfig] Update data/select.def based on [stages] directory\n")
 		err := updateStageInSelectDef(NormalizeFile("data/select.def"))
 		if err != nil {
-			fmt.Printf("[DEBUG][main.go][setupConfig] %v\n", err)
+			fmt.Printf("[main.go][setupConfig] %v\n", err)
 		}
+	}
+
+	if _, ok := sys.cmdFlags["-install"]; ok {
+		fmt.Printf("[main.go][setupConfig] Install default screenpack\n")
+		err := extractEmbed(screenpackZip)
+		if err != nil {
+			fmt.Printf("[main.go][setupConfig] Error extracting screenpack: %v\n", err)
+		}
+		err = extractEmbed(assetsZip)
+		if err != nil {
+			fmt.Printf("[main.go][setupConfig] Error extracting asset: %v\n", err)
+		}
+	}
+
+	if _, ok := sys.cmdFlags["-audit"]; ok {
+		l := lua.NewState()
+		l.Options.IncludeGoStackTrace = true
+		l.OpenLibs()
+		systemScriptInit(l)
+		fmt.Printf("\n\n==================================\nVerifying included the game assets...\n")
+		if err := l.DoFile("external/script/audit.lua"); err != nil {
+			fmt.Printf("[main.go][setupConfig] Error running audit script: %v\n", err)
+		}
+		os.Exit(0)
 	}
 
 	return tmp
