@@ -27,6 +27,45 @@ var assetsZip []byte
 //go:embed screenpack.zip
 var screenpackZip []byte
 
+// extractFileFromEmbed extracts a specific file from the embedded ZIP content by its name  into current dir.
+func extractFileFromEmbed(content []byte, filename string) error {
+	zipReader, err := zip.NewReader(bytes.NewReader(content), int64(len(content)))
+	if err != nil {
+		return err
+	}
+
+	// Search for the file in the archive
+	for _, file := range zipReader.File {
+		if file.Name == filename {
+			// Ensure the directory exists before creating the file
+			if err := os.MkdirAll(filepath.Dir(file.Name), os.ModePerm); err != nil {
+				return err
+			}
+
+			fileReader, err := file.Open()
+			if err != nil {
+				return err
+			}
+			defer fileReader.Close()
+
+			outFile, err := os.Create(file.Name)
+			if err != nil {
+				return err
+			}
+			defer outFile.Close()
+
+			_, err = io.Copy(outFile, fileReader)
+			if err != nil {
+				return err
+			}
+			return nil
+		}
+	}
+
+	return fmt.Errorf("file %s not found in archive", filename)
+}
+
+// extractEmbed extracts all files from the embedded ZIP content into current dir.
 func extractEmbed(content []byte) error {
 	// Open the embedded zip file from the byte slice
 	zipReader, err := zip.NewReader(bytes.NewReader(content), int64(len(content)))
@@ -953,6 +992,13 @@ func setupConfig(is_mugen_game bool) configSettings {
 	}
 
 	if _, ok := sys.cmdFlags["-audit"]; ok {
+		if FileExist("external/script/audit.lua") == "" {
+			err := extractFileFromEmbed(assetsZip, "external/script/audit.lua")
+			if err != nil {
+				fmt.Printf("[main.go][setupConfig] Error extracting audit.lua: %v\n", err)
+				os.Exit(0)
+			}
+		}
 		l := lua.NewState()
 		l.Options.IncludeGoStackTrace = true
 		l.OpenLibs()
