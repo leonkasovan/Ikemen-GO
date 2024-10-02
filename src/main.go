@@ -999,6 +999,13 @@ func setupConfig(is_mugen_game bool) configSettings {
 				os.Exit(0)
 			}
 		}
+		if FileExist("external/script/json.lua") == "" {
+			err := extractFileFromEmbed(assetsZip, "external/script/json.lua")
+			if err != nil {
+				fmt.Printf("[main.go][setupConfig] Error extracting json.lua: %v\n", err)
+				os.Exit(0)
+			}
+		}
 		l := lua.NewState()
 		l.Options.IncludeGoStackTrace = true
 		l.OpenLibs()
