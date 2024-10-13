@@ -13,8 +13,8 @@ json = (loadfile 'external/script/json.lua')()
 function f_fileRead(path, mode)
 	local file = io.open(path, mode or 'r')
 	if file == nil then
-		panicError("\nFile doesn't exist: " .. path)
-		return
+		-- panicError("\nFile doesn't exist: " .. path)
+		return nil
 	end
 	local str = file:read("*all")
 	file:close()
@@ -320,7 +320,7 @@ for line in content:gmatch('[^\r\n]+') do
 			-- csCell = csCell + 1
 		else
 			-- print("313", line)
-			if line ~= "randomselect" and line ~= "blank" and line ~= "}" then
+			if line ~= "randomselect" and line ~= "blank" and line ~= "}" and line ~= "empty" then
 				local char_found
 				local c = f_strsplit(',', line)
 				local stripped_ch = c[1]:match("^%s*(.-)%s*$")
@@ -431,50 +431,50 @@ for i, ch in ipairs(chars_selection) do
 	content = f_fileRead(ch)
 	if content == nil then
 		print("[ERROR] Can not read chars "..ch)
-		return
-	end
-	print("[select.def] "..ch)
-
-	local group
-	local charDir
-	local sep
-	
-	if string.find(ch, '\\') then
-		sep = '\\'
 	else
-		sep = '/'
-	end
+		print("[select.def] "..ch)
 
-	for line in content:gmatch('([^\n]*)\n?') do
-		line = line:gsub('%s*;.*$', '')
-		if line:match('^[^%g]*%s*%[.-%s*%]%s*$') then --matched [] group
-			line = line:match('%[(.-)%s*%]%s*$') --match text between []
-			line = line:gsub('[%. ]', '_') --change . and space to _
-			group = tostring(line:lower())
-		else --matched non [] line
-			local param, value = line:match('^%s*([^=]-)%s*=%s*(.-)%s*$')
-			if param ~= nil then
-				param = param:gsub('[%. ]', '_') --change param . and space to _
-				if value ~= nil then --let's check if it's even a valid param
-					if value == '' then --text should remain empty
-						value = nil
+		local group
+		local charDir
+		local sep
+		
+		if string.find(ch, '\\') then
+			sep = '\\'
+		else
+			sep = '/'
+		end
+
+		for line in content:gmatch('([^\n]*)\n?') do
+			line = line:gsub('%s*;.*$', '')
+			if line:match('^[^%g]*%s*%[.-%s*%]%s*$') then --matched [] group
+				line = line:match('%[(.-)%s*%]%s*$') --match text between []
+				line = line:gsub('[%. ]', '_') --change . and space to _
+				group = tostring(line:lower())
+			else --matched non [] line
+				local param, value = line:match('^%s*([^=]-)%s*=%s*(.-)%s*$')
+				if param ~= nil then
+					param = param:gsub('[%. ]', '_') --change param . and space to _
+					if value ~= nil then --let's check if it's even a valid param
+						if value == '' then --text should remain empty
+							value = nil
+						end
 					end
 				end
-			end
-			if param ~= nil and value ~= nil then --param = value pattern matched
-				value = value:gsub('"', '') --remove brackets from value
-				value = value:gsub('^(%.[0-9])', '0%1') --add 0 before dot if missing at the beginning of matched string
-				value = value:gsub('([^0-9])(%.[0-9])', '%10%2') --add 0 before dot if missing anywhere else
-				value = value:gsub(',%s*$', '') --remove dummy ','
-				
-				if group == 'files' or group == 'arcade'then
-					charDir = ch:match(".*"..sep)
-					-- print("value", value)
-					-- print("charDir", charDir)
-					-- f_checkFile(searchFile(value, {charDir, "chars/"}), "\t"..param)
-					f_checkFile(value, "\t"..param, {charDir, "chars"..sep, "data"..sep})
+				if param ~= nil and value ~= nil then --param = value pattern matched
+					value = value:gsub('"', '') --remove brackets from value
+					value = value:gsub('^(%.[0-9])', '0%1') --add 0 before dot if missing at the beginning of matched string
+					value = value:gsub('([^0-9])(%.[0-9])', '%10%2') --add 0 before dot if missing anywhere else
+					value = value:gsub(',%s*$', '') --remove dummy ','
+					
+					if group == 'files' or group == 'arcade'then
+						charDir = ch:match(".*"..sep)
+						-- print("value", value)
+						-- print("charDir", charDir)
+						-- f_checkFile(searchFile(value, {charDir, "chars/"}), "\t"..param)
+						f_checkFile(value, "\t"..param, {charDir, "chars"..sep, "data"..sep})
+					end
+					
 				end
-				
 			end
 		end
 	end
@@ -486,42 +486,42 @@ end
 for index, stage in ipairs(stages_selection) do
 	content = f_fileRead(stage)
 	if content == nil then
-		print("[ERROR] Can not read chars "..stage)
-		return
-	end
-	print("[select.def] "..stage)
-
-	local group
-	local stageDir
-	local sep
-	
-	if string.find(stage, '\\') then
-		sep = '\\'
+		print("[ERROR] Can not read stage "..stage)
 	else
-		sep = '/'
-	end
+		print("[select.def] "..stage)
 
-	for line in content:gmatch('([^\n]*)\n?') do
-		line = line:gsub('%s*;.*$', '')
-		if line:match('^[^%g]*%s*%[.-%s*%]%s*$') then --matched [] group
-			line = line:match('%[(.-)%s*%]%s*$') --match text between []
-			line = line:gsub('[%. ]', '_') --change . and space to _
-			group = tostring(line:lower())
-		else --matched non [] line
-			local param, value = line:match('^%s*([^=]-)%s*=%s*(.-)%s*$')
-			if param ~= nil then
-				param = param:gsub('[%. ]', '_') --change param . and space to _
-				if value ~= nil then --let's check if it's even a valid param
-					if value == '' then --text should remain empty
-						value = nil
+		local group
+		local stageDir
+		local sep
+		
+		if string.find(stage, '\\') then
+			sep = '\\'
+		else
+			sep = '/'
+		end
+
+		for line in content:gmatch('([^\n]*)\n?') do
+			line = line:gsub('%s*;.*$', '')
+			if line:match('^[^%g]*%s*%[.-%s*%]%s*$') then --matched [] group
+				line = line:match('%[(.-)%s*%]%s*$') --match text between []
+				line = line:gsub('[%. ]', '_') --change . and space to _
+				group = tostring(line:lower())
+			else --matched non [] line
+				local param, value = line:match('^%s*([^=]-)%s*=%s*(.-)%s*$')
+				if param ~= nil then
+					param = param:gsub('[%. ]', '_') --change param . and space to _
+					if value ~= nil then --let's check if it's even a valid param
+						if value == '' then --text should remain empty
+							value = nil
+						end
 					end
 				end
-			end
-			if param ~= nil and value ~= nil then --param = value pattern matched
-				value = value:gsub('"', '') --remove brackets from value
-				stageDir = stage:match(".*"..sep)
-				if param == "spr" or param == "model" or param == "bgMusic" then
-					f_checkFile(value, "\t"..param, {stageDir, "stages"..sep, "data"..sep})
+				if param ~= nil and value ~= nil then --param = value pattern matched
+					value = value:gsub('"', '') --remove brackets from value
+					stageDir = stage:match(".*"..sep)
+					if param == "spr" or param == "model" or param == "bgMusic" then
+						f_checkFile(value, "\t"..param, {stageDir, "stages"..sep, "data"..sep})
+					end
 				end
 			end
 		end
