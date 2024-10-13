@@ -249,7 +249,7 @@ func updateCharInSelectDef(fname string) error {
 			continue
 		}
 		if section == 1 {
-			result = regexp.MustCompile(`^(.+),`).FindStringSubmatch(scanner.Text())
+			result = regexp.MustCompile(`^(.+?),`).FindStringSubmatch(scanner.Text())
 			if result != nil {
 				writer.WriteString(scanner.Text() + "\n")
 				chars = append(chars, result[1])
