@@ -278,6 +278,9 @@ func updateCharInSelectDef(fname string) error {
 
 // Update Section [ExtraStages] in select.def based on files *.def in [stages] directory
 func updateStageInSelectDef(fname string) error {
+	path_sep1 := ""
+	path_sep2 := ""
+
 	// Open the file
 	filename := NormalizeFile(fname)
 	file, err := os.Open(filename)
@@ -342,6 +345,7 @@ func updateStageInSelectDef(fname string) error {
 
 			// Print the matching files
 			for _, file := range files {
+				file = strings.Replace(file, path_sep2, path_sep1, -1)
 				if !stringInSlice(file, stages) {
 					fmt.Printf(" add new stage: %v\n", file)
 					writer.WriteString(file + "\n")
@@ -355,6 +359,17 @@ func updateStageInSelectDef(fname string) error {
 			writer.WriteString(scanner.Text() + "\n")
 			stages = append(stages, scanner.Text())
 			fmt.Printf(" existing stage: %v\n", scanner.Text())
+			if path_sep1 == "" {
+				if strings.Contains(scanner.Text(), "/") {
+					path_sep1 = "/"
+					path_sep2 = "\\"
+					// fmt.Printf("scanner.Text=%v path_sep1=%v path_sep2=%v\n", scanner.Text(), path_sep1, path_sep2)
+				}
+				if strings.Contains(scanner.Text(), "\\") {
+					path_sep1 = "\\"
+					path_sep2 = "/"
+				}
+			}
 			continue
 		}
 		writer.WriteString(scanner.Text() + "\n")
