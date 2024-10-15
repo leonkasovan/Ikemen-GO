@@ -4,7 +4,10 @@ import (
 	_ "embed" // Support for go:embed resources
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+
+	"net/http"
+	_ "net/http/pprof"
+
 	"os"
 	"regexp"
 	"runtime"
@@ -18,6 +21,11 @@ var Version = "development"
 var BuildTime = ""
 
 func init() {
+	// // run pprof
+	go func() {
+		fmt.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
+
 	runtime.LockOSThread()
 }
 
@@ -56,7 +64,7 @@ func main() {
 	processCommandLine()
 
 	// Try reading stats
-	if _, err := ioutil.ReadFile("save/stats.json"); err != nil {
+	if _, err := os.ReadFile("save/stats.json"); err != nil {
 		// If there was an error reading, write an empty json file
 		f, err := os.Create("save/stats.json")
 		chk(err)
@@ -113,7 +121,7 @@ func processCommandLine() {
 		sys.cmdFlags = make(map[string]string)
 		key := ""
 		player := 1
-		r1, _ := regexp.Compile("^-[h%?]")
+		r1, _ := regexp.Compile("^-[h%?]$")
 		r2, _ := regexp.Compile("^-")
 		// Loop through arguments
 		for _, a := range os.Args[1:] {
@@ -125,6 +133,8 @@ func processCommandLine() {
 -r <path>               Loads motif <path>. eg. -r motifdir or -r motifdir/system.def
 -lifebar <path>         Loads lifebar <path>. eg. -lifebar data/fight.def
 -storyboard <path>      Loads storyboard <path>. eg. -storyboard chars/kfm/intro.def
+-width <num>            Overrides game window width
+-height <num>           Overrides game window height
 
 Quick VS Options:
 -p<n> <playername>      Loads player n, eg. -p3 kfm
@@ -186,7 +196,6 @@ type configSettings struct {
 	BarRedLife                 bool
 	BarStun                    bool
 	Borderless                 bool
-	ComboExtraFrameWindow      int32
 	CommonAir                  []string
 	CommonCmd                  []string
 	CommonConst                []string
@@ -217,12 +226,15 @@ type configSettings struct {
 	GameWidth                  int32
 	GameHeight                 int32
 	GameFramerate              float32
+	InputButtonAssist          bool
+	InputSOCDResolution        int32
 	IP                         map[string]string
 	LifeMul                    float32
 	ListenPort                 string
 	LoseSimul                  bool
 	LoseTag                    bool
 	MaxAfterImage              int32
+	MaxBatchSize               int32
 	MaxBgmVolume               int
 	MaxDrawGames               int32
 	MaxExplod                  int
@@ -295,7 +307,7 @@ func setupConfig() configSettings {
 		cfgPath = sys.cmdFlags["-config"]
 	}
 	// Load the config file, overwriting the defaults
-	if bytes, err := ioutil.ReadFile(cfgPath); err == nil {
+	if bytes, err := os.ReadFile(cfgPath); err == nil {
 		if len(bytes) >= 3 &&
 			bytes[0] == 0xef && bytes[1] == 0xbb && bytes[2] == 0xbf {
 			bytes = bytes[3:]
@@ -319,7 +331,17 @@ func setupConfig() configSettings {
 	tmp.WavChannels = Clamp(tmp.WavChannels, 1, 256)
 	// Save config file, indent with two spaces to match calls to json.encode() in the Lua code
 	cfg, _ := json.MarshalIndent(tmp, "", "  ")
-	chk(ioutil.WriteFile(cfgPath, cfg, 0644))
+	chk(os.WriteFile(cfgPath, cfg, 0644))
+
+	// If given width/height arguments, override config's width/height here
+	if _, wok := sys.cmdFlags["-width"]; wok {
+		var w, _ = strconv.ParseInt(sys.cmdFlags["-width"], 10, 32)
+		tmp.GameWidth = int32(w)
+	}
+	if _, hok := sys.cmdFlags["-height"]; hok {
+		var h, _ = strconv.ParseInt(sys.cmdFlags["-height"], 10, 32)
+		tmp.GameHeight = int32(h)
+	}
 
 	// Set each config property to the system object
 	sys.afterImageMax = tmp.MaxAfterImage
@@ -335,7 +357,6 @@ func setupConfig() configSettings {
 	sys.cam.ZoomMax = tmp.ForceStageZoomin
 	sys.cam.ZoomMin = tmp.ForceStageZoomout
 	sys.cam.ZoomSpeed = 12 - tmp.ZoomSpeed
-	sys.comboExtraFrameWindow = tmp.ComboExtraFrameWindow
 	sys.commonAir = tmp.CommonAir
 	sys.commonCmd = tmp.CommonCmd
 	sys.commonConst = tmp.CommonConst
@@ -359,12 +380,15 @@ func setupConfig() configSettings {
 	sys.gameHeight = tmp.GameHeight
 	sys.gameSpeed = tmp.GameFramerate / float32(tmp.Framerate)
 	sys.helperMax = tmp.MaxHelper
+	sys.inputButtonAssist = tmp.InputButtonAssist
+	sys.inputSOCDresolution = Clamp(tmp.InputSOCDResolution, 0, 4)
 	sys.lifeMul = tmp.LifeMul / 100
 	sys.lifeShare = [...]bool{tmp.TeamLifeShare, tmp.TeamLifeShare}
 	sys.listenPort = tmp.ListenPort
 	sys.loseSimul = tmp.LoseSimul
 	sys.loseTag = tmp.LoseTag
 	sys.masterVolume = tmp.VolumeMaster
+	sys.maxBatchSize = tmp.MaxBatchSize
 	sys.multisampleAntialiasing = tmp.MSAA
 	sys.panningRange = tmp.PanningRange
 	sys.playerProjectileMax = tmp.MaxPlayerProjectile

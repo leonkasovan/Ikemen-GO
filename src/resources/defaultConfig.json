@@ -9,7 +9,6 @@
   "BarRedLife": true,
   "BarStun": false,
   "Borderless": false,
-  "ComboExtraFrameWindow": 0,
   "CommonAir": [
     "data/common.air"
   ],
@@ -56,12 +55,15 @@
   "GameWidth": 640,
   "GameHeight": 480,
   "GameFramerate": 60,
+  "InputButtonAssist": true,
+  "InputSOCDResolution": 2,
   "IP": {},
   "LifeMul": 100,
   "ListenPort": "7500",
   "LoseSimul": true,
   "LoseTag": false,
   "MaxAfterImage": 128,
+  "MaxBatchSize": 512,  
   "MaxBgmVolume": 100,
   "MaxDrawGames": -2,
   "MaxExplod": 512,

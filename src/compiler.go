@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"math"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -130,6 +130,7 @@ func newCompiler() *Compiler {
 		"zoom":                 c.zoom,
 		"forcefeedback":        c.forceFeedback,
 		"null":                 c.null,
+		"assertcommand":        c.assertCommand,
 		"assertinput":          c.assertInput,
 		"dialogue":             c.dialogue,
 		"dizzypointsadd":       c.dizzyPointsAdd,
@@ -166,6 +167,9 @@ func newCompiler() *Compiler {
 		"text":                 c.text,
 		"modifystagevar":       c.modifyStageVar,
 		"camera":               c.cameraCtrl,
+		"height":               c.height,
+		"modifychar":           c.modifyChar,
+		"gethitvarset":         c.getHitVarSet,
 	}
 	return c
 }
@@ -181,6 +185,7 @@ var triggerMap = map[string]int{
 	"enemy":       0,
 	"enemynear":   0,
 	"playerid":    0,
+	"playerindex": 0,
 	"p2":          0,
 	"stateowner":  0,
 	"helperindex": 0,
@@ -214,6 +219,7 @@ var triggerMap = map[string]int{
 	"const720p":         1,
 	"cos":               1,
 	"ctrl":              1,
+	"displayname":       1,
 	"drawgame":          1,
 	"e":                 1,
 	"exp":               1,
@@ -227,7 +233,6 @@ var triggerMap = map[string]int{
 	"gametime":          1,
 	"gamewidth":         1,
 	"gethitvar":         1,
-	"helpername":        1,
 	"hitcount":          1,
 	"hitdefattr":        1,
 	"hitfall":           1,
@@ -240,7 +245,6 @@ var triggerMap = map[string]int{
 	"inguarddist":       1,
 	"ishelper":          1,
 	"ishometeam":        1,
-	"ishost":            1,
 	"leftedge":          1,
 	"life":              1,
 	"lifemax":           1,
@@ -325,10 +329,16 @@ var triggerMap = map[string]int{
 	"animelemlength":     1,
 	"animlength":         1,
 	"attack":             1,
+	"alpha":              1,
+	"angle":              1,
+	"atan2":              1,
 	"bgmlength":          1,
 	"bgmposition":        1,
+	"clamp":              1,
 	"combocount":         1,
 	"consecutivewins":    1,
+	"const1080p":         1,
+	"deg":                1,
 	"defence":            1,
 	"dizzy":              1,
 	"dizzypoints":        1,
@@ -343,12 +353,19 @@ var triggerMap = map[string]int{
 	"getplayerid":        1,
 	"groundangle":        1,
 	"guardbreak":         1,
+	"guardcount":         1,
 	"guardpoints":        1,
 	"guardpointsmax":     1,
+	"helperid":           1,
+	"helperindexexist":   1,
+	"helpername":         1,
 	"hitoverridden":      1,
 	"incustomstate":      1,
 	"indialogue":         1,
 	"isasserted":         1,
+	"ishost":             1,
+	"lastplayerid":       1,
+	"lerp":               1,
 	"localscale":         1,
 	"majorversion":       1,
 	"map":                1,
@@ -356,6 +373,10 @@ var triggerMap = map[string]int{
 	"memberno":           1,
 	"min":                1,
 	"movecountered":      1,
+	"movehitvar":         1,
+	"mugenversion":       1,
+	"numplayer":          1,
+	"offset":             1,
 	"p5name":             1,
 	"p6name":             1,
 	"p7name":             1,
@@ -363,8 +384,12 @@ var triggerMap = map[string]int{
 	"pausetime":          1,
 	"physics":            1,
 	"playerno":           1,
+	"playercount":        1,
+	"playerindexexist":   1,
 	"prevanim":           1,
 	"prevmovetype":       1,
+	"prevstatetype":      1,
+	"rad":                1,
 	"ratiolevel":         1,
 	"randomrange":        1,
 	"receivedhits":       1,
@@ -373,6 +398,9 @@ var triggerMap = map[string]int{
 	"reversaldefattr":    1,
 	"round":              1,
 	"roundtype":          1,
+	"scale":              1,
+	"selfcommand":        1,
+	"sign":               1,
 	"score":              1,
 	"scoretotal":         1,
 	"selfstatenoexist":   1,
@@ -687,7 +715,7 @@ func (c *Compiler) attr(text string, hitdef bool) (int32, error) {
 		case "h", "a":
 			flg |= int32(AT_HA | AT_HT | AT_HP)
 		default:
-			if sys.ignoreMostErrors && sys.cgi[c.playerNo].ver[0] == 1 {
+			if sys.ignoreMostErrors && sys.cgi[c.playerNo].mugenver[0] == 1 {
 				//if hitdef {
 				//	flg = hitdefflg
 				//}
@@ -1164,7 +1192,7 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 	case "":
 		return bvNone(), Error("Nothing assigned")
 	case "root", "player", "parent", "helper", "target", "partner",
-		"enemy", "enemynear", "playerid", "p2", "stateowner", "helperindex":
+		"enemy", "enemynear", "playerid", "playerindex", "p2", "stateowner", "helperindex":
 		switch c.token {
 		case "parent":
 			opc = OC_parent
@@ -1194,6 +1222,8 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 				opc = OC_enemynear
 			case "playerid":
 				opc = OC_playerid
+			case "playerindex":
+				opc = OC_playerindex
 			case "helperindex":
 				opc = OC_helperindex
 			}
@@ -1218,6 +1248,8 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 					return bvNone(), Error("Missing '(' after player")
 				case OC_playerid:
 					return bvNone(), Error("Missing '(' after playerid")
+				case OC_playerindex:
+					return bvNone(), Error("Missing '(' after playerindex")
 				case OC_helperindex:
 					return bvNone(), Error("Missing '(' after helperindex")
 				}
@@ -1434,7 +1466,12 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 		out.append(OC_camerazoom)
 	case "canrecover":
 		out.append(OC_canrecover)
-	case "command":
+	case "command", "selfcommand":
+		opc := OC_command
+		if c.token == "selfcommand" {
+			out.append(OC_ex_)
+			opc = OC_ex_selfcommand
+		}
 		if err := eqne(func() error {
 			if err := text(); err != nil {
 				return err
@@ -1443,8 +1480,7 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 			if !ok {
 				return Error("Command doesn't exist: " + c.token)
 			}
-			i := sys.stringPool[c.playerNo].Add(c.token)
-			out.appendI32Op(OC_command, int32(i))
+			out.appendI32Op(opc, int32(sys.stringPool[c.playerNo].Add(c.token)))
 			return nil
 		}); err != nil {
 			return bvNone(), err
@@ -1501,16 +1537,28 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 			out.append(OC_const_size_air_back)
 		case "size.air.front":
 			out.append(OC_const_size_air_front)
-		case "size.height":
-			out.append(OC_const_size_height)
-		case "size.attack.dist":
-			out.append(OC_const_size_attack_dist)
+		case "size.height", "size.height.stand": // Latter is also accepted for consistency's sake
+			out.append(OC_const_size_height_stand)
+		case "size.height.crouch":
+			out.append(OC_const_size_height_crouch)
+		case "size.height.air.top":
+			out.append(OC_const_size_height_air_top)
+		case "size.height.air.bottom":
+			out.append(OC_const_size_height_air_bottom)
+		case "size.height.down":
+			out.append(OC_const_size_height_down)
+		case "size.attack.dist", "size.attack.dist.front":
+			out.append(OC_const_size_attack_dist_front)
+		case "size.attack.dist.back":
+			out.append(OC_const_size_attack_dist_back)
 		case "size.attack.z.width.back":
 			out.append(OC_const_size_attack_z_width_back)
 		case "size.attack.z.width.front":
 			out.append(OC_const_size_attack_z_width_front)
-		case "size.proj.attack.dist":
-			out.append(OC_const_size_proj_attack_dist)
+		case "size.proj.attack.dist", "size.proj.attack.dist.front":
+			out.append(OC_const_size_proj_attack_dist_front)
+		case "size.proj.attack.dist.back":
+			out.append(OC_const_size_proj_attack_dist_back)
 		case "size.proj.doscale":
 			out.append(OC_const_size_proj_doscale)
 		case "size.head.pos.x":
@@ -1686,8 +1734,17 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 			return bvNone(), err
 		}
 		out.append(OC_ex_, OC_ex_const720p)
+	case "const1080p":
+		if _, err := c.oneArg(out, in, rd, true); err != nil {
+			return bvNone(), err
+		}
+		out.append(OC_ex_, OC_ex_const1080p)
 	case "ctrl":
 		out.append(OC_ctrl)
+	case "displayname":
+		if err := nameSub(OC_const_displayname); err != nil {
+			return bvNone(), err
+		}
 	case "drawgame":
 		out.append(OC_ex_, OC_ex_drawgame)
 	case "facing":
@@ -1736,6 +1793,8 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 				out.append(OC_ex_gethitvar_groundtype)
 			case "damage":
 				out.append(OC_ex_gethitvar_damage)
+			case "guardcount":
+				out.append(OC_ex_gethitvar_guardcount)
 			case "hitcount":
 				out.append(OC_ex_gethitvar_hitcount)
 			case "fallcount":
@@ -1810,12 +1869,38 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 				out.append(OC_ex_gethitvar_hitdamage)
 			case "guarddamage":
 				out.append(OC_ex_gethitvar_guarddamage)
+			case "power":
+				out.append(OC_ex_gethitvar_power)
 			case "hitpower":
 				out.append(OC_ex_gethitvar_hitpower)
 			case "guardpower":
 				out.append(OC_ex_gethitvar_guardpower)
 			case "kill":
 				out.append(OC_ex_gethitvar_kill)
+			case "priority":
+				out.append(OC_ex_gethitvar_priority)
+			case "facing":
+				out.append(OC_ex_gethitvar_facing)
+			case "ground.velocity.x":
+				out.append(OC_ex_gethitvar_ground_velocity_x)
+			case "ground.velocity.y":
+				out.append(OC_ex_gethitvar_ground_velocity_y)
+			case "air.velocity.x":
+				out.append(OC_ex_gethitvar_air_velocity_x)
+			case "air.velocity.y":
+				out.append(OC_ex_gethitvar_air_velocity_y)
+			case "down.velocity.x":
+				out.append(OC_ex_gethitvar_down_velocity_x)
+			case "down.velocity.y":
+				out.append(OC_ex_gethitvar_down_velocity_y)
+			case "guard.velocity.x":
+				out.append(OC_ex_gethitvar_guard_velocity_x)
+			case "airguard.velocity.x":
+				out.append(OC_ex_gethitvar_airguard_velocity_x)
+			case "airguard.velocity.y":
+				out.append(OC_ex_gethitvar_airguard_velocity_y)
+			case "contact":
+				out.append(OC_ex_gethitvar_contact)
 			default:
 				return bvNone(), Error("Invalid data: " + c.token)
 			}
@@ -1824,6 +1909,13 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 		if err := c.checkClosingBracket(); err != nil {
 			return bvNone(), err
 		}
+	case "guardcount":
+		out.append(OC_ex_, OC_ex_guardcount)
+	case "helperindexexist":
+		if _, err := c.oneArg(out, in, rd, true); err != nil {
+			return bvNone(), err
+		}
+		out.append(OC_ex_, OC_ex_helperindexexist)
 	case "hitcount":
 		out.append(OC_hitcount)
 	case "hitdefattr":
@@ -1835,7 +1927,7 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 			}
 			return nil
 		}
-		// if sys.cgi[c.playerNo].ver[0] == 1 {
+		// if sys.cgi[c.playerNo].mugenver[0] == 1 {
 		// if err := eqne(hda); err != nil {
 		// return bvNone(), err
 		// }
@@ -2087,7 +2179,7 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 			out.appendI32Op(OC_p2, 1)
 		}
 		out.append(OC_stateno)
-	case "statetype", "p2statetype":
+	case "statetype", "p2statetype", "prevstatetype":
 		trname := c.token
 		if err := eqne2(func(not bool) error {
 			if len(c.token) == 0 {
@@ -2106,10 +2198,14 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 			default:
 				return Error("Invalid value: " + c.token)
 			}
-			if trname == "p2statetype" {
-				out.appendI32Op(OC_p2, 2+Btoi(not))
+			if trname == "prevstatetype" {
+				out.append(OC_ex_, OC_ex_prevstatetype, OpCode(st))
+			} else {
+				if trname == "p2statetype" {
+					out.appendI32Op(OC_p2, 2+Btoi(not))
+				}
+				out.append(OC_statetype, OpCode(st))
 			}
-			out.append(OC_statetype, OpCode(st))
 			if not {
 				out.append(OC_blnot)
 			}
@@ -2334,7 +2430,7 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 		case "x":
 			out.append(OC_ex_, OC_ex_p2bodydist_x)
 		case "y":
-			out.append(OC_ex_, OC_ex_p2dist_y)
+			out.append(OC_ex_, OC_ex_p2bodydist_y)
 		case "z":
 			bv = BytecodeFloat(0)
 		default:
@@ -2562,12 +2658,176 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 			out.round(&bv1, bv2)
 			bv = bv1
 		}
+	case "clamp":
+		if err := c.checkOpeningBracket(in); err != nil {
+			return bvNone(), err
+		}
+		if bv1, err = c.expBoolOr(&be1, in); err != nil {
+			return bvNone(), err
+		}
+		if c.token != "," {
+			return bvNone(), Error("Missing ','")
+		}
+		c.token = c.tokenizer(in)
+		if bv2, err = c.expBoolOr(&be2, in); err != nil {
+			return bvNone(), err
+		}
+		if c.token != "," {
+			return bvNone(), Error("Missing ','")
+		}
+		c.token = c.tokenizer(in)
+		if bv3, err = c.expBoolOr(&be3, in); err != nil {
+			return bvNone(), err
+		}
+		if err := c.checkClosingBracket(); err != nil {
+			return bvNone(), err
+		}
+		if bv1.IsNone() || bv2.IsNone() || bv3.IsNone() {
+			if rd {
+				out.append(OC_rdreset)
+			}
+			out.append(be1...)
+			out.appendValue(bv1)
+			out.append(be2...)
+			out.appendValue(bv2)
+			out.append(be3...)
+			out.appendValue(bv3)
+			out.append(OC_ex_, OC_ex_clamp)
+		} else {
+			out.clamp(&bv1, bv2, bv3)
+			bv = bv1
+		}
+	case "atan2":
+		if err := c.checkOpeningBracket(in); err != nil {
+			return bvNone(), err
+		}
+		if bv1, err = c.expBoolOr(&be1, in); err != nil {
+			return bvNone(), err
+		}
+		if c.token != "," {
+			return bvNone(), Error("Missing ','")
+		}
+		c.token = c.tokenizer(in)
+		if bv2, err = c.expBoolOr(&be2, in); err != nil {
+			return bvNone(), err
+		}
+		if err := c.checkClosingBracket(); err != nil {
+			return bvNone(), err
+		}
+		if bv1.IsNone() || bv2.IsNone() {
+			if rd {
+				out.append(OC_rdreset)
+			}
+			out.append(be1...)
+			out.appendValue(bv1)
+			out.append(be2...)
+			out.appendValue(bv2)
+			out.append(OC_ex_, OC_ex_atan2)
+		} else {
+			out.atan2(&bv1, bv2)
+			bv = bv1
+		}
+	case "sign":
+		if _, err := c.oneArg(out, in, rd, true); err != nil {
+			return bvNone(), err
+		}
+		out.append(OC_ex_, OC_ex_sign)
+	case "rad":
+		if _, err := c.oneArg(out, in, rd, true); err != nil {
+			return bvNone(), err
+		}
+		out.append(OC_ex_, OC_ex_rad)
+	case "deg":
+		if _, err := c.oneArg(out, in, rd, true); err != nil {
+			return bvNone(), err
+		}
+		out.append(OC_ex_, OC_ex_deg)
+	case "lerp":
+		if err := c.checkOpeningBracket(in); err != nil {
+			return bvNone(), err
+		}
+		if bv1, err = c.expBoolOr(&be1, in); err != nil {
+			return bvNone(), err
+		}
+		if c.token != "," {
+			return bvNone(), Error("Missing ','")
+		}
+		c.token = c.tokenizer(in)
+		if bv2, err = c.expBoolOr(&be2, in); err != nil {
+			return bvNone(), err
+		}
+		if c.token != "," {
+			return bvNone(), Error("Missing ','")
+		}
+		c.token = c.tokenizer(in)
+		if bv3, err = c.expBoolOr(&be3, in); err != nil {
+			return bvNone(), err
+		}
+		if err := c.checkClosingBracket(); err != nil {
+			return bvNone(), err
+		}
+		if bv1.IsNone() || bv2.IsNone() || bv3.IsNone() {
+			if rd {
+				out.append(OC_rdreset)
+			}
+			out.append(be1...)
+			out.appendValue(bv1)
+			out.append(be2...)
+			out.appendValue(bv2)
+			out.append(be3...)
+			out.appendValue(bv3)
+			out.append(OC_ex_, OC_ex_lerp)
+		} else {
+			out.lerp(&bv1, bv2, bv3)
+			bv = bv1
+		}
 	case "ailevelf":
 		out.append(OC_ex_, OC_ex_ailevelf)
 	case "airjumpcount":
 		out.append(OC_ex_, OC_ex_airjumpcount)
 	case "animelemlength":
 		out.append(OC_ex_, OC_ex_animelemlength)
+	case "animframe":
+		if err := c.checkOpeningBracket(in); err != nil {
+			return bvNone(), err
+		}
+		out.append(OC_ex_)
+		switch c.token {
+		case "alphadest":
+			out.append(OC_ex_animframe_alphadest)
+		case "angle":
+			out.append(OC_ex_animframe_angle)
+		case "alphasource":
+			out.append(OC_ex_animframe_alphasource)
+		case "group":
+			out.append(OC_ex_animframe_group)
+		case "hflip":
+			out.append(OC_ex_animframe_hflip)
+		case "image":
+			out.append(OC_ex_animframe_image)
+		case "time":
+			out.append(OC_ex_animframe_time)
+		case "vflip":
+			out.append(OC_ex_animframe_vflip)
+		case "xoffset":
+			out.append(OC_ex_animframe_xoffset)
+		case "xscale":
+			out.append(OC_ex_animframe_xscale)
+		case "yoffset":
+			out.append(OC_ex_animframe_yoffset)
+		case "yscale":
+			out.append(OC_ex_animframe_yscale)
+		case "numclsn1":
+			out.append(OC_ex_animframe_numclsn1)
+		case "numclsn2":
+			out.append(OC_ex_animframe_numclsn2)
+		default:
+			return bvNone(), Error("Invalid data: " + c.token)
+		}
+		c.token = c.tokenizer(in)
+		if err := c.checkClosingBracket(); err != nil {
+			return bvNone(), err
+		}
 	case "animlength":
 		out.append(OC_ex_, OC_ex_animlength)
 	case "attack":
@@ -2626,12 +2886,43 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 		out.append(OC_ex_, OC_ex_guardpoints)
 	case "guardpointsmax":
 		out.append(OC_ex_, OC_ex_guardpointsmax)
+	case "helperid":
+		out.append(OC_ex_, OC_ex_helperid)
 	case "helpername":
 		if err := nameSubEx(OC_ex_helpername); err != nil {
 			return bvNone(), err
 		}
 	case "hitoverridden":
 		out.append(OC_ex_, OC_ex_hitoverridden)
+	case "movehitvar":
+		if err := c.checkOpeningBracket(in); err != nil {
+			return bvNone(), err
+		}
+		out.append(OC_ex_)
+		switch c.token {
+		case "cornerpush":
+			out.append(OC_ex_movehitvar_cornerpush)
+		case "contact":
+			out.append(OC_ex_movehitvar_contact)
+		case "id":
+			out.append(OC_ex_movehitvar_id)
+		case "overridden":
+			out.append(OC_ex_movehitvar_overridden)
+		case "playerno":
+			out.append(OC_ex_movehitvar_playerno)
+		case "sparkx":
+			out.append(OC_ex_movehitvar_spark_x)
+		case "sparky":
+			out.append(OC_ex_movehitvar_spark_y)
+		case "uniqhit":
+			out.append(OC_ex_movehitvar_uniqhit)
+		default:
+			return bvNone(), Error("Invalid data: " + c.token)
+		}
+		c.token = c.tokenizer(in)
+		if err := c.checkClosingBracket(); err != nil {
+			return bvNone(), err
+		}
 	case "incustomstate":
 		out.append(OC_ex_, OC_ex_incustomstate)
 	case "indialogue":
@@ -2643,77 +2934,83 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 		out.append(OC_ex_)
 		switch c.token {
 		case "nostandguard":
-			out.appendI64Op(OC_ex_isassertedchar, int64(CSF_nostandguard))
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_nostandguard))
 		case "nocrouchguard":
-			out.appendI64Op(OC_ex_isassertedchar, int64(CSF_nocrouchguard))
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_nocrouchguard))
 		case "noairguard":
-			out.appendI64Op(OC_ex_isassertedchar, int64(CSF_noairguard))
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_noairguard))
 		case "noshadow":
-			out.appendI64Op(OC_ex_isassertedchar, int64(CSF_noshadow))
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_noshadow))
 		case "invisible":
-			out.appendI64Op(OC_ex_isassertedchar, int64(CSF_invisible))
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_invisible))
 		case "unguardable":
-			out.appendI64Op(OC_ex_isassertedchar, int64(CSF_unguardable))
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_unguardable))
 		case "nojugglecheck":
-			out.appendI64Op(OC_ex_isassertedchar, int64(CSF_nojugglecheck))
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_nojugglecheck))
 		case "noautoturn":
-			out.appendI64Op(OC_ex_isassertedchar, int64(CSF_noautoturn))
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_noautoturn))
 		case "nowalk":
-			out.appendI64Op(OC_ex_isassertedchar, int64(CSF_nowalk))
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_nowalk))
 		case "nobrake":
-			out.appendI64Op(OC_ex_isassertedchar, int64(CSF_nobrake))
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_nobrake))
 		case "nocrouch":
-			out.appendI64Op(OC_ex_isassertedchar, int64(CSF_nocrouch))
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_nocrouch))
 		case "nostand":
-			out.appendI64Op(OC_ex_isassertedchar, int64(CSF_nostand))
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_nostand))
 		case "nojump":
-			out.appendI64Op(OC_ex_isassertedchar, int64(CSF_nojump))
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_nojump))
 		case "noairjump":
-			out.appendI64Op(OC_ex_isassertedchar, int64(CSF_noairjump))
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_noairjump))
 		case "nohardcodedkeys":
-			out.appendI64Op(OC_ex_isassertedchar, int64(CSF_nohardcodedkeys))
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_nohardcodedkeys))
 		case "nogetupfromliedown":
-			out.appendI64Op(OC_ex_isassertedchar, int64(CSF_nogetupfromliedown))
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_nogetupfromliedown))
 		case "nofastrecoverfromliedown":
-			out.appendI64Op(OC_ex_isassertedchar, int64(CSF_nofastrecoverfromliedown))
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_nofastrecoverfromliedown))
 		case "nofallcount":
-			out.appendI64Op(OC_ex_isassertedchar, int64(CSF_nofallcount))
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_nofallcount))
 		case "nofalldefenceup":
-			out.appendI64Op(OC_ex_isassertedchar, int64(CSF_nofalldefenceup))
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_nofalldefenceup))
 		case "noturntarget":
-			out.appendI64Op(OC_ex_isassertedchar, int64(CSF_noturntarget))
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_noturntarget))
 		case "noinput":
-			out.appendI64Op(OC_ex_isassertedchar, int64(CSF_noinput))
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_noinput))
 		case "nopowerbardisplay":
-			out.appendI64Op(OC_ex_isassertedchar, int64(CSF_nopowerbardisplay))
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_nopowerbardisplay))
 		case "autoguard":
-			out.appendI64Op(OC_ex_isassertedchar, int64(CSF_autoguard))
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_autoguard))
+		case "animatehitpause":
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_animatehitpause))
 		case "animfreeze":
-			out.appendI64Op(OC_ex_isassertedchar, int64(CSF_animfreeze))
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_animfreeze))
 		case "postroundinput":
-			out.appendI64Op(OC_ex_isassertedchar, int64(CSF_postroundinput))
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_postroundinput))
 		case "nohitdamage":
-			out.appendI64Op(OC_ex_isassertedchar, int64(CSF_nohitdamage))
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_nohitdamage))
 		case "noguarddamage":
-			out.appendI64Op(OC_ex_isassertedchar, int64(CSF_noguarddamage))
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_noguarddamage))
 		case "nodizzypointsdamage":
-			out.appendI64Op(OC_ex_isassertedchar, int64(CSF_nodizzypointsdamage))
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_nodizzypointsdamage))
 		case "noguardpointsdamage":
-			out.appendI64Op(OC_ex_isassertedchar, int64(CSF_noguardpointsdamage))
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_noguardpointsdamage))
 		case "noredlifedamage":
-			out.appendI64Op(OC_ex_isassertedchar, int64(CSF_noredlifedamage))
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_noredlifedamage))
 		case "nomakedust":
-			out.appendI64Op(OC_ex_isassertedchar, int64(CSF_nomakedust))
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_nomakedust))
 		case "noko":
-			out.appendI64Op(OC_ex_isassertedchar, int64(CSF_noko))
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_noko))
 		case "noguardko":
-			out.appendI64Op(OC_ex_isassertedchar, int64(CSF_noguardko))
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_noguardko))
 		case "nokovelocity":
-			out.appendI64Op(OC_ex_isassertedchar, int64(CSF_nokovelocity))
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_nokovelocity))
 		case "noailevel":
-			out.appendI64Op(OC_ex_isassertedchar, int64(CSF_noailevel))
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_noailevel))
 		case "nointroreset":
-			out.appendI64Op(OC_ex_isassertedchar, int64(CSF_nointroreset))
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_nointroreset))
+		case "ignoreclsn2push":
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_ignoreclsn2push))
+		case "immovable":
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_immovable))
 		case "intro":
 			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_intro))
 		case "roundnotover":
@@ -2749,6 +3046,13 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 		}
 	case "ishost":
 		out.append(OC_ex_, OC_ex_ishost)
+	case "jugglepoints":
+		if _, err := c.oneArg(out, in, rd, true); err != nil {
+			return bvNone(), err
+		}
+		out.append(OC_ex_, OC_ex_jugglepoints)
+	case "lastplayerid":
+		out.append(OC_ex_, OC_ex_lastplayerid)
 	case "localscale":
 		out.append(OC_ex_, OC_ex_localscale)
 	case "majorversion":
@@ -2785,6 +3089,10 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 		out.append(OC_ex_, OC_ex_memberno)
 	case "movecountered":
 		out.append(OC_ex_, OC_ex_movecountered)
+	case "mugenversion":
+		out.append(OC_ex_, OC_ex_mugenversion)
+	case "numplayer":
+		out.append(OC_ex_, OC_ex_numplayer)
 	case "pausetime":
 		out.append(OC_ex_, OC_ex_pausetime)
 	case "physics":
@@ -2863,8 +3171,47 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 		out.append(OC_ex_, OC_ex_timeremaining)
 	case "timetotal":
 		out.append(OC_ex_, OC_ex_timetotal)
+	case "playercount":
+		out.append(OC_ex_, OC_ex_playercount)
+	case "playerindexexist":
+		if _, err := c.oneArg(out, in, rd, true); err != nil {
+			return bvNone(), err
+		}
+		out.append(OC_ex_, OC_ex_playerindexexist)
 	case "drawpalno":
 		out.append(OC_ex_, OC_ex_drawpalno)
+	case "angle":
+		out.append(OC_ex_, OC_ex_angle)
+	case "scale":
+		c.token = c.tokenizer(in)
+		switch c.token {
+		case "x":
+			out.append(OC_ex_, OC_ex_scale_x)
+		case "y":
+			out.append(OC_ex_, OC_ex_scale_y)
+		default:
+			return bvNone(), Error("Invalid data: " + c.token)
+		}
+	case "offset":
+		c.token = c.tokenizer(in)
+		switch c.token {
+		case "x":
+			out.append(OC_ex_, OC_ex_offset_x)
+		case "y":
+			out.append(OC_ex_, OC_ex_offset_y)
+		default:
+			return bvNone(), Error("Invalid data: " + c.token)
+		}
+	case "alpha":
+		c.token = c.tokenizer(in)
+		switch c.token {
+		case "source":
+			out.append(OC_ex_, OC_ex_alpha_s)
+		case "dest":
+			out.append(OC_ex_, OC_ex_alpha_d)
+		default:
+			return bvNone(), Error("Invalid data: " + c.token)
+		}
 	case "=", "!=", ">", ">=", "<", "<=", "&", "&&", "^", "^^", "|", "||",
 		"+", "*", "**", "/", "%":
 		if !sys.ignoreMostErrors || len(c.previousOperator) > 0 {
@@ -3739,7 +4086,7 @@ func (c *Compiler) paramTrans(is IniSection, sc *StateControllerBase,
 		}
 		var exp []BytecodeExp
 		b := false
-		if !afterImage || sys.cgi[c.playerNo].ver[0] == 1 {
+		if !afterImage || sys.cgi[c.playerNo].mugenver[0] == 1 {
 			if err := c.stateParam(is, prefix+"alpha", func(data string) error {
 				b = true
 				bes, err := c.exprs(data, VT_Int, 2)
@@ -3770,7 +4117,7 @@ func (c *Compiler) paramTrans(is IniSection, sc *StateControllerBase,
 				}
 				if len(bes) > 1 {
 					exp[1] = bes[1]
-					if tt != TT_alpha && tt != TT_add1 && !(tt == TT_add && sys.cgi[c.playerNo].ver[0] == 1) {
+					if tt != TT_alpha && tt != TT_add1 && !(tt == TT_add && sys.cgi[c.playerNo].mugenver[0] == 1) {
 						exp[1].append(OC_pop)
 					}
 				}
@@ -3780,7 +4127,7 @@ func (c *Compiler) paramTrans(is IniSection, sc *StateControllerBase,
 						exp[1].appendValue(BytecodeInt(255))
 					}
 				case TT_add:
-					if sys.cgi[c.playerNo].ver[0] == 1 {
+					if sys.cgi[c.playerNo].mugenver[0] == 1 {
 						if len(bes) <= 1 {
 							exp[1].appendValue(BytecodeInt(255))
 						}
@@ -4003,7 +4350,7 @@ func (c *Compiler) stateCompile(states map[int32]StateBytecode,
 		var err error
 		// If this is a zss file
 		if zss {
-			b, err := ioutil.ReadFile(filename)
+			b, err := os.ReadFile(filename)
 			if err != nil {
 				return err
 			}
@@ -4018,7 +4365,7 @@ func (c *Compiler) stateCompile(states map[int32]StateBytecode,
 		// If filename doesn't exist, see if a zss file exists
 		fnz += ".zss"
 		if err := LoadFile(&fnz, dirs, func(filename string) error {
-			b, err := ioutil.ReadFile(filename)
+			b, err := os.ReadFile(filename)
 			if err != nil {
 				return err
 			}
@@ -5318,14 +5665,14 @@ func (c *Compiler) Compile(pn int, def string, constants map[string]float32) (ma
 				info = false
 				var ok bool
 				var str string
-				sys.cgi[pn].ver = [2]uint16{}
+				sys.cgi[pn].mugenver = [2]uint16{}
 				if str, ok = is["mugenversion"]; ok {
 					for i, s := range SplitAndTrim(str, ".") {
-						if i >= len(sys.cgi[pn].ver) {
+						if i >= len(sys.cgi[pn].mugenver) {
 							break
 						}
 						if v, err := strconv.ParseUint(s, 10, 16); err == nil {
-							sys.cgi[pn].ver[i] = uint16(v)
+							sys.cgi[pn].mugenver[i] = uint16(v)
 						} else {
 							break
 						}
@@ -5343,6 +5690,11 @@ func (c *Compiler) Compile(pn int, def string, constants map[string]float32) (ma
 							break
 						}
 					}
+				}
+				// Ikemen characters adopt Mugen 1.1 version as a safeguard
+				if sys.cgi[pn].ikemenver[0] != 0 || sys.cgi[pn].ikemenver[1] != 0 {
+					sys.cgi[pn].mugenver[0] = 1
+					sys.cgi[pn].mugenver[1] = 1
 				}
 			}
 		case "files":
@@ -5409,25 +5761,25 @@ func (c *Compiler) Compile(pn int, def string, constants map[string]float32) (ma
 				rm := func(name string, k, nk *CommandKey) {
 					switch strings.ToLower(is[name]) {
 					case "x":
-						*k, *nk = CK_x, CK_nx
+						*k, *nk = CK_x, CK_rx
 					case "y":
-						*k, *nk = CK_y, CK_ny
+						*k, *nk = CK_y, CK_ry
 					case "z":
-						*k, *nk = CK_z, CK_nz
+						*k, *nk = CK_z, CK_rz
 					case "a":
-						*k, *nk = CK_a, CK_na
+						*k, *nk = CK_a, CK_ra
 					case "b":
-						*k, *nk = CK_b, CK_nb
+						*k, *nk = CK_b, CK_rb
 					case "c":
-						*k, *nk = CK_c, CK_nc
+						*k, *nk = CK_c, CK_rc
 					case "s":
-						*k, *nk = CK_s, CK_ns
+						*k, *nk = CK_s, CK_rs
 					case "d":
-						*k, *nk = CK_d, CK_nd
+						*k, *nk = CK_d, CK_rd
 					case "w":
-						*k, *nk = CK_w, CK_nw
+						*k, *nk = CK_w, CK_rw
 					case "m":
-						*k, *nk = CK_m, CK_nm
+						*k, *nk = CK_m, CK_rm
 					}
 				}
 				rm("x", &ckr.x, &ckr.nx)

@@ -49,6 +49,7 @@ func LoadFntTtf(f *Fnt, fontfile string, filename string, height int32) {
 		panic(err)
 	}
 	f.ttf = ttf
+	f.ttf.SetBatchMode(true)
 
 	//Create Ttf dummy palettes
 	f.palettes = make([][256]uint32, 1)
