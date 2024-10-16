@@ -5,6 +5,7 @@ go/*
 *.log
 *.cmd
 *.bat
+*.bak
 *.sh
 *.png
 save/*

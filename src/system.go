@@ -134,6 +134,7 @@ type System struct {
 	aiInput                 [MaxSimul*2 + MaxAttachedChar]AiInput
 	keyConfig               []KeyConfig
 	joystickConfig          []KeyConfig
+	joystickDefaultConfig   map[string]KeyConfig
 	com                     [MaxSimul*2 + MaxAttachedChar]float32
 	autolevel               bool
 	home                    int
@@ -379,6 +380,13 @@ type System struct {
 	maxBatchSize      int32
 	batchGlobals      BatchRenderGlobals
 	paletteAtlas      TextureAtlas
+
+	// for avg. FPS calculations
+	gameFPS           float32
+	prevTimestamp     float64
+	absTickCountF     float32
+	prevTimestampUint uint64
+	absTickCount      uint64
 }
 
 // Initialize stuff, this is called after the config int at main.go
@@ -892,7 +900,19 @@ func (s *System) nextRound() {
 	}
 	for _, p := range s.chars {
 		if len(p) > 0 {
-			p[0].selfState(5900, 0, -1, 0, "")
+			zeroDeclared := p[0].gi().anim[0] != nil
+
+			if zeroDeclared {
+				p[0].selfState(5900, 0, -1, 0, "")
+			} else {
+				// Default to first anim in .AIR
+				var firstAnim int32
+				for k := range p[0].gi().anim {
+					firstAnim = k
+					break
+				}
+				p[0].selfState(5900, firstAnim, -1, 0, "")
+			}
 		}
 	}
 }
@@ -932,7 +952,7 @@ func (s *System) addFrameTime(t float32) bool {
 	return true
 }
 func (s *System) resetFrameTime() {
-	s.tickCount, s.oldTickCount, s.tickCountF, s.lastTick = 0, -1, 0, 0
+	s.tickCount, s.oldTickCount, s.tickCountF, s.lastTick, s.absTickCountF, s.absTickCount = 0, -1, 0, 0, 0, 0
 	s.nextAddTime, s.oldNextAddTime = 1, 1
 }
 func (s *System) commandUpdate() {
@@ -997,8 +1017,7 @@ func (s *System) commandUpdate() {
 func (s *System) charUpdate() {
 	s.charList.update()
 	for i, pr := range s.projs {
-		for j := 0; j < len(pr); j++ {
-			p := &pr[j]
+		for j, p := range pr {
 			if p.id >= 0 {
 				s.projs[i][j].update(i)
 			}
@@ -1009,8 +1028,7 @@ func (s *System) charUpdate() {
 	s.lifebar.step()
 	if s.tickNextFrame() {
 		for i, pr := range s.projs {
-			for j := 0; j < len(pr); j++ {
-				p := &pr[j]
+			for j, p := range pr {
 				if p.id >= 0 {
 					s.projs[i][j].clsn(i)
 				}
@@ -1018,8 +1036,7 @@ func (s *System) charUpdate() {
 		}
 		s.charList.getHit()
 		for i, pr := range s.projs {
-			for j := 0; j < len(pr); j++ {
-				p := &pr[j]
+			for j, p := range pr {
 				if p.id != IErr {
 					s.projs[i][j].tick(i)
 				}
@@ -1449,8 +1466,7 @@ func (s *System) action() {
 		}
 	}
 	for i, pr := range s.projs {
-		for j := 0; j < len(pr); j++ {
-			p := &pr[j]
+		for j, p := range pr {
 			if p.id >= 0 {
 				s.projs[i][j].cueDraw(s.cgi[i].mugenver[0] != 1, i)
 			}
@@ -2978,6 +2994,11 @@ func (l *Loader) loadAttachedChar(pn int) int {
 
 func (l *Loader) loadStage() bool {
 	if sys.round == 1 {
+		var tstr string
+		tnow := time.Now()
+		defer func() {
+			sys.loadTime(tnow, tstr, false, true)
+		}()
 		var def string
 		if sys.sel.selectedStageNo == 0 {
 			randomstageno := Rand(0, int32(len(sys.sel.stagelist))-1)
@@ -3008,6 +3029,11 @@ func (l *Loader) load() {
 			}
 		}
 		return true
+	}
+	if sys.sel.selectedStageNo == -1 {
+		l.state = LS_Error
+		fmt.Printf("[DEBUG][system.go][load] No stage: selectedStageNo == -1\n")
+		return
 	}
 	for !stageDone || !allCharDone() {
 		if !stageDone && sys.sel.selectedStageNo >= 0 {

@@ -1,4 +1,4 @@
-//go:build gles2
+//go:build gles
 
 package main
 
@@ -13,6 +13,8 @@ import (
 	gl "github.com/leonkasovan/gl/v3.1/gles2"
 	"golang.org/x/mobile/exp/f32"
 )
+
+const Renderer_API = 2
 
 var InternalFormatLUT = map[int32]uint32{
 	8:  gl.LUMINANCE,
@@ -93,7 +95,7 @@ func (s *ShaderProgram) RegisterTextures(names ...string) {
 
 func compileShader(shaderType uint32, src string) (shader uint32) {
 	shader = gl.CreateShader(shaderType)
-	src = "#version 320 es\nprecision mediump float;\n" + src + "\x00"
+	src = "#version 300 es\nprecision mediump float;\n" + src + "\x00"
 	s, _ := gl.Strs(src)
 	var l int32 = int32(len(src) - 1)
 	gl.ShaderSource(shader, 1, s, &l)
@@ -251,8 +253,9 @@ type Renderer struct {
 	spriteShader *ShaderProgram
 	vertexBuffer uint32
 	// Shader and index data for 3D model rendering
-	modelShader *ShaderProgram
-	indexBuffer uint32
+	modelShader       *ShaderProgram
+	stageVertexBuffer uint32
+	stageIndexBuffer  uint32
 }
 
 //go:embed shaders/sprite.vert.320.glsl
@@ -277,7 +280,11 @@ var identFragShader string
 // Creates the default shaders, the framebuffer and enables MSAA.
 func (r *Renderer) Init() {
 	chk(gl.Init())
-	sys.errLog.Printf("Using OpenGL %v (%v)", gl.GoStr(gl.GetString(gl.VERSION)), gl.GoStr(gl.GetString(gl.RENDERER)))
+	sys.errLog.Printf("Using %v (%v)", gl.GoStr(gl.GetString(gl.VERSION)), gl.GoStr(gl.GetString(gl.RENDERER)))
+	sys.errLog.Printf("Fullscreen: %v (%v x %v)", sys.fullscreen, sys.fullscreenWidth, sys.fullscreenHeight)
+	sys.errLog.Printf("scrrect: %v,%v - %v,%v", sys.scrrect[0], sys.scrrect[1], sys.scrrect[2], sys.scrrect[3])
+	sys.errLog.Printf("gameWidth x gameHeight: %v,%v", sys.gameWidth, sys.gameHeight)
+	sys.errLog.Printf("widthScale x heightScale: %v,%v", sys.widthScale, sys.heightScale)
 
 	r.postShaderSelect = make([]*ShaderProgram, 1+len(sys.externalShaderList))
 
@@ -290,7 +297,8 @@ func (r *Renderer) Init() {
 	gl.BufferData(gl.ARRAY_BUFFER, len(postVertData), unsafe.Pointer(&postVertData[0]), gl.STATIC_DRAW)
 
 	gl.GenBuffers(1, &r.vertexBuffer)
-	gl.GenBuffers(1, &r.indexBuffer)
+	gl.GenBuffers(1, &r.stageVertexBuffer)
+	gl.GenBuffers(1, &r.stageIndexBuffer)
 
 	// Sprite shader
 	r.spriteShader = newShaderProgram(vertShader, fragShader, "Main Shader")
@@ -398,6 +406,7 @@ func (r *Renderer) Close() {
 }
 
 func (r *Renderer) BeginFrame(clearColor bool) {
+	sys.absTickCount++
 	gl.BindFramebuffer(gl.FRAMEBUFFER, r.fbo)
 	gl.Viewport(0, 0, sys.scrrect[2], sys.scrrect[3])
 	if clearColor {
@@ -414,6 +423,8 @@ func (r *Renderer) EndFrame() {
 		gl.BlitFramebuffer(0, 0, sys.scrrect[2], sys.scrrect[3], 0, 0, sys.scrrect[2], sys.scrrect[3], gl.COLOR_BUFFER_BIT, gl.LINEAR)
 	}
 
+	x, y, resizedWidth, resizedHeight := sys.window.GetScaledViewportSize()
+	gl.Viewport(x, y, resizedWidth, resizedHeight)
 	gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
 
 	postShader := r.postShaderSelect[sys.postProcessingShader]
@@ -467,14 +478,23 @@ func (r *Renderer) ReleasePipeline() {
 	gl.Disable(gl.BLEND)
 }
 
-func (r *Renderer) SetModelPipeline(eq BlendEquation, src, dst BlendFunc, depthMask, doubleSided, useUV, useVertColor, useJoint0, useJoint1 bool, numVertices, vertAttrOffset uint32) {
+func (r *Renderer) SetModelPipeline(eq BlendEquation, src, dst BlendFunc, depthTest, depthMask, doubleSided, invertFrontFace, useUV, useVertColor, useJoint0, useJoint1 bool, numVertices, vertAttrOffset uint32) {
 	gl.UseProgram(r.modelShader.program)
 
 	gl.Enable(gl.TEXTURE_2D)
 	gl.Enable(gl.BLEND)
-	gl.Enable(gl.DEPTH_TEST)
-	gl.DepthFunc(gl.LESS)
+	if depthTest {
+		gl.Enable(gl.DEPTH_TEST)
+		gl.DepthFunc(gl.LESS)
+	} else {
+		gl.Disable(gl.DEPTH_TEST)
+	}
 	gl.DepthMask(depthMask)
+	if invertFrontFace {
+		gl.FrontFace(gl.CW)
+	} else {
+		gl.FrontFace(gl.CCW)
+	}
 	if !doubleSided {
 		gl.Enable(gl.CULL_FACE)
 		gl.CullFace(gl.BACK)
@@ -485,8 +505,8 @@ func (r *Renderer) SetModelPipeline(eq BlendEquation, src, dst BlendFunc, depthM
 	gl.BlendEquation(BlendEquationLUT[eq])
 	gl.BlendFunc(BlendFunctionLUT[src], BlendFunctionLUT[dst])
 
-	gl.BindBuffer(gl.ARRAY_BUFFER, r.vertexBuffer)
-	gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, r.indexBuffer)
+	gl.BindBuffer(gl.ARRAY_BUFFER, r.stageVertexBuffer)
+	gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, r.stageIndexBuffer)
 	loc := r.modelShader.a["position"]
 	gl.EnableVertexAttribArray(uint32(loc))
 	gl.VertexAttribPointerWithOffset(uint32(loc), 3, gl.FLOAT, false, 0, uintptr(vertAttrOffset))
@@ -694,16 +714,15 @@ func (r *Renderer) SetVertexData(values ...float32) {
 	gl.BindBuffer(gl.ARRAY_BUFFER, r.vertexBuffer)
 	gl.BufferData(gl.ARRAY_BUFFER, len(data), unsafe.Pointer(&data[0]), gl.STATIC_DRAW)
 }
-func (r *Renderer) SetByteVertexData(values []byte) {
-	gl.BindBuffer(gl.ARRAY_BUFFER, r.vertexBuffer)
+func (r *Renderer) SetStageVertexData(values []byte) {
+	gl.BindBuffer(gl.ARRAY_BUFFER, r.stageVertexBuffer)
 	gl.BufferData(gl.ARRAY_BUFFER, len(values), unsafe.Pointer(&values[0]), gl.STATIC_DRAW)
 }
-func (r *Renderer) SetIndexData(values ...uint32) {
+func (r *Renderer) SetStageIndexData(values ...uint32) {
 	data := new(bytes.Buffer)
 	binary.Write(data, binary.LittleEndian, values)
 
-	gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, r.indexBuffer)
-	//gl.BufferData(gl.ELEMENT_ARRAY_BUFFER, data.Bytes(), gl.STATIC_DRAW)
+	gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, r.stageIndexBuffer)
 	gl.BufferData(gl.ELEMENT_ARRAY_BUFFER, len(values)*4, unsafe.Pointer(&data.Bytes()[0]), gl.STATIC_DRAW)
 }
 
