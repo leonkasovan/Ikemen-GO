@@ -1,3 +1,5 @@
+//go:build gl
+
 package glfont
 
 import (
@@ -7,7 +9,7 @@ import (
 	"strings"
 )
 
-//newProgram links the frag and vertex shader programs
+// newProgram links the frag and vertex shader programs
 func newProgram(GLSLVersion uint, vertexShaderSource, fragmentShaderSource string) (uint32, error) {
 	vertexShaderSource = fmt.Sprintf("#version %d\n", GLSLVersion) + vertexShaderSource
 	fragmentShaderSource = fmt.Sprintf("#version %d\n", GLSLVersion) + fragmentShaderSource
@@ -46,7 +48,7 @@ func newProgram(GLSLVersion uint, vertexShaderSource, fragmentShaderSource strin
 	return program, nil
 }
 
-//compileShader compiles the shader program
+// compileShader compiles the shader program
 func compileShader(source string, shaderType uint32) (uint32, error) {
 	shader := gl.CreateShader(shaderType)
 
