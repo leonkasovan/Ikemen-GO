@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"unsafe"
 
+	atlas "github.com/assemblaj/glh"
+	"github.com/cespare/xxhash"
 	gl "github.com/leonkasovan/gl/v3.1/gles2"
 	"golang.org/x/mobile/exp/f32"
 )
@@ -148,11 +150,16 @@ func linkProgram(v, f uint32) (program uint32) {
 // Texture
 
 type Texture struct {
-	width  int32
-	height int32
-	depth  int32
-	filter bool
-	handle uint32
+	width                       int32
+	height                      int32
+	depth                       int32
+	filter                      bool
+	handle                      uint32
+	atlased                     bool
+	region                      atlas.AtlasRegion
+	atlas                       *atlas.TextureAtlas
+	atlasKey                    AtlasBufferKey
+	uvX, uvY, uvWidth, uvHeight float32 // UV coordinates in texture space (0.0 to 1.0)
 }
 
 // Generate a new texture name
@@ -160,7 +167,7 @@ func newTexture(width, height, depth int32, filter bool) (t *Texture) {
 	var h uint32
 	gl.ActiveTexture(gl.TEXTURE0)
 	gl.GenTextures(1, &h)
-	t = &Texture{width, height, depth, filter, h}
+	t = &Texture{width: width, height: height, depth: depth, filter: filter, handle: h}
 	runtime.SetFinalizer(t, func(t *Texture) {
 		sys.mainThreadTask <- func() {
 			gl.DeleteTextures(1, &t.handle)
@@ -169,11 +176,41 @@ func newTexture(width, height, depth int32, filter bool) (t *Texture) {
 	return
 }
 
+func newTextureWithAtlas(atlas *TextureAtlas, width, height, depth int32, filter bool) (t *Texture) {
+
+	t = &Texture{width: width, height: height, depth: depth, filter: filter}
+	var interp int32 = gl.NEAREST
+	if t.filter {
+		interp = gl.LINEAR
+	}
+	t.atlasKey = NewAtlasBufferKey(interp, depth)
+
+	directAtlas := atlas.Get(t.atlasKey)
+	region, ok := directAtlas.Allocate(int(width), int(height))
+	if !ok {
+		return
+	}
+	t.uvX = float32(region.X) / float32(directAtlas.Width())
+	t.uvY = float32(region.Y) / float32(directAtlas.Height())
+	t.uvWidth = float32(region.W) / float32(directAtlas.Width())
+	t.uvHeight = float32(region.H) / float32(directAtlas.Height())
+	t.region = region
+	t.atlas = directAtlas
+
+	t.atlased = true
+
+	runtime.SetFinalizer(t, func(t *Texture) {
+		sys.mainThreadTask <- func() {
+			//gl.DeleteTextures(1, &t.handle)
+		}
+	})
+	return
+}
 func newDataTexture(width, height int32) (t *Texture) {
 	var h uint32
 	gl.ActiveTexture(gl.TEXTURE0)
 	gl.GenTextures(1, &h)
-	t = &Texture{width, height, 32, false, h}
+	t = &Texture{width: width, height: height, depth: 32, filter: false, handle: h}
 	runtime.SetFinalizer(t, func(t *Texture) {
 		sys.mainThreadTask <- func() {
 			gl.DeleteTextures(1, &t.handle)
@@ -210,6 +247,13 @@ func (t *Texture) SetData(data []byte) {
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
 }
+
+func (t *Texture) SetDataAtlas(atlas *TextureAtlas, data []byte) {
+	// bytesPerPixel := t.depth / 8
+	stride := t.width
+	t.atlas.Set(t.region, data, int(stride))
+}
+
 func (t *Texture) SetDataG(data []byte, mag, min, ws, wt int32) {
 
 	format := InternalFormatLUT[Max(t.depth, 8)]
@@ -232,7 +276,7 @@ func (t *Texture) SetPixelData(data []float32) {
 
 // Return whether texture has a valid handle
 func (t *Texture) IsValid() bool {
-	return t.handle != 0
+	return t.handle != 0 || t.atlased
 }
 
 // ------------------------------------------------------------------
@@ -250,31 +294,50 @@ type Renderer struct {
 	postVertBuffer   uint32
 	postShaderSelect []*ShaderProgram
 	// Shader and vertex data for primitive rendering
-	spriteShader *ShaderProgram
-	vertexBuffer uint32
+	spriteShader  *ShaderProgram
+	vertexBuffer  uint32
+	vertexBuffer2 uint32
 	// Shader and index data for 3D model rendering
 	modelShader       *ShaderProgram
 	stageVertexBuffer uint32
 	stageIndexBuffer  uint32
+
+	curVertexBuffer    uint32
+	vertexBufferCache  map[uint64]uint32
+	lastUsedInBatch    RenderUniformData
+	setInitialUniforms bool
 }
 
-//go:embed shaders/sprite.vert.320.glsl
+//go:embed shaders/sprite.vert.glsl
 var vertShader string
 
-//go:embed shaders/sprite.frag.320.glsl
+//go:embed shaders/sprite.frag.glsl
 var fragShader string
 
-//go:embed shaders/model.vert.320.glsl
+//go:embed shaders/model.vert.glsl
 var modelVertShader string
 
-//go:embed shaders/model.frag.320.glsl
+//go:embed shaders/model.frag.glsl
 var modelFragShader string
 
-//go:embed shaders/ident.vert.320.glsl
+//go:embed shaders/ident.vert.glsl
 var identVertShader string
 
-//go:embed shaders/ident.frag.320.glsl
+//go:embed shaders/ident.frag.glsl
 var identFragShader string
+
+func gl_error_debug(
+	source uint32,
+	gltype uint32,
+	id uint32,
+	severity uint32,
+	length int32,
+	message string,
+	userParam unsafe.Pointer) {
+	if gltype == gl.DEBUG_TYPE_ERROR {
+		fmt.Println(fmt.Sprintf("GL CALLBACK: GL_ERROR type = 0x%x, severity = 0x%x, message = %s\n", gltype, severity, message))
+	}
+}
 
 // Render initialization.
 // Creates the default shaders, the framebuffer and enables MSAA.
@@ -287,6 +350,9 @@ func (r *Renderer) Init() {
 	sys.errLog.Printf("widthScale x heightScale: %v,%v", sys.widthScale, sys.heightScale)
 
 	r.postShaderSelect = make([]*ShaderProgram, 1+len(sys.externalShaderList))
+	//gl.Enable(gl.DEBUG_OUTPUT)
+	//gl.DebugMessageCallback(gl_error_debug, nil)
+	r.setInitialUniforms = true
 
 	// Data buffers for rendering
 	postVertData := f32.Bytes(binary.LittleEndian, -1, -1, 1, -1, -1, 1, 1, 1)
@@ -296,7 +362,12 @@ func (r *Renderer) Init() {
 	gl.BindBuffer(gl.ARRAY_BUFFER, r.postVertBuffer)
 	gl.BufferData(gl.ARRAY_BUFFER, len(postVertData), unsafe.Pointer(&postVertData[0]), gl.STATIC_DRAW)
 
+	r.vertexBufferCache = make(map[uint64]uint32)
+
 	gl.GenBuffers(1, &r.vertexBuffer)
+	gl.GenBuffers(1, &r.vertexBuffer2)
+	r.curVertexBuffer = r.vertexBuffer
+
 	gl.GenBuffers(1, &r.stageVertexBuffer)
 	gl.GenBuffers(1, &r.stageIndexBuffer)
 
@@ -455,13 +526,14 @@ func (r *Renderer) EndFrame() {
 
 func (r *Renderer) SetPipeline(eq BlendEquation, src, dst BlendFunc) {
 	gl.UseProgram(r.spriteShader.program)
-
-	gl.BlendEquation(BlendEquationLUT[eq])
-	gl.BlendFunc(BlendFunctionLUT[src], BlendFunctionLUT[dst])
+	if r.setInitialUniforms || r.lastUsedInBatch.eq != eq || r.lastUsedInBatch.src != src || r.lastUsedInBatch.dst != dst {
+		gl.BlendEquation(BlendEquationLUT[eq])
+		gl.BlendFunc(BlendFunctionLUT[src], BlendFunctionLUT[dst])
+	}
 	gl.Enable(gl.BLEND)
 
 	// Must bind buffer before enabling attributes
-	gl.BindBuffer(gl.ARRAY_BUFFER, r.vertexBuffer)
+	gl.BindBuffer(gl.ARRAY_BUFFER, r.curVertexBuffer)
 	loc := r.spriteShader.a["position"]
 	gl.EnableVertexAttribArray(uint32(loc))
 	gl.VertexAttribPointerWithOffset(uint32(loc), 2, gl.FLOAT, false, 16, 0)
@@ -476,6 +548,8 @@ func (r *Renderer) ReleasePipeline() {
 	loc = r.spriteShader.a["uv"]
 	gl.DisableVertexAttribArray(uint32(loc))
 	gl.Disable(gl.BLEND)
+	gl.BindBuffer(gl.ARRAY_BUFFER, 0)
+	gl.BindTexture(gl.TEXTURE_2D, 0)
 }
 
 func (r *Renderer) SetModelPipeline(eq BlendEquation, src, dst BlendFunc, depthTest, depthMask, doubleSided, invertFrontFace, useUV, useVertColor, useJoint0, useJoint1 bool, numVertices, vertAttrOffset uint32) {
@@ -666,6 +740,19 @@ func (r *Renderer) SetTexture(name string, t *Texture) {
 	gl.Uniform1i(loc, int32(unit))
 }
 
+func (r *Renderer) SetTextureWithHandle(name string, handle uint32) {
+	loc, unit := r.spriteShader.u[name], r.spriteShader.t[name]
+	gl.ActiveTexture((uint32(gl.TEXTURE0 + unit)))
+	gl.BindTexture(gl.TEXTURE_2D, handle)
+	gl.Uniform1i(loc, int32(unit))
+}
+func (r *Renderer) SetTextureWithAtlas(name string, atlas *atlas.TextureAtlas) {
+	loc, unit := r.spriteShader.u[name], r.spriteShader.t[name]
+	gl.ActiveTexture((uint32(gl.TEXTURE0 + unit)))
+	atlas.Bind(gl.TEXTURE_2D)
+	gl.Uniform1i(loc, int32(unit))
+}
+
 func (r *Renderer) SetModelUniformI(name string, val int) {
 	loc := r.modelShader.u[name]
 	gl.Uniform1i(loc, int32(val))
@@ -709,10 +796,50 @@ func (r *Renderer) SetModelTexture(name string, t *Texture) {
 	gl.Uniform1i(loc, int32(unit))
 }
 
+func (r *Renderer) SwitchBuffer() {
+	if r.curVertexBuffer == r.vertexBuffer {
+		r.curVertexBuffer = r.vertexBuffer2
+	} else {
+		r.curVertexBuffer = r.vertexBuffer
+	}
+}
+
+var UIMode bool = false
+
 func (r *Renderer) SetVertexData(values ...float32) {
-	data := f32.Bytes(binary.LittleEndian, values...)
-	gl.BindBuffer(gl.ARRAY_BUFFER, r.vertexBuffer)
-	gl.BufferData(gl.ARRAY_BUFFER, len(data), unsafe.Pointer(&data[0]), gl.STATIC_DRAW)
+	data := batchF32Encode(values)
+
+	/*
+		UI tends to eat up a lot of time in buffering data despite being primarily static
+		so the idea is to store that data in a buffer and just keep reusing it.
+
+		Weird, but hear me out...
+	*/
+	if UIMode {
+		vHash := xxhash.Sum64(data)
+		buffer, ok := r.vertexBufferCache[vHash]
+		if !ok {
+			gl.GenBuffers(1, &buffer)
+			r.vertexBufferCache[vHash] = buffer
+		}
+		gl.BindBuffer(gl.ARRAY_BUFFER, buffer)
+		loc := r.spriteShader.a["position"]
+		gl.EnableVertexAttribArray(uint32(loc))
+		gl.VertexAttribPointerWithOffset(uint32(loc), 2, gl.FLOAT, false, 16, 0)
+		loc = r.spriteShader.a["uv"]
+		gl.EnableVertexAttribArray(uint32(loc))
+		gl.VertexAttribPointerWithOffset(uint32(loc), 2, gl.FLOAT, false, 16, 8)
+		if ok {
+			return
+		}
+	} else {
+		gl.BindBuffer(gl.ARRAY_BUFFER, r.curVertexBuffer)
+	}
+
+	gl.BufferData(gl.ARRAY_BUFFER, len(data), unsafe.Pointer(&data[0]), gl.DYNAMIC_DRAW)
+	if !UIMode {
+		r.SwitchBuffer()
+	}
 }
 func (r *Renderer) SetStageVertexData(values []byte) {
 	gl.BindBuffer(gl.ARRAY_BUFFER, r.stageVertexBuffer)
@@ -731,4 +858,20 @@ func (r *Renderer) RenderQuad() {
 }
 func (r *Renderer) RenderElements(mode PrimitiveMode, count, offset int) {
 	gl.DrawElementsWithOffset(PrimitiveModeLUT[mode], int32(count), gl.UNSIGNED_INT, uintptr(offset))
+}
+
+func (r *Renderer) RenderQuadAtIndex(vertex int32) {
+	gl.DrawArrays(gl.TRIANGLE_STRIP, vertex, 4)
+}
+
+func (r *Renderer) RenderQuadBatch(total int32) {
+	gl.DrawArrays(gl.TRIANGLES, 0, total)
+}
+
+func (r *Renderer) RenderQuadBatchAtIndex(index int32, total int32) {
+	gl.DrawArrays(gl.TRIANGLES, index, total)
+}
+
+func (r *Renderer) Flush() {
+	gl.Flush()
 }

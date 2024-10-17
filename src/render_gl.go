@@ -17,6 +17,8 @@ import (
 	"golang.org/x/mobile/exp/f32"
 )
 
+const Renderer_API = 1
+
 var InternalFormatLUT = map[int32]uint32{
 	8:  gl.LUMINANCE,
 	24: gl.RGB,
@@ -473,6 +475,7 @@ func (r *Renderer) Close() {
 }
 
 func (r *Renderer) BeginFrame(clearColor bool) {
+	sys.absTickCountF++
 	gl.BindFramebuffer(gl.FRAMEBUFFER, r.fbo)
 	gl.Viewport(0, 0, sys.scrrect[2], sys.scrrect[3])
 	if clearColor {

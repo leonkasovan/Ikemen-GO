@@ -3,9 +3,8 @@
 package main
 
 import (
-	"strings"
-
 	glfw "github.com/go-gl/glfw/v3.3/glfw"
+	"strings"
 )
 
 type Input struct {
