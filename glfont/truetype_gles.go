@@ -7,13 +7,12 @@ import (
 	"image"
 	"image/draw"
 	"io"
-	atlas "github.com/assemblaj/glh"
+	atlas "github.com/ikemen-engine/Ikemen-GO/glh"
 	gl "github.com/leonkasovan/gl/v3.1/gles2"
 	"github.com/golang/freetype"
 	"github.com/golang/freetype/truetype"
 	"golang.org/x/image/font"
 	"golang.org/x/image/math/fixed"
-	"io/ioutil"
 )
 
 // A Font allows rendering of text to an OpenGL context.

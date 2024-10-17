@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	atlas "github.com/assemblaj/glh"
+	atlas "github.com/ikemen-engine/Ikemen-GO/glh"
 )
 
 // FntCharImage stores sprite and position

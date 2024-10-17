@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	atlas "github.com/assemblaj/glh"
+	atlas "github.com/ikemen-engine/Ikemen-GO/glh"
 )
 
 type FinishType int32

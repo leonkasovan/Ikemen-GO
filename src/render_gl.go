@@ -10,7 +10,7 @@ import (
 	"runtime"
 	"unsafe"
 
-	atlas "github.com/assemblaj/glh"
+	atlas "github.com/ikemen-engine/Ikemen-GO/glh"
 
 	"github.com/cespare/xxhash"
 	gl "github.com/go-gl/gl/v2.1/gl"
