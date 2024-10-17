@@ -9,6 +9,7 @@ go/*
 *.sh
 *.png
 save/*
+bin/*
 Ikemen_GO.exe
 Ikemen_GO_Linux
 Ikemen_GO_MacOS
