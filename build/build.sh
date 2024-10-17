@@ -48,6 +48,25 @@ function main() {
 			varLinux
 			build
 		;;
+		rg353p)
+			export GOOS=linux
+			export GOARCH=arm64
+			# export CC=aarch64-buildroot-linux-gnu-gcc
+			# export CXX=aarch64-buildroot-linux-gnu-g++
+			binName="Ikemen_Go_RG353P"
+			echo "Linux Build Release for RG353P(Recalbox) with SDL and GLES"
+			go build -tags=sdl,gles -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/$binName ./src
+		;;
+		steamdeck)
+			# export GOOS=linux
+			binName="Ikemen_Go_Steamdeck"
+			echo "Linux Build Release for Steamdeck(SteamOS) with GLFW and OpenGL"
+			go build -tags=glfw,gl -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/$binName ./src
+			# mkdir -p ~/Applications/IkemenGoDev
+			# cp bin/Ikemen_Go_Steamdeck ~/Applications/IkemenGoDev
+			# cp bin/Ikemen_Go_Steamdeck ~/Applications/SFAS\ Ikemen\ Version
+			cp bin/Ikemen_Go_Steamdeck ~/Applications/mugen-1.1b1
+		;;
 	esac
 
 	if [[ "${binName}" == "Default" ]]; then
