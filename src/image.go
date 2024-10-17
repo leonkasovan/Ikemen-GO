@@ -15,7 +15,6 @@ import (
 
 	atlas "github.com/assemblaj/glh"
 	"github.com/cespare/xxhash"
-	"github.com/go-gl/gl/v2.1/gl"
 )
 
 type TransType int32
@@ -575,7 +574,7 @@ func (t *TextureAtlas) Get(key AtlasBufferKey) *atlas.TextureAtlas {
 func (t *TextureAtlas) Commit() {
 	for _, a := range t.atlas {
 		fmt.Println("Commit")
-		a.Commit(gl.TEXTURE_2D)
+		a.Commit(0x0DE1) //gl.TEXTURE_2D
 	}
 }
 
