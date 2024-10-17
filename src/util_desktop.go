@@ -8,7 +8,6 @@ import (
 
 	findfont "github.com/flopp/go-findfont"
 	"github.com/ikemen-engine/Ikemen-GO/glfont"
-	"github.com/sqweek/dialog"
 )
 
 // Log writer implementation
@@ -18,11 +17,11 @@ func NewLogWriter() io.Writer {
 
 // Message box implementation
 func ShowInfoDialog(message, title string) {
-	dialog.Message(message).Title(title).Info()
+	print(title + "\n\n" + message)
 }
 
 func ShowErrorDialog(message string) {
-	dialog.Message(message).Title("I.K.E.M.E.N Error").Error()
+	print("I.K.E.M.E.N Error\n\n" + message)
 }
 
 // TTF font loading
