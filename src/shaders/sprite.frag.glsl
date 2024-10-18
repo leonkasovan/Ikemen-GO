@@ -60,7 +60,7 @@ void main(void) {
 			if (int(255.25*c.r) == mask) {
 				final_mul = vec4(0.0);
 			} else {
-				c = texture2D(pal, vec2(c.r*0.9966, 0.5));
+				c = COMPAT_TEXTURE(pal, vec2(c.r*0.9966, 0.5));
 			}
 		}
 		if (hue != 0.0) {
