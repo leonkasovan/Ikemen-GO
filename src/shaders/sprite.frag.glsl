@@ -56,9 +56,11 @@ void main(void) {
 			final_add *= c.a;
 			final_mul.rgb *= alpha;
 		} else {
-			c = COMPAT_TEXTURE(pal, vec2(c.r*0.9966, 0.5));
-			if (mask == -1) {
-				c.a = 1.0;
+			// Colormap sprites use the old “buggy” Mugen way
+			if (int(255.25*c.r) == mask) {
+				final_mul = vec4(0.0);
+			} else {
+				c = texture2D(pal, vec2(c.r*0.9966, 0.5));
 			}
 		}
 		if (hue != 0.0) {

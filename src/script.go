@@ -4182,6 +4182,10 @@ func triggerFunctions(l *lua.LState) {
 		l.Push(lua.LNumber(sys.lifebar.ti.framespercount))
 		return 1
 	})
+	luaRegister(l, "gamefps", func(*lua.LState) int {
+		l.Push(lua.LNumber(sys.gameFPS))
+		return 1
+	})
 	luaRegister(l, "gamemode", func(*lua.LState) int {
 		if l.GetTop() == 0 {
 			l.Push(lua.LString(sys.gameMode))

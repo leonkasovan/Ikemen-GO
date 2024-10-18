@@ -3,8 +3,9 @@
 package main
 
 import (
-	glfw "github.com/go-gl/glfw/v3.3/glfw"
 	"strings"
+
+	glfw "github.com/go-gl/glfw/v3.3/glfw"
 )
 
 type Input struct {
@@ -255,7 +256,7 @@ func JoystickState(joy, button int) bool {
 			return false
 		}
 
-		return val > sys.controllerStickSensitivity
+		return val > sys.controllerStickSensitivityGLFW
 	}
 }
 

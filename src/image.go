@@ -13,8 +13,8 @@ import (
 	"runtime"
 	"unsafe"
 
-	atlas "github.com/ikemen-engine/Ikemen-GO/glh"
 	"github.com/cespare/xxhash"
+	atlas "github.com/ikemen-engine/Ikemen-GO/glh"
 )
 
 type TransType int32
@@ -563,7 +563,7 @@ type TextureAtlas struct {
 
 func (t *TextureAtlas) Get(key AtlasBufferKey) *atlas.TextureAtlas {
 	if a, ok := t.atlas[key]; !ok {
-		fmt.Println("Create")
+		// fmt.Println("Create")
 		t.atlas[key] = atlas.NewTextureAtlas(1024, 1024, int(key.depth), int(key.interp))
 		return t.atlas[key]
 	} else {
@@ -573,7 +573,7 @@ func (t *TextureAtlas) Get(key AtlasBufferKey) *atlas.TextureAtlas {
 
 func (t *TextureAtlas) Commit() {
 	for _, a := range t.atlas {
-		fmt.Println("Commit")
+		// fmt.Println("Commit")
 		a.Commit(0x0DE1) //gl.TEXTURE_2D
 	}
 }
