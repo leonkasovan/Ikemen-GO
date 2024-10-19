@@ -41,7 +41,7 @@ Lessard Collection https://www.mediafire.com/folder/gf9p2w993dwka/LESSARD_MUGEN
 https://www.mediafire.com/folder/syh6wacfmskeg/MBTL_Stages  
 https://www.mediafire.com/folder/4yrw405s2eeal/StagePacks  
 https://www.mediafire.com/folder/w6wgk5xo7sraz/Stages  
-
+xcheatdeath https://www.mediafire.com/folder/oz0kp2v4juism/3D_STAGES  
 Library for v.0.98.2
 ```
 sudo pacman -S libsysprof-capture pcre openal pcre2 libffi freetype2 xcb libpng brotli graphite util-linux-libs
