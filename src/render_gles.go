@@ -348,6 +348,8 @@ func (r *Renderer) Init() {
 	sys.errLog.Printf("scrrect: %v,%v - %v,%v", sys.scrrect[0], sys.scrrect[1], sys.scrrect[2], sys.scrrect[3])
 	sys.errLog.Printf("gameWidth x gameHeight: %v,%v", sys.gameWidth, sys.gameHeight)
 	sys.errLog.Printf("widthScale x heightScale: %v,%v", sys.widthScale, sys.heightScale)
+	// Store current timestamp
+	updateTimeStamp()
 
 	r.postShaderSelect = make([]*ShaderProgram, 1+len(sys.externalShaderList))
 	//gl.Enable(gl.DEBUG_OUTPUT)
@@ -477,7 +479,8 @@ func (r *Renderer) Close() {
 }
 
 func (r *Renderer) BeginFrame(clearColor bool) {
-	sys.absTickCount++
+	// sys.absTickCount++
+	nextTickCount()
 	gl.BindFramebuffer(gl.FRAMEBUFFER, r.fbo)
 	gl.Viewport(0, 0, sys.scrrect[2], sys.scrrect[3])
 	if clearColor {
@@ -684,6 +687,8 @@ func (r *Renderer) SetModelMorphTarget(offsets [8]uint32, weights [8]float32, po
 
 func (r *Renderer) ReadPixels(data []uint8, width, height int) {
 	r.EndFrame()
+	sys.window.SwapBuffers()
+	gl.BindFramebuffer(gl.READ_FRAMEBUFFER, 0)
 	gl.ReadPixels(0, 0, int32(width), int32(height), gl.RGBA, gl.UNSIGNED_BYTE, unsafe.Pointer(&data[0]))
 	r.BeginFrame(false)
 }
