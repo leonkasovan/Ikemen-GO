@@ -430,7 +430,7 @@
       ]
     },
     {
-      "JoystickName": "retrogame_joypad",
+      "JoystickName": "retrogame_joypad.linux.arm64.sdl",
       "Buttons": [
         "13",
         "14",
