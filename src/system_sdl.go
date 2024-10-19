@@ -228,3 +228,7 @@ func (w *Window) Close() {
 	w.Window.Destroy()
 	sdl.Quit()
 }
+
+func nextTickCount() {
+	sys.absTickCountSDL++
+}
