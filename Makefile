@@ -33,9 +33,9 @@ srcFiles=src/anim.go \
 # Target: assets.zip depends on the Lua scripts
 assets.zip: $(LUA_FILES) $(DATA_FILES)
 	@echo "Zipping Lua files into assets.zip..."
-	zip -r assets.zip external/ data/ font/
-	rm src/assets.zip
-	mv assets.zip src/
+	zip -r src/assets.zip external/ data/ font/
+#	rm src/assets.zip
+#	mv assets.zip src/
 
 # Windows 64-bit target
 Ikemen_GO.exe: ${srcFiles} assets.zip

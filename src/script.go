@@ -1394,38 +1394,42 @@ func systemScriptInit(l *lua.LState) {
 			if input.IsJoystickPresent(joy) {
 				axes := input.GetJoystickAxes(joy)
 				btns := input.GetJoystickButtons(joy)
-				name := input.GetJoystickName(joy)
-				for i := range axes {
-					if strings.Contains(name, "XInput") || strings.Contains(name, "X360") {
-						if axes[i] > 0.5 {
-							s = strconv.Itoa(-i*2 - 2)
-						} else if axes[i] < -0.5 && i < 4 {
-							s = strconv.Itoa(-i*2 - 1)
-						}
-					} else if name == "PS3 Controller" {
-						if (len(axes) == 8 && i != 3 && i != 4 && i != 6 && i != 7) ||
-							(len(axes) == 6 && i != 2 && i != 5) {
-							// 8 axes in Windows (need to skip 3, 4, 6, 7) and
-							// 6 axes in Linux (need to skip 2 and 5)
-							if axes[i] < -0.2 {
-								s = strconv.Itoa(-i*2 - 1)
-							} else if axes[i] > 0.2 {
-								s = strconv.Itoa(-i*2 - 2)
-							}
-						}
-					} else if name != "PS4 Controller" || !(i == 3 || i == 4) {
-						if axes[i] < -0.2 {
-							s = strconv.Itoa(-i*2 - 1)
-						} else if axes[i] > 0.2 {
-							s = strconv.Itoa(-i*2 - 2)
-						}
-					}
-				}
+				hats := input.GetJoystickHats(joy)
+				base := len(btns)
 				for i := range btns {
 					if btns[i] > 0 {
 						s = strconv.Itoa(i)
+						fmt.Printf("[script.go][systemScriptInit] BUTTON joy=%v s: %v\n", joy, s)
+						break
 					}
 				}
+				if s != "" {
+					break
+				}
+				if len(hats) > 0 {
+					if hats[0] == 1 { // up
+						s = strconv.Itoa(base)
+						fmt.Printf("[script.go][systemScriptInit] HAT joy=%v s: %v\n", joy, s)
+					} else if hats[0] == 2 { // right
+						s = strconv.Itoa(2 + base)
+						fmt.Printf("[script.go][systemScriptInit] HAT joy=%v s: %v\n", joy, s)
+					} else if hats[0] == 4 { // down
+						s = strconv.Itoa(3 + base)
+						fmt.Printf("[script.go][systemScriptInit] HAT joy=%v s: %v\n", joy, s)
+					} else if hats[0] == 8 { // left
+						s = strconv.Itoa(1 + base)
+						fmt.Printf("[script.go][systemScriptInit] HAT joy=%v s: %v\n", joy, s)
+					}
+					if s != "" {
+						break
+					}
+				}
+				s = checkAxisForDpad(joy, &axes, base)
+				if s != "" {
+					break
+				}
+
+				s = checkAxisForTrigger(joy, &axes)
 				if s != "" {
 					break
 				}
