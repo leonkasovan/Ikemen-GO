@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"image"
 	"os"
+	"runtime"
+	"strings"
 
 	sdl "github.com/veandco/go-sdl2/sdl"
 )
@@ -21,6 +23,10 @@ type Window struct {
 	fullscreen  bool
 	shouldclose bool
 	x, y, w, h  int
+}
+
+func updateTimeStamp() {
+	sys.prevTimestampUint = sdl.GetTicks64()
 }
 
 func (s *System) newWindow(w, h int) (*Window, error) {
@@ -38,8 +44,13 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 		sdl.GLSetAttribute(sdl.GL_CONTEXT_MAJOR_VERSION, 2)
 		sdl.GLSetAttribute(sdl.GL_CONTEXT_MINOR_VERSION, 1)
 	}
+
+	// "-windowed" overrides the configuration setting but does not change it
+	_, forceWindowed := sys.cmdFlags["-windowed"]
+	fullscreen := s.fullscreen && !forceWindowed
+
 	// Create main window.
-	if s.fullscreen {
+	if fullscreen && !s.borderless {
 		window, err = sdl.CreateWindow(s.windowTitle, sdl.WINDOWPOS_UNDEFINED, sdl.WINDOWPOS_UNDEFINED,
 			int32(w), int32(h), sdl.WINDOW_OPENGL|sdl.WINDOW_FULLSCREEN)
 	} else {
@@ -66,7 +77,7 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 	}
 	// Store current timestamp
 	s.prevTimestampUint = sdl.GetTicks64()
-	ret := &Window{window, s.windowTitle, s.fullscreen, false, x, y, w, h}
+	ret := &Window{window, s.windowTitle, fullscreen, false, x, y, w, h}
 	return ret, err
 }
 
@@ -76,9 +87,8 @@ func (w *Window) SwapBuffers() {
 	sdlNow := sdl.GetTicks64()
 	delta := sdlNow - sys.prevTimestampUint
 	if delta >= 1000 {
-		// sys.gameFPS = float32(sys.absTickCount) / float32(delta/1000)
-		sys.gameFPS = float32(sys.absTickCount)
-		sys.absTickCount = 0
+		sys.gameFPS = float32(sys.absTickCountSDL)
+		sys.absTickCountSDL = 0
 		sys.prevTimestampUint = sdlNow
 	}
 }
@@ -103,7 +113,11 @@ func (w *Window) GetScaledViewportSize() (int32, int32, int32, int32) {
 	ratioWidth := float32(winWidth) / float32(sys.gameWidth)
 	ratioHeight := float32(winHeight) / float32(sys.gameHeight)
 	var ratio float32
-	var x, y int32 = 0, 0
+	var x, y, resizedWidth, resizedHeight int32 = 0, 0, int32(winWidth), int32(winHeight)
+
+	if sys.fullscreen || int32(winWidth) == sys.scrrect[2] && int32(winHeight) == sys.scrrect[3] {
+		return 0, 0, int32(winWidth), int32(winHeight)
+	}
 
 	if ratioWidth < ratioHeight {
 		ratio = ratioWidth
@@ -167,24 +181,25 @@ func (w *Window) pollEvents() {
 		}
 		break
 	case *sdl.JoyDeviceAddedEvent:
-		var isExist bool
-		var kc KeyConfig
-		input.joysticks[int(t.Which)] = sdl.JoystickOpen(int(t.Which))
-		if input.joysticks[int(t.Which)] != nil {
-			id := int(t.Which)
-			sys.errLog.Printf("Joystick (%v) id=%v connected\n", input.joysticks[id].Name(), t.Which)
-			if os.Getenv("XDG_SESSION_DESKTOP") == "KDE" { // in steamdeck there is 2 env: desktop mode(KDE) and gaming mode(gamescope), which each has spesific controller setting
-				if input.joysticks[id].Name() == "Logitech Dual Action" {
-					kc, isExist = sys.joystickDefaultConfig[input.joysticks[id].Name()+".KDE"]
-				} else {
-					kc, isExist = sys.joystickDefaultConfig[input.joysticks[id].Name()]
+		jid := int(t.Which)
+		input.joysticks[jid] = sdl.JoystickOpen(jid)
+		if input.joysticks[jid] != nil {
+			var isExist bool
+			var kc KeyConfig
+			name := input.joysticks[jid].Name() + "." + runtime.GOOS + "." + runtime.GOARCH + ".sdl"
+			if os.Getenv("XDG_CURRENT_DESKTOP") == "KDE" { // in steamdeck there is 2 env: desktop mode(KDE) and gaming mode(gamescope), which each has spesific controller setting
+				if strings.Contains(name, "Logitech Dual Action") || strings.Contains(name, "Steam Virtual Gamepad") {
+					name = name + ".KDE"
 				}
-			} else {
-				kc, isExist = sys.joystickDefaultConfig[input.joysticks[id].Name()]
 			}
+			fmt.Printf("[system_sdl.go][pollEvents] Using Joystick id=%v [%v]\n\tTotal Button=%v\n\tTotal Axes=%v\n\tTotal Hats=%v\n", jid, name, input.joysticks[jid].NumButtons(), input.joysticks[jid].NumAxes(), input.joysticks[jid].NumHats())
+			kc, isExist = sys.joystickDefaultConfig[name]
 			if isExist {
-				sys.joystickConfig[id] = KeyConfig{id, kc.dU, kc.dD, kc.dL, kc.dR, kc.kA, kc.kB, kc.kC, kc.kX, kc.kY, kc.kZ, kc.kS, kc.kD, kc.kW, kc.kM}
-				sys.errLog.Printf("Joystick [%v] is overwritten with %v\n", input.joysticks[id].Name(), sys.joystickConfig[id])
+				sys.joystickConfig[jid] = KeyConfig{jid, kc.dU, kc.dD, kc.dL, kc.dR, kc.kA, kc.kB, kc.kC, kc.kX, kc.kY, kc.kZ, kc.kS, kc.kD, kc.kW, kc.kM}
+				fmt.Printf("\tConfig is overwritten with %v\n", sys.joystickConfig[jid])
+				// fmt.Printf("\tConfig should be overwritten with %v U=%v\n", sys.joystickConfig[jid], kc.dU)
+			} else {
+				fmt.Printf("\tConfig is NOT overwritten, using %v\n", sys.joystickConfig[jid])
 			}
 		}
 		break

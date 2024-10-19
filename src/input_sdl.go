@@ -3,6 +3,10 @@
 package main
 
 import (
+	"fmt"
+	"runtime"
+	"strconv"
+
 	sdl "github.com/veandco/go-sdl2/sdl"
 )
 
@@ -207,49 +211,37 @@ func (input *Input) GetJoystickAxis(joy int, axis int) int16 {
 	return input.joysticks[joy].Axis(axis)
 }
 
-func (input *Input) GetJoystickAxes(joy int) []float32 {
+func (input *Input) GetJoystickAxes(joy int) []int16 {
 	if joy < 0 || joy >= len(input.joysticks) {
-		return []float32{}
+		return []int16{}
 	}
-	return []float32{0.0, 0.0} // dummy, to be define
+	axes := make([]int16, input.joysticks[joy].NumAxes())
+	for i := range axes {
+		axes[i] = input.joysticks[joy].Axis(i)
+	}
+	return axes
 }
 
 func (input *Input) GetJoystickButtons(joy int) []byte {
 	if joy < 0 || joy >= len(input.joysticks) {
 		return []byte{}
 	}
-	js := input.joysticks[joy]
-	// Update button status
-	res := []byte{js.Button(0), js.Button(1), js.Button(2), js.Button(3), js.Button(4), js.Button(5), js.Button(6), js.Button(7), js.Button(8), js.Button(9), js.Button(10), js.Button(11), js.Button(12), js.Button(13), js.Button(14), js.Button(15), js.Button(16)}
+	buttons := make([]byte, input.joysticks[joy].NumButtons())
+	for i := range buttons {
+		buttons[i] = input.joysticks[joy].Button(i)
+	}
+	return buttons
+}
 
-	// Update direction button with Hat status
-	res[sys.joystickConfig[joy].dU] |= (js.Hat(0) & 1)
-	res[sys.joystickConfig[joy].dR] |= (js.Hat(0) & 2)
-	res[sys.joystickConfig[joy].dD] |= (js.Hat(0) & 4)
-	res[sys.joystickConfig[joy].dL] |= (js.Hat(0) & 8)
-
-	// Update direction button with Axes status
-	if res[sys.joystickConfig[joy].dU] == 0 && (js.Axis(1) < -16000) {
-		res[sys.joystickConfig[joy].dU] = 1
+func (input *Input) GetJoystickHats(joy int) []byte {
+	if joy < 0 || joy >= len(input.joysticks) {
+		return []byte{}
 	}
-	if res[sys.joystickConfig[joy].dR] == 0 && (js.Axis(0) > 16000) {
-		res[sys.joystickConfig[joy].dR] = 1
+	hats := make([]byte, input.joysticks[joy].NumHats())
+	for i := range hats {
+		hats[i] = input.joysticks[joy].Hat(i)
 	}
-	if res[sys.joystickConfig[joy].dD] == 0 && (js.Axis(1) > 16000) {
-		res[sys.joystickConfig[joy].dD] = 1
-	}
-	if res[sys.joystickConfig[joy].dL] == 0 && (js.Axis(0) < -16000) {
-		res[sys.joystickConfig[joy].dL] = 1
-	}
-
-	// Update L2/dC R2/dZ button with Axes status (steamdeck)
-	if res[sys.joystickConfig[joy].kW] == 0 && (js.Axis(4) > 16000) {
-		res[sys.joystickConfig[joy].kW] = 1
-	}
-	if res[sys.joystickConfig[joy].kZ] == 0 && (js.Axis(5) > 16000) {
-		res[sys.joystickConfig[joy].kZ] = 1
-	}
-	return res
+	return hats
 }
 
 func JoystickState(joy, button int) bool {
@@ -259,22 +251,74 @@ func JoystickState(joy, button int) bool {
 	if joy >= input.GetMaxJoystickCount() {
 		return false
 	}
-	if button >= 0 {
-		base := sys.joystickConfig[joy].dU
-		switch button {
-		case sys.joystickConfig[joy].dU: // Up: check axis and d.pad(hat)
-			return (input.joysticks[joy].Axis(1) < -16000) || (input.joysticks[joy].Button(button) != 0) || ((input.joysticks[joy].Hat(0) & (1 << (button - base))) != 0)
-		case sys.joystickConfig[joy].dR: // Right: check axis and d.pad(hat)
-			return (input.joysticks[joy].Axis(0) > 16000) || (input.joysticks[joy].Button(button) != 0) || ((input.joysticks[joy].Hat(0) & (1 << (button - base))) != 0)
-		case sys.joystickConfig[joy].dD: // Down: check axis and d.pad(hat)
-			return (input.joysticks[joy].Axis(1) > 16000) || (input.joysticks[joy].Button(button) != 0) || ((input.joysticks[joy].Hat(0) & (1 << (button - base))) != 0)
-		case sys.joystickConfig[joy].dL: // Left: check axis and d.pad(hat)
-			return (input.joysticks[joy].Axis(0) < -16000) || (input.joysticks[joy].Button(button) != 0) || ((input.joysticks[joy].Hat(0) & (1 << (button - base))) != 0)
-		default: // Other (normal) button
-			return input.joysticks[joy].Button(button) != 0
+	js := input.joysticks[joy]
+	if button >= js.NumButtons() { // only check for Hats or "axis for dpad" (max_button,max_button+1,max_button+2,max_button+3)
+		if js.NumAxes() >= 2 { // check axes for dpad
+			switch button { // check HAT0, AXIS1, AXIS2
+			case sys.joystickConfig[joy].dU: // Up
+				return (js.Axis(1) < -sys.controllerStickSensitivitySDL) || ((js.Hat(0) & 1) != 0)
+			case sys.joystickConfig[joy].dR: // Right
+				return (js.Axis(0) > sys.controllerStickSensitivitySDL) || ((js.Hat(0) & 2) != 0)
+			case sys.joystickConfig[joy].dD: // Down
+				return (js.Axis(1) > sys.controllerStickSensitivitySDL) || ((js.Hat(0) & 4) != 0)
+			case sys.joystickConfig[joy].dL: // Left
+				return (js.Axis(0) < -sys.controllerStickSensitivitySDL) || ((js.Hat(0) & 8) != 0)
+			default: // invalid button code if > max_button+3
+				return false
+			}
+		} else {
+			switch button { // check HAT0 only
+			case sys.joystickConfig[joy].dU: // Up
+				return js.Hat(0)&1 != 0
+			case sys.joystickConfig[joy].dR: // Right
+				return js.Hat(0)&2 != 0
+			case sys.joystickConfig[joy].dD: // Down
+				return js.Hat(0)&4 != 0
+			case sys.joystickConfig[joy].dL: // Left
+				return js.Hat(0)&8 != 0
+			default: // invalid button code if > max_button+3
+				return false
+			}
 		}
-	} else { // Button value = Minus => Handle Axis
-		return (input.joysticks[joy].Axis(-button) > 16000)
+	} else if button >= 0 { // Check for button code (0,1,2,...,10,11,max_button-1)
+		if js.NumAxes() >= 2 {
+			switch button { // check BUTTON, AXIS1, AXIS2
+			case sys.joystickConfig[joy].dU: // Up: check axis, d.pad(hat), button
+				return (js.Axis(1) < -sys.controllerStickSensitivitySDL) || (js.Button(button) != 0)
+			case sys.joystickConfig[joy].dR: // Right: check axis and d.pad(hat), button
+				return (js.Axis(0) > sys.controllerStickSensitivitySDL) || (js.Button(button) != 0)
+			case sys.joystickConfig[joy].dD: // Down: check axis and d.pad(hat), button
+				return (js.Axis(1) > sys.controllerStickSensitivitySDL) || (js.Button(button) != 0)
+			case sys.joystickConfig[joy].dL: // Left: check axis and d.pad(hat), button
+				return (js.Axis(0) < -sys.controllerStickSensitivitySDL) || (js.Button(button) != 0)
+			default: // Other (normal) button
+				// if js.Button(button) != 0 {
+				// 	fmt.Printf("[default] input.joysticks[%v].Button(%v)=%v\n", joy, button, js.Button(button))
+				// }
+				return js.Button(button) != 0
+			}
+		} else { // check BUTTON only
+			return js.Button(button) != 0
+		}
+
+	} else { // Check for Axis code, button is negatif (-1,-2,...,-10,-11,...)
+		var axis int
+		if button&1 == 0 {
+			axis = (-button - 1) / 2
+		} else {
+			axis = -button / 2
+		}
+		if js.NumAxes() > axis {
+			value := js.Axis(axis)
+			if button&1 == 0 {
+				return value > sys.controllerStickSensitivitySDL
+			} else {
+				return -value > sys.controllerStickSensitivitySDL
+			}
+		} else {
+			return false
+		}
+		return false
 	}
 }
 
@@ -306,20 +350,20 @@ func (ir *InputReader) LocalInput(in int) (bool, bool, bool, bool, bool, bool, b
 		sdl.JoystickUpdate()
 		joyS := sys.joystickConfig[in].Joy
 		if joyS >= 0 {
-			U = sys.joystickConfig[in].U() || U // Does not override keyboard
-			D = sys.joystickConfig[in].D() || D
-			L = sys.joystickConfig[in].L() || L
-			R = sys.joystickConfig[in].R() || R
-			a = sys.joystickConfig[in].a() || a
-			b = sys.joystickConfig[in].b() || b
-			c = sys.joystickConfig[in].c() || c
-			x = sys.joystickConfig[in].x() || x
-			y = sys.joystickConfig[in].y() || y
-			z = sys.joystickConfig[in].z() || z
-			s = sys.joystickConfig[in].s() || s
-			d = sys.joystickConfig[in].d() || d
-			w = sys.joystickConfig[in].w() || w
-			m = sys.joystickConfig[in].m() || m
+			U = U || sys.joystickConfig[in].U() // Does not override keyboard
+			D = D || sys.joystickConfig[in].D()
+			L = L || sys.joystickConfig[in].L()
+			R = R || sys.joystickConfig[in].R()
+			a = a || sys.joystickConfig[in].a()
+			b = b || sys.joystickConfig[in].b()
+			c = c || sys.joystickConfig[in].c()
+			x = x || sys.joystickConfig[in].x()
+			y = y || sys.joystickConfig[in].y()
+			z = z || sys.joystickConfig[in].z()
+			s = s || sys.joystickConfig[in].s()
+			d = d || sys.joystickConfig[in].d()
+			w = w || sys.joystickConfig[in].w()
+			m = m || sys.joystickConfig[in].m()
 		}
 	}
 	// Button assist is checked locally so the sent inputs are already processed
@@ -327,4 +371,54 @@ func (ir *InputReader) LocalInput(in int) (bool, bool, bool, bool, bool, bool, b
 		a, b, c, x, y, z, s, d, w = ir.ButtonAssistCheck(a, b, c, x, y, z, s, d, w)
 	}
 	return U, D, L, R, a, b, c, x, y, z, s, d, w, m
+}
+
+func checkAxisForDpad(joy int, axes *[]int16, base int) string {
+	var s string
+	if (*axes)[0] > sys.controllerStickSensitivitySDL { // right
+		s = strconv.Itoa(2 + base)
+		fmt.Printf("[input_sdl.go][checkAxisForDpad] AXIS for DPAD RIGHT joy=%v s: %v\n", joy, s)
+	} else if -(*axes)[0] > sys.controllerStickSensitivitySDL { // left
+		s = strconv.Itoa(1 + base)
+		fmt.Printf("[input_sdl.go][checkAxisForDpad] AXIS for DPAD LEFT joy=%v s: %v\n", joy, s)
+	}
+	if (*axes)[1] > sys.controllerStickSensitivitySDL { // down
+		s = strconv.Itoa(3 + base)
+		fmt.Printf("[input_sdl.go][checkAxisForDpad] AXIS for DPAD DOWN joy=%v s: %v\n", joy, s)
+	} else if -(*axes)[1] > sys.controllerStickSensitivitySDL { // up
+		s = strconv.Itoa(base)
+		fmt.Printf("[input_sdl.go][checkAxisForDpad] AXIS  for DPAD UP joy=%v s: %v\n", joy, s)
+	}
+	return s
+}
+
+func checkAxisForTrigger(joy int, axes *[]int16) string {
+	var s string = ""
+	for i := range *axes {
+		if (*axes)[i] < -sys.controllerStickSensitivitySDL {
+			name := input.GetJoystickName(joy) + "." + runtime.GOOS + "." + runtime.GOARCH + ".sdl"
+			if (i == 4 || i == 5) && name == "XInput Gamepad (GLFW).windows.amd64.sdl" {
+				// do nothing
+			} else if (i == 4 || i == 5) && name == "PS4 Controller.windows.amd64.sdl" {
+				// do nothing
+			} else if (i == 2 || i == 5) && name == "Steam Virtual Gamepad.linux.amd64.glfw" {
+				// do nothing
+			} else if (i == 2 || i == 5) && name == "Steam Deck Controller.linux.amd64.sdl" {
+				// do nothing
+			} else if (i == 2 || i == 5) && name == "PS3 Controller.linux.amd64.sdl" {
+				// do nothing
+			} else if (i == 2 || i == 5) && name == "Logitech Dual Action.linux.amd64.sdl" {
+				// do nothing
+			} else {
+				s = strconv.Itoa(-i*2 - 1)
+				fmt.Printf("[input_sdl.go][checkAxisForTrigger] 1.AXIS joy=%v i=%v s:%v axes[i]=%v\n", joy, i, s, (*axes)[i])
+				break
+			}
+		} else if (*axes)[i] > sys.controllerStickSensitivitySDL {
+			s = strconv.Itoa(-i*2 - 2)
+			fmt.Printf("[input_sdl.go][checkAxisForTrigger] 2.AXIS joy=%v i=%v s:%v axes[i]=%v\n", joy, i, s, (*axes)[i])
+			break
+		}
+	}
+	return s
 }

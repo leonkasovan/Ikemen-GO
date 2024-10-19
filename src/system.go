@@ -296,11 +296,11 @@ type System struct {
 	fullscreenHeight      int32
 
 	// Input variables
-	controllerStickSensitivitySDL  int16
-	controllerStickSensitivityGLFW float32
-	inputButtonAssist              bool
-	inputSOCDresolution            int32
-	xinputTriggerSensitivity       float32
+	controllerStickSensitivitySDL int16
+	controllerStickSensitivityGLFW    float32
+	inputButtonAssist             bool
+	inputSOCDresolution           int32
+	xinputTriggerSensitivity      float32
 
 	// Localcoord sceenpack
 	luaLocalcoord    [2]int32
@@ -385,9 +385,9 @@ type System struct {
 	// for avg. FPS calculations
 	gameFPS           float32
 	prevTimestamp     float64
-	absTickCountF     float32
+	absTickCountGLFW     float32
 	prevTimestampUint uint64
-	absTickCount      uint64
+	absTickCountSDL      uint64
 }
 
 // Initialize stuff, this is called after the config int at main.go

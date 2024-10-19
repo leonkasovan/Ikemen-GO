@@ -31,6 +31,7 @@
     "data/tag.zss",
     "data/training.zss"
   ],
+  "ControllerStickSensitivitySDL": 8000,
   "ControllerStickSensitivity": 0.4,
   "Credits": 10,
   "DebugClipboardRows": 2,
@@ -286,6 +287,256 @@
         "7",
         "4",
         "-10",
+        "6"
+      ]
+    }
+  ]
+  ,
+  "JoystickDefaultConfig": [
+    {
+      "JoystickName": "PS4 Controller.windows.amd64.sdl",
+      "Buttons": [
+        "11",
+        "12",
+        "13",
+        "14",
+        "0",
+        "1",
+        "-12",
+        "2",
+        "3",
+        "10",
+        "4",
+        "-10",
+        "9",
+        "6"
+      ]
+    },
+    {
+      "JoystickName": "PS4 Controller.windows.amd64.glfw",
+      "Buttons": [
+        "14",
+        "16",
+        "17",
+        "15",
+        "1",
+        "2",
+        "7",
+        "0",
+        "3",
+        "5",
+        "8",
+        "6",
+        "4",
+        "9"
+      ]
+    },
+    {
+      "JoystickName": "XInput Gamepad (GLFW).windows.amd64.glfw",
+      "Buttons": [
+        "10",
+        "12",
+        "13",
+        "11",
+        "0",
+        "1",
+        "-12",
+        "2",
+        "3",
+        "5",
+        "6",
+        "-10",
+        "4",
+        "7"
+      ]
+    },
+    {
+      "JoystickName": "Logitech Dual Action.windows.amd64.glfw",
+      "Buttons": [
+        "12",
+        "14",
+        "15",
+        "13",
+        "1",
+        "2",
+        "7",
+        "0",
+        "3",
+        "5",
+        "9",
+        "6",
+        "4",
+        "8"
+      ]
+    },
+    {
+      "JoystickName": "Logitech Dual Action.windows.amd64.sdl",
+      "Buttons": [
+        "12",
+        "15",
+        "13",
+        "14",
+        "1",
+        "2",
+        "7",
+        "0",
+        "3",
+        "5",
+        "9",
+        "4",
+        "6",
+        "8"
+      ]
+    },
+    {
+      "JoystickName": "Logitech Dual Action.linux.amd64.sdl",
+      "Buttons": [
+        "11",
+        "14",
+        "12",
+        "13",
+        "0",
+        "1",
+        "-12",
+        "2",
+        "3",
+        "5",
+        "7",
+        "4",
+        "-6",
+        "6"
+      ]
+    },
+    {
+      "JoystickName": "Steam Deck",
+      "Buttons": [
+        "11",
+        "12",
+        "13",
+        "14",
+        "0",
+        "1",
+        "-5",
+        "2",
+        "3",
+        "10",
+        "6",
+        "9",
+        "-4",
+        "4"      
+      ]
+    },
+    {
+      "JoystickName": "retrogame_joypad.linux.arm64.sdl",
+      "Buttons": [
+        "13",
+        "14",
+        "15",
+        "16",
+        "0",
+        "1",
+        "7",
+        "3",
+        "2",
+        "5",
+        "9",
+        "4",
+        "6",
+        "8"
+      ]
+    },
+    {
+      "JoystickName": "Sony Interactive Entertainment Controller",
+      "Buttons": [
+        "10",
+        "12",
+        "13",
+        "11",
+        "2",
+        "1",
+        "5",
+        "3",
+        "0",
+        "7",
+        "9",
+        "4",
+        "-10",
+        "6"
+      ]
+    },
+    {
+      "JoystickName": "Steam Virtual Gamepad.linux.amd64.glfw",
+      "Buttons": [
+        "11",
+        "13",
+        "14",
+        "12",
+        "0",
+        "1",
+        "-12",
+        "2",
+        "3",
+        "5",
+        "7",
+        "4",
+        "-6",
+        "6"
+      ]
+    },
+    {
+      "JoystickName": "Steam Deck Controller.linux.amd64.sdl",
+      "Buttons": [
+        "11",
+        "14",
+        "12",
+        "13",
+        "0",
+        "1",
+        "-12",
+        "2",
+        "3",
+        "5",
+        "7",
+        "4",
+        "-6",
+        "6"
+      ]
+    },
+    {
+      "JoystickName": "PS3 Controller.linux.amd64.sdl",
+      "Buttons": [
+        "11",
+        "14",
+        "12",
+        "13",
+        "0",
+        "1",
+        "-12",
+        "2",
+        "3",
+        "5",
+        "7",
+        "4",
+        "-6",
+        "6"
+      ]
+    },
+    {
+      "JoystickName": "Controller (XBOX 360 For Windows).windows.amd64",
+      "Buttons": [
+        "10",
+        "12",
+        "13",
+        "11",
+        "0",
+        "1",
+        "-5",
+        "2",
+        "3",
+        "5",
+        "7",
+        "4",
+        "-2",
         "6"
       ]
     }

@@ -16,6 +16,10 @@ type Window struct {
 	x, y, w, h int
 }
 
+func updateTimeStamp() {
+	sys.prevTimestamp = glfw.GetTime()
+}
+
 func (s *System) newWindow(w, h int) (*Window, error) {
 	var err error
 	var window *glfw.Window
@@ -30,14 +34,24 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 
 	var mode = monitor.GetVideoMode()
 	var x, y = (mode.Width - w) / 2, (mode.Height - h) / 2
+	fmt.Printf("[system_glfw.go][newWindow] monitor.GetVideoMode() = %v\n", mode)
 
 	// "-windowed" overrides the configuration setting but does not change it
 	_, forceWindowed := sys.cmdFlags["-windowed"]
 	fullscreen := s.fullscreen && !forceWindowed
 
-	glfw.WindowHint(glfw.Resizable, glfw.False)
-	glfw.WindowHint(glfw.ContextVersionMajor, 2)
-	glfw.WindowHint(glfw.ContextVersionMinor, 1)
+	glfw.WindowHint(glfw.Resizable, glfw.True)
+
+	// only macOS needs this
+	if runtime.GOOS == "darwin" {
+		glfw.WindowHint(glfw.ContextVersionMajor, 3)
+		glfw.WindowHint(glfw.ContextVersionMinor, 2)
+		glfw.WindowHint(glfw.OpenGLForwardCompatible, glfw.True)
+		glfw.WindowHint(glfw.OpenGLProfile, glfw.OpenGLCoreProfile)
+	} else {
+		glfw.WindowHint(glfw.ContextVersionMajor, 2)
+		glfw.WindowHint(glfw.ContextVersionMinor, 1)
+	}
 
 	// Create main window.
 	// NOTE: Borderless fullscreen is in reality just a window without borders.
@@ -75,6 +89,27 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 		glfw.SwapInterval(s.vRetrace)
 	}
 
+	for i := glfw.Joystick1; i <= glfw.JoystickLast; i++ {
+		if i.Present() {
+			var isExist bool
+			var kc KeyConfig
+			name := i.GetGamepadName() + "." + runtime.GOOS + "." + runtime.GOARCH + ".glfw"
+			if os.Getenv("XDG_CURRENT_DESKTOP") == "KDE" { // in steamdeck there is 2 env: desktop mode(KDE) and gaming mode(gamescope), which each has spesific controller setting
+				if strings.Contains(name, "Logitech Dual Action") || strings.Contains(name, "Steam Virtual Gamepad") {
+					name = name + ".KDE"
+				}
+			}
+			fmt.Printf("[system_glfw.go][newWindow] Using Joystick id=%v [%v]\n\tTotal Buttons=%v\n\tTotal Axes=%v\n\tTotal Hats=%v\n", i, name, len(i.GetButtons()), len(i.GetAxes()), len(i.GetHats()))
+			kc, isExist = sys.joystickDefaultConfig[name]
+			if isExist {
+				sys.joystickConfig[i] = KeyConfig{int(i), kc.dU, kc.dD, kc.dL, kc.dR, kc.kA, kc.kB, kc.kC, kc.kX, kc.kY, kc.kZ, kc.kS, kc.kD, kc.kW, kc.kM}
+				fmt.Printf("\tConfig is overwritten with %v\n", sys.joystickConfig[i])
+			} else {
+				fmt.Printf("\tConfig is NOT overwritten, using %v\n", sys.joystickConfig[i])
+			}
+		}
+	}
+
 	ret := &Window{window, s.windowTitle, fullscreen, x, y, w, h}
 	return ret, err
 }
@@ -84,8 +119,8 @@ func (w *Window) SwapBuffers() {
 	// Retrieve GL timestamp now
 	glNow := glfw.GetTime()
 	if glNow-sys.prevTimestamp >= 1 {
-		sys.gameFPS = sys.absTickCountF / float32(glNow-sys.prevTimestamp)
-		sys.absTickCountF = 0
+		sys.gameFPS = sys.absTickCountGLFW / float32(glNow-sys.prevTimestamp)
+		sys.absTickCountGLFW = 0
 		sys.prevTimestamp = glNow
 	}
 }
@@ -100,6 +135,41 @@ func (w *Window) SetSwapInterval(interval int) {
 
 func (w *Window) GetSize() (int, int) {
 	return w.Window.GetSize()
+}
+
+func (w *Window) GetScaledViewportSize() (int32, int32, int32, int32) {
+	// calculates a position and size for the viewport to fill the window while centered (see render_gl.go)
+	// returns x, y, width, height respectively
+	winWidth, winHeight := w.GetSize()
+	ratioWidth := float32(winWidth) / float32(sys.gameWidth)
+	ratioHeight := float32(winHeight) / float32(sys.gameHeight)
+	var ratio float32
+	var x, y, resizedWidth, resizedHeight int32 = 0, 0, int32(winWidth), int32(winHeight)
+
+	if sys.fullscreen || int32(winWidth) == sys.scrrect[2] && int32(winHeight) == sys.scrrect[3] {
+		return 0, 0, int32(winWidth), int32(winHeight)
+	}
+
+	if ratioWidth < ratioHeight {
+		ratio = ratioWidth
+	} else {
+		ratio = ratioHeight
+	}
+
+	if sys.keepAspect {
+		resizedWidth = int32(float32(sys.gameWidth) * ratio)
+		resizedHeight = int32(float32(sys.gameHeight) * ratio)
+
+		// calculate offsets for the resized width to center it to the window
+		if resizedWidth < int32(winWidth) {
+			x = (int32(winWidth) - resizedWidth) / 2
+		}
+		if resizedHeight < int32(winHeight) {
+			y = (int32(winHeight) - resizedHeight) / 2
+		}
+	}
+
+	return x, y, resizedWidth, resizedHeight
 }
 
 func (w *Window) GetClipboardString() string {
@@ -153,4 +223,8 @@ func keyCallback(_ *glfw.Window, key Key, _ int, action glfw.Action, mk Modifier
 
 func charCallback(_ *glfw.Window, char rune, mk ModifierKey) {
 	OnTextEntered(string(char))
+}
+
+func nextTickCount() {
+	sys.absTickCountGLFW++
 }
