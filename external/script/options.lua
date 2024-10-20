@@ -150,6 +150,7 @@ options.t_itemname = {
 			config.GameHeight = 480
 			config.GameFramerate = 60
 			--config.IP = {}
+			config.KeepAspect = true
 			config.LifeMul = 100
 			config.ListenPort = "7500"
 			config.LoseSimul = true
@@ -194,6 +195,7 @@ options.t_itemname = {
 			config.VolumeMaster = 80
 			config.VolumeSfx = 80
 			config.VRetrace = 1
+			config.WindowScaleMode = true
 			--config.WavChannels = 32
 			--config.WindowCentered = true
 			--config.WindowIcon = {"external/icons/IkemenCylia.png"}
@@ -237,6 +239,8 @@ options.t_itemname = {
 			--setZoomSpeed(config.ZoomSpeed)
 			toggleFullscreen(config.Fullscreen)
 			toggleVsync(config.VRetrace)
+			toggleWindowScaleMode(config.WindowScaleMode)
+			toggleKeepAspect(config.KeepAspect)
 			options.modified = true
 			options.needReload = true
 		end
@@ -853,6 +857,36 @@ options.t_itemname = {
 		end
 		return true
 	end,
+	--Window scaling mode
+	['windowscalemode'] = function(t, item, cursorPosY, moveTxt)
+		if main.f_input(main.t_players, {'$F', '$B', 'pal', 's'}) then
+			sndPlay(motif.files.snd_data, motif.option_info.cursor_move_snd[1], motif.option_info.cursor_move_snd[2])
+			if config.WindowScaleMode then
+				config.WindowScaleMode = false
+			else
+				config.WindowScaleMode = true
+			end
+			toggleWindowScaleMode(config.WindowScaleMode)
+			t.items[item].vardisplay = options.f_boolDisplay(config.WindowScaleMode, motif.option_info.menu_valuename_enabled, motif.option_info.menu_valuename_disabled)
+			options.modified = true
+		end
+		return true
+	end,
+	--Keep Aspect Ratio
+	['keepaspect'] = function(t, item, cursorPosY, moveTxt)
+		if main.f_input(main.t_players, {'$F', '$B', 'pal', 's'}) then
+			sndPlay(motif.files.snd_data, motif.option_info.cursor_move_snd[1], motif.option_info.cursor_move_snd[2])
+			if config.KeepAspect then
+				config.KeepAspect = false
+			else
+				config.KeepAspect = true
+			end
+			toggleKeepAspect(config.KeepAspect)
+			t.items[item].vardisplay = options.f_boolDisplay(config.KeepAspect, motif.option_info.menu_valuename_enabled, motif.option_info.menu_valuename_disabled)
+			options.modified = true
+		end
+		return true
+	end,	
 	--Shaders (submenu)
 	['shaders'] = function(t, item, cursorPosY, moveTxt)
 		if main.f_input(main.t_players, {'$F', '$B', 'pal', 's'}) then
@@ -1313,6 +1347,9 @@ options.t_vardisplay = {
 	['helpermax'] = function()
 		return config.MaxHelper
 	end,
+	['keepaspect'] = function()
+		return options.f_boolDisplay(config.KeepAspect, motif.option_info.menu_valuename_enabled, motif.option_info.menu_valuename_disabled)
+	end,
 	['lifemul'] = function()
 		return config.LifeMul .. '%'
 	end,
@@ -1444,6 +1481,9 @@ options.t_vardisplay = {
 	end,
 	['vretrace'] = function()
 		return options.f_definedDisplay(config.VRetrace, {[1] = motif.option_info.menu_valuename_enabled}, motif.option_info.menu_valuename_disabled)
+	end,
+	['windowscalemode'] = function()
+		return options.f_boolDisplay(config.WindowScaleMode, motif.option_info.menu_valuename_enabled, motif.option_info.menu_valuename_disabled)
 	end,
 }
 

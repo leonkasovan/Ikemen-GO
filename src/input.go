@@ -420,7 +420,7 @@ func (ir *InputReader) ButtonAssistCheck(a, b, c, x, y, z, s, d, w bool) (bool, 
 }
 
 type CommandBuffer struct {
-	Bb, Db, Fb, Ub                         int32
+	Bb, Db, Fb, Ub, Lb, Rb                 int32
 	ab, bb, cb, xb, yb, zb, sb, db, wb, mb int32
 	B, D, F, U                             int8
 	a, b, c, x, y, z, s, d, w, m           int8

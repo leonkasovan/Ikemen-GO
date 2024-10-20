@@ -1,7 +1,9 @@
 package main
 
 import (
+	"archive/zip"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
@@ -204,6 +206,18 @@ func Atof(str string) float64 {
 	}
 	return f
 }
+
+// Prevent overflow errors when converting float64 to int32
+func F64toI32(f float64) int32 {
+	if f >= float64(math.MaxInt32) {
+		return math.MaxInt32
+	}
+	if f <= float64(math.MinInt32) {
+		return math.MinInt32
+	}
+	return int32(f)
+}
+
 func readDigit(d string) (int32, bool) {
 	if len(d) == 0 || (len(d) >= 2 && d[0] == '0') {
 		return 0, false
@@ -250,7 +264,131 @@ func LoadText(filename string) (string, error) {
 	}
 	return string(bytes), nil
 }
+func LoadTextFromZip(zipname string, filename string) (string, error) {
+	// Open the ZIP file
+	zipReader, err := zip.OpenReader(zipname)
+	if err != nil {
+		return "", err
+	}
+	defer zipReader.Close()
 
+	// Iterate through the files in the archive and find matched filename
+	for _, file := range zipReader.File {
+		if file.Name == filename {
+			// Open the file
+			zippedFile, err := file.Open()
+			if err != nil {
+				return "", err
+			}
+			defer zippedFile.Close()
+
+			// Read the file content into a byte slice
+			bytes, err := io.ReadAll(zippedFile)
+			if err != nil {
+				return "", err
+			}
+
+			if len(bytes) >= 3 && bytes[0] == 0xef && bytes[1] == 0xbb && bytes[2] == 0xbf {
+				bytes = bytes[3:]
+			}
+			return string(bytes), nil
+		}
+	}
+
+	return "", Error("File " + filename + " not found in " + zipname)
+}
+
+// ExtractFileFromZip extracts a specific file from a ZIP archive and saves it to the specified destination directory.
+func ExtractFileFromZip(zipname string, filename string, destdir string) error {
+	// Open the ZIP file
+	zipReader, err := zip.OpenReader(zipname)
+	if err != nil {
+		return fmt.Errorf("failed to open ZIP file: %w", err)
+	}
+	defer zipReader.Close()
+
+	// Find the specific file in the ZIP archive
+	var extractedFile *zip.File
+	for _, file := range zipReader.File {
+		if file.Name == filename {
+			extractedFile = file
+			break
+		}
+	}
+
+	if extractedFile == nil {
+		return fmt.Errorf("file '%s' not found in the ZIP archive", filename)
+	}
+
+	// Create the destination directory if it doesn't exist
+	if err := os.MkdirAll(destdir, os.ModePerm); err != nil {
+		return fmt.Errorf("failed to create destination directory: %w", err)
+	}
+
+	// Create the destination file path
+	destFilePath := filepath.Join(destdir, extractedFile.Name)
+
+	// Open the file inside the ZIP archive
+	srcFile, err := extractedFile.Open()
+	if err != nil {
+		return fmt.Errorf("failed to open file in ZIP archive: %w", err)
+	}
+	defer srcFile.Close()
+
+	// Create the destination file
+	destFile, err := os.Create(destFilePath)
+	if err != nil {
+		return fmt.Errorf("failed to create destination file: %w", err)
+	}
+	defer destFile.Close()
+
+	// Copy the content from the source file to the destination file
+	_, err = io.Copy(destFile, srcFile)
+	if err != nil {
+		return fmt.Errorf("failed to copy file content: %w", err)
+	}
+
+	fmt.Printf("File '%s' extracted to '%s'\n", extractedFile.Name, destFilePath)
+	return nil
+}
+
+// ReadFileFromZip reads the contents of a specific file from a ZIP archive.
+func ReadFileFromZip(zipname string, filename string) ([]byte, error) {
+	// Open the ZIP file
+	zipReader, err := zip.OpenReader(zipname)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open ZIP file: %w", err)
+	}
+	defer zipReader.Close()
+
+	// Find the specific file in the ZIP archive
+	var fileInZip *zip.File
+	for _, file := range zipReader.File {
+		if file.Name == filename {
+			fileInZip = file
+			break
+		}
+	}
+
+	if fileInZip == nil {
+		return nil, fmt.Errorf("file '%s' not found in the ZIP archive", filename)
+	}
+
+	// Open the file inside the ZIP archive
+	srcFile, err := fileInZip.Open()
+	if err != nil {
+		return nil, fmt.Errorf("failed to open file in ZIP archive: %w", err)
+	}
+	defer srcFile.Close()
+
+	// Read the file's content into a byte slice
+	content, err := io.ReadAll(srcFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read file content: %w", err)
+	}
+
+	return content, nil
+}
 func FileExist(filename string) string {
 	if info, err := os.Stat(filename); !os.IsNotExist(err) {
 		if info == nil || info.IsDir() {
@@ -277,10 +415,23 @@ func FileExist(filename string) string {
 
 // SearchFile returns full path to specified file
 func SearchFile(file string, dirs []string) string {
-	file = strings.Replace(file, "\\", "/", -1)
 	for _, v := range dirs {
-		defdir := filepath.Dir(strings.Replace(v, "\\", "/", -1))
+		defdir := filepath.Dir(v)
 		if fp := FileExist(defdir + "/" + file); len(fp) > 0 {
+			return fp
+		}
+	}
+	lastIndex := strings.LastIndex(file, `\`)
+	if lastIndex == -1 {
+		lastIndex := strings.LastIndex(file, `/`)
+		if lastIndex == -1 {
+			// If no backslash is found, return the entire string
+			return file
+		}
+	}
+	for _, v := range dirs {
+		defdir := filepath.Dir(v)
+		if fp := FileExist(defdir + "/" + file[lastIndex+1:]); len(fp) > 0 {
 			return fp
 		}
 	}
@@ -566,7 +717,7 @@ func (is IniSection) getText(name string) (str string, ok bool, err error) {
 	if len(str) >= 2 && str[0] == '"' && str[len(str)-1] == '"' {
 		str = str[1 : len(str)-1]
 	} else {
-		err = Error("Not enclosed in \"")
+		// err = Error("Not enclosed in \"")
 	}
 	return
 }
@@ -856,4 +1007,34 @@ func (ats *AnimTextSnd) End(dt int32, inf bool) bool {
 				ats.anim.anim.current == int32(len(ats.anim.anim.frames)-1))
 	}
 	return dt >= ats.displaytime
+}
+
+// ExtractPath extracts the path up to the last backslash
+//
+//	func ExtractPath(filePath string) string {
+//		var path_sep string
+//		if runtime.GOOS == "windows" {
+//			path_sep = "\\"
+//		} else {
+//			path_sep = "/"
+//		}
+//		// Find the last backslash
+//		lastIndex := strings.LastIndex(filePath, path_sep)
+//		if lastIndex == -1 {
+//			// If no backslash is found, return the entire string
+//			return filePath
+//		}
+//		// Return the substring up to and including the last backslash
+//		return filePath[:lastIndex+1]
+//	}
+func ExtractPath(filePath string) string {
+	path_sep := "/"
+	// Find the last backslash
+	lastIndex := strings.LastIndex(filePath, path_sep)
+	if lastIndex == -1 {
+		// If no backslash is found, return the entire string
+		return filePath
+	}
+	// Return the substring up to and including the last backslash
+	return filePath[:lastIndex+1]
 }

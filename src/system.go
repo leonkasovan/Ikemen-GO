@@ -38,6 +38,8 @@ var sys = System{
 	scrrect:           [...]int32{0, 0, 320, 240},
 	gameWidth:         320,
 	gameHeight:        240,
+	keepAspect:        true,
+	windowScaleMode:   true,
 	widthScale:        1,
 	heightScale:       1,
 	brightness:        256,
@@ -109,6 +111,8 @@ type System struct {
 	scrrect                 [4]int32
 	gameWidth, gameHeight   int32
 	widthScale, heightScale float32
+	keepAspect              bool
+	windowScaleMode         bool
 	window                  *Window
 	gameEnd, frameSkip      bool
 	redrawWait              struct{ nextTime, lastDraw time.Time }
@@ -237,20 +241,25 @@ type System struct {
 	wintime                 int32
 	projs                   [MaxSimul*2 + MaxAttachedChar][]Projectile
 	explods                 [MaxSimul*2 + MaxAttachedChar][]Explod
-	explDrawlist            [MaxSimul*2 + MaxAttachedChar][]int
-	topexplDrawlist         [MaxSimul*2 + MaxAttachedChar][]int
-	underexplDrawlist       [MaxSimul*2 + MaxAttachedChar][]int
+	explodsLayerN1          [MaxSimul*2 + MaxAttachedChar][]int
+	explodsLayer0           [MaxSimul*2 + MaxAttachedChar][]int
+	explodsLayer1           [MaxSimul*2 + MaxAttachedChar][]int
 	changeStateNest         int32
-	sprites                 DrawList
-	topSprites              DrawList
-	bottomSprites           DrawList
+	spritesLayerN1          DrawList
+	spritesLayerU           DrawList
+	spritesLayer0           DrawList
+	spritesLayer1           DrawList
 	shadows                 ShadowList
-	drawc1                  ClsnRect
-	drawc2                  ClsnRect
-	drawc2sp                ClsnRect
-	drawc2mtk               ClsnRect
-	drawwh                  ClsnRect
-	drawch                  ClsnRect
+	debugc1hit              ClsnRect
+	debugc1rev              ClsnRect
+	debugc1not              ClsnRect
+	debugc2                 ClsnRect
+	debugc2hb               ClsnRect
+	debugc2mtk              ClsnRect
+	debugc2grd              ClsnRect
+	debugc2stb              ClsnRect
+	debugcsize              ClsnRect
+	debugch                 ClsnRect
 	autoguard               [MaxSimul*2 + MaxAttachedChar]bool
 	accel                   float32
 	clsnSpr                 Sprite
@@ -296,11 +305,11 @@ type System struct {
 	fullscreenHeight      int32
 
 	// Input variables
-	controllerStickSensitivitySDL int16
-	controllerStickSensitivityGLFW    float32
-	inputButtonAssist             bool
-	inputSOCDresolution           int32
-	xinputTriggerSensitivity      float32
+	controllerStickSensitivitySDL  int16
+	controllerStickSensitivityGLFW float32
+	inputButtonAssist              bool
+	inputSOCDresolution            int32
+	xinputTriggerSensitivity       float32
 
 	// Localcoord sceenpack
 	luaLocalcoord    [2]int32
@@ -385,9 +394,9 @@ type System struct {
 	// for avg. FPS calculations
 	gameFPS           float32
 	prevTimestamp     float64
-	absTickCountGLFW     float32
+	absTickCountGLFW  float32
 	prevTimestampUint uint64
-	absTickCountSDL      uint64
+	absTickCountSDL   uint64
 }
 
 // Initialize stuff, this is called after the config int at main.go
@@ -672,6 +681,62 @@ func (s *System) playerIndexExist(id BytecodeValue) BytecodeValue {
 func (s *System) playercount() int32 {
 	return int32(len(s.charList.runOrder))
 }
+func (s *System) palfxvar(x int32, y int32) int32 {
+	n := int32(0)
+	if x >= 4 {
+		n = 256
+	}
+	pfx := s.bgPalFX
+	if y == 2 {
+		pfx = s.allPalFX
+	}
+	if pfx.enable {
+		switch x {
+		case -2:
+			n = pfx.eInvertblend
+		case -1:
+			n = Btoi(pfx.eInvertall)
+		case 0:
+			n = pfx.time
+		case 1:
+			n = pfx.eAdd[0]
+		case 2:
+			n = pfx.eAdd[1]
+		case 3:
+			n = pfx.eAdd[2]
+		case 4:
+			n = pfx.eMul[0]
+		case 5:
+			n = pfx.eMul[1]
+		case 6:
+			n = pfx.eMul[2]
+		default:
+			n = 0
+		}
+	}
+	return n
+}
+func (s *System) palfxvar2(x int32, y int32) float32 {
+	n := float32(1)
+	if x > 1 {
+		n = 0
+	}
+	pfx := s.bgPalFX
+	if y == 2 {
+		pfx = s.allPalFX
+	}
+	if pfx.enable {
+		switch x {
+		case 1:
+			n = pfx.eColor
+		case 2:
+			n = pfx.eHue
+		default:
+			n = 0
+		}
+	}
+	return n * 256
+}
 func (s *System) screenHeight() float32 {
 	return 240
 }
@@ -680,6 +745,53 @@ func (s *System) screenWidth() float32 {
 }
 func (s *System) roundEnd() bool {
 	return s.intro < -s.lifebar.ro.over_hittime
+}
+
+// Characters cannot hurt each other between lifebar timers over.hittime and over.waittime
+func (s *System) roundNoDamage() bool {
+	return sys.intro < 0 && sys.intro <= -sys.lifebar.ro.over_hittime && sys.intro >= -sys.lifebar.ro.over_waittime
+}
+func (s *System) roundState() int32 {
+	switch {
+	case sys.postMatchFlg:
+		return -1
+	case sys.intro > sys.lifebar.ro.ctrl_time+1:
+		return 0
+	case sys.lifebar.ro.cur == 0:
+		return 1
+	case sys.intro >= 0 || sys.finish == FT_NotYet:
+		return 2
+	case sys.intro < -sys.lifebar.ro.over_waittime:
+		return 4
+	default:
+		return 3
+	}
+}
+func (s *System) introState() int32 {
+	switch {
+	// Implements discussion #1172
+	case sys.intro > sys.lifebar.ro.ctrl_time+1:
+		// roundstate = 0
+		return 1
+	case sys.intro > sys.lifebar.ro.ctrl_time:
+		// characters are doing their intros
+		return 2
+	case sys.lifebar.ro.cur == 1 && sys.intro > 0:
+		// fight!
+		return 4
+	case sys.lifebar.ro.cur == 0:
+		// dialogueFlg doesn't work here :(
+		for _, p := range sys.chars {
+			if len(p) > 0 && len(p[0].dialogue) > 0 {
+				return 2
+			}
+		}
+		// round <n>
+		return 3
+	default:
+		// players have gained ctrl, or not applicable
+		return 0
+	}
 }
 func (s *System) roundWinTime() bool {
 	return s.wintime < 0
@@ -721,9 +833,11 @@ func (s *System) loadTime(start time.Time, str string, shell, console bool) {
 		s.appendToConsole(str)
 	}
 }
-func (s *System) clsnHantei(clsn1 []float32, scl1, pos1 [2]float32,
-	facing1 float32, clsn2 []float32, scl2, pos2 [2]float32,
-	facing2 float32) bool {
+func (s *System) clsnOverlap(clsn1 []float32, scl1, pos1 [2]float32, facing1 float32,
+	clsn2 []float32, scl2, pos2 [2]float32, facing2 float32) bool {
+	if clsn1 == nil || clsn2 == nil {
+		return false
+	}
 	if scl1[0] < 0 {
 		facing1 *= -1
 		scl1[0] *= -1
@@ -733,19 +847,19 @@ func (s *System) clsnHantei(clsn1 []float32, scl1, pos1 [2]float32,
 		scl2[0] *= -1
 	}
 	for i1 := 0; i1+3 < len(clsn1); i1 += 4 {
-		l1, r1 := clsn1[i1], clsn1[i1+2]+1
+		l1, r1 := clsn1[i1], clsn1[i1+2]
 		if facing1 < 0 {
 			l1, r1 = -r1, -l1
 		}
 		for i2 := 0; i2+3 < len(clsn2); i2 += 4 {
-			l2, r2 := clsn2[i2], clsn2[i2+2]+1
+			l2, r2 := clsn2[i2], clsn2[i2+2]
 			if facing2 < 0 {
 				l2, r2 = -r2, -l2
 			}
-			if l1*scl1[0]+pos1[0] < r2*scl2[0]+pos2[0] &&
-				l2*scl2[0]+pos2[0] < r1*scl1[0]+pos1[0] &&
-				clsn1[i1+1]*scl1[1]+pos1[1] < (clsn2[i2+3]+1)*scl2[1]+pos2[1] &&
-				clsn2[i2+1]*scl2[1]+pos2[1] < (clsn1[i1+3]+1)*scl1[1]+pos1[1] {
+			if l1*scl1[0]+pos1[0] <= r2*scl2[0]+pos2[0] && // Left Clsn1 <= Right Clsn2
+				l2*scl2[0]+pos2[0] <= r1*scl1[0]+pos1[0] && // Left Clsn2 <= Right Clsn1
+				clsn1[i1+1]*scl1[1]+pos1[1] <= (clsn2[i2+3])*scl2[1]+pos2[1] && // Top Clsn1 <= Bottom Clsn2
+				clsn2[i2+1]*scl2[1]+pos2[1] <= (clsn1[i1+3])*scl1[1]+pos1[1] { // Top Clsn2 <= Bottom Clsn1
 				return true
 			}
 		}
@@ -802,9 +916,9 @@ func (s *System) playerClear(pn int, destroy bool) {
 	}
 	s.projs[pn] = s.projs[pn][:0]
 	s.explods[pn] = s.explods[pn][:0]
-	s.explDrawlist[pn] = s.explDrawlist[pn][:0]
-	s.topexplDrawlist[pn] = s.topexplDrawlist[pn][:0]
-	s.underexplDrawlist[pn] = s.underexplDrawlist[pn][:0]
+	s.explodsLayerN1[pn] = s.explodsLayerN1[pn][:0]
+	s.explodsLayer0[pn] = s.explodsLayer0[pn][:0]
+	s.explodsLayer1[pn] = s.explodsLayer1[pn][:0]
 }
 func (s *System) nextRound() {
 	s.resetGblEffect()
@@ -812,8 +926,8 @@ func (s *System) nextRound() {
 	s.firstAttack = [3]int{-1, -1, 0}
 	s.finish = FT_NotYet
 	s.winTeam = -1
-	s.winType = [...]WinType{WT_N, WT_N}
-	s.winTrigger = [...]WinType{WT_N, WT_N}
+	s.winType = [...]WinType{WT_Normal, WT_Normal}
+	s.winTrigger = [...]WinType{WT_Normal, WT_Normal}
 	s.lastHitter = [2]int{-1, -1}
 	s.waitdown = s.lifebar.ro.over_waittime + 900
 	s.slowtime = s.lifebar.ro.slow_time
@@ -967,8 +1081,8 @@ func (s *System) commandUpdate() {
 				act = false
 			}
 			// Having this here makes B and F inputs reverse the same instant the character turns
-			if act && !r.asf(ASF_noautoturn) && (r.scf(SCF_ctrl) || r.roundState() > 2) &&
-				(r.ss.no == 0 || r.ss.no == 11 || r.ss.no == 20 || r.ss.no == 52) {
+			if act && !r.asf(ASF_noautoturn) && (r.scf(SCF_ctrl) || sys.roundState() > 2) &&
+				(r.ss.no == 0 || r.ss.no == 11 || r.ss.no == 20 || r.ss.no == 52) && s.stage.autoturn {
 				r.turn()
 			}
 			if r.inputOver() || r.asf(ASF_noinput) {
@@ -1001,7 +1115,7 @@ func (s *System) commandUpdate() {
 				cc := int32(-1)
 				// AI Scaling
 				// TODO: Balance AI Scaling
-				if r.roundState() == 2 && RandF32(0, sys.com[i]/2+32) > 32 {
+				if sys.roundState() == 2 && RandF32(0, sys.com[i]/2+32) > 32 {
 					cc = Rand(0, int32(len(r.cmd[r.ss.sb.playerNo].Commands))-1)
 				} else {
 					cc = -1
@@ -1031,11 +1145,11 @@ func (s *System) charUpdate() {
 		for i, pr := range s.projs {
 			for j, p := range pr {
 				if p.id >= 0 {
-					s.projs[i][j].clsn(i)
+					s.projs[i][j].tradeDetection(i, j)
 				}
 			}
 		}
-		s.charList.getHit()
+		s.charList.collisionDetection()
 		for i, pr := range s.projs {
 			for j, p := range pr {
 				if p.id != IErr {
@@ -1054,16 +1168,21 @@ func (s *System) posReset() {
 	}
 }
 func (s *System) action() {
-	s.sprites = s.sprites[:0]
-	s.topSprites = s.topSprites[:0]
-	s.bottomSprites = s.bottomSprites[:0]
+	s.spritesLayerN1 = s.spritesLayerN1[:0]
+	s.spritesLayerU = s.spritesLayerU[:0]
+	s.spritesLayer0 = s.spritesLayer0[:0]
+	s.spritesLayer1 = s.spritesLayer1[:0]
 	s.shadows = s.shadows[:0]
-	s.drawc1 = s.drawc1[:0]
-	s.drawc2 = s.drawc2[:0]
-	s.drawc2sp = s.drawc2sp[:0]
-	s.drawc2mtk = s.drawc2mtk[:0]
-	s.drawwh = s.drawwh[:0]
-	s.drawch = s.drawch[:0]
+	s.debugc1hit = s.debugc1hit[:0]
+	s.debugc1rev = s.debugc1rev[:0]
+	s.debugc1not = s.debugc1not[:0]
+	s.debugc2 = s.debugc2[:0]
+	s.debugc2hb = s.debugc2hb[:0]
+	s.debugc2mtk = s.debugc2mtk[:0]
+	s.debugc2grd = s.debugc2grd[:0]
+	s.debugc2stb = s.debugc2stb[:0]
+	s.debugcsize = s.debugcsize[:0]
+	s.debugch = s.debugch[:0]
 	s.clsnText = nil
 	var x, y, scl float32 = s.cam.Pos[0], s.cam.Pos[1], s.cam.Scale / s.cam.BaseScale()
 	s.cam.ResetTracking()
@@ -1186,14 +1305,16 @@ func (s *System) action() {
 					s.winTeam = -1
 				}
 				if !(ko[0] || ko[1]) {
-					s.winType[0], s.winType[1] = WT_T, WT_T
+					s.winType[0], s.winType[1] = WT_Time, WT_Time
 				}
 			}
 			if s.intro >= -1 && (ko[0] || ko[1]) {
 				if ko[0] && ko[1] {
-					s.finish, s.winTeam = FT_DKO, -1
+					s.finish = FT_DKO
+					s.winTeam = -1
 				} else {
-					s.finish, s.winTeam = FT_KO, int(Btoi(ko[0]))
+					s.finish = FT_KO
+					s.winTeam = int(Btoi(ko[0]))
 				}
 			}
 			if ft != s.finish {
@@ -1203,10 +1324,10 @@ func (s *System) action() {
 							for _, tid := range h.targets {
 								if t := sys.playerID(tid); t != nil {
 									if t.ghv.attr&int32(AT_AH) != 0 {
-										s.winTrigger[i&1] = WT_H
+										s.winTrigger[i&1] = WT_Hyper
 									} else if t.ghv.attr&int32(AT_AS) != 0 &&
-										s.winTrigger[i&1] == WT_N {
-										s.winTrigger[i&1] = WT_S
+										s.winTrigger[i&1] == WT_Normal {
+										s.winTrigger[i&1] = WT_Special
 									}
 								}
 							}
@@ -1254,12 +1375,14 @@ func (s *System) action() {
 								if !p[0].scf(SCF_inputwait) {
 									p[0].setSCF(SCF_inputwait)
 								}
-								// Check if this character is ready to procced to roundstate 4
-								if p[0].scf(SCF_over) || p[0].ss.no == 5150 || (p[0].scf(SCF_ctrl) && p[0].ss.moveType == MT_I &&
-									p[0].ss.stateType != ST_A && p[0].ss.stateType != ST_L) {
+								// Check if this player is ready to proceed to roundstate 4
+								// TODO: The game should normally only wait for players that are active in the fight // || p[0].teamside == -1 || p[0].scf(SCF_standby)
+								// TODO: This could be manageable from the char's side with an AssertSpecial or such
+								if p[0].scf(SCF_over) || p[0].ss.no == 5150 ||
+									(p[0].scf(SCF_ctrl) && p[0].ss.moveType == MT_I && p[0].ss.stateType != ST_A && p[0].ss.stateType != ST_L) {
 									continue
 								}
-								// Freeze timer if any character is not ready to proceed yet
+								// Freeze timer if any player is not ready to proceed yet
 								s.intro = rs4t
 								break
 							}
@@ -1300,7 +1423,7 @@ func (s *System) action() {
 					}
 					for _, p := range s.chars {
 						if len(p) > 0 {
-							//default life recovery, used only if externalized Lua implementaion is disabled
+							// Default life recovery. Used only if externalized Lua implementation is disabled
 							if len(sys.commonLua) == 0 && s.waitdown >= 0 && s.time > 0 && p[0].win() &&
 								p[0].alive() && !s.matchOver() &&
 								(s.tmode[0] == TM_Turns || s.tmode[1] == TM_Turns) {
@@ -1310,6 +1433,7 @@ func (s *System) action() {
 									p[0].life = p[0].lifeMax
 								}
 							}
+							// TODO: These changestates ought to be unhardcoded
 							if !p[0].scf(SCF_over) && !p[0].hitPause() && p[0].alive() && p[0].animNo != 5 {
 								p[0].setSCF(SCF_over)
 								p[0].unsetSCF(SCF_inputwait)
@@ -1377,17 +1501,19 @@ func (s *System) action() {
 			s.pausetime = ^s.pausetime
 			s.pause = s.pausetime
 		}
-		// in mugen 1.1 most global assertspecial flags are reset during pause
-		// TODO: test if roundnotover should reset (keep intro and noko active)
+		// In Mugen 1.1, few global AssertSpecial flags persist during pauses. Seemingly only TimerFreeze
 		if s.super <= 0 && s.pause <= 0 {
 			s.specialFlag = 0
 		} else {
-			s.unsetGSF(GSF_assertspecial)
+			// These flags persist even during pauses
+			// "Intro" seems to have been deliberately added. Does not persist in Mugen 1.1
+			// "NoKOSlow" added to facilitate custom slowdown. In Mugen that flag only needs to be asserted in first frame of KO slowdown
+			s.specialFlag = (s.specialFlag&GSF_intro | s.specialFlag&GSF_nokoslow | s.specialFlag&GSF_timerfreeze)
 		}
 		if s.superanim != nil {
 			s.superanim.Action()
 		}
-		s.charList.action(x)
+		s.charList.action()
 		s.nomusic = s.gsf(GSF_nomusic) && !sys.postMatchFlg
 	} else {
 		s.charUpdate()
@@ -1439,7 +1565,7 @@ func (s *System) action() {
 		}
 	}
 	if !s.cam.ZoomEnable {
-		// Pos X の誤差が出ないように精度を落とす
+		// Lower the precision to prevent errors in Pos X.
 		x = float32(math.Ceil(float64(x)*4-0.5) / 4)
 	}
 	s.cam.Update(scl, x, y)
@@ -1459,7 +1585,7 @@ func (s *System) action() {
 	s.charList.xScreenBound()
 
 	if s.superanim != nil {
-		s.topSprites.add(&SprData{s.superanim, &s.superpmap, s.superpos,
+		s.spritesLayer1.add(&SprData{s.superanim, &s.superpmap, s.superpos,
 			[...]float32{s.superfacing, 1}, [2]int32{-1}, 5, Rotation{}, [2]float32{},
 			false, true, s.cgi[s.superplayer].mugenver[0] != 1, 1, 1, 0, 0, [4]float32{0, 0, 0, 0}}, 0, 0, 0, 0)
 		if s.superanim.loopend {
@@ -1491,10 +1617,9 @@ func (s *System) action() {
 			}
 		}
 	}
-	explUpdate(&s.explDrawlist, true)
-	explUpdate(&s.topexplDrawlist, false)
-	explUpdate(&s.underexplDrawlist, true)
-
+	explUpdate(&s.explodsLayerN1, true)
+	explUpdate(&s.explodsLayer0, true)
+	explUpdate(&s.explodsLayer1, false)
 	if s.tickNextFrame() {
 		spd := s.gameSpeed * s.accel
 		if s.postMatchFlg {
@@ -1522,6 +1647,8 @@ func (s *System) draw(x, y, scl float32) {
 	//}
 	if s.envcol_time == 0 {
 		c := uint32(0)
+
+		// Draw stage background fill if stage is disabled
 		if s.gsf(GSF_nobg) {
 			if s.allPalFX.enable {
 				var rgb [3]int32
@@ -1538,7 +1665,10 @@ func (s *System) draw(x, y, scl float32) {
 			} else {
 				FillRect(s.scrrect, c, 0xff)
 			}
-		} else {
+		}
+
+		// Draw normal stage background fill and elements with layerNo == -1
+		if !s.gsf(GSF_nobg) {
 			if s.stage.debugbg {
 				if sys.batchMode {
 					CalculateRectData(s.scrrect, 0xff00ff, 0xff)
@@ -1552,12 +1682,34 @@ func (s *System) draw(x, y, scl float32) {
 				} else {
 					FillRect(s.scrrect, c, 0xff)
 				}
+				if s.stage.ikemenver[0] != 0 || s.stage.ikemenver[1] != 0 { // This layer did not render in Mugen
+					s.stage.draw(-1, bgx, bgy, scl)
+				}
 			}
-			s.stage.draw(false, bgx, bgy, scl)
+
+			// Draw reflections on layer -1
+			if !s.gsf(GSF_globalnoshadow) {
+				if s.stage.reflection.intensity > 0 && s.stage.reflectionlayerno < 0 {
+					s.shadows.drawReflection(x, y, scl*s.cam.BaseScale())
+				}
+			}
+
+			// Draw character sprites with layerNo == -1
+			s.spritesLayerN1.draw(x, y, scl*s.cam.BaseScale())
+
+			// Draw stage elements with layerNo == 0
+			if !s.gsf(GSF_nobg) {
+				s.stage.draw(0, bgx, bgy, scl)
+			}
 		}
-		s.bottomSprites.draw(x, y, scl*s.cam.BaseScale())
+		// Draw character sprites with special under flag
+		s.spritesLayerU.draw(x, y, scl*s.cam.BaseScale())
+
+		// Draw shadows
+		// Draw reflections on layer 0
+		// TODO: Make shadows render in same layers as their sources?
 		if !s.gsf(GSF_globalnoshadow) {
-			if s.stage.reflection > 0 {
+			if s.stage.reflection.intensity > 0 && s.stage.reflectionlayerno >= 0 {
 				s.shadows.drawReflection(x, y, scl*s.cam.BaseScale())
 			}
 			s.shadows.draw(x, y, scl*s.cam.BaseScale())
@@ -1596,27 +1748,38 @@ func (s *System) draw(x, y, scl float32) {
 		//	fade(rect, 0, 255)
 		//}
 		UIMode = true
+		// Draw lifebar layers -1 and 0
 		s.lifebar.draw(-1)
 		s.lifebar.draw(0)
-	} else {
+	} 
+	
+	// Draw EnvColor effect
+	if s.envcol_time != 0 {
 		if sys.batchMode {
 			CalculateRectData(s.scrrect, ecol, 255)
 		} else {
 			FillRect(s.scrrect, ecol, 255)
 		}
 	}
+	
 	UIMode = false
+	// Draw character sprites in layer 0
 	if s.envcol_time == 0 || s.envcol_under {
-		s.sprites.draw(x, y, scl*s.cam.BaseScale())
+		s.spritesLayer0.draw(x, y, scl*s.cam.BaseScale())
 		if s.envcol_time == 0 && !s.gsf(GSF_nofg) {
-			s.stage.draw(true, bgx, bgy, scl)
+			s.stage.draw(1, bgx, bgy, scl)
 		}
 	}
 	UIMode = true
+	// Draw lifebar layer 1
 	s.lifebar.draw(1)
+	
 	UIMode = false
-	s.topSprites.draw(x, y, scl*s.cam.BaseScale())
+	// Draw character sprites in layer 1 (old "ontop")
+	s.spritesLayer1.draw(x, y, scl*s.cam.BaseScale())
+	
 	UIMode = true
+	// Draw lifebar layer 2
 	s.lifebar.draw(2)
 	UIMode = false
 }
@@ -1661,22 +1824,31 @@ func (s *System) drawTop() {
 		fade(rect, s.lifebar.ro.shutter_col, 255)
 	}
 	s.brightness = s.brightnessOld
+	// Draw Clsn boxes
 	if s.clsnDraw {
 		s.clsnSpr.Pal[0] = 0xff0000ff
-		s.drawc1.draw(0x3feff)
+		s.debugc1hit.draw(0x3feff)
+		s.clsnSpr.Pal[0] = 0xff0040c0
+		s.debugc1rev.draw(0x3feff)
+		s.clsnSpr.Pal[0] = 0xff000080
+		s.debugc1not.draw(0x3feff)
 		s.clsnSpr.Pal[0] = 0xffff0000
-		s.drawc2.draw(0x3feff)
-		s.clsnSpr.Pal[0] = 0xff00ff00
-		s.drawc2sp.draw(0x3feff)
-		s.clsnSpr.Pal[0] = 0xff002000
-		s.drawc2mtk.draw(0x3feff)
+		s.debugc2.draw(0x3feff)
+		s.clsnSpr.Pal[0] = 0xff808000
+		s.debugc2hb.draw(0x3feff)
+		s.clsnSpr.Pal[0] = 0xff004000
+		s.debugc2mtk.draw(0x3feff)
+		s.clsnSpr.Pal[0] = 0xffc00040
+		s.debugc2grd.draw(0x3feff)
+		s.clsnSpr.Pal[0] = 0xff404040
+		s.debugc2stb.draw(0x3feff)
 		s.clsnSpr.Pal[0] = 0xff303030
-		s.drawwh.draw(0x3feff)
+		s.debugcsize.draw(0x3feff)
 		s.clsnSpr.Pal[0] = 0xffffffff
-		s.drawch.draw(0x3feff)
+		s.debugch.draw(0x3feff)
 	}
 }
-func (s *System) drawDebug() {
+func (s *System) drawDebugText() {
 	put := func(x, y *float32, txt string) {
 		for txt != "" {
 			w, drawTxt := int32(0), ""
@@ -1697,7 +1869,7 @@ func (s *System) drawDebug() {
 		}
 	}
 	if s.debugDraw {
-		//Player Info
+		// Player Info on top of screen
 		x := (320-float32(s.gameWidth))/2 + 1
 		y := 240 - float32(s.gameHeight)
 		if s.statusLFunc != nil {
@@ -1723,6 +1895,8 @@ func (s *System) drawDebug() {
 			put(&x, &y, s)
 		}
 		//Data
+		y = float32(s.gameHeight) - float32(s.debugFont.fnt.Size[1])*sys.debugFont.yscl/s.heightScale*
+			(float32(len(s.listLFunc))+float32(s.clipboardRows)) - 1*s.heightScale
 		pn := s.debugRef[0]
 		hn := s.debugRef[1]
 		if pn >= len(s.chars) || hn >= len(s.chars[pn]) {
@@ -1730,8 +1904,6 @@ func (s *System) drawDebug() {
 			s.debugRef[1] = 0
 		}
 		s.debugWC = s.chars[s.debugRef[0]][s.debugRef[1]]
-		y = float32(s.gameHeight) - float32(s.debugFont.fnt.Size[1])*sys.debugFont.yscl/s.heightScale*
-			(float32(len(s.listLFunc))+float32(s.clipboardRows)) - 1*s.heightScale
 		for i, f := range s.listLFunc {
 			if f != nil {
 				if i == 1 {
@@ -1763,15 +1935,16 @@ func (s *System) drawDebug() {
 			put(&x, &y, s)
 		}
 	}
-	//Clsn
-	if s.clsnDraw {
+	// Draw Clsn text
+	// Unlike Mugen, this is drawn separately from the Clsn boxes themselves, making debug more flexible
+	//if s.clsnDraw {
 		for _, t := range s.clsnText {
 			s.debugFont.SetColor(t.r, t.g, t.b)
 			s.debugFont.fnt.Print(t.text, t.x, t.y, s.debugFont.xscl/s.widthScale,
 				s.debugFont.yscl/s.heightScale, 0, 0, &s.scrrect,
 				s.debugFont.palfx, s.debugFont.frgba)
 		}
-	}
+	//}
 }
 
 // Starts and runs gameplay
@@ -1795,7 +1968,7 @@ func (s *System) fight() (reload bool) {
 		s.wincnt.update()
 	}()
 	var oldStageVars Stage
-	oldStageVars.copyStageVars(s.stage)
+	oldStageVars.copyStageVars(s.stage) // NOTE: This save and restore of stage variables makes ModifyStageVar not persist. Maybe that should not be the case?
 	var life, lifeMax, power, powerMax [len(s.chars)]int32
 	var guardPoints, guardPointsMax, dizzyPoints, dizzyPointsMax, redLife [len(s.chars)]int32
 	var teamside [len(s.chars)]int
@@ -1977,6 +2150,7 @@ func (s *System) fight() (reload bool) {
 						p[0].power = 0
 					}
 				}
+				p[0].power = Clamp(p[0].power, 0, p[0].powerMax) // Because of Turns mode
 				p[0].dialogue = []string{}
 				p[0].mapArray = make(map[string]float32)
 				for k, v := range p[0].mapDefault {
@@ -2091,8 +2265,8 @@ func (s *System) fight() (reload bool) {
 					tmp.RawSetString("winKO", lua.LBool(p[0].winKO()))
 					tmp.RawSetString("winTime", lua.LBool(p[0].winTime()))
 					tmp.RawSetString("winPerfect", lua.LBool(p[0].winPerfect()))
-					tmp.RawSetString("winSpecial", lua.LBool(p[0].winType(WT_S)))
-					tmp.RawSetString("winHyper", lua.LBool(p[0].winType(WT_H)))
+					tmp.RawSetString("winSpecial", lua.LBool(p[0].winType(WT_Special)))
+					tmp.RawSetString("winHyper", lua.LBool(p[0].winType(WT_Hyper)))
 					tmp.RawSetString("drawgame", lua.LBool(p[0].drawgame()))
 					tmp.RawSetString("ko", lua.LBool(p[0].scf(SCF_ko)))
 					tmp.RawSetString("ko_round_middle", lua.LBool(p[0].scf(SCF_ko_round_middle)))
@@ -2217,8 +2391,8 @@ func (s *System) fight() (reload bool) {
 			}
 		}
 		// Render debug elements
-		if !s.frameSkip {
-			s.drawDebug()
+		if !s.frameSkip && s.debugDraw {
+			s.drawDebugText()
 		}
 		// Break if finished
 		if fin && (!s.postMatchFlg || len(sys.commonLua) == 0) {

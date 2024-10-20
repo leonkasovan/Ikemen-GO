@@ -8,10 +8,11 @@ import (
 	"encoding/binary"
 	"fmt"
 	"runtime"
+	"time"
 	"unsafe"
 
-	atlas "github.com/ikemen-engine/Ikemen-GO/glh"
 	"github.com/cespare/xxhash"
+	atlas "github.com/ikemen-engine/Ikemen-GO/glh"
 	gl "github.com/leonkasovan/gl/v3.1/gles2"
 	"golang.org/x/mobile/exp/f32"
 )
@@ -343,11 +344,12 @@ func gl_error_debug(
 // Creates the default shaders, the framebuffer and enables MSAA.
 func (r *Renderer) Init() {
 	chk(gl.Init())
-	sys.errLog.Printf("Using %v (%v)", gl.GoStr(gl.GetString(gl.VERSION)), gl.GoStr(gl.GetString(gl.RENDERER)))
-	sys.errLog.Printf("Fullscreen: %v (%v x %v)", sys.fullscreen, sys.fullscreenWidth, sys.fullscreenHeight)
-	sys.errLog.Printf("scrrect: %v,%v - %v,%v", sys.scrrect[0], sys.scrrect[1], sys.scrrect[2], sys.scrrect[3])
-	sys.errLog.Printf("gameWidth x gameHeight: %v,%v", sys.gameWidth, sys.gameHeight)
-	sys.errLog.Printf("widthScale x heightScale: %v,%v", sys.widthScale, sys.heightScale)
+	fmt.Printf("Using %v (%v)\n", gl.GoStr(gl.GetString(gl.VERSION)), gl.GoStr(gl.GetString(gl.RENDERER)))
+	fmt.Printf("Fullscreen: %v (%v x %v)\n", sys.fullscreen, sys.fullscreenWidth, sys.fullscreenHeight)
+	fmt.Printf("scrrect: %v,%v - %v,%v\n", sys.scrrect[0], sys.scrrect[1], sys.scrrect[2], sys.scrrect[3])
+	fmt.Printf("gameWidth x gameHeight: %v,%v\n", sys.gameWidth, sys.gameHeight)
+	fmt.Printf("widthScale x heightScale: %v,%v\n", sys.widthScale, sys.heightScale)
+
 	// Store current timestamp
 	updateTimeStamp()
 
@@ -498,11 +500,17 @@ func (r *Renderer) EndFrame() {
 	}
 
 	x, y, resizedWidth, resizedHeight := sys.window.GetScaledViewportSize()
-	gl.Viewport(x, y, resizedWidth, resizedHeight)
-	gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
-
 	postShader := r.postShaderSelect[sys.postProcessingShader]
 
+	var scaleMode int32 // GL enum
+	if sys.windowScaleMode == true {
+		scaleMode = gl.LINEAR
+	} else {
+		scaleMode = gl.NEAREST
+	}
+
+	gl.Viewport(x, y, int32(resizedWidth), int32(resizedHeight))
+	gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
 	gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 	gl.UseProgram(postShader.program)
 	gl.Disable(gl.BLEND)
@@ -513,8 +521,13 @@ func (r *Renderer) EndFrame() {
 	} else {
 		gl.BindTexture(gl.TEXTURE_2D, r.fbo_texture)
 	}
+
+	// set post-processing parameters
 	gl.Uniform1i(postShader.u["Texture"], 0)
-	gl.Uniform2f(postShader.u["TextureSize"], float32(sys.scrrect[2]), float32(sys.scrrect[3]))
+	gl.Uniform2f(postShader.u["TextureSize"], float32(resizedWidth), float32(resizedHeight))
+	gl.Uniform1f(postShader.u["CurrentTime"], float32(time.Now().Unix()))
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, scaleMode)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, scaleMode)
 
 	gl.BindBuffer(gl.ARRAY_BUFFER, r.postVertBuffer)
 

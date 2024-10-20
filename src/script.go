@@ -390,10 +390,23 @@ func systemScriptInit(l *lua.LState) {
 		if !ok {
 			userDataError(l, 1, bg)
 		}
-		top := false
+		layer := int32(0)
 		var x, y, scl float32 = 0, 0, 1
 		if l.GetTop() >= 2 {
-			top = boolArg(l, 2)
+			num, ok := l.Get(2).(lua.LNumber)
+			if ok {
+				if float64(num) == 1 {
+					layer = 1
+				} else {
+					layer = 0
+				}
+			} else {
+				if l.ToBool(2) {
+					layer = 1
+				} else {
+					layer = 0
+				}
+			}
 		}
 		if l.GetTop() >= 3 {
 			x = float32(numArg(l, 3))
@@ -404,7 +417,7 @@ func systemScriptInit(l *lua.LState) {
 		if l.GetTop() >= 5 {
 			scl = float32(numArg(l, 5))
 		}
-		bg.draw(top, x, y, scl)
+		bg.draw(layer, x, y, scl)
 		return 0
 	})
 	luaRegister(l, "bgNew", func(*lua.LState) int {
@@ -2565,6 +2578,26 @@ func systemScriptInit(l *lua.LState) {
 		}
 		return 0
 	})
+	luaRegister(l, "toggleWindowScaleMode", func(*lua.LState) int {
+		wsm := !sys.windowScaleMode
+		if l.GetTop() >= 1 {
+			wsm = boolArg(l, 1)
+		}
+		if wsm != sys.windowScaleMode {
+			sys.windowScaleMode = !sys.windowScaleMode
+		}
+		return 0
+	})
+	luaRegister(l, "toggleKeepAspect", func(*lua.LState) int {
+		wsm := !sys.keepAspect
+		if l.GetTop() >= 1 {
+			wsm = boolArg(l, 1)
+		}
+		if wsm != sys.keepAspect {
+			sys.keepAspect = !sys.keepAspect
+		}
+		return 0
+	})
 	luaRegister(l, "toggleMaxPowerMode", func(*lua.LState) int {
 		if l.GetTop() >= 1 {
 			sys.maxPowerMode = boolArg(l, 1)
@@ -3901,7 +3934,7 @@ func triggerFunctions(l *lua.LState) {
 		case "shadow.xshear":
 			l.Push(lua.LNumber(sys.stage.sdw.xshear))
 		case "reflection.intensity":
-			l.Push(lua.LNumber(sys.stage.reflection))
+			l.Push(lua.LNumber(sys.stage.reflection.intensity))
 		default:
 			l.Push(lua.LString(""))
 		}
@@ -3987,11 +4020,11 @@ func triggerFunctions(l *lua.LState) {
 		return 1
 	})
 	luaRegister(l, "winspecial", func(*lua.LState) int {
-		l.Push(lua.LBool(sys.debugWC.winType(WT_S)))
+		l.Push(lua.LBool(sys.debugWC.winType(WT_Special)))
 		return 1
 	})
 	luaRegister(l, "winhyper", func(*lua.LState) int {
-		l.Push(lua.LBool(sys.debugWC.winType(WT_H)))
+		l.Push(lua.LBool(sys.debugWC.winType(WT_Hyper)))
 		return 1
 	})
 
@@ -4140,7 +4173,7 @@ func triggerFunctions(l *lua.LState) {
 		return 1
 	})
 	luaRegister(l, "attack", func(*lua.LState) int {
-		l.Push(lua.LNumber(sys.debugWC.attackMul * 100))
+		l.Push(lua.LNumber(sys.debugWC.attackMul[0] * 100))
 		return 1
 	})
 	luaRegister(l, "clamp", func(*lua.LState) int {

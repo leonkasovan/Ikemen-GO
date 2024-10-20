@@ -9,6 +9,7 @@ import (
 	"image"
 	"image/draw"
 	_ "image/jpeg"
+	"log"
 	"math"
 	"os"
 	"regexp"
@@ -143,7 +144,7 @@ type backGround struct {
 	visible            bool
 	active             bool
 	positionlink       bool
-	toplayer           bool
+	layerno            int32
 	autoresizeparallax bool
 	notmaskwindow      int32
 	startrect          [4]int32
@@ -182,12 +183,7 @@ func readBackGround(is IniSection, link *backGround,
 		return bg
 	}
 	var tmp int32
-	if is.ReadI32("layerno", &tmp) {
-		bg.toplayer = tmp == 1
-		if tmp < 0 || tmp > 1 {
-			bg.typ = 3
-		}
-	}
+	is.ReadI32("layerno", &bg.layerno)
 	if bg.typ != 3 {
 		var hasAnim bool
 		if (bg.typ != 0 || len(is["spriteno"]) == 0) &&
@@ -406,15 +402,18 @@ func (bg backGround) draw(pos [2]float32, scl, bgscl, lclscl float32,
 		ys3 = ((scl + (1-scl)*(1-bg.zoomscaledelta[1])) / scly)
 	}
 	// This handles the flooring of the camera position in MUGEN versions earlier than 1.0.
+	var x, yScrollPos float32
 	if bg.roundpos {
+		x = bg.start[0] + bg.xofs - float32(Floor(pos[0]/stgscl[0]))*bg.delta[0] + bg.bga.offset[0]
+		yScrollPos = float32(Floor(pos[1]/scl/stgscl[1])) * bg.delta[1]
 		for i := 0; i < 2; i++ {
 			pos[i] = float32(math.Floor(float64(pos[i])))
 		}
+	} else {
+		x = bg.start[0] + bg.xofs - pos[0]/stgscl[0]*bg.delta[0] + bg.bga.offset[0]
+		// Hires breaks ydelta scrolling vel, so bgscl was commented from here.
+		yScrollPos = (pos[1] / scl / stgscl[1]) * bg.delta[1] // * bgscl
 	}
-	x := bg.start[0] + bg.xofs - (pos[0]/stgscl[0])*bg.delta[0] +
-		bg.bga.offset[0]
-	// Hires breaks ydelta scrolling vel, so bgscl was commented from here.
-	yScrollPos := (pos[1] / scl / stgscl[1]) * bg.delta[1] // * bgscl
 	y := bg.start[1] - yScrollPos + bg.bga.offset[1]
 	ys2 := bg.scaledelta[1] * pos[1] * bg.delta[1] * bgscl
 	ys := ((100-(pos[1])*bg.yscaledelta)*bgscl/bg.yscalestart)*bg.scalestart[1] + ys2
@@ -697,61 +696,68 @@ type stageShadow struct {
 	fadeend   int32
 	fadebgn   int32
 	xshear    float32
+	offset    [2]float32
 }
 type stagePlayer struct {
 	startx, starty, startz int32
 }
 type Stage struct {
-	def             string
-	bgmusic         string
-	name            string
-	displayname     string
-	author          string
-	nameLow         string
-	displaynameLow  string
-	authorLow       string
-	attachedchardef []string
-	sff             *Sff
-	at              AnimationTable
-	bg              []*backGround
-	bgc             []bgCtrl
-	bgct            bgcTimeLine
-	bga             bgAction
-	sdw             stageShadow
-	p               [2]stagePlayer
-	leftbound       float32
-	rightbound      float32
-	screenleft      int32
-	screenright     int32
-	zoffsetlink     int32
-	reflection      int32
-	hires           bool
-	resetbg         bool
-	debugbg         bool
-	bgclearcolor    [3]int32
-	localscl        float32
-	scale           [2]float32
-	bgmvolume       int32
-	bgmloopstart    int32
-	bgmloopend      int32
-	bgmratiolife    int32
-	bgmtriggerlife  int32
-	bgmtriggeralt   int32
-	mainstage       bool
-	stageCamera     stageCamera
-	stageTime       int32
-	constants       map[string]float32
-	p1p3dist        float32
-	mugenver        [2]uint16
-	reload          bool
-	stageprops      StageProps
-	model           *Model
+	def               string
+	bgmusic           string
+	name              string
+	displayname       string
+	author            string
+	nameLow           string
+	displaynameLow    string
+	authorLow         string
+	attachedchardef   []string
+	sff               *Sff
+	at                AnimationTable
+	bg                []*backGround
+	bgc               []bgCtrl
+	bgct              bgcTimeLine
+	bga               bgAction
+	sdw               stageShadow
+	p                 [2]stagePlayer
+	leftbound         float32
+	rightbound        float32
+	screenleft        int32
+	screenright       int32
+	zoffsetlink       int32
+	reflection        stageShadow
+	reflectionlayerno int32
+	hires             bool
+	autoturn          bool
+	resetbg           bool
+	debugbg           bool
+	bgclearcolor      [3]int32
+	localscl          float32
+	scale             [2]float32
+	bgmvolume         int32
+	bgmloopstart      int32
+	bgmloopend        int32
+	bgmstartposition  int32
+	bgmfreqmul        float32
+	bgmratiolife      int32
+	bgmtriggerlife    int32
+	bgmtriggeralt     int32
+	mainstage         bool
+	stageCamera       stageCamera
+	stageTime         int32
+	constants         map[string]float32
+	p1p3dist          float32
+	mugenver          [2]uint16
+	reload            bool
+	stageprops        StageProps
+	model             *Model
+	ikemenver         [3]uint16
 }
 
 func newStage(def string) *Stage {
 	s := &Stage{def: def, leftbound: -1000,
 		rightbound: 1000, screenleft: 15, screenright: 15,
-		zoffsetlink: -1, resetbg: true, localscl: 1, scale: [...]float32{float32(math.NaN()), float32(math.NaN())},
+		zoffsetlink: -1, autoturn: true, resetbg: true, localscl: 1,
+		scale:        [...]float32{float32(math.NaN()), float32(math.NaN())},
 		bgmratiolife: 30, stageCamera: *newStageCamera(),
 		constants: make(map[string]float32), p1p3dist: 25, bgmvolume: 100}
 	s.sdw.intensity = 128
@@ -762,8 +768,23 @@ func newStage(def string) *Stage {
 	return s
 }
 func loadStage(def string, main bool) (*Stage, error) {
+	var str, zipDef, zipFileName string
+	var err error
+	fmt.Printf("[DEBUG][stage.go] loadStage: def=%v main=%v\n", def, main)
+	if strings.Index(def, ".zip") == -1 {
+		zipFileName = ""
+		zipDef = ""
+	} else {
+		lines := SplitAndTrim(def, "|")
+		zipFileName = lines[0]
+		zipDef = lines[1]
+	}
 	s := newStage(def)
-	str, err := LoadText(def)
+	if zipFileName == "" {
+		str, err = LoadText(def)
+	} else {
+		str, err = LoadTextFromZip(zipFileName, zipDef)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -869,6 +890,7 @@ func loadStage(def string, main bool) (*Stage, error) {
 		sec[0].ReadI32("zoffset", &s.stageCamera.zoffset)
 		sec[0].ReadI32("zoffsetlink", &s.zoffsetlink)
 		sec[0].ReadBool("hires", &s.hires)
+		sec[0].ReadBool("autoturn", &s.autoturn)
 		sec[0].ReadBool("resetbg", &s.resetbg)
 		sec[0].readI32ForStage("localcoord", &s.stageCamera.localcoord[0],
 			&s.stageCamera.localcoord[1])
@@ -889,7 +911,7 @@ func loadStage(def string, main bool) (*Stage, error) {
 	s.stageCamera.localscl = s.localscl
 	if sec := defmap["camera"]; len(sec) > 0 {
 		sec[0].ReadI32("startx", &s.stageCamera.startx)
-		sec[0].ReadI32("starty", &s.stageCamera.starty) //does nothing in mugen
+		sec[0].ReadI32("starty", &s.stageCamera.starty)
 		sec[0].ReadI32("boundleft", &s.stageCamera.boundleft)
 		sec[0].ReadI32("boundright", &s.stageCamera.boundright)
 		sec[0].ReadI32("boundhigh", &s.stageCamera.boundhigh)
@@ -909,6 +931,12 @@ func loadStage(def string, main bool) (*Stage, error) {
 		sec[0].ReadF32("far", &s.stageCamera.far)
 		sec[0].ReadBool("autocenter", &s.stageCamera.autocenter)
 		sec[0].ReadF32("zoomindelay", &s.stageCamera.zoomindelay)
+		sec[0].ReadF32("zoominspeed", &s.stageCamera.zoominspeed)
+		sec[0].ReadF32("zoomoutspeed", &s.stageCamera.zoomoutspeed)
+		sec[0].ReadF32("yscrollspeed", &s.stageCamera.yscrollspeed)
+		sec[0].ReadF32("boundhighzoomdelta", &s.stageCamera.boundhighzoomdelta)
+		sec[0].ReadF32("verticalfollowzoomdelta", &s.stageCamera.verticalfollowzoomdelta)
+		sec[0].ReadBool("lowestcap", &s.stageCamera.lowestcap)
 		if sys.cam.ZoomMax == 0 {
 			sec[0].ReadF32("zoomin", &s.stageCamera.zoomin)
 		} else {
@@ -930,26 +958,77 @@ func loadStage(def string, main bool) (*Stage, error) {
 	}
 	if sec := defmap["music"]; len(sec) > 0 {
 		s.bgmusic = sec[0]["bgmusic"]
+		if zipFileName != "" {
+			path := FileExist("tmp/stages/" + s.bgmusic)
+			if path == "" {
+				err = ExtractFileFromZip(zipFileName, s.bgmusic, "tmp/stages")
+				path = "tmp/stages/" + s.bgmusic
+			}
+			if err != nil {
+				log.Fatal(err)
+			}
+			s.bgmusic = path
+		}
+		// fmt.Printf("[DEBUG][stage.go] loadStage: s.bgmusic=%v\n", s.bgmusic)
 		sec[0].ReadI32("bgmvolume", &s.bgmvolume)
 		sec[0].ReadI32("bgmloopstart", &s.bgmloopstart)
 		sec[0].ReadI32("bgmloopend", &s.bgmloopend)
+		sec[0].ReadI32("bgmstartposition", &s.bgmstartposition)
+		sec[0].ReadF32("bgmfreqmul", &s.bgmfreqmul)
 		sec[0].ReadI32("bgmratio.life", &s.bgmratiolife)
 		sec[0].ReadI32("bgmtrigger.life", &s.bgmtriggerlife)
 		sec[0].ReadI32("bgmtrigger.alt", &s.bgmtriggeralt)
 	}
 	if sec := defmap["bgdef"]; len(sec) > 0 {
 		if sec[0].LoadFile("spr", []string{def, "", sys.motifDir, "data/"}, func(filename string) error {
-			sff, err := loadSff(filename, false, nil)
+			var sff *Sff
+			var err error
+			// fmt.Printf("[DEBUG][stage.go] loadStage.loadSff: filename=%v\n", filename)
+			if zipFileName == "" {
+				sff, err = loadSff(filename, false, nil)
+			} else {
+				path := FileExist("tmp/stages/" + filename)
+				if path == "" {
+					err = ExtractFileFromZip(zipFileName, filename, "tmp/stages")
+					path = "tmp/stages/" + filename
+				}
+				if err != nil {
+					log.Fatal(err)
+				} else {
+					sff, err = loadSff(path, false, nil)
+				}
+			}
 			if err != nil {
 				return err
 			}
 			*s.sff = *sff
+			// SFF v2.01 was not available before Mugen 1.1, therefore we assume that's the minimum correct version for the stage
+			if s.sff.header.Ver0 == 2 && s.sff.header.Ver2 == 1 {
+				s.mugenver[0] = 1
+				s.mugenver[1] = 1
+			}
 			return nil
 		}); err != nil {
 			return nil, err
 		}
 		if err = sec[0].LoadFile("model", []string{def, "", sys.motifDir, "data/"}, func(filename string) error {
-			model, err := loadglTFStage(filename)
+			var model *Model
+			var err error
+			fmt.Printf("[DEBUG][stage.go] loadStage.loadglTFStage: filename=%v\n", filename)
+			if zipFileName == "" {
+				model, err = loadglTFStage(filename)
+			} else {
+				path := FileExist("tmp/stages/" + filename)
+				if path == "" {
+					err = ExtractFileFromZip(zipFileName, filename, "tmp/stages")
+					path = "tmp/stages/" + filename
+				}
+				if err != nil {
+					log.Fatal(err)
+				} else {
+					model, err = loadglTFStage(path)
+				}
+			}
 			if err != nil {
 				return err
 			}
@@ -958,6 +1037,11 @@ func loadStage(def string, main bool) (*Stage, error) {
 			s.model.pfx = newPalFX()
 			s.model.pfx.clear()
 			s.model.pfx.time = -1
+			// 3D models were not available before Ikemen 1.0, therefore we assume that's the minimum correct version for the stage
+			if s.ikemenver[0] == 0 && s.ikemenver[1] == 0 {
+				s.ikemenver[0] = 1
+				s.ikemenver[1] = 0
+			}
 			return nil
 		}); err != nil {
 			return nil, err
@@ -1001,21 +1085,37 @@ func loadStage(def string, main bool) (*Stage, error) {
 			s.sdw.intensity = Clamp(tmp, 0, 255)
 		}
 		var r, g, b int32
-		// mugen 1.1 removed support for color
-		if (s.mugenver[0] != 1 || s.mugenver[1] != 1) && (s.sff.header.Ver0 != 2 || s.sff.header.Ver2 != 1) && sec[0].readI32ForStage("color", &r, &g, &b) {
-			r, g, b = Clamp(r, 0, 255), Clamp(g, 0, 255), Clamp(b, 0, 255)
+		sec[0].readI32ForStage("color", &r, &g, &b)
+		r, g, b = Clamp(r, 0, 255), Clamp(g, 0, 255), Clamp(b, 0, 255)
+		// Disable color parameter specifically in Mugen 1.1 stages
+		if s.ikemenver[0] == 0 && s.ikemenver[1] == 0 && s.mugenver[0] == 1 && s.mugenver[1] == 1 {
+			r, g, b = 0, 0, 0
 		}
 		s.sdw.color = uint32(r<<16 | g<<8 | b)
 		sec[0].ReadF32("yscale", &s.sdw.yscale)
 		sec[0].ReadBool("reflect", &reflect)
 		sec[0].readI32ForStage("fade.range", &s.sdw.fadeend, &s.sdw.fadebgn)
 		sec[0].ReadF32("xshear", &s.sdw.xshear)
+		sec[0].readF32ForStage("offset", &s.sdw.offset[0], &s.sdw.offset[1])
 	}
 	if reflect {
 		if sec := defmap["reflection"]; len(sec) > 0 {
+			s.reflection.yscale = 1.0
 			var tmp int32
+			var tmp2 float32
+			var tmp3 [2]float32
 			if sec[0].ReadI32("intensity", &tmp) {
-				s.reflection = Clamp(tmp, 0, 255)
+				s.reflection.intensity = Clamp(tmp, 0, 255)
+			}
+			if sec[0].ReadI32("layerno", &tmp) {
+				s.reflectionlayerno = Clamp(tmp, -1, 0)
+			}
+			if sec[0].ReadF32("yscale", &tmp2) {
+				s.reflection.yscale = tmp2
+			}
+			if sec[0].readF32ForStage("offset", &tmp3[0], &tmp3[1]) {
+				s.reflection.offset[0] = tmp3[0]
+				s.reflection.offset[1] = tmp3[1]
 			}
 		}
 	}
@@ -1119,7 +1219,11 @@ func (s *Stage) copyStageVars(src *Stage) {
 	s.sdw.fadeend = src.sdw.fadeend
 	s.sdw.fadebgn = src.sdw.fadebgn
 	s.sdw.xshear = src.sdw.xshear
-	s.reflection = src.reflection
+	s.sdw.offset[0] = src.sdw.offset[0]
+	s.sdw.offset[1] = src.sdw.offset[1]
+	s.reflection.intensity = src.reflection.intensity
+	s.reflection.offset[0] = src.reflection.offset[0]
+	s.reflection.offset[1] = src.reflection.offset[1]
 }
 func (s *Stage) getBg(id int32) (bg []*backGround) {
 	if id >= 0 {
@@ -1238,8 +1342,10 @@ func (s *Stage) runBgCtrl(bgc *bgCtrl) {
 		if bgc.v[0] == 0 {
 			bgc.v[1] = 0
 		}
-		a := float32(bgc.v[2]) / 360
-		st := int32((a - float32(int32(a))) * float32(bgc.v[1]))
+		// Unlike plain sin.x elements, in the SinX BGCtrl the last parameter is a time offset rather than a phase
+		// https://github.com/ikemen-engine/Ikemen-GO/issues/1790
+		ph := float32(bgc.v[2]) / float32(bgc.v[1])
+		st := int32((ph - float32(int32(ph))) * float32(bgc.v[1]))
 		if st < 0 {
 			st += Abs(bgc.v[1])
 		}
@@ -1357,7 +1463,8 @@ func (s *Stage) action() {
 		}
 	}
 }
-func (s *Stage) draw(top bool, x, y, scl float32) {
+
+func (s *Stage) draw(layer int32, x, y, scl float32) {
 	bgscl := float32(1)
 	if s.hires {
 		bgscl = 0.5
@@ -1403,11 +1510,13 @@ func (s *Stage) draw(top bool, x, y, scl float32) {
 			pos[i] = float32(math.Ceil(float64(p - 0.5)))
 		}
 	}
-	if !top {
-		s.drawModel(pos, yofs, scl)
+	if layer == 0 {
+		s.drawModel(pos, yofs, scl, 0)
+	} else if layer == 1 {
+		s.drawModel(pos, yofs, scl, 1)
 	}
 	for _, b := range s.bg {
-		if b.visible && b.toplayer == top && b.anim.spr != nil {
+		if b.layerno == layer && b.visible && b.anim.spr != nil {
 			b.draw(pos, scl, bgscl, s.localscl, s.scale, yofs, true)
 		}
 	}
@@ -2260,6 +2369,7 @@ func loadglTFStage(filepath string) (*Model, error) {
 		scene.nodes = s.Nodes
 		mdl.scenes = append(mdl.scenes, scene)
 	}
+	fmt.Println("loadglTFStage")
 	return mdl, nil
 }
 func (n *Node) getLocalTransform() (mat mgl.Mat4) {
@@ -2424,22 +2534,25 @@ func drawNode(mdl *Model, n *Node, proj, view mgl.Mat4, drawBlended bool) {
 
 	}
 }
-func (s *Stage) drawModel(pos [2]float32, yofs float32, scl float32) {
-	if s.model == nil || len(s.model.scenes) == 0 {
+func (s *Stage) drawModel(pos [2]float32, yofs float32, scl float32, sceneNumber int) {
+	if s.model == nil || len(s.model.scenes) <= sceneNumber {
 		return
 	}
 
 	drawFOV := s.stageCamera.fov * math.Pi / 180
 
-	var posMul float32 = float32(math.Tan(float64(drawFOV)/2)) * -s.model.offset[2] / (float32(sys.scrrect[3]) / 2)
-
 	var syo float32
-	aspectCorrection := (float32(sys.cam.zoffset)*float32(sys.gameHeight)/float32(sys.cam.localcoord[1]) - (float32(sys.cam.zoffset)*s.localscl - sys.cam.aspectcorrection))
-	syo = -(float32(s.stageCamera.zoffset) - float32(sys.cam.localcoord[1])/2) * (1 - scl) / scl * float32(sys.gameHeight) / float32(s.stageCamera.localcoord[1])
-	offset := []float32{(pos[0]*-posMul*s.localscl*sys.widthScale + s.model.offset[0]/scl), (((pos[1]*s.localscl+sys.cam.zoomanchorcorrection+aspectCorrection)/scl+yofs/scl+syo)*posMul*sys.heightScale + s.model.offset[1]), s.model.offset[2] / scl}
-	rotation := []float32{s.model.rotation[0], s.model.rotation[1], s.model.rotation[2]}
-	scale := []float32{s.model.scale[0], s.model.scale[1], s.model.scale[2]}
-	proj := mgl.Translate3D(0, sys.cam.yshift*scl, 0)
+	scaleCorrection := float32(sys.cam.localcoord[1]) * sys.cam.localscl / float32(sys.gameHeight)
+	posMul := float32(math.Tan(float64(drawFOV)/2)) * -s.model.offset[2] / (float32(sys.cam.localcoord[1]) / 2)
+	aspectCorrection := (float32(sys.cam.zoffset)/float32(sys.cam.localcoord[1]) - (float32(sys.cam.zoffset)*s.localscl-sys.cam.aspectcorrection)/float32(sys.gameHeight)) * 2
+	syo = -(float32(s.stageCamera.zoffset) - float32(sys.cam.localcoord[1])/2) * (1 - scl) / scl
+	syo2 := -(float32(s.stageCamera.zoffset) - float32(sys.cam.localcoord[1])/2) * (1 - scaleCorrection) / float32(sys.cam.localcoord[1]) * 2
+	offset := [3]float32{(pos[0]*-posMul + s.model.offset[0]/scl), (((pos[1])/scl+syo)*posMul + s.model.offset[1]), s.model.offset[2] / scl}
+	rotation := [3]float32{s.model.rotation[0], s.model.rotation[1], s.model.rotation[2]}
+	scale := [3]float32{s.model.scale[0], s.model.scale[1], s.model.scale[2]}
+	proj := mgl.Translate3D(0, (sys.cam.zoomanchorcorrection+yofs)/float32(sys.gameHeight)*2+syo2+aspectCorrection, 0)
+	proj = proj.Mul4(mgl.Scale3D(scaleCorrection, scaleCorrection, 1))
+	proj = proj.Mul4(mgl.Translate3D(0, (sys.cam.yshift * scl), 0))
 	proj = proj.Mul4(mgl.Perspective(drawFOV, float32(sys.scrrect[2])/float32(sys.scrrect[3]), s.stageCamera.near, s.stageCamera.far))
 	view := mgl.Ident4()
 	view = view.Mul4(mgl.Translate3D(offset[0], offset[1], offset[2]))
@@ -2447,7 +2560,7 @@ func (s *Stage) drawModel(pos [2]float32, yofs float32, scl float32) {
 	view = view.Mul4(mgl.HomogRotate3DY(rotation[1]))
 	view = view.Mul4(mgl.HomogRotate3DZ(rotation[2]))
 	view = view.Mul4(mgl.Scale3D(scale[0], scale[1], scale[2]))
-	scene := s.model.scenes[0]
+	scene := s.model.scenes[sceneNumber]
 
 	for _, index := range scene.nodes {
 		s.model.nodes[index].calculateWorldTransform(mgl.Ident4(), s.model.nodes)
@@ -2458,6 +2571,7 @@ func (s *Stage) drawModel(pos [2]float32, yofs float32, scl float32) {
 	for _, index := range scene.nodes {
 		drawNode(s.model, s.model.nodes[index], proj, view, true)
 	}
+	fmt.Printf("drawModel scene.nodes=%v\n", len(scene.nodes))
 }
 
 func (model *Model) step() {

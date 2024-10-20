@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"runtime"
+	"time"
 	"unsafe"
 
 	atlas "github.com/ikemen-engine/Ikemen-GO/glh"
@@ -344,8 +345,15 @@ func gl_error_debug(
 // Creates the default shaders, the framebuffer and enables MSAA.
 func (r *Renderer) Init() {
 	chk(gl.Init())
-	sys.errLog.Printf("Using OpenGL %v (%v)", gl.GoStr(gl.GetString(gl.VERSION)), gl.GoStr(gl.GetString(gl.RENDERER)))
-	//sys.errLog.Printf("With extensions: %s\n", gl.GoStr(gl.GetString(gl.EXTENSIONS)))
+	fmt.Printf("Using %v (%v)\n", gl.GoStr(gl.GetString(gl.VERSION)), gl.GoStr(gl.GetString(gl.RENDERER)))
+	// fmt.Printf("With extensions: %v\n", gl.GoStr(gl.GetString(gl.EXTENSIONS)))
+	fmt.Printf("Fullscreen: %v (%v x %v)\n", sys.fullscreen, sys.fullscreenWidth, sys.fullscreenHeight)
+	fmt.Printf("scrrect: %v,%v - %v,%v\n", sys.scrrect[0], sys.scrrect[1], sys.scrrect[2], sys.scrrect[3])
+	fmt.Printf("gameWidth x gameHeight: %v,%v\n", sys.gameWidth, sys.gameHeight)
+	fmt.Printf("widthScale x heightScale: %v,%v\n", sys.widthScale, sys.heightScale)
+
+	// Store current timestamp
+	updateTimeStamp()
 
 	r.postShaderSelect = make([]*ShaderProgram, 1+len(sys.externalShaderList))
 	//gl.Enable(gl.DEBUG_OUTPUT)
@@ -475,7 +483,7 @@ func (r *Renderer) Close() {
 }
 
 func (r *Renderer) BeginFrame(clearColor bool) {
-	sys.absTickCountF++
+	nextTickCount()
 	gl.BindFramebuffer(gl.FRAMEBUFFER, r.fbo)
 	gl.Viewport(0, 0, sys.scrrect[2], sys.scrrect[3])
 	if clearColor {
@@ -492,10 +500,18 @@ func (r *Renderer) EndFrame() {
 		gl.BlitFramebuffer(0, 0, sys.scrrect[2], sys.scrrect[3], 0, 0, sys.scrrect[2], sys.scrrect[3], gl.COLOR_BUFFER_BIT, gl.LINEAR)
 	}
 
-	gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
-
+	x, y, resizedWidth, resizedHeight := sys.window.GetScaledViewportSize()
 	postShader := r.postShaderSelect[sys.postProcessingShader]
 
+	var scaleMode int32 // GL enum
+	if sys.windowScaleMode == true {
+		scaleMode = gl.LINEAR
+	} else {
+		scaleMode = gl.NEAREST
+	}
+
+	gl.Viewport(x, y, int32(resizedWidth), int32(resizedHeight))
+	gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
 	gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 	gl.UseProgram(postShader.program)
 	gl.Disable(gl.BLEND)
@@ -506,8 +522,13 @@ func (r *Renderer) EndFrame() {
 	} else {
 		gl.BindTexture(gl.TEXTURE_2D, r.fbo_texture)
 	}
+
+	// set post-processing parameters
 	gl.Uniform1i(postShader.u["Texture"], 0)
-	gl.Uniform2f(postShader.u["TextureSize"], float32(sys.scrrect[2]), float32(sys.scrrect[3]))
+	gl.Uniform2f(postShader.u["TextureSize"], float32(resizedWidth), float32(resizedHeight))
+	gl.Uniform1f(postShader.u["CurrentTime"], float32(time.Now().Unix()))
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, scaleMode)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, scaleMode)
 
 	gl.BindBuffer(gl.ARRAY_BUFFER, r.postVertBuffer)
 
@@ -680,6 +701,8 @@ func (r *Renderer) SetModelMorphTarget(offsets [8]uint32, weights [8]float32, po
 
 func (r *Renderer) ReadPixels(data []uint8, width, height int) {
 	r.EndFrame()
+	sys.window.SwapBuffers()
+	gl.BindFramebuffer(gl.READ_FRAMEBUFFER, 0)
 	gl.ReadPixels(0, 0, int32(width), int32(height), gl.RGBA, gl.UNSIGNED_BYTE, unsafe.Pointer(&data[0]))
 	r.BeginFrame(false)
 }
