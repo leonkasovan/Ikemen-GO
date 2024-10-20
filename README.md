@@ -22,32 +22,27 @@ These instructions are for those interested in developing the Ikemen GO engine i
 ### Building
 You can find instructions for building Ikemen GO on our wiki. Instructions are available for [Windows](https://github.com/ikemen-engine/Ikemen-GO/wiki/Building,-Installing-and-Distributing#building-on-windows), [macOS](https://github.com/ikemen-engine/Ikemen-GO/wiki/Building,-Installing-and-Distributing#building-on-macos), and [Linux](https://github.com/ikemen-engine/Ikemen-GO/wiki/Building,-Installing-and-Distributing#building-on-linux).
 
-### Debugging
-In order to run the compiled Ikemen GO executable, you will need to download the [engine dependencies](https://github.com/ikemen-engine/Ikemen_GO-Elecbyte-Screenpack) and unpack them into the Ikemen-GO source directory. After that, you can use [Goland](https://www.jetbrains.com/go/) or [Visual Studio Code](https://code.visualstudio.com/) to debug.
+Summarize Ikemen Batch Engine 
+'''
+// Collecting RenderParams for RenderSprite
+Sprite.draw(image.go) -> CalculateRenderData(render.go) -> BatchParam(render.go): append sys.paramList
+Fnt.drawChar(font.go) -> CalculateRenderData(render.go) -> BatchParam(render.go): append sys.paramList
+ClsnRect.drawChar(char.go) -> CalculateRenderData(render.go) -> BatchParam(render.go): append sys.paramList
+Animation.Draw(anim.go) -> CalculateRenderData(render.go) -> BatchParam(render.go): append sys.paramList
+Animation.ShadowDraw(anim.go) -> CalculateRenderData(render.go) -> BatchParam(render.go): append sys.paramList
 
-### Cross-compiling binaries with Docker (Linux/Windows/MacOS)
-The easiest way to compile binaries for other platforms is with Docker.
-You don't need the native development environment set to be able to build binaries if you decide to use Docker.  
-The image downloaded has all the required tools to compile Ikemen GO for all three major platforms.
+// Collecting RenderParams for FillRect
+systemScriptInit(script.go) -> luaRegister: "clearColor", "fade", "fadeColor", "fillRect" -> CalculateRectData(render.go) -> BatchParam(render.go): append sys.paramList
+System.draw(system.go) -> CalculateRectData(render.go) -> BatchParam(render.go): append sys.paramList
+System.drawTop(system.go) -> CalculateRectData(render.go) -> BatchParam(render.go): append sys.paramList
 
-Install [Docker for your platform](https://www.docker.com/get-started).  
-For macOS, you can install Docker using Homebrew (`brew cask install docker`).
+// Batch Processing RenderParams 
+System.await(system.go) -> BatchRender(render.go) -> processBatch : iterate sys.paramList
 
-Open a terminal, go to the Ikemen `build` directory folder and then run the script `build_docker.sh`. Look inside the script for details on how it works.
-
-## Troubleshooting
-If you run into any issues with Ikemen Go, you can report it on our [issue tracker](https://github.com/ikemen-engine/Ikemen-GO/issues). It is recommend to read [this page](https://github.com/ikemen-engine/Ikemen-GO/blob/develop/CONTRIBUTING.md) before submitting a bug report.
-
-## References
-- [The original reposity of Ikemen GO.](https://osdn.net/users/supersuehiro/pf/ikemen_go/) This project was forked from this repository due to its original author seemingly abandoning the project.
-
-- [The default motif bundled with the engine.](https://github.com/ikemen-engine/Ikemen_GO-Elecbyte-Screenpack) Note that this motif is licensed under CC-BY 3 rather than Ikemen GO's source, which is MIT.
-
-## Name
-"Ikemen" is an acronym of:
-
-**い**つまでも **完**成しない **永**遠に **未**完成 **エン**ジン  
-**I**tsu made mo **K**ansei shinai **E**ien ni **M**ikansei **EN**gine
+// Stage draw
+systemScriptInit(script.go) -> luaRegister("game") -> System.fight(system.go) -> Stage.draw(stage.go) -> Stage.drawModel(stage.go) -> drawNode(stage.go)
+System.draw(system.go) -> Stage.draw(stage.go) -> Stage.drawModel(stage.go) -> drawNode(stage.go)
+'''
 
 ## License
 Ikemen GO's source code is available under the MIT License. Certain non-code assets are licensed under CC-BY 3.0.
