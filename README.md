@@ -23,7 +23,7 @@ These instructions are for those interested in developing the Ikemen GO engine i
 You can find instructions for building Ikemen GO on our wiki. Instructions are available for [Windows](https://github.com/ikemen-engine/Ikemen-GO/wiki/Building,-Installing-and-Distributing#building-on-windows), [macOS](https://github.com/ikemen-engine/Ikemen-GO/wiki/Building,-Installing-and-Distributing#building-on-macos), and [Linux](https://github.com/ikemen-engine/Ikemen-GO/wiki/Building,-Installing-and-Distributing#building-on-linux).
 
 Summarize Ikemen Batch Engine 
-'''
+```
 // Collecting RenderParams for RenderSprite
 Sprite.draw(image.go) -> CalculateRenderData(render.go) -> BatchParam(render.go): append sys.paramList
 Fnt.drawChar(font.go) -> CalculateRenderData(render.go) -> BatchParam(render.go): append sys.paramList
@@ -42,7 +42,7 @@ System.await(system.go) -> BatchRender(render.go) -> processBatch : iterate sys.
 // Stage draw
 systemScriptInit(script.go) -> luaRegister("game") -> System.fight(system.go) -> Stage.draw(stage.go) -> Stage.drawModel(stage.go) -> drawNode(stage.go)
 System.draw(system.go) -> Stage.draw(stage.go) -> Stage.drawModel(stage.go) -> drawNode(stage.go)
-'''
+```
 
 ## License
 Ikemen GO's source code is available under the MIT License. Certain non-code assets are licensed under CC-BY 3.0.
