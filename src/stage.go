@@ -2571,7 +2571,6 @@ func (s *Stage) drawModel(pos [2]float32, yofs float32, scl float32, sceneNumber
 	for _, index := range scene.nodes {
 		drawNode(s.model, s.model.nodes[index], proj, view, true)
 	}
-	fmt.Printf("drawModel scene.nodes=%v\n", len(scene.nodes))
 }
 
 func (model *Model) step() {
