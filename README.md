@@ -37,11 +37,10 @@ System.draw(system.go) -> CalculateRectData(render.go) -> BatchParam(render.go):
 System.drawTop(system.go) -> CalculateRectData(render.go) -> BatchParam(render.go): append sys.paramList
 
 // Batch Processing RenderParams 
-System.await(system.go) -> BatchRender(render.go) -> processBatch : iterate sys.paramList
+systemScriptInit(script.go) -> luaRegister("game") -> System.await(system.go) -> BatchRender(render.go) -> processBatch : iterate sys.paramList
 
 // Stage draw
 systemScriptInit(script.go) -> luaRegister("game") -> System.fight(system.go) -> Stage.draw(stage.go) -> Stage.drawModel(stage.go) -> drawNode(stage.go)
-System.draw(system.go) -> Stage.draw(stage.go) -> Stage.drawModel(stage.go) -> drawNode(stage.go)
 ```
 
 ## License
