@@ -89,6 +89,9 @@ var sys = System{
 	panningRange:         30,
 	windowCentered:       true,
 	audioSampleRate:      44100,
+	palTexCache:          make(map[uint64]*Texture),
+	batchMode:            true,
+	paramList:            make([]RenderUniformData, 0),
 }
 
 type TeamMode int32
@@ -303,11 +306,11 @@ type System struct {
 	fullscreenHeight      int32
 
 	// Input variables
-	controllerStickSensitivitySDL int16
-	controllerStickSensitivityGLFW    float32
-	inputButtonAssist             bool
-	inputSOCDresolution           int32
-	xinputTriggerSensitivity      float32
+	controllerStickSensitivitySDL  int16
+	controllerStickSensitivityGLFW float32
+	inputButtonAssist              bool
+	inputSOCDresolution            int32
+	xinputTriggerSensitivity       float32
 
 	// Localcoord sceenpack
 	luaLocalcoord    [2]int32
@@ -382,13 +385,20 @@ type System struct {
 	windowCentered    bool
 	loopBreak         bool
 	loopContinue      bool
+	palTexCache       map[uint64]*Texture
+	curSDRSeqNo       int
+	batchMode         bool
+	paramList         []RenderUniformData
+	maxBatchSize      int32
+	batchGlobals      BatchRenderGlobals
+	// paletteAtlas      TextureAtlas
 
 	// for avg. FPS calculations
 	gameFPS           float32
 	prevTimestamp     float64
-	absTickCountGLFW     float32
+	absTickCountGLFW  float32
 	prevTimestampUint uint64
-	absTickCountSDL      uint64
+	absTickCountSDL   uint64
 }
 
 // Initialize stuff, this is called after the config int at main.go
@@ -454,7 +464,7 @@ func (s *System) init(w, h int32) *lua.LState {
 	}
 	s.clsnSpr = *newSprite()
 	s.clsnSpr.Size, s.clsnSpr.Pal = [...]uint16{1, 1}, make([]uint32, 256)
-	s.clsnSpr.SetPxl([]byte{0})
+	s.clsnSpr.SetPxl([]byte{0}, nil)
 	systemScriptInit(l)
 	s.shortcutScripts = make(map[ShortcutKey]*ShortcutScript)
 	// So now that we have a window we add a icon.
@@ -530,6 +540,8 @@ func (s *System) runMainThreadTask() {
 
 func (s *System) await(fps int) bool {
 	if !s.frameSkip {
+		BatchRender()
+
 		// Render the finished frame
 		gfx.EndFrame()
 		s.window.SwapBuffers()
@@ -622,6 +634,9 @@ func (s *System) resetRemapInput() {
 }
 func (s *System) loaderReset() {
 	s.round, s.wins, s.roundsExisted, s.roundType = 1, [2]int32{}, [2]int32{}, [2]RoundType{}
+	s.palTexCache = make(map[uint64]*Texture)
+	gfx.vertexBufferCache = make(map[uint64]uint32)
+	gfx.setInitialUniforms = true
 	s.loader.reset()
 }
 func (s *System) loadStart() {
@@ -1680,7 +1695,7 @@ func (s *System) draw(x, y, scl float32) {
 	s.brightness = 0x100 >> uint(Btoi(s.super > 0 && s.superdarken))
 	bgx, bgy := x/s.stage.localscl, y/s.stage.localscl
 	//fade := func(rect [4]int32, color uint32, alpha int32) {
-	//	FillRect(rect, color, alpha>>uint(Btoi(s.clsnDraw))+Btoi(s.clsnDraw)*128)
+	//	CalculateRectData(rect, color, alpha>>uint(Btoi(s.clsnDraw))+Btoi(s.clsnDraw)*128)
 	//}
 	if s.envcol_time == 0 {
 		c := uint32(0)
@@ -1697,16 +1712,32 @@ func (s *System) draw(x, y, scl float32) {
 				}
 				c = uint32(rgb[2] | rgb[1]<<8 | rgb[0]<<16)
 			}
-			FillRect(s.scrrect, c, 0xff)
+			if sys.batchMode {
+				CalculateRectData(s.scrrect, c, 0xff)
+			} else {
+				FillRect(s.scrrect, c, 0xff)
+			}
 		}
 
 		// Draw normal stage background fill and elements with layerNo == -1
 		if !s.gsf(GSF_nobg) {
 			if s.stage.debugbg {
-				FillRect(s.scrrect, 0xff00ff, 0xff)
+				if sys.batchMode {
+					CalculateRectData(s.scrrect, c, 0xff)
+				} else {
+					FillRect(s.scrrect, c, 0xff)
+				}
 			} else {
 				c = uint32(s.stage.bgclearcolor[2]&0xff | s.stage.bgclearcolor[1]&0xff<<8 | s.stage.bgclearcolor[0]&0xff<<16)
-				FillRect(s.scrrect, c, 0xff)
+				if sys.batchMode {
+					if sys.batchMode {
+						CalculateRectData(s.scrrect, 0xff00ff, 0xff)
+					} else {
+						FillRect(s.scrrect, 0xff00ff, 0xff)
+					}
+				} else {
+					FillRect(s.scrrect, c, 0xff)
+				}
 			}
 			if s.stage.ikemenver[0] != 0 || s.stage.ikemenver[1] != 0 { // This layer did not render in Mugen
 				s.stage.draw(-1, bgx, bgy, scl)
@@ -1741,51 +1772,23 @@ func (s *System) draw(x, y, scl float32) {
 			s.shadows.draw(x, y, scl*s.cam.BaseScale())
 		}
 
-		//off := s.envShake.getOffset()
-		//yofs, yofs2 := float32(s.gameHeight), float32(0)
-		//if scl > 1 && s.cam.verticalfollow > 0 {
-		//	yofs = s.cam.screenZoff + float32(s.gameHeight-240)
-		//	yofs2 = (240 - s.cam.screenZoff) * (1 - 1/scl)
-		//}
-		//yofs *= 1/scl - 1
-		//rect := s.scrrect
-		//if off < (yofs-y+s.cam.boundH)*scl {
-		//	rect[3] = (int32(math.Ceil(float64(((yofs-y+s.cam.boundH)*scl-off)*
-		//		float32(s.scrrect[3])))) + s.gameHeight - 1) / s.gameHeight
-		//	fade(rect, 0, 255)
-		//}
-		//if off > (-y+yofs2)*scl {
-		//	rect[3] = (int32(math.Ceil(float64(((y-yofs2)*scl+off)*
-		//		float32(s.scrrect[3])))) + s.gameHeight - 1) / s.gameHeight
-		//	rect[1] = s.scrrect[3] - rect[3]
-		//	fade(rect, 0, 255)
-		//}
-		//bl, br := MinF(x, s.cam.boundL), MaxF(x, s.cam.boundR)
-		//xofs := float32(s.gameWidth) * (1/scl - 1) / 2
-		//rect = s.scrrect
-		//if x-xofs < bl {
-		//	rect[2] = (int32(math.Ceil(float64((bl-(x-xofs))*scl*
-		//		float32(s.scrrect[2])))) + s.gameWidth - 1) / s.gameWidth
-		//	fade(rect, 0, 255)
-		//}
-		//if x+xofs > br {
-		//	rect[2] = (int32(math.Ceil(float64(((x+xofs)-br)*scl*
-		//		float32(s.scrrect[2])))) + s.gameWidth - 1) / s.gameWidth
-		//	rect[0] = s.scrrect[2] - rect[2]
-		//	fade(rect, 0, 255)
-		//}
-
 		// Draw lifebar layers -1 and 0
+		UIMode = true
 		s.lifebar.draw(-1)
 		s.lifebar.draw(0)
 	}
 
 	// Draw EnvColor effect
 	if s.envcol_time != 0 {
-		FillRect(s.scrrect, ecol, 255)
+		if sys.batchMode {
+			CalculateRectData(s.scrrect, ecol, 255)
+		} else {
+			FillRect(s.scrrect, ecol, 255)
+		}
 	}
 
 	// Draw character sprites in layer 0
+	UIMode = false
 	if s.envcol_time == 0 || s.envcol_under {
 		s.spritesLayer0.draw(x, y, scl*s.cam.BaseScale())
 		if s.envcol_time == 0 && !s.gsf(GSF_nofg) {
@@ -1794,18 +1797,26 @@ func (s *System) draw(x, y, scl float32) {
 	}
 
 	// Draw lifebar layer 1
+	UIMode = true
 	s.lifebar.draw(1)
 
 	// Draw character sprites in layer 1 (old "ontop")
+	UIMode = false
 	s.spritesLayer1.draw(x, y, scl*s.cam.BaseScale())
 
 	// Draw lifebar layer 2
+	UIMode = true
 	s.lifebar.draw(2)
+	UIMode = false
 }
 
 func (s *System) drawTop() {
 	fade := func(rect [4]int32, color uint32, alpha int32) {
-		FillRect(rect, color, alpha>>uint(Btoi(s.clsnDraw))+Btoi(s.clsnDraw)*128)
+		if sys.batchMode {
+			CalculateRectData(rect, color, alpha>>uint(Btoi(s.clsnDraw))+Btoi(s.clsnDraw)*128)
+		} else {
+			FillRect(rect, color, alpha>>uint(Btoi(s.clsnDraw))+Btoi(s.clsnDraw)*128)
+		}
 	}
 	fadeout := s.intro + s.lifebar.ro.over_waittime + s.lifebar.ro.over_time
 	if fadeout == s.lifebar.ro.fadeout_time-1 && len(s.commonLua) > 0 && s.matchOver() && !s.dialogueFlg {
@@ -2553,7 +2564,7 @@ type SelectChar struct {
 	pal            []int32
 	pal_defaults   []int32
 	pal_keymap     []int32
-	palfiles	   []string
+	palfiles       []string
 	localcoord     int32
 	portrait_scale float32
 	cns_scale      [2]float32
@@ -2944,18 +2955,18 @@ func (s *Select) addChar(def string) {
 		}
 	}
 	//Update the animation with palette information
-	if sc.anims[[2]int16{0, -1}] != nil {//Check is in place to avoid crashing when loading match through command line
+	if sc.anims[[2]int16{0, -1}] != nil { //Check is in place to avoid crashing when loading match through command line
 		sc.anims[[2]int16{0, -1}].palettedata.palettes = sc.anims[[2]int16{0, -1}].sff.palList.palettes
 		sc.anims[[2]int16{0, -1}].palettedata.paletteMap = sc.anims[[2]int16{0, -1}].sff.palList.paletteMap
 		sc.anims[[2]int16{0, -1}].palettedata.PalTable = sc.anims[[2]int16{0, -1}].sff.palList.PalTable
 		sc.anims[[2]int16{0, -1}].palettedata.PalTex = sc.anims[[2]int16{0, -1}].sff.palList.PalTex
-		value, ok := sc.anims[[2]int16{0, -1}].sff.sprites[[2]int16{sc.anims[[2]int16{0, -1}].frames[0].Group, sc.anims[[2]int16{0, -1}].frames[0].Number}]//This exists to serve the purpose of a try in other languages. If removed characters who have no animation will crash the engine.
+		value, ok := sc.anims[[2]int16{0, -1}].sff.sprites[[2]int16{sc.anims[[2]int16{0, -1}].frames[0].Group, sc.anims[[2]int16{0, -1}].frames[0].Number}] //This exists to serve the purpose of a try in other languages. If removed characters who have no animation will crash the engine.
 		//Apply palette to preloaded animations, fixes palette issues that occured on some characters
 		if ok {
-			if value.palidx >= 0 {//fuxes an issue discovered on a character that occurs in the scenario that an animation exists but there is no sprite used in the first frame of the animation
-				if sc.anims[[2]int16{0, -1}].palettedata.PalTable[[2]int16{1, 1}] != -1 {//Resolves a crash issue in the event that a character does not have a 1,1 palette
+			if value.palidx >= 0 { //fuxes an issue discovered on a character that occurs in the scenario that an animation exists but there is no sprite used in the first frame of the animation
+				if sc.anims[[2]int16{0, -1}].palettedata.PalTable[[2]int16{1, 1}] != -1 { //Resolves a crash issue in the event that a character does not have a 1,1 palette
 					if len(sc.pal) > 1 {
-						if sc.anims[[2]int16{0, -1}].sff.header.Ver0 == 1{// 
+						if sc.anims[[2]int16{0, -1}].sff.header.Ver0 == 1 { //
 							sc.anims[[2]int16{0, -1}].palettedata.paletteMap[sc.anims[[2]int16{0, -1}].sff.sprites[[2]int16{sc.anims[[2]int16{0, -1}].frames[0].Group, sc.anims[[2]int16{0, -1}].frames[0].Number}].palidx] = sc.anims[[2]int16{0, -1}].palettedata.PalTable[[2]int16{1, 1}]
 						}
 					}

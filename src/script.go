@@ -700,7 +700,11 @@ func systemScriptInit(l *lua.LState) {
 		}
 		col := uint32(int32(numArg(l, 3))&0xff | int32(numArg(l, 2))&0xff<<8 |
 			int32(numArg(l, 1))&0xff<<16)
-		FillRect(sys.scrrect, col, a)
+		if sys.batchMode {
+			CalculateRectData(sys.scrrect, col, a)
+		} else {
+			FillRect(sys.scrrect, col, a)
+		}
 		return 0
 	})
 	luaRegister(l, "clearConsole", func(*lua.LState) int {
@@ -917,7 +921,11 @@ func systemScriptInit(l *lua.LState) {
 	luaRegister(l, "fade", func(l *lua.LState) int {
 		rect := [4]int32{int32(numArg(l, 1)), int32(numArg(l, 2)), int32(numArg(l, 3)), int32(numArg(l, 4))}
 		alpha := int32(numArg(l, 5))
-		FillRect(rect, 0, alpha>>uint(Btoi(sys.clsnDraw))+Btoi(sys.clsnDraw)*128)
+		if sys.batchMode {
+			CalculateRectData(rect, 0, alpha>>uint(Btoi(sys.clsnDraw))+Btoi(sys.clsnDraw)*128)
+		} else {
+			FillRect(rect, 0, alpha>>uint(Btoi(sys.clsnDraw))+Btoi(sys.clsnDraw)*128)
+		}
 		return 0
 	})
 	luaRegister(l, "fadeColor", func(l *lua.LState) int {
@@ -944,7 +952,11 @@ func systemScriptInit(l *lua.LState) {
 			b = int32(numArg(l, 6))
 		}
 		col := uint32(int32(b)&0xff | int32(g)&0xff<<8 | int32(r)&0xff<<16)
-		FillRect(sys.scrrect, col, int32(a))
+		if sys.batchMode {
+			CalculateRectData(sys.scrrect, col, int32(a))
+		} else {
+			FillRect(sys.scrrect, col, int32(a))
+		}
 		l.Push(lua.LBool(true))
 		return 1
 	})
@@ -955,7 +967,11 @@ func systemScriptInit(l *lua.LState) {
 			int32((float32(numArg(l, 4)) / sys.luaSpriteScale) * sys.heightScale)}
 		col := uint32(int32(numArg(l, 7))&0xff | int32(numArg(l, 6))&0xff<<8 | int32(numArg(l, 5))&0xff<<16)
 		a := int32(int32(numArg(l, 8))&0xff | int32(numArg(l, 9))&0xff<<10)
-		FillRect(rect, col, a)
+		if sys.batchMode {
+			CalculateRectData(rect, col, a)
+		} else {
+			FillRect(rect, col, a)
+		}
 		return 0
 	})
 	luaRegister(l, "fontGetDef", func(l *lua.LState) int {
@@ -2096,7 +2112,7 @@ func systemScriptInit(l *lua.LState) {
 			l.Push(newUserData(l, newSff()))
 			return 1
 		}
-		sff, err := loadSff(strArg(l, 1), false)
+		sff, err := loadSff(strArg(l, 1), false, nil)
 		if err != nil {
 			l.RaiseError("\nCan't load %v: %v\n", strArg(l, 1), err.Error())
 		}

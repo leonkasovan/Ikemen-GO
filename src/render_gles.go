@@ -1,5 +1,5 @@
 //go:build gles2 || gles
-
+// NEED TOBE SYNC'ED with render_gl.go
 package main
 
 import (
@@ -148,13 +148,13 @@ func linkProgram(v, f uint32) (program uint32) {
 // ------------------------------------------------------------------
 // Texture
 
-type Texture struct {
-	width  int32
-	height int32
-	depth  int32
-	filter bool
-	handle uint32
-}
+// type Texture struct {
+// 	width  int32
+// 	height int32
+// 	depth  int32
+// 	filter bool
+// 	handle uint32
+// }
 
 // Generate a new texture name
 func newTexture(width, height, depth int32, filter bool) (t *Texture) {

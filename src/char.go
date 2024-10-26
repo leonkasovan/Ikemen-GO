@@ -192,9 +192,13 @@ func (cr ClsnRect) draw(trans int32) {
 			sys.clsnSpr.Tex, paltex, sys.clsnSpr.Size,
 			-c[0] * sys.widthScale, -c[1] * sys.heightScale, notiling,
 			c[2] * sys.widthScale, c[2] * sys.widthScale, c[3] * sys.heightScale, 1, 0,
-			1, 1, Rotation{}, 0, trans, -1, nil, &sys.scrrect, 0, 0, 0, 0, 0, 0,
+			1, 1, Rotation{}, 0, trans, -1, nil, &sys.scrrect, 0, 0, 0, 0, 0, 0, nil,
 		}
-		RenderSprite(params)
+		if sys.batchMode {
+			CalculateRenderData(params)
+		} else {
+			RenderSprite(params)
+		}
 	}
 }
 
@@ -2843,14 +2847,14 @@ func (c *Char) load(def string) error {
 			// fmt.Printf("[DEBUG][char.go][load] sprite filename=%v\n", filename)
 			var err error
 			if c.zipFileName == "" {
-				gi.sff, err = loadSff(filename, true)
+				gi.sff, err = loadSff(filename, true, nil)
 			} else {
 				path := FileExist("tmp/chars/" + filename)
 				if path == "" {
 					err = ExtractFileFromZip(c.zipFileName, filename, "tmp/chars")
 					path = "tmp/chars/" + filename
 				}
-				gi.sff, err = loadSff(path, true)
+				gi.sff, err = loadSff(path, true, nil)
 			}
 			return err
 		}); err != nil {

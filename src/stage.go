@@ -1066,7 +1066,7 @@ func loadStage(def string, main bool) (*Stage, error) {
 			var err error
 			// fmt.Printf("[DEBUG][stage.go] loadStage.loadSff: filename=%v\n", filename)
 			if zipFileName == "" {
-				sff, err = loadSff(filename, false)
+				sff, err = loadSff(filename, false, nil)
 			} else {
 				path := FileExist("tmp/stages/" + filename)
 				if path == "" {
@@ -1076,7 +1076,7 @@ func loadStage(def string, main bool) (*Stage, error) {
 				if err != nil {
 					log.Fatal(err)
 				} else {
-					sff, err = loadSff(path, false)
+					sff, err = loadSff(path, false, nil)
 				}
 			}
 			if err != nil {

@@ -730,9 +730,13 @@ func (a *Animation) Draw(window *[4]int32, x, y, xcs, ycs, xs, xbs, ys,
 		ys * sys.heightScale, 1, xcs * rxadd * sys.widthScale / sys.heightScale, h, v, rot,
 		0, trans, mask, pfx, window, rcx, rcy, projectionMode, fLength * sys.heightScale,
 		xs * posLocalscl * (float32(a.frames[a.drawidx].X) + a.interpolate_offset_x) * a.start_scale[0] * (1 / a.scale_x) * sys.widthScale,
-		ys * posLocalscl * (float32(a.frames[a.drawidx].Y) + a.interpolate_offset_y) * a.start_scale[1] * (1 / a.scale_y) * sys.heightScale,
+		ys * posLocalscl * (float32(a.frames[a.drawidx].Y) + a.interpolate_offset_y) * a.start_scale[1] * (1 / a.scale_y) * sys.heightScale, a.spr.Tex.atlas,
 	}
-	RenderSprite(rp)
+	if sys.batchMode {
+		CalculateRenderData(rp)
+	} else {
+		RenderSprite(rp)
+	}
 }
 func (a *Animation) ShadowDraw(window *[4]int32, x, y, xscl, yscl, vscl, rxadd float32, rot Rotation,
 	pfx *PalFX, old bool, color uint32, alpha int32, facing float32, posLocalscl float32, projectionMode int32, fLength float32) {
@@ -754,7 +758,7 @@ func (a *Animation) ShadowDraw(window *[4]int32, x, y, xscl, yscl, vscl, rxadd f
 		(x + float32(sys.gameWidth)/2) * sys.widthScale, y * sys.heightScale,
 		projectionMode, fLength,
 		xscl * posLocalscl * h * (float32(a.frames[a.drawidx].X) + a.interpolate_offset_x) * (1 / a.scale_x),
-		yscl * posLocalscl * vscl * v * (float32(a.frames[a.drawidx].Y) + a.interpolate_offset_y) * (1 / a.scale_y),
+		yscl * posLocalscl * vscl * v * (float32(a.frames[a.drawidx].Y) + a.interpolate_offset_y) * (1 / a.scale_y), a.spr.Tex.atlas,
 	}
 
 	// TODO: This is redundant now that rp.tint is used to colorise the shadow
@@ -801,11 +805,19 @@ func (a *Animation) ShadowDraw(window *[4]int32, x, y, xscl, yscl, vscl, rxadd f
 
 	if color != 0 {
 		rp.trans = -2
-		RenderSprite(rp)
+		if sys.batchMode {
+			CalculateRenderData(rp)
+		} else {
+			RenderSprite(rp)
+		}
 	}
 	if alpha > 0 {
 		rp.trans = (256-alpha)<<10 | 1<<9
-		RenderSprite(rp)
+		if sys.batchMode {
+			CalculateRenderData(rp)
+		} else {
+			RenderSprite(rp)
+		}
 	}
 }
 

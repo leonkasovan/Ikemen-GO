@@ -668,6 +668,7 @@ type configSettings struct {
 	LoseSimul                     bool
 	LoseTag                       bool
 	MaxAfterImage                 int32
+	MaxBatchSize                  int32
 	MaxBgmVolume                  int
 	MaxDrawGames                  int32
 	MaxExplod                     int
@@ -925,6 +926,7 @@ func setupConfig(is_mugen_game bool) configSettings {
 	sys.loseSimul = tmp.LoseSimul
 	sys.loseTag = tmp.LoseTag
 	sys.masterVolume = tmp.VolumeMaster
+	sys.maxBatchSize = tmp.MaxBatchSize
 	if tmp.MSAA <= -1 {
 		tmp.MSAA = 0
 	}

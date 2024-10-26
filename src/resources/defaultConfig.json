@@ -66,6 +66,7 @@
   "LoseSimul": true,
   "LoseTag": false,
   "MaxAfterImage": 128,
+  "MaxBatchSize": 512,
   "MaxBgmVolume": 100,
   "MaxDrawGames": -2,
   "MaxExplod": 512,

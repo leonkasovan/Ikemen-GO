@@ -17,8 +17,10 @@ type FntCharImage struct {
 // TtfFont implements TTF font rendering on supported platforms
 type TtfFont interface {
 	SetColor(red float32, green float32, blue float32, alpha float32)
+	SetBatchMode(batchMode bool)
 	Width(scale float32, fs string, argv ...interface{}) float32
 	Printf(x, y float32, scale float32, align int32, blend bool, window [4]int32, fs string, argv ...interface{}) error
+	PrintBatch() bool
 }
 
 // Fnt is a interface for basic font information
@@ -35,6 +37,8 @@ type Fnt struct {
 	offset    [2]int32
 	ttf       TtfFont
 	paltex    *Texture
+
+	atlas *TextureAtlas
 }
 
 func newFnt() *Fnt {
@@ -227,6 +231,7 @@ func loadFntV1(filename string) (*Fnt, error) {
 			}
 		}
 	}
+	f.atlas = NewTextureAtlas()
 	for _, fci := range f.images[0] {
 		fci.img = make([]Sprite, len(f.palettes))
 		for i, p := range f.palettes {
@@ -236,7 +241,7 @@ func loadFntV1(filename string) (*Fnt, error) {
 				px2 := make([]byte, int(fci.w)*int(fci.img[0].Size[1]))
 				copyCharRect(px2, int(fci.w), px, int(fci.ofs),
 					int(spr.Size[0]), int(spr.Size[1]))
-				fci.img[0].SetPxl(px2)
+				fci.img[0].SetPxlAtlas(f.atlas, px2)
 			} else {
 				i, fci := i, fci
 				sys.mainThreadTask <- func() {
@@ -246,6 +251,9 @@ func loadFntV1(filename string) (*Fnt, error) {
 			}
 			fci.img[i].Offset[0], fci.img[i].Offset[1], fci.img[i].Pal = 0, 0, p[:]
 		}
+	}
+	sys.mainThreadTask <- func() {
+		f.atlas.Commit()
 	}
 	return f, nil
 }
@@ -318,7 +326,8 @@ func loadDefInfo(f *Fnt, filename string, is IniSection, height int32) {
 
 func LoadFntSff(f *Fnt, fontfile string, filename string) {
 	fileDir := SearchFile(filename, []string{fontfile, "font/", sys.motifDir, "", "data/"})
-	sff, err := loadSff(fileDir, false)
+	f.atlas = NewTextureAtlas()
+	sff, err := loadSff(fileDir, false, f.atlas)
 
 	if err != nil {
 		panic(err)
@@ -374,6 +383,9 @@ func LoadFntSff(f *Fnt, fontfile string, filename string) {
 	if len(f.palettes) == 0 && pal_default != nil {
 		f.palettes = make([][256]uint32, 1)
 		copy(f.palettes[0][:], pal_default)
+	}
+	sys.mainThreadTask <- func() {
+		f.atlas.Commit()
 	}
 }
 
@@ -464,9 +476,13 @@ func (f *Fnt) drawChar(
 		Rotation{},
 		0, sys.brightness*255>>8 | 1<<9, 0,
 		palfx, window, 0, 0,
-		0, 0, -xscl * float32(spr.Offset[0]), -yscl * float32(spr.Offset[1]),
+		0, 0, -xscl * float32(spr.Offset[0]), -yscl * float32(spr.Offset[1]), spr.Tex.atlas,
 	}
-	RenderSprite(rp)
+	if sys.batchMode {
+		CalculateRenderData(rp)
+	} else {
+		RenderSprite(rp)
+	}
 	return float32(spr.Size[0]) * xscl
 }
 
@@ -540,6 +556,8 @@ func (f *Fnt) DrawTtf(txt string, x, y, xscl, yscl float32, align int32,
 
 	f.ttf.SetColor(frgba[0], frgba[1], frgba[2], frgba[3])
 	f.ttf.Printf(x, y, (xscl+yscl)/2, align, blend, win, "%s", txt) //x, y, scale, align, blend, window, string, printf args
+	BatchParam(&RenderUniformData{isTTF: true, seqNo: sys.curSDRSeqNo, ttf: &f.ttf})
+	sys.curSDRSeqNo++
 }
 
 type TextSprite struct {

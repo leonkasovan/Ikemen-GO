@@ -112,7 +112,7 @@ func loadFightFx(def string) error {
 				if is.LoadFile("sff", []string{def, sys.motifDir, "", "data/"},
 					func(filename string) error {
 						// fmt.Printf("[DEBUG][lifebar.go][loadFightFx] sff filename=%v\n", filename)
-						s, err := loadSff(filename, false)
+						s, err := loadSff(filename, false, nil)
 						if err != nil {
 							return err
 						}
@@ -3037,6 +3037,7 @@ type Lifebar struct {
 	fx_limit   int
 	def        string
 	textsprite []*TextSprite
+	atlas      *TextureAtlas
 }
 
 func loadLifebar(def string) (*Lifebar, error) {
@@ -3093,6 +3094,7 @@ func loadLifebar(def string) (*Lifebar, error) {
 	}
 	lines, i := SplitAndTrim(str, "\n"), 0
 	l.at = ReadAnimationTable(l.sff, &l.sff.palList, lines, &i)
+	l.atlas = NewTextureAtlas()
 	i = 0
 	filesflg := true
 	ffx := newFightFx()
@@ -3120,7 +3122,7 @@ func loadLifebar(def string) (*Lifebar, error) {
 				if is.LoadFile("sff", []string{def, sys.motifDir, "", "data/"},
 					func(filename string) error {
 						// fmt.Printf("[DEBUG][lifebar.go][loadLifebar] sff filename=%v\n", filename)
-						s, err := loadSff(filename, false)
+						s, err := loadSff(filename, false, nil)
 						if err != nil {
 							fmt.Printf("[DEBUG][lifebar.go][loadLifebar] err=%v\n", err)
 							return err
@@ -3146,7 +3148,7 @@ func loadLifebar(def string) (*Lifebar, error) {
 				if is.LoadFile("fightfx.sff", []string{def, sys.motifDir, "", "data/"},
 					func(filename string) error {
 						// fmt.Printf("[DEBUG][lifebar.go][loadLifebar] fightfx.sff filename=%v\n", filename)
-						s, err := loadSff(filename, false)
+						s, err := loadSff(filename, false, nil)
 						if err != nil {
 							fmt.Printf("[DEBUG][lifebar.go][loadLifebar] err=%v\n", err)
 							return err

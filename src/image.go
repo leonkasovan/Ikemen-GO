@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"image"
@@ -11,6 +12,10 @@ import (
 	"os"
 	"runtime"
 	"unsafe"
+
+	"github.com/cespare/xxhash"
+	gl "github.com/go-gl/gl/v2.1/gl"
+	atlas "github.com/ikemen-engine/Ikemen-GO/glh"
 )
 
 type TransType int32
@@ -63,6 +68,15 @@ type PalFX struct {
 	eiColor      float32
 	eiHue        float32
 	eiTime       int32
+}
+
+type AtlasBufferKey struct {
+	interp int32
+	depth  int32
+}
+
+type TextureAtlas struct {
+	atlas map[AtlasBufferKey]*atlas.TextureAtlas
 }
 
 func newPalFX() *PalFX { return &PalFX{} }
@@ -418,10 +432,40 @@ func (pl *PaletteList) SwapPalMap(palMap *[]int) bool {
 	return true
 }
 
-func PaletteToTexture(pal []uint32) *Texture {
+func uint32SliceToBytes(slice []uint32) []byte {
+	var buf bytes.Buffer
+	for _, val := range slice {
+		if err := binary.Write(&buf, binary.LittleEndian, val); err != nil {
+			return nil
+		}
+	}
+	return buf.Bytes()
+}
+
+func HashPalette(pal []uint32) uint64 {
+	return xxhash.Sum64(uint32SliceToBytes(pal))
+}
+
+func PaletteToTextureSub(pal []uint32) *Texture {
 	tx := newTexture(256, 1, 32, false)
 	tx.SetData(unsafe.Slice((*byte)(unsafe.Pointer(&pal[0])), len(pal)*4))
 	return tx
+}
+
+func GenerateTextureFromPalette(pal []uint32) *Texture {
+	key := HashPalette(pal)
+
+	if texture, exists := sys.palTexCache[key]; exists {
+		return texture
+	}
+
+	newTexture := PaletteToTextureSub(pal)
+	sys.palTexCache[key] = newTexture
+	return newTexture
+}
+
+func PaletteToTexture(pal []uint32) *Texture {
+	return GenerateTextureFromPalette(pal)
 }
 
 type SffHeader struct {
@@ -505,6 +549,46 @@ func (sh *SffHeader) Read(r io.Reader, lofs *uint32, tofs *uint32) error {
 	return nil
 }
 
+func NewAtlasBufferKey(interp int32, depth int32) AtlasBufferKey {
+	clampedDepth := int32(Max(depth, 8))
+	return AtlasBufferKey{
+		interp: interp, depth: clampedDepth / 8,
+	}
+}
+
+func (t *TextureAtlas) Get(key AtlasBufferKey) *atlas.TextureAtlas {
+	if a, ok := t.atlas[key]; !ok {
+		fmt.Println("Create")
+		t.atlas[key] = atlas.NewTextureAtlas(1024, 1024, int(key.depth), int(key.interp))
+		return t.atlas[key]
+	} else {
+		return a
+	}
+}
+
+func (t *TextureAtlas) Commit() {
+	for _, a := range t.atlas {
+		fmt.Println("Commit")
+		a.Commit(gl.TEXTURE_2D)
+	}
+}
+
+func (t *TextureAtlas) Release() {
+	for _, a := range t.atlas {
+		a.Release()
+	}
+}
+
+func NewTextureAtlas() *TextureAtlas {
+	ta := &TextureAtlas{atlas: make(map[AtlasBufferKey]*atlas.TextureAtlas)}
+	runtime.SetFinalizer(ta, func(t *TextureAtlas) {
+		sys.mainThreadTask <- func() {
+			t.Release()
+		}
+	})
+	return ta
+}
+
 type Sprite struct {
 	Pal           []uint32
 	Tex           *Texture
@@ -516,6 +600,8 @@ type Sprite struct {
 	coldepth      byte
 	paltemp       []uint32
 	PalTex        *Texture
+
+	atlas *TextureAtlas
 }
 
 func newSprite() *Sprite {
@@ -656,6 +742,7 @@ func (s *Sprite) shareCopy(src *Sprite) {
 		s.palidx = src.palidx
 	}
 	s.coldepth = src.coldepth
+	s.atlas = src.atlas
 	//s.paltemp = src.paltemp
 	//s.PalTex = src.PalTex
 }
@@ -672,7 +759,35 @@ func (s *Sprite) GetPalTex(pl *PaletteList) *Texture {
 	return pl.PalTex[pl.paletteMap[int(s.palidx)]]
 }
 
-func (s *Sprite) SetPxl(px []byte) {
+func (s *Sprite) SetPxl(px []byte, atlas *TextureAtlas) {
+	if len(px) == 0 {
+		return
+	}
+	if int64(len(px)) != int64(s.Size[0])*int64(s.Size[1]) {
+		return
+	}
+	if atlas != nil {
+		s.SetPxlAtlas(atlas, px)
+	} else {
+		sys.mainThreadTask <- func() {
+			s.Tex = newTexture(int32(s.Size[0]), int32(s.Size[1]), 8, false)
+			s.Tex.SetData(px)
+		}
+	}
+}
+
+func (s *Sprite) SetRaw(data []byte, sprWidth int32, sprHeight int32, sprDepth int32, atlas *TextureAtlas) {
+	if atlas != nil {
+		s.SetRawAtlas(atlas, data, sprWidth, sprHeight, sprDepth)
+	} else {
+		sys.mainThreadTask <- func() {
+			s.Tex = newTexture(sprWidth, sprHeight, sprDepth, sys.pngFilter)
+			s.Tex.SetData(data)
+		}
+	}
+}
+
+func (s *Sprite) SetPxlAtlas(atlas *TextureAtlas, px []byte) {
 	if len(px) == 0 {
 		return
 	}
@@ -680,15 +795,17 @@ func (s *Sprite) SetPxl(px []byte) {
 		return
 	}
 	sys.mainThreadTask <- func() {
-		s.Tex = newTexture(int32(s.Size[0]), int32(s.Size[1]), 8, false)
-		s.Tex.SetData(px)
+		s.atlas = atlas
+		s.Tex = newTextureWithAtlas(atlas, int32(s.Size[0]), int32(s.Size[1]), 8, false)
+		s.Tex.SetDataAtlas(atlas, px)
 	}
 }
 
-func (s *Sprite) SetRaw(data []byte, sprWidth int32, sprHeight int32, sprDepth int32) {
+func (s *Sprite) SetRawAtlas(atlas *TextureAtlas, data []byte, sprWidth int32, sprHeight int32, sprDepth int32) {
 	sys.mainThreadTask <- func() {
-		s.Tex = newTexture(sprWidth, sprHeight, sprDepth, sys.pngFilter)
-		s.Tex.SetData(data)
+		s.atlas = atlas
+		s.Tex = newTextureWithAtlas(atlas, sprWidth, sprHeight, sprDepth, sys.pngFilter)
+		s.Tex.SetDataAtlas(atlas, data)
 	}
 }
 
@@ -788,7 +905,7 @@ func (s *Sprite) RlePcxDecode(rle []byte) (p []byte) {
 	return
 }
 func (s *Sprite) read(f *os.File, sh *SffHeader, offset int64, datasize uint32,
-	nextSubheader uint32, prev *Sprite, pl *PaletteList, c00 bool) error {
+	nextSubheader uint32, prev *Sprite, pl *PaletteList, c00 bool, atlas *TextureAtlas) error {
 	if int64(nextSubheader) > offset {
 		// Ignore datasize except last
 		datasize = nextSubheader - uint32(offset)
@@ -843,7 +960,7 @@ func (s *Sprite) read(f *os.File, sh *SffHeader, offset int64, datasize uint32,
 			pal[i] = uint32(alpha)<<24 | uint32(rgb[2])<<16 | uint32(rgb[1])<<8 | uint32(rgb[0])
 		}
 	}
-	s.SetPxl(s.RlePcxDecode(px))
+	s.SetPxl(s.RlePcxDecode(px), atlas)
 	return nil
 }
 
@@ -903,7 +1020,7 @@ func (s *Sprite) preloadSetPalRead(f *os.File, sh *SffHeader, offset int64, data
 			current.Pal[i] = uint32(alpha)<<24 | uint32(rgb[2])<<16 | uint32(rgb[1])<<8 | uint32(rgb[0])
 		}
 	}
-	s.SetPxl(s.RlePcxDecode(px))
+	s.SetPxl(s.RlePcxDecode(px), nil)
 	return nil
 }
 
@@ -1102,7 +1219,7 @@ func (s *Sprite) Lz5Decode(rle []byte) (p []byte) {
 	}
 	return
 }
-func (s *Sprite) readV2(f *os.File, offset int64, datasize uint32) error {
+func (s *Sprite) readV2(f *os.File, offset int64, datasize uint32, atlas *TextureAtlas) error {
 	var px []byte
 	var isRaw bool = false
 
@@ -1119,7 +1236,7 @@ func (s *Sprite) readV2(f *os.File, offset int64, datasize uint32) error {
 			// Do nothing, px is already in the expected format
 		case 24, 32:
 			isRaw = true
-			s.SetRaw(px, int32(s.Size[0]), int32(s.Size[1]), int32(s.coldepth))
+			s.SetRaw(px, int32(s.Size[0]), int32(s.Size[1]), int32(s.coldepth), atlas)
 		default:
 			return Error("Unknown color depth")
 		}
@@ -1175,14 +1292,14 @@ func (s *Sprite) readV2(f *os.File, offset int64, datasize uint32) error {
 				rgba = image.NewRGBA(rect)
 				draw.Draw(rgba, rect, img, rect.Min, draw.Src)
 			}
-			s.SetRaw(rgba.Pix, int32(rect.Max.X-rect.Min.X), int32(rect.Max.Y-rect.Min.Y), 32)
+			s.SetRaw(rgba.Pix, int32(rect.Max.X-rect.Min.X), int32(rect.Max.Y-rect.Min.Y), 32, atlas)
 		default:
 			return Error("Unknown format")
 		}
 	}
 
 	if !isRaw {
-		s.SetPxl(px)
+		s.SetPxl(px, atlas)
 	}
 	return nil
 }
@@ -1223,9 +1340,13 @@ func (s *Sprite) Draw(x, y, xscale, yscale, angle float32, fx *PalFX, window *[4
 		-x * sys.widthScale, -y * sys.heightScale, notiling,
 		xscale * sys.widthScale, xscale * sys.widthScale, yscale * sys.heightScale, 1, 0, 1, 1,
 		Rotation{angle, 0, 0}, 0, sys.brightness*255>>8 | 1<<9, 0, fx, window, 0, 0, 0, 0,
-		-xscale * float32(s.Offset[0]), -yscale * float32(s.Offset[1]),
+		-xscale * float32(s.Offset[0]), -yscale * float32(s.Offset[1]), s.Tex.atlas,
 	}
-	RenderSprite(rp)
+	if sys.batchMode {
+		CalculateRenderData(rp)
+	} else {
+		RenderSprite(rp)
+	}
 }
 
 type Sff struct {
@@ -1269,7 +1390,7 @@ func removeSFFCache(filename string) {
 		delete(SffCache, filename)
 	}
 }
-func loadSff(filename string, char bool) (*Sff, error) {
+func loadSff(filename string, char bool, atlas *TextureAtlas) (*Sff, error) {
 	// If this SFF is already in the cache, just return a copy
 	if cached, ok := SffCache[filename]; ok {
 		cached.refCount++
@@ -1388,11 +1509,11 @@ func loadSff(filename string, char bool) (*Sff, error) {
 				if err := spriteList[i].read(f, &s.header, shofs+32, size,
 					xofs, prev, &s.palList,
 					char && (prev == nil || spriteList[i].Group == 0 &&
-						spriteList[i].Number == 0)); err != nil {
+						spriteList[i].Number == 0), atlas); err != nil {
 					return nil, err
 				}
 			case 2:
-				if err := spriteList[i].readV2(f, int64(xofs), size); err != nil {
+				if err := spriteList[i].readV2(f, int64(xofs), size, atlas); err != nil {
 					return nil, err
 				}
 			}
@@ -1477,7 +1598,7 @@ func (s *Sprite) preloadRead(f *os.File, sh *SffHeader, offset int64, datasize u
 			pal[i] = uint32(alpha)<<24 | uint32(rgb[2])<<16 | uint32(rgb[1])<<8 | uint32(rgb[0])
 		}
 	}
-	s.SetPxl(s.RlePcxDecode(px))
+	s.SetPxl(s.RlePcxDecode(px), nil)
 	return nil
 }
 
@@ -1525,7 +1646,7 @@ func (s *Sprite) preloadPaletteRead(f *os.File, sh *SffHeader, offset int64, dat
 			f.Seek(offset+int64(datasize)-768, 0)
 		}
 	}
-	s.SetPxl(s.RlePcxDecode(px))
+	s.SetPxl(s.RlePcxDecode(px), nil)
 	return nil
 }
 
@@ -1695,7 +1816,7 @@ func preloadSff(filename string, char bool, preloadSpr map[[2]int16]bool, s map[
 						}
 					}
 				case 2:
-					if err := spriteList[i].readV2(f, int64(xofs), size); err != nil {
+					if err := spriteList[i].readV2(f, int64(xofs), size, nil); err != nil {
 						return nil, nil, err
 					}
 				}

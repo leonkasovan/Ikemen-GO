@@ -1,13 +1,21 @@
 package main
 
 import (
+	"bytes"
+	"encoding/binary"
+	"fmt"
 	"math"
 
+	"github.com/cespare/xxhash"
 	mgl "github.com/go-gl/mathgl/mgl32"
+	atlas "github.com/ikemen-engine/Ikemen-GO/glh"
+	"golang.org/x/exp/maps"
 )
 
 // The global, platform-specific rendering backend
 var gfx = &Renderer{}
+
+var UIMode bool = false
 
 // Blend constants
 type BlendFunc int
@@ -70,6 +78,63 @@ type RenderParams struct {
 	fLength        float32
 	xOffset        float32
 	yOffset        float32
+	// Texture atlas
+	atlas *atlas.TextureAtlas
+}
+
+type BatchRenderGlobals struct {
+	serializeBuffer         bytes.Buffer
+	floatConvertBuffer      []byte
+	vertexDataBuffer        [][]float32
+	vertexDataBufferCounter int
+	vertexCacheBuffer       []map[uint64]bool
+}
+
+type RenderUniformData struct {
+	atlas    *atlas.TextureAtlas
+	window   [4]int32
+	eq       BlendEquation // int
+	src, dst BlendFunc     // int
+	proj     mgl.Mat4
+	tex      uint32
+	paltex   uint32
+	isRgba   int
+	mask     int32
+	isTropez int
+	isFlat   int
+
+	neg        int
+	grayscale  float32
+	hue        float32
+	padd       [3]float32
+	pmul       [3]float32
+	tint       [4]float32
+	alpha      float32
+	modelView  mgl.Mat4
+	trans      int32
+	invblend   int32
+	vertexData []float32
+	// Possibly implement later
+	//x1x2x4x3        [][]float32
+	seqNo           int
+	forSprite       bool
+	UIMode          bool
+	isTTF           bool
+	ttf             *TtfFont
+	vertexDataCache map[uint64]bool
+}
+
+type Texture struct {
+	width                       int32
+	height                      int32
+	depth                       int32
+	filter                      bool
+	handle                      uint32
+	atlased                     bool
+	region                      atlas.AtlasRegion
+	atlas                       *atlas.TextureAtlas
+	atlasKey                    AtlasBufferKey
+	uvX, uvY, uvWidth, uvHeight float32 // UV coordinates in texture space (0.0 to 1.0)
 }
 
 func (rp *RenderParams) IsValid() bool {
@@ -77,20 +142,56 @@ func (rp *RenderParams) IsValid() bool {
 		rp.rxadd+rp.rot.angle+rp.rcx+rp.rcy)
 }
 
-func drawQuads(modelview mgl.Mat4, x1, y1, x2, y2, x3, y3, x4, y4 float32) {
-	gfx.SetUniformMatrix("modelview", modelview[:])
-	gfx.SetUniformF("x1x2x4x3", x1, x2, x4, x3) // this uniform is optional
-	gfx.SetVertexData(
-		x2, y2, 1, 1,
-		x3, y3, 1, 0,
-		x1, y1, 0, 1,
-		x4, y4, 0, 0)
+func drawQuads(rd *RenderUniformData, modelview mgl.Mat4, x1, y1, x2, y2, x3, y3, x4, y4, uvX, uvY, uvWidth, uvHeight float32, useAtlas bool) {
+	if rd == nil {
+		gfx.SetUniformMatrix("modelview", modelview[:])
+		gfx.SetUniformF("x1x2x4x3", x1, x2, x4, x3) // this uniform is optional
+		fmt.Println("drawQuads 1")
+		gfx.SetVertexData(
+			x2, y2, 1, 1,
+			x3, y3, 1, 0,
+			x1, y1, 0, 1,
+			x4, y4, 0, 0)
 
-	gfx.RenderQuad()
+		gfx.RenderQuad()
+	} else {
+		if useAtlas {
+			uvLeft := uvX + uvWidth
+			uvTop := uvY
+			uvRight := uvX
+			uvBottom := uvY + uvHeight
+
+			rd.AppendVertexData([]float32{
+				// Adjust vertices to rotate texture counterclockwise
+				// First triangle
+				x2, y2, uvLeft, uvBottom, // Rotate UVs counterclockwise
+				x3, y3, uvLeft, uvTop,
+				x1, y1, uvRight, uvBottom,
+
+				// Second triangle
+				x1, y1, uvRight, uvBottom, // Keep consistent UV rotation
+				x3, y3, uvLeft, uvTop,
+				x4, y4, uvRight, uvTop,
+			})
+		} else {
+			rd.AppendVertexData([]float32{
+				x2, y2, 1, 1,
+				x3, y3, 1, 0,
+				x1, y1, 0, 1,
+
+				x1, y1, 0, 1,
+				x3, y3, 1, 0,
+				x4, y4, 0, 0,
+			})
+		}
+		rd.modelView = modelview
+	}
 }
 
 // Render a quad with optional horizontal tiling
-func rmTileHSub(modelview mgl.Mat4, x1, y1, x2, y2, x3, y3, x4, y4, dy, width float32, rp RenderParams) {
+// func rmTileHSub(modelview mgl.Mat4, x1, y1, x2, y2, x3, y3, x4, y4, dy, width float32, rp RenderParams) {
+// rmTileHSub(rd, modelview, x1d, y1d, x2d, y2d, x3d, y3d, x4d, y4d, rp.size[0], rp.tex.uvX, rp.tex.uvY, rp.tex.uvWidth, rp.tex.uvHeight, rp.tile, rp.rcx, rp.atlas != nil)
+/*func rmTileHSub(rd *RenderUniformData, modelview mgl.Mat4, x1, y1, x2, y2, x3, y3, x4, y4, dy, width float32, rp RenderParams, useAtlas bool) {
 	//            p3
 	//    p4 o-----o-----o- - -o
 	//      /      |      \     ` .
@@ -134,11 +235,107 @@ func rmTileHSub(modelview mgl.Mat4, x1, y1, x2, y2, x3, y3, x4, y4, dy, width fl
 			mat = mat.Mul4(mgl.Translate3D(-(rp.rcx + float32(n)*botdist), -(rp.rcy + dy), 0))
 		}
 
-		drawQuads(mat, x1d, y1, x2d, y2, x3d, y3, x4d, y4)
+		// drawQuads(mat, x1d, y1, x2d, y2, x3d, y3, x4d, y4)
+		drawQuads(rd, modelview, x1d, y1, x2d, y2, x3d, y3, x4d, y4, rp.tex.uvX, rp.tex.uvY, rp.tex.uvWidth, rp.tex.uvHeight, true)
+	}
+}*/
+
+func rmTileHSub(rd *RenderUniformData, modelview mgl.Mat4, x1, y1, x2, y2, x3, y3, x4, y4, width float32, rp RenderParams, useAtlas bool) {
+	//            p3
+	//    p4 o-----o-----o- - -o
+	//      /      |      \     ` .
+	//     /       |       \       `.
+	//    o--------o--------o- - - - o
+	//   p1         p2
+	topdist := (x3 - x4) * (1 + float32(rp.tile.sx)/width)
+	botdist := (x2 - x1) * (1 + float32(rp.tile.sx)/width)
+	if AbsF(topdist) >= 0.01 {
+		db := (x4 - rp.rcx) * (botdist - topdist) / AbsF(topdist)
+		x1 += db
+		x2 += db
+	}
+
+	// Compute left/right tiling bounds (or right/left when topdist < 0)
+	xmax := float32(sys.scrrect[2])
+	left, right := int32(0), int32(1)
+	if topdist >= 0.01 {
+		left = 1 - int32(math.Ceil(float64(MaxF(x3/topdist, x2/botdist))))
+		right = int32(math.Ceil(float64(MaxF((xmax-x4)/topdist, (xmax-x1)/botdist))))
+	} else if topdist <= -0.01 {
+		left = 1 - int32(math.Ceil(float64(MaxF((xmax-x3)/-topdist, (xmax-x2)/-botdist))))
+		right = int32(math.Ceil(float64(MaxF(x4/-topdist, x1/-botdist))))
+	}
+
+	if rp.tile.x != 1 {
+		left = 0
+		right = Min(right, Max(rp.tile.x, 1))
+	}
+
+	buffer := make([]float32, 0)
+	xs := make([][]float32, 0)
+	// Draw all quads in one loop
+	for n := left; n < right; n++ {
+		x1d, x2d := x1+float32(n)*botdist, x2+float32(n)*botdist
+		x3d, x4d := x3+float32(n)*topdist, x4+float32(n)*topdist
+		if sys.batchMode {
+			if useAtlas {
+				uvLeft := rp.tex.uvX + rp.tex.uvWidth
+				uvTop := rp.tex.uvY
+				uvRight := rp.tex.uvX
+				uvBottom := rp.tex.uvY + rp.tex.uvHeight
+
+				buffer = append(buffer, []float32{
+					// Adjust vertices to rotate texture counterclockwise
+					// First triangle
+					x2d, y2, uvLeft, uvBottom, // Rotate UVs counterclockwise
+					x3d, y3, uvLeft, uvTop,
+					x1d, y1, uvRight, uvBottom,
+
+					// Second triangle
+					x1d, y1, uvRight, uvBottom, // Keep consistent UV rotation
+					x3d, y3, uvLeft, uvTop,
+					x4d, y4, uvRight, uvTop,
+				}...)
+			} else {
+				buffer = append(buffer, []float32{
+					x2d, y2, 1, 1,
+					x3d, y3, 1, 0,
+					x1d, y1, 0, 1,
+
+					x1d, y1, 0, 1,
+					x3d, y3, 1, 0,
+					x4d, y4, 0, 0,
+				}...)
+
+			}
+		} else {
+			buffer = append(buffer, []float32{
+				x2d, y2, 1, 1,
+				x3d, y3, 1, 0,
+				x1d, y1, 0, 1,
+				x4d, y4, 0, 0,
+			}...)
+		}
+		xs = append(xs, []float32{x1d, x2d, x4d, x3d})
+	}
+	if len(buffer) > 0 {
+		if rd == nil {
+			gfx.SetVertexData(buffer...)
+			vertex := int32(0)
+			for i := 0; i < len(xs); i++ {
+				gfx.SetUniformMatrix("modelview", modelview[:])
+				gfx.SetUniformF("x1x2x4x3", xs[i][0], xs[i][1], xs[i][2], xs[i][3]) // this uniform is optional
+				gfx.RenderQuadAtIndex(vertex)
+				vertex += 4
+			}
+		} else {
+			rd.modelView = modelview
+			rd.AppendVertexData(buffer)
+		}
 	}
 }
 
-func rmTileSub(modelview mgl.Mat4, rp RenderParams) {
+func rmTileSub(modelview mgl.Mat4, rp RenderParams, rd *RenderUniformData) {
 	x1, y1 := rp.x+rp.rxadd*rp.ys*float32(rp.size[1]), rp.rcy+((rp.y-rp.ys*float32(rp.size[1]))-rp.rcy)*rp.vs
 	x2, y2 := x1+rp.xbs*float32(rp.size[0]), y1
 	x3, y3 := rp.x+rp.xts*float32(rp.size[0]), rp.rcy+(rp.y-rp.rcy)*rp.vs
@@ -183,7 +380,7 @@ func rmTileSub(modelview mgl.Mat4, rp RenderParams) {
 				mgl.Rotate3DZ(rp.rot.angle * math.Pi / 180.0)).Mat4())
 		modelview = modelview.Mul4(mgl.Translate3D(-rp.rcx, -rp.rcy, 0))
 
-		drawQuads(modelview, x1, y1, x2, y2, x3, y3, x4, y4)
+		drawQuads(rd, modelview, x1, y1, x2, y2, x3, y3, x4, y4, rp.tex.uvX, rp.tex.uvY, rp.tex.uvWidth, rp.tex.uvHeight, rp.atlas != nil)
 		return
 	}
 	if rp.tile.y == 1 && rp.xbs != 0 {
@@ -217,13 +414,12 @@ func rmTileSub(modelview mgl.Mat4, rp RenderParams) {
 			x1d, x2d, x3d, x4d, y1d, y2d, y3d, y4d, xy = xy[len(xy)-8], xy[len(xy)-7], xy[len(xy)-6], xy[len(xy)-5], xy[len(xy)-4], xy[len(xy)-3], xy[len(xy)-2], xy[len(xy)-1], xy[:len(xy)-8]
 			if (0 > y1d || 0 > y4d) &&
 				(y1d > float32(-sys.scrrect[3]) || y4d > float32(-sys.scrrect[3])) {
-				rmTileHSub(modelview, x1d, y1d, x2d, y2d, x3d, y3d, x4d, y4d, y1d-y1, float32(rp.size[0]), rp)
+				rmTileHSub(rd, modelview, x1d, y1d, x2d, y2d, x3d, y3d, x4d, y4d, float32(rp.size[0]), rp, rp.atlas != nil)
 			}
 		}
 	}
 	if rp.tile.y == 0 || rp.xts != 0 {
 		n := rp.tile.y
-		oy := y1
 		for {
 			if rp.ys*((float32(rp.tile.sy)+float32(rp.size[1]))/rp.yas) > 0 {
 				if y1 <= float32(-sys.scrrect[3]) && y4 <= float32(-sys.scrrect[3]) {
@@ -234,8 +430,7 @@ func rmTileSub(modelview mgl.Mat4, rp RenderParams) {
 			}
 			if (0 > y1 || 0 > y4) &&
 				(y1 > float32(-sys.scrrect[3]) || y4 > float32(-sys.scrrect[3])) {
-				rmTileHSub(modelview, x1, y1, x2, y2, x3, y3, x4, y4, y1-oy,
-					float32(rp.size[0]), rp)
+				rmTileHSub(rd, modelview, x1, y1, x2, y2, x3, y3, x4, y4, float32(rp.size[0]), rp, rp.atlas != nil)
 			}
 			if rp.tile.y != 1 && n != 0 {
 				n--
@@ -282,6 +477,106 @@ func rmInitSub(rp *RenderParams) {
 		rp.y *= -1
 	}
 	rp.y += rp.rcy
+}
+
+func processBatch(batch []RenderUniformData) {
+	if len(batch) == 0 {
+		return
+	}
+	srd := batch[0]
+
+	// Maybe do this better later
+	if srd.isTTF {
+		(*srd.ttf).PrintBatch()
+		return
+	}
+
+	var vertices []float32
+	for i := 0; i < len(batch); i++ {
+		vertices = append(vertices, batch[i].vertexData...)
+	}
+
+	//for i := 0; i < len(batch); i++ {
+	UIMode = srd.UIMode
+	if srd.forSprite {
+		gfx.Scissor(srd.window[0], srd.window[1], srd.window[2], srd.window[3])
+	}
+	gfx.SetPipeline(srd.eq, srd.src, srd.dst)
+	gfx.SetUniformMatrix("projection", srd.proj[:])
+
+	if srd.forSprite {
+		if srd.atlas != nil {
+			gfx.SetTextureWithAtlas("tex", srd.atlas)
+		} else {
+			gfx.SetTextureWithHandle("tex", srd.tex)
+		}
+		if srd.paltex != 0xFFFFFFFF {
+			gfx.SetTextureWithHandle("pal", srd.paltex)
+		}
+		if gfx.setInitialUniforms || srd.isRgba != gfx.lastUsedInBatch.isRgba {
+			gfx.SetUniformI("isRgba", int(srd.isRgba))
+		}
+		if gfx.setInitialUniforms || srd.mask != gfx.lastUsedInBatch.mask {
+			gfx.SetUniformI("mask", int(srd.mask))
+		}
+		if gfx.setInitialUniforms || srd.isTropez != gfx.lastUsedInBatch.isTropez {
+			gfx.SetUniformI("isTrapez", srd.isTropez)
+		}
+		if gfx.setInitialUniforms || srd.neg != gfx.lastUsedInBatch.neg {
+			gfx.SetUniformI("neg", srd.neg)
+		}
+		if gfx.setInitialUniforms || srd.grayscale != gfx.lastUsedInBatch.grayscale {
+			gfx.SetUniformF("gray", srd.grayscale)
+		}
+		if gfx.setInitialUniforms || srd.hue != gfx.lastUsedInBatch.hue {
+			gfx.SetUniformF("hue", srd.hue)
+		}
+		if gfx.setInitialUniforms || srd.padd != gfx.lastUsedInBatch.padd {
+			gfx.SetUniformFv("add", srd.padd[:])
+		}
+		if gfx.setInitialUniforms || srd.pmul != gfx.lastUsedInBatch.pmul {
+			gfx.SetUniformFv("mult", srd.pmul[:])
+		}
+		if gfx.setInitialUniforms || srd.alpha != gfx.lastUsedInBatch.alpha {
+			gfx.SetUniformF("alpha", srd.alpha)
+		}
+	}
+
+	if gfx.setInitialUniforms || srd.isFlat != gfx.lastUsedInBatch.isFlat {
+		gfx.SetUniformI("isFlat", int(srd.isFlat))
+	}
+	if gfx.setInitialUniforms || srd.tint != gfx.lastUsedInBatch.tint {
+		gfx.SetUniformFv("tint", srd.tint[:])
+	}
+	if gfx.setInitialUniforms || srd.modelView != gfx.lastUsedInBatch.modelView {
+		gfx.SetUniformMatrix("modelview", srd.modelView[:])
+	}
+
+	// Implement chunking and rendering
+	maxVerticesPerBatch := int(sys.maxBatchSize) * 6 * 4
+	for start := 0; start < len(vertices); start += maxVerticesPerBatch {
+		end := start + maxVerticesPerBatch
+		if end > len(vertices) {
+			end = len(vertices)
+		}
+		// fmt.Printf("start=%v end=%v len(chunk)=%v len(vertices)=%v\n", start, end, len(vertices[start:end]), len(vertices))
+		chunk := vertices[start:end]
+		gfx.SetVertexData(chunk...)
+		gfx.RenderQuadBatchAtIndex(int32(start), int32((end-start)/4)) // Assuming RenderQuadBatchAtIndex is implemented
+	}
+
+	gfx.ReleasePipeline()
+
+	if srd.forSprite {
+		gfx.DisableScissor()
+	}
+
+	gfx.lastUsedInBatch = srd
+	//if gfx.setInitialUniforms {
+	gfx.setInitialUniforms = true
+	//}
+	//}
+
 }
 
 func RenderSprite(rp RenderParams) {
@@ -335,7 +630,7 @@ func RenderSprite(rp RenderParams) {
 		gfx.SetUniformFv("tint", tint[:])
 		gfx.SetUniformF("alpha", a)
 
-		rmTileSub(modelview, rp)
+		rmTileSub(modelview, rp, nil)
 
 		gfx.ReleasePipeline()
 	}, rp.trans, rp.paltex != nil, invblend, &neg, &padd, &pmul, rp.paltex == nil)
@@ -453,4 +748,318 @@ func FillRect(rect [4]int32, color uint32, trans int32) {
 		gfx.RenderQuad()
 		gfx.ReleasePipeline()
 	}, trans, true, 0, nil, nil, nil, false)
+}
+
+func BatchParam(rp *RenderUniformData) {
+	if rp != nil {
+		sys.paramList = append(sys.paramList, *rp)
+	}
+}
+
+/*
+Get the uniforms that would be generated by this set of
+RenderParams, without actually rendering
+*/
+func CalculateRenderData(rp RenderParams) {
+	if !rp.IsValid() {
+		return
+	}
+
+	rmInitSub(&rp)
+
+	rd := NewRenderUniformData()
+	rd.forSprite = true
+	rd.UIMode = UIMode
+
+	neg, grayscale, padd, pmul, invblend, hue := false, float32(0), [3]float32{0, 0, 0}, [3]float32{1, 1, 1}, int32(0), float32(0)
+	tint := [4]float32{float32(rp.tint&0xff) / 255, float32(rp.tint>>8&0xff) / 255,
+		float32(rp.tint>>16&0xff) / 255, float32(rp.tint>>24&0xff) / 255}
+
+	if rp.pfx != nil {
+		blending := rp.trans
+		//if rp.trans == -2 || rp.trans == -1 || (rp.trans&0xff > 0 && rp.trans>>10&0xff >= 255) {
+		//	blending = true
+		//}
+		neg, grayscale, padd, pmul, invblend, hue = rp.pfx.getFcPalFx(false, int(blending))
+		//if rp.trans == -2 && invblend < 1 {
+		//padd[0], padd[1], padd[2] = -padd[0], -padd[1], -padd[2]
+		//}
+	}
+
+	proj := mgl.Ortho(0, float32(sys.scrrect[2]), 0, float32(sys.scrrect[3]), -65535, 65535)
+	modelview := mgl.Translate3D(0, float32(sys.scrrect[3]), 0)
+	rd.window = *rp.window
+
+	// gfx.Scissor(rp.window[0], rp.window[1], rp.window[2], rp.window[3])
+	renderWithBlending(func(eq BlendEquation, src, dst BlendFunc, a float32) {
+		rmTileSub(modelview, rp, &rd)
+		rd.tex = rp.tex.handle
+		rd.atlas = rp.atlas
+		rd.eq = eq
+		rd.src = src
+		rd.dst = dst
+		rd.proj = proj
+		rd.tex = rp.tex.handle
+		if rp.paltex == nil {
+			rd.isRgba = 1
+			rd.paltex = 0xFFFFFFFF
+		} else {
+			rd.paltex = rp.paltex.handle
+			rd.isRgba = 0
+		}
+		rd.mask = rp.mask
+		rd.isTropez = int(Btoi(AbsF(AbsF(rp.xts)-AbsF(rp.xbs)) > 0.001))
+		rd.isFlat = 0
+		rd.neg = int(Btoi(neg))
+		rd.grayscale = grayscale
+		rd.hue = hue
+		rd.padd = padd
+		rd.pmul = pmul
+		rd.tint = tint
+		rd.alpha = a
+		//rd.modelView = modelview
+		//rd.trans = rp.trans
+		//rd.invblend = invblend
+		BatchParam(&rd)
+		rd.seqNo = sys.curSDRSeqNo
+		sys.curSDRSeqNo++
+		// fmt.Printf("In Prerender: eq: %d src %d dst %d a %f seqNo: %d \n", eq, src, dst, a, rd.seqNo)
+
+	}, rp.trans, rp.paltex != nil, invblend, &neg, &padd, &pmul, rp.paltex == nil)
+}
+
+func CalculateRectData(rect [4]int32, color uint32, trans int32) {
+	rd := NewRenderUniformData()
+	rd.UIMode = UIMode
+
+	r := float32(color>>16&0xff) / 255
+	g := float32(color>>8&0xff) / 255
+	b := float32(color&0xff) / 255
+
+	modelview := mgl.Translate3D(0, float32(sys.scrrect[3]), 0)
+	proj := mgl.Ortho(0, float32(sys.scrrect[2]), 0, float32(sys.scrrect[3]), -65535, 65535)
+
+	x1, y1 := float32(rect[0]), -float32(rect[1])
+	x2, y2 := float32(rect[0]+rect[2]), -float32(rect[1]+rect[3])
+
+	renderWithBlending(func(eq BlendEquation, src, dst BlendFunc, a float32) {
+
+		rd.eq = eq
+		rd.src = src
+		rd.dst = dst
+		// rd.vertexData = append(rd.vertexData, []float32{
+		// 	x1, y2, 0, 1,
+		// 	x1, y1, 0, 0,
+		// 	x2, y1, 1, 0,
+
+		// 	x1, y2, 0, 1,
+		// 	x2, y1, 1, 0,
+		// 	x2, y2, 1, 1,
+		// }...)
+		rd.AppendVertexData([]float32{
+			x1, y2, 0, 1,
+			x1, y1, 0, 0,
+			x2, y1, 1, 0,
+
+			x1, y2, 0, 1,
+			x2, y1, 1, 0,
+			x2, y2, 1, 1,
+		})
+		rd.modelView = modelview
+		rd.proj = proj
+		rd.isFlat = 1
+		rd.tint = [4]float32{r, g, b, a}
+		rd.trans = trans
+		rd.invblend = 0
+		BatchParam(&rd)
+		rd.seqNo = sys.curSDRSeqNo
+		// fmt.Printf("In Prerender: eq: %d src %d dst %d a %f seqNo: %d \n", eq, src, dst, a, rd.seqNo)
+
+		sys.curSDRSeqNo++
+	}, trans, true, 0, nil, nil, nil, false)
+}
+
+func NewRenderUniformData() RenderUniformData {
+	rud := RenderUniformData{}
+	if len(sys.batchGlobals.vertexDataBuffer) == 0 {
+		sys.batchGlobals.vertexDataBuffer = make([][]float32, 256)
+
+		for i := 0; i < 256; i++ {
+			sys.batchGlobals.vertexDataBuffer[i] = make([]float32, 0, 24)
+		}
+	}
+	if len(sys.batchGlobals.vertexCacheBuffer) == 0 {
+		sys.batchGlobals.vertexCacheBuffer = make([]map[uint64]bool, 256)
+
+		for i := 0; i < 256; i++ {
+			sys.batchGlobals.vertexCacheBuffer[i] = make(map[uint64]bool)
+		}
+	}
+
+	if len(sys.batchGlobals.vertexDataBuffer) > sys.batchGlobals.vertexDataBufferCounter {
+		rud.vertexData = sys.batchGlobals.vertexDataBuffer[sys.batchGlobals.vertexDataBufferCounter]
+		rud.vertexDataCache = sys.batchGlobals.vertexCacheBuffer[sys.batchGlobals.vertexDataBufferCounter]
+		sys.batchGlobals.vertexDataBufferCounter++
+	} else {
+		sys.batchGlobals.vertexDataBuffer = append(sys.batchGlobals.vertexDataBuffer, make([]float32, 0, 24))
+		rud.vertexData = sys.batchGlobals.vertexDataBuffer[sys.batchGlobals.vertexDataBufferCounter]
+		sys.batchGlobals.vertexCacheBuffer = append(sys.batchGlobals.vertexCacheBuffer, make(map[uint64]bool))
+		rud.vertexDataCache = sys.batchGlobals.vertexCacheBuffer[sys.batchGlobals.vertexDataBufferCounter]
+		sys.batchGlobals.vertexDataBufferCounter++
+	}
+	return rud
+}
+
+/* Do not be afraid of this */
+/*
+	Take the Uniform data and turn it into a series of bytes to be hashed.
+	XXHASH is super fast, this shouldn't be a problem.
+*/
+func (r *RenderUniformData) Serialize() ([]byte, error) {
+	buf := &sys.batchGlobals.serializeBuffer
+	buf.Reset()
+
+	if r.atlas != nil {
+		if err := binary.Write(buf, binary.LittleEndian, r.atlas.Handle()); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := binary.Write(buf, binary.LittleEndian, uint32(0)); err != nil {
+			return nil, err
+		}
+	}
+	if err := binary.Write(buf, binary.LittleEndian, r.window[:]); err != nil {
+		return nil, err
+	}
+	if err := binary.Write(buf, binary.LittleEndian, int32(r.eq)); err != nil {
+		return nil, err
+	}
+	if err := binary.Write(buf, binary.LittleEndian, int32(r.src)); err != nil {
+		return nil, err
+	}
+	if err := binary.Write(buf, binary.LittleEndian, int32(r.dst)); err != nil {
+		return nil, err
+	}
+	if err := binary.Write(buf, binary.LittleEndian, r.proj[:]); err != nil {
+		return nil, err
+	}
+	if r.atlas == nil {
+		if err := binary.Write(buf, binary.LittleEndian, r.tex); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := binary.Write(buf, binary.LittleEndian, uint32(0)); err != nil {
+			return nil, err
+		}
+	}
+	if err := binary.Write(buf, binary.LittleEndian, r.paltex); err != nil {
+		return nil, err
+	}
+
+	if err := binary.Write(buf, binary.LittleEndian, int32(r.isRgba)); err != nil {
+		return nil, err
+	}
+	if err := binary.Write(buf, binary.LittleEndian, r.mask); err != nil {
+		return nil, err
+	}
+	if err := binary.Write(buf, binary.LittleEndian, int32(r.isTropez)); err != nil {
+		return nil, err
+	}
+	if err := binary.Write(buf, binary.LittleEndian, int32(r.isFlat)); err != nil {
+		return nil, err
+	}
+	if err := binary.Write(buf, binary.LittleEndian, int32(r.neg)); err != nil {
+		return nil, err
+	}
+	if err := binary.Write(buf, binary.LittleEndian, r.grayscale); err != nil {
+		return nil, err
+	}
+	if err := binary.Write(buf, binary.LittleEndian, r.hue); err != nil {
+		return nil, err
+	}
+	if err := binary.Write(buf, binary.LittleEndian, r.padd[:]); err != nil {
+		return nil, err
+	}
+	if err := binary.Write(buf, binary.LittleEndian, r.pmul[:]); err != nil {
+		return nil, err
+	}
+	if err := binary.Write(buf, binary.LittleEndian, r.tint[:]); err != nil {
+		return nil, err
+	}
+	if err := binary.Write(buf, binary.LittleEndian, r.alpha); err != nil {
+		return nil, err
+	}
+	if err := binary.Write(buf, binary.LittleEndian, r.modelView[:]); err != nil {
+		return nil, err
+	}
+
+	if err := binary.Write(buf, binary.LittleEndian, r.UIMode); err != nil {
+		return nil, err
+	}
+	if err := binary.Write(buf, binary.LittleEndian, r.isTTF); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
+}
+
+func batchF32Encode(data []float32) []byte {
+	sys.batchGlobals.floatConvertBuffer = sys.batchGlobals.floatConvertBuffer[:0]
+	for _, f := range data {
+		u := math.Float32bits(f)
+		b := make([]byte, 4)
+		binary.LittleEndian.PutUint32(b, u)
+		sys.batchGlobals.floatConvertBuffer = append(sys.batchGlobals.floatConvertBuffer, b...)
+	}
+	return sys.batchGlobals.floatConvertBuffer
+}
+
+func (r *RenderUniformData) AppendVertexData(vertices []float32) {
+	data := batchF32Encode(vertices)
+
+	hash := xxhash.Sum64(data)
+	if _, ok := r.vertexDataCache[hash]; !ok {
+		r.vertexData = append(r.vertexData, vertices...)
+		r.vertexDataCache[hash] = true
+	}
+}
+
+func BatchRender() {
+	if !sys.batchMode {
+		return
+	}
+	var currentBatch []RenderUniformData
+	var lastHash uint64
+	drawsReduced := 0
+
+	for i := 0; i < len(sys.paramList); i++ {
+		entry := sys.paramList[i]
+		data, _ := entry.Serialize()
+		currentHash := xxhash.Sum64(data)
+		if i == 0 || currentHash != lastHash {
+			if len(currentBatch) > 0 {
+				processBatch(currentBatch)
+				drawsReduced += len(currentBatch) - 1
+				currentBatch = []RenderUniformData{}
+			}
+		}
+
+		currentBatch = append(currentBatch, entry)
+		lastHash = currentHash
+
+		if i == len(sys.paramList)-1 && len(currentBatch) > 0 {
+			processBatch(currentBatch)
+			drawsReduced += len(currentBatch) - 1
+		}
+	}
+
+	for i := 0; i < len(sys.batchGlobals.vertexDataBuffer); i++ {
+		sys.batchGlobals.vertexDataBuffer[i] = sys.batchGlobals.vertexDataBuffer[i][:0]
+		maps.Clear(sys.batchGlobals.vertexCacheBuffer[i])
+	}
+	sys.paramList = sys.paramList[:0]
+	sys.batchGlobals.vertexDataBufferCounter = 0
+	sys.curSDRSeqNo = 0
+	//fmt.Println(drawsReduced)
+	//gfx.Flush()
 }
