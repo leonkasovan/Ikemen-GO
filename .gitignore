@@ -5,6 +5,7 @@ go/*
 *.log
 *.cmd
 *.bat
+!build_test_3d_stage.bat
 *.sh
 *.png
 save/*
