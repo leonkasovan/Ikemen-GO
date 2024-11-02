@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
-	"fmt"
 	"math"
 
 	"github.com/cespare/xxhash"
@@ -146,7 +145,6 @@ func drawQuads(rd *RenderUniformData, modelview mgl.Mat4, x1, y1, x2, y2, x3, y3
 	if rd == nil {
 		gfx.SetUniformMatrix("modelview", modelview[:])
 		gfx.SetUniformF("x1x2x4x3", x1, x2, x4, x3) // this uniform is optional
-		fmt.Println("drawQuads 1")
 		gfx.SetVertexData(
 			x2, y2, 1, 1,
 			x3, y3, 1, 0,
@@ -189,57 +187,6 @@ func drawQuads(rd *RenderUniformData, modelview mgl.Mat4, x1, y1, x2, y2, x3, y3
 }
 
 // Render a quad with optional horizontal tiling
-// func rmTileHSub(modelview mgl.Mat4, x1, y1, x2, y2, x3, y3, x4, y4, dy, width float32, rp RenderParams) {
-// rmTileHSub(rd, modelview, x1d, y1d, x2d, y2d, x3d, y3d, x4d, y4d, rp.size[0], rp.tex.uvX, rp.tex.uvY, rp.tex.uvWidth, rp.tex.uvHeight, rp.tile, rp.rcx, rp.atlas != nil)
-/*func rmTileHSub(rd *RenderUniformData, modelview mgl.Mat4, x1, y1, x2, y2, x3, y3, x4, y4, dy, width float32, rp RenderParams, useAtlas bool) {
-	//            p3
-	//    p4 o-----o-----o- - -o
-	//      /      |      \     ` .
-	//     /       |       \       `.
-	//    o--------o--------o- - - - o
-	//   p1         p2
-	topdist := (x3 - x4) * (((float32(rp.tile.sx) + width) / rp.xas) / width)
-	botdist := (x2 - x1) * (((float32(rp.tile.sx) + width) / rp.xas) / width)
-	if AbsF(topdist) >= 0.01 {
-		db := (x4 - rp.rcx) * (botdist - topdist) / AbsF(topdist)
-		x1 += db
-		x2 += db
-	}
-
-	// Compute left/right tiling bounds (or right/left when topdist < 0)
-	xmax := float32(sys.scrrect[2])
-	left, right := int32(0), int32(1)
-	if rp.tile.x != 0 {
-		if topdist >= 0.01 {
-			left = 1 - int32(math.Ceil(float64(MaxF(x3/topdist, x2/botdist))))
-			right = int32(math.Ceil(float64(MaxF((xmax-x4)/topdist, (xmax-x1)/botdist))))
-		} else if topdist <= -0.01 {
-			left = 1 - int32(math.Ceil(float64(MaxF((xmax-x3)/-topdist, (xmax-x2)/-botdist))))
-			right = int32(math.Ceil(float64(MaxF(x4/-topdist, x1/-botdist))))
-		}
-		if rp.tile.x != 1 {
-			left = 0
-			right = Min(right, Max(rp.tile.x, 1))
-		}
-	}
-
-	// Draw all quads in one loop
-	for n := left; n < right; n++ {
-		x1d, x2d := x1+float32(n)*botdist, x2+float32(n)*botdist
-		x3d, x4d := x3+float32(n)*topdist, x4+float32(n)*topdist
-		mat := modelview
-		if !rp.rot.IsZero() {
-			mat = mat.Mul4(mgl.Translate3D(rp.rcx+float32(n)*botdist, rp.rcy+dy, 0))
-			//modelview = modelview.Mul4(mgl.Scale3D(1, rp.vs, 1))
-			mat = mat.Mul4(mgl.Rotate3DZ(rp.rot.angle * math.Pi / 180.0).Mat4())
-			mat = mat.Mul4(mgl.Translate3D(-(rp.rcx + float32(n)*botdist), -(rp.rcy + dy), 0))
-		}
-
-		// drawQuads(mat, x1d, y1, x2d, y2, x3d, y3, x4d, y4)
-		drawQuads(rd, modelview, x1d, y1, x2d, y2, x3d, y3, x4d, y4, rp.tex.uvX, rp.tex.uvY, rp.tex.uvWidth, rp.tex.uvHeight, true)
-	}
-}*/
-
 func rmTileHSub(rd *RenderUniformData, modelview mgl.Mat4, x1, y1, x2, y2, x3, y3, x4, y4, width float32, rp RenderParams, useAtlas bool) {
 	//            p3
 	//    p4 o-----o-----o- - -o
@@ -340,12 +287,6 @@ func rmTileSub(modelview mgl.Mat4, rp RenderParams, rd *RenderUniformData) {
 	x2, y2 := x1+rp.xbs*float32(rp.size[0]), y1
 	x3, y3 := rp.x+rp.xts*float32(rp.size[0]), rp.rcy+(rp.y-rp.rcy)*rp.vs
 	x4, y4 := rp.x, y3
-	//var pers float32
-	//if AbsF(rp.xts) < AbsF(rp.xbs) {
-	//	pers = AbsF(rp.xts) / AbsF(rp.xbs)
-	//} else {
-	//	pers = AbsF(rp.xbs) / AbsF(rp.xts)
-	//}
 	if !rp.rot.IsZero() && rp.tile.x == 0 && rp.tile.y == 0 {
 
 		if rp.vs != 1 {
@@ -366,7 +307,6 @@ func rmTileSub(modelview mgl.Mat4, rp RenderParams, rd *RenderUniformData) {
 			modelview = modelview.Mul4(mgl.Translate3D(rp.rcx, rp.rcy, 0))
 		} else if rp.projectionMode == 2 {
 			matrix := mgl.Mat4{float32(sys.scrrect[2] / 2.0), 0, 0, 0, 0, float32(sys.scrrect[3] / 2), 0, 0, 0, 0, -65535, 0, float32(sys.scrrect[2] / 2), float32(sys.scrrect[3] / 2), 0, 1}
-			//modelview = modelview.Mul4(mgl.Translate3D(0, -float32(sys.scrrect[3]), 2048))
 			modelview = modelview.Mul4(mgl.Translate3D(rp.rcx-float32(sys.scrrect[2])/2.0-rp.xOffset, rp.rcy-float32(sys.scrrect[3])/2.0+rp.yOffset, rp.fLength))
 			modelview = modelview.Mul4(matrix)
 			modelview = modelview.Mul4(mgl.Frustum(-float32(sys.scrrect[2])/2/rp.fLength, float32(sys.scrrect[2])/2/rp.fLength, -float32(sys.scrrect[3])/2/rp.fLength, float32(sys.scrrect[3])/2/rp.fLength, 1.0, 65535))
@@ -490,56 +430,54 @@ func processBatch(batch []RenderUniformData) {
 		(*srd.ttf).PrintBatch()
 		return
 	}
+	if !srd.forSprite {
+		return
+	}
 
 	var vertices []float32
 	for i := 0; i < len(batch); i++ {
 		vertices = append(vertices, batch[i].vertexData...)
 	}
 
-	//for i := 0; i < len(batch); i++ {
 	UIMode = srd.UIMode
-	if srd.forSprite {
-		gfx.Scissor(srd.window[0], srd.window[1], srd.window[2], srd.window[3])
-	}
+	gfx.Scissor(srd.window[0], srd.window[1], srd.window[2], srd.window[3])
 	gfx.SetPipeline(srd.eq, srd.src, srd.dst)
 	gfx.SetUniformMatrix("projection", srd.proj[:])
 
-	if srd.forSprite {
-		if srd.atlas != nil {
-			gfx.SetTextureWithAtlas("tex", srd.atlas)
-		} else {
-			gfx.SetTextureWithHandle("tex", srd.tex)
-		}
-		if srd.paltex != 0xFFFFFFFF {
-			gfx.SetTextureWithHandle("pal", srd.paltex)
-		}
-		if gfx.setInitialUniforms || srd.isRgba != gfx.lastUsedInBatch.isRgba {
-			gfx.SetUniformI("isRgba", int(srd.isRgba))
-		}
-		if gfx.setInitialUniforms || srd.mask != gfx.lastUsedInBatch.mask {
-			gfx.SetUniformI("mask", int(srd.mask))
-		}
-		if gfx.setInitialUniforms || srd.isTropez != gfx.lastUsedInBatch.isTropez {
-			gfx.SetUniformI("isTrapez", srd.isTropez)
-		}
-		if gfx.setInitialUniforms || srd.neg != gfx.lastUsedInBatch.neg {
-			gfx.SetUniformI("neg", srd.neg)
-		}
-		if gfx.setInitialUniforms || srd.grayscale != gfx.lastUsedInBatch.grayscale {
-			gfx.SetUniformF("gray", srd.grayscale)
-		}
-		if gfx.setInitialUniforms || srd.hue != gfx.lastUsedInBatch.hue {
-			gfx.SetUniformF("hue", srd.hue)
-		}
-		if gfx.setInitialUniforms || srd.padd != gfx.lastUsedInBatch.padd {
-			gfx.SetUniformFv("add", srd.padd[:])
-		}
-		if gfx.setInitialUniforms || srd.pmul != gfx.lastUsedInBatch.pmul {
-			gfx.SetUniformFv("mult", srd.pmul[:])
-		}
-		if gfx.setInitialUniforms || srd.alpha != gfx.lastUsedInBatch.alpha {
-			gfx.SetUniformF("alpha", srd.alpha)
-		}
+	if srd.atlas != nil {
+		gfx.SetTextureWithAtlas("tex", srd.atlas)
+	} else {
+		gfx.SetTextureWithHandle("tex", srd.tex)
+	}
+	if srd.paltex != 0xFFFFFFFF {
+		gfx.SetTextureWithHandle("pal", srd.paltex)
+	}
+	if gfx.setInitialUniforms || srd.isRgba != gfx.lastUsedInBatch.isRgba {
+		gfx.SetUniformI("isRgba", int(srd.isRgba))
+	}
+	if gfx.setInitialUniforms || srd.mask != gfx.lastUsedInBatch.mask {
+		gfx.SetUniformI("mask", int(srd.mask))
+	}
+	if gfx.setInitialUniforms || srd.isTropez != gfx.lastUsedInBatch.isTropez {
+		gfx.SetUniformI("isTrapez", srd.isTropez)
+	}
+	if gfx.setInitialUniforms || srd.neg != gfx.lastUsedInBatch.neg {
+		gfx.SetUniformI("neg", srd.neg)
+	}
+	if gfx.setInitialUniforms || srd.grayscale != gfx.lastUsedInBatch.grayscale {
+		gfx.SetUniformF("gray", srd.grayscale)
+	}
+	if gfx.setInitialUniforms || srd.hue != gfx.lastUsedInBatch.hue {
+		gfx.SetUniformF("hue", srd.hue)
+	}
+	if gfx.setInitialUniforms || srd.padd != gfx.lastUsedInBatch.padd {
+		gfx.SetUniformFv("add", srd.padd[:])
+	}
+	if gfx.setInitialUniforms || srd.pmul != gfx.lastUsedInBatch.pmul {
+		gfx.SetUniformFv("mult", srd.pmul[:])
+	}
+	if gfx.setInitialUniforms || srd.alpha != gfx.lastUsedInBatch.alpha {
+		gfx.SetUniformF("alpha", srd.alpha)
 	}
 
 	if gfx.setInitialUniforms || srd.isFlat != gfx.lastUsedInBatch.isFlat {
@@ -559,24 +497,15 @@ func processBatch(batch []RenderUniformData) {
 		if end > len(vertices) {
 			end = len(vertices)
 		}
-		// fmt.Printf("start=%v end=%v len(chunk)=%v len(vertices)=%v\n", start, end, len(vertices[start:end]), len(vertices))
 		chunk := vertices[start:end]
 		gfx.SetVertexData(chunk...)
 		gfx.RenderQuadBatchAtIndex(int32(start), int32((end-start)/4)) // Assuming RenderQuadBatchAtIndex is implemented
 	}
 
 	gfx.ReleasePipeline()
-
-	if srd.forSprite {
-		gfx.DisableScissor()
-	}
-
+	gfx.DisableScissor()
 	gfx.lastUsedInBatch = srd
-	//if gfx.setInitialUniforms {
 	gfx.setInitialUniforms = true
-	//}
-	//}
-
 }
 
 func RenderSprite(rp RenderParams) {
@@ -592,13 +521,7 @@ func RenderSprite(rp RenderParams) {
 
 	if rp.pfx != nil {
 		blending := rp.trans
-		//if rp.trans == -2 || rp.trans == -1 || (rp.trans&0xff > 0 && rp.trans>>10&0xff >= 255) {
-		//	blending = true
-		//}
 		neg, grayscale, padd, pmul, invblend, hue = rp.pfx.getFcPalFx(false, int(blending))
-		//if rp.trans == -2 && invblend < 1 {
-		//padd[0], padd[1], padd[2] = -padd[0], -padd[1], -padd[2]
-		//}
 	}
 
 	proj := mgl.Ortho(0, float32(sys.scrrect[2]), 0, float32(sys.scrrect[3]), -65535, 65535)
@@ -777,20 +700,13 @@ func CalculateRenderData(rp RenderParams) {
 
 	if rp.pfx != nil {
 		blending := rp.trans
-		//if rp.trans == -2 || rp.trans == -1 || (rp.trans&0xff > 0 && rp.trans>>10&0xff >= 255) {
-		//	blending = true
-		//}
 		neg, grayscale, padd, pmul, invblend, hue = rp.pfx.getFcPalFx(false, int(blending))
-		//if rp.trans == -2 && invblend < 1 {
-		//padd[0], padd[1], padd[2] = -padd[0], -padd[1], -padd[2]
-		//}
 	}
 
 	proj := mgl.Ortho(0, float32(sys.scrrect[2]), 0, float32(sys.scrrect[3]), -65535, 65535)
 	modelview := mgl.Translate3D(0, float32(sys.scrrect[3]), 0)
 	rd.window = *rp.window
 
-	// gfx.Scissor(rp.window[0], rp.window[1], rp.window[2], rp.window[3])
 	renderWithBlending(func(eq BlendEquation, src, dst BlendFunc, a float32) {
 		rmTileSub(modelview, rp, &rd)
 		rd.tex = rp.tex.handle
@@ -817,13 +733,9 @@ func CalculateRenderData(rp RenderParams) {
 		rd.pmul = pmul
 		rd.tint = tint
 		rd.alpha = a
-		//rd.modelView = modelview
-		//rd.trans = rp.trans
-		//rd.invblend = invblend
 		BatchParam(&rd)
 		rd.seqNo = sys.curSDRSeqNo
 		sys.curSDRSeqNo++
-		// fmt.Printf("In Prerender: eq: %d src %d dst %d a %f seqNo: %d \n", eq, src, dst, a, rd.seqNo)
 
 	}, rp.trans, rp.paltex != nil, invblend, &neg, &padd, &pmul, rp.paltex == nil)
 }
@@ -847,15 +759,6 @@ func CalculateRectData(rect [4]int32, color uint32, trans int32) {
 		rd.eq = eq
 		rd.src = src
 		rd.dst = dst
-		// rd.vertexData = append(rd.vertexData, []float32{
-		// 	x1, y2, 0, 1,
-		// 	x1, y1, 0, 0,
-		// 	x2, y1, 1, 0,
-
-		// 	x1, y2, 0, 1,
-		// 	x2, y1, 1, 0,
-		// 	x2, y2, 1, 1,
-		// }...)
 		rd.AppendVertexData([]float32{
 			x1, y2, 0, 1,
 			x1, y1, 0, 0,
@@ -873,7 +776,6 @@ func CalculateRectData(rect [4]int32, color uint32, trans int32) {
 		rd.invblend = 0
 		BatchParam(&rd)
 		rd.seqNo = sys.curSDRSeqNo
-		// fmt.Printf("In Prerender: eq: %d src %d dst %d a %f seqNo: %d \n", eq, src, dst, a, rd.seqNo)
 
 		sys.curSDRSeqNo++
 	}, trans, true, 0, nil, nil, nil, false)
@@ -1060,6 +962,4 @@ func BatchRender() {
 	sys.paramList = sys.paramList[:0]
 	sys.batchGlobals.vertexDataBufferCounter = 0
 	sys.curSDRSeqNo = 0
-	//fmt.Println(drawsReduced)
-	//gfx.Flush()
 }
