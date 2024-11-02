@@ -145,7 +145,7 @@ func (f *Font) GenerateGlyphs(low, high rune) error {
 		f.fontChar[ch] = char
 	}
 	// Finalize the atlas
-	f.atlas.Commit(gl.TEXTURE_2D)
+	f.atlas.Commit()
 
 	gl.BindTexture(gl.TEXTURE_2D, 0)
 	return nil

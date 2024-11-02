@@ -124,7 +124,9 @@ func (a *TextureAtlas) Unbind(target uint32) { gl.BindTexture(target, 0) }
 // Commit creates the actual texture from the atlas image data.
 // This should be called after all regions have been defined and set,
 // and before you start using the texture for display.
-func (a *TextureAtlas) Commit(target uint32) {
+func (a *TextureAtlas) Commit() {
+	var target uint32
+	target = gl.TEXTURE_2D
 	//gl.PushAttrib(gl.CURRENT_BIT | gl.ENABLE_BIT)
 	gl.Enable(target)
 

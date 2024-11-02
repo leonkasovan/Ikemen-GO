@@ -14,7 +14,6 @@ import (
 	"unsafe"
 
 	"github.com/cespare/xxhash"
-	gl "github.com/go-gl/gl/v2.1/gl"
 	atlas "github.com/ikemen-engine/Ikemen-GO/glh"
 )
 
@@ -569,7 +568,7 @@ func (t *TextureAtlas) Get(key AtlasBufferKey) *atlas.TextureAtlas {
 func (t *TextureAtlas) Commit() {
 	for _, a := range t.atlas {
 		fmt.Println("Commit")
-		a.Commit(gl.TEXTURE_2D)
+		a.Commit()
 	}
 }
 
