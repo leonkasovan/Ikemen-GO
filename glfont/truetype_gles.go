@@ -1,4 +1,4 @@
-//go:build gles
+//go:build gles2 || gles
 
 package glfont
 
@@ -7,24 +7,25 @@ import (
 	"image"
 	"image/draw"
 	"io"
-	atlas "github.com/ikemen-engine/Ikemen-GO/glh"
-	gl "github.com/leonkasovan/gl/v3.1/gles2"
+
 	"github.com/golang/freetype"
 	"github.com/golang/freetype/truetype"
+	atlas "github.com/ikemen-engine/Ikemen-GO/glh"
+	gl "github.com/leonkasovan/gl/v3.1/gles2"
 	"golang.org/x/image/font"
 	"golang.org/x/image/math/fixed"
 )
 
 // A Font allows rendering of text to an OpenGL context.
 type Font struct {
-	fontChar map[rune]*character
-	ttf      *truetype.Font
-	scale    int32
-	vao      uint32
-	vbo      uint32
-	program  uint32
-	texture  uint32 // Holds the glyph texture id.
-	color    color
+	fontChar     map[rune]*character
+	ttf          *truetype.Font
+	scale        int32
+	vao          uint32
+	vbo          uint32
+	program      uint32
+	texture      uint32 // Holds the glyph texture id.
+	color        color
 	batches      map[BatchKey][]*FontBatchData
 	curFontBatch []FontBatchData
 	batchMode    bool
@@ -32,13 +33,13 @@ type Font struct {
 }
 
 type character struct {
-	textureID uint32 // ID handle of the glyph texture
-	width     int    //glyph width
-	height    int    //glyph height
-	advance   int    //glyph advance
-	bearingH  int    //glyph bearing horizontal
-	bearingV  int    //glyph bearing vertical
-	region	atlas.AtlasRegion
+	textureID                   uint32 // ID handle of the glyph texture
+	width                       int    //glyph width
+	height                      int    //glyph height
+	advance                     int    //glyph advance
+	bearingH                    int    //glyph bearing horizontal
+	bearingV                    int    //glyph bearing vertical
+	region                      atlas.AtlasRegion
 	uvX, uvY, uvWidth, uvHeight float32 // UV coordinates in texture space (0.0 to 1.0)
 }
 

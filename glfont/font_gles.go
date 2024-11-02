@@ -1,4 +1,4 @@
-//go:build gles
+//go:build gles2 || gles
 
 package glfont
 
@@ -26,7 +26,7 @@ type color struct {
 	a float32
 }
 
-//LoadFont loads the specified font at the given scale.
+// LoadFont loads the specified font at the given scale.
 func LoadFont(file string, scale int32, windowWidth int, windowHeight int, GLSLVersion uint) (*Font, error) {
 	fd, err := os.Open(file)
 	if err != nil {
@@ -50,7 +50,7 @@ func LoadFont(file string, scale int32, windowWidth int, windowHeight int, GLSLV
 	return LoadTrueTypeFont(program, fd, scale, 32, 127, LeftToRight)
 }
 
-//SetColor allows you to set the text color to be used when you draw the text
+// SetColor allows you to set the text color to be used when you draw the text
 func (f *Font) SetColor(red float32, green float32, blue float32, alpha float32) {
 	f.color.r = red
 	f.color.g = green
