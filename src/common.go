@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"unicode"
@@ -428,48 +429,22 @@ func NormalizeFile(file string) string {
 }
 
 // SearchFile returns full path to specified file
-// func SearchFile(file string, dirs []string) string {
-// 	var path_sep, native_sep string
-// 	if runtime.GOOS == "windows" {
-// 		native_sep = "/"
-// 		path_sep = "\\"
-// 	} else {
-// 		native_sep = "\\"
-// 		path_sep = "/"
-// 	}
-
-//		file = strings.Replace(file, native_sep, path_sep, -1)
-//		// fmt.Printf("[common.go][SearchFile] file=[%v] in %v\n", file, dirs)
-//		for _, v := range dirs {
-//			defdir := filepath.Dir(strings.Replace(v, native_sep, path_sep, -1))
-//			// fmt.Printf("\t%v\n", defdir+path_sep+file)
-//			if fp := FileExist(defdir + path_sep + file); len(fp) > 0 {
-//				return fp
-//			}
-//		}
-//		lastIndex := strings.LastIndex(file, `\`)
-//		if lastIndex == -1 {
-//			lastIndex := strings.LastIndex(file, `/`)
-//			if lastIndex == -1 {
-//				// If no backslash is found, return the entire string
-//				// fmt.Printf("[common.go][SearchFile] %v NOT FOUND in %v.\nOther method(trim filename only) fail too\n", file, dirs)
-//				return file
-//			}
-//		}
-//		for _, v := range dirs {
-//			defdir := filepath.Dir(strings.Replace(v, native_sep, path_sep, -1))
-//			// fmt.Printf("\t%v\n", defdir+path_sep+file[lastIndex+1:])
-//			if fp := FileExist(defdir + path_sep + file[lastIndex+1:]); len(fp) > 0 {
-//				return fp
-//			}
-//		}
-//		// fmt.Printf("[common.go][SearchFile] %v NOT FOUND in %v.\nOther method(trim filename only) fail too\n", file, dirs)
-//		return file
-//	}
 func SearchFile(file string, dirs []string) string {
+	var path_sep, native_sep string
+	if runtime.GOOS == "windows" {
+		native_sep = "/"
+		path_sep = "\\"
+	} else {
+		native_sep = "\\"
+		path_sep = "/"
+	}
+
+	file = strings.Replace(file, native_sep, path_sep, -1)
+	// fmt.Printf("[common.go][SearchFile] file=[%v] in %v\n", file, dirs)
 	for _, v := range dirs {
-		defdir := filepath.Dir(v)
-		if fp := FileExist(defdir + "/" + file); len(fp) > 0 {
+		defdir := filepath.Dir(strings.Replace(v, native_sep, path_sep, -1))
+		// fmt.Printf("\t%v\n", defdir+path_sep+file)
+		if fp := FileExist(defdir + path_sep + file); len(fp) > 0 {
 			return fp
 		}
 	}
@@ -478,17 +453,44 @@ func SearchFile(file string, dirs []string) string {
 		lastIndex := strings.LastIndex(file, `/`)
 		if lastIndex == -1 {
 			// If no backslash is found, return the entire string
+			// fmt.Printf("[common.go][SearchFile] %v NOT FOUND in %v.\nOther method(trim filename only) fail too\n", file, dirs)
 			return file
 		}
 	}
 	for _, v := range dirs {
-		defdir := filepath.Dir(v)
-		if fp := FileExist(defdir + "/" + file[lastIndex+1:]); len(fp) > 0 {
+		defdir := filepath.Dir(strings.Replace(v, native_sep, path_sep, -1))
+		// fmt.Printf("\t%v\n", defdir+path_sep+file[lastIndex+1:])
+		if fp := FileExist(defdir + path_sep + file[lastIndex+1:]); len(fp) > 0 {
 			return fp
 		}
 	}
+	// fmt.Printf("[common.go][SearchFile] %v NOT FOUND in %v.\nOther method(trim filename only) fail too\n", file, dirs)
 	return file
 }
+
+// func SearchFile(file string, dirs []string) string {
+// 	for _, v := range dirs {
+// 		defdir := filepath.Dir(v)
+// 		if fp := FileExist(defdir + "/" + file); len(fp) > 0 {
+// 			return fp
+// 		}
+// 	}
+// 	lastIndex := strings.LastIndex(file, `\`)
+// 	if lastIndex == -1 {
+// 		lastIndex := strings.LastIndex(file, `/`)
+// 		if lastIndex == -1 {
+// 			// If no backslash is found, return the entire string
+// 			return file
+// 		}
+// 	}
+// 	for _, v := range dirs {
+// 		defdir := filepath.Dir(v)
+// 		if fp := FileExist(defdir + "/" + file[lastIndex+1:]); len(fp) > 0 {
+// 			return fp
+// 		}
+// 	}
+// 	return file
+// }
 
 func LoadFile(file *string, dirs []string, load func(string) error) error {
 	// fmt.Printf("[common.go][LoadFile] file=[%v]\n", *file)
