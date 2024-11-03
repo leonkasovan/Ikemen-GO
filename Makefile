@@ -55,3 +55,7 @@ steamdeck: ${srcFiles}
 # Playstation Classic target
 psc: ${srcFiles}
 	cd ./build && ./build.sh psc
+
+# Raspberry Pi4 target
+pi4: ${srcFiles}
+	cd ./build && ./build.sh pi4
