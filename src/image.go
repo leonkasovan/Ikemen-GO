@@ -557,7 +557,6 @@ func NewAtlasBufferKey(interp int32, depth int32) AtlasBufferKey {
 
 func (t *TextureAtlas) Get(key AtlasBufferKey) *atlas.TextureAtlas {
 	if a, ok := t.atlas[key]; !ok {
-		fmt.Println("Create")
 		t.atlas[key] = atlas.NewTextureAtlas(1024, 1024, int(key.depth), int(key.interp))
 		return t.atlas[key]
 	} else {
@@ -567,7 +566,6 @@ func (t *TextureAtlas) Get(key AtlasBufferKey) *atlas.TextureAtlas {
 
 func (t *TextureAtlas) Commit() {
 	for _, a := range t.atlas {
-		fmt.Println("Commit")
 		a.Commit()
 	}
 }
