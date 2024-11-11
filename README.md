@@ -38,9 +38,9 @@ Karma Charizard Collection: https://www.mediafire.com/folder/f4qxixm5h39cu
 Lessard Collection https://www.mediafire.com/folder/gf9p2w993dwka/LESSARD_MUGEN
 
 3D Stages  
-https://www.mediafire.com/folder/syh6wacfmskeg/MBTL_Stages  
-https://www.mediafire.com/folder/4yrw405s2eeal/StagePacks  
-https://www.mediafire.com/folder/w6wgk5xo7sraz/Stages  
+Tong Eiton https://www.mediafire.com/folder/syh6wacfmskeg/MBTL_Stages  
+Lasombra https://www.mediafire.com/folder/4yrw405s2eeal/StagePacks  
+POTs https://www.mediafire.com/folder/w6wgk5xo7sraz/Stages  
 xcheatdeath https://www.mediafire.com/folder/oz0kp2v4juism/3D_STAGES  
 bigchungusfartporn https://www.mediafire.com/folder/t9oic8khyxxk2/fighting_game  
 
