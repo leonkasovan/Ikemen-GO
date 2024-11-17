@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/binary"
 	"encoding/gob"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -2725,17 +2726,11 @@ func (be BytecodeExp) run_ex(c *Char, i *int, oc *Char) {
 		sys.bcStack.PushB(c.reversalDefAttr(*(*int32)(unsafe.Pointer(&be[*i]))))
 		*i += 4
 	case OC_ex_bgmlength:
-		if sys.bgm.streamer == nil {
-			sys.bcStack.PushI(0)
-		} else {
-			sys.bcStack.PushI(int32(sys.bgm.streamer.Len()))
-		}
+		sys.bcStack.PushI((int32)(sys.bgm.GetLength()))
+		fmt.Printf("[bytecode.go] OC_ex_bgmlength\n")
 	case OC_ex_bgmposition:
-		if sys.bgm.streamer == nil {
-			sys.bcStack.PushI(0)
-		} else {
-			sys.bcStack.PushI(int32(sys.bgm.streamer.Position()))
-		}
+		sys.bcStack.PushI((int32)(sys.bgm.GetPosition()))
+		fmt.Printf("[bytecode.go] OC_ex_bgmposition\n")
 	case OC_ex_angle:
 		sys.bcStack.PushF(c.angleTrg)
 	case OC_ex_scale_x:
@@ -2839,17 +2834,11 @@ func (be BytecodeExp) run_ex2(c *Char, i *int, oc *Char) {
 	case OC_ex2_introstate:
 		sys.bcStack.PushI(sys.introState())
 	case OC_ex2_bgmvar_loopstart:
-		if sys.bgm.volctrl != nil {
-			if sl, ok := sys.bgm.volctrl.Streamer.(*StreamLooper); ok {
-				sys.bcStack.PushI(int32(sl.loopstart))
-			}
-		}
+		sys.bcStack.PushI((int32)(sys.bgm.GetLoopStart()))
+		fmt.Printf("[bytecode.go] OC_ex2_bgmvar_loopstart\n")
 	case OC_ex2_bgmvar_loopend:
-		if sys.bgm.volctrl != nil {
-			if sl, ok := sys.bgm.volctrl.Streamer.(*StreamLooper); ok {
-				sys.bcStack.PushI(int32(sl.loopend))
-			}
-		}
+		sys.bcStack.PushI((int32)(sys.bgm.GetLoopEnd()))
+		fmt.Printf("[bytecode.go] OC_ex2_bgmvar_loopend\n")
 	case OC_ex2_bgmvar_startposition:
 		sys.bcStack.PushI(int32(sys.bgm.startPos))
 	case OC_ex2_bgmvar_volume:
@@ -10188,7 +10177,7 @@ func (sc modifyBgm) Run(c *Char, _ []int32) bool {
 		}
 		return true
 	})
-	if sys.bgm.ctrl != nil {
+	if sys.bgm.Loaded() {
 		// Set values that are different only
 		if volumeSet {
 			volumeScaled := int(float64(volume) / 100.0 * float64(sys.maxBgmVolume))
@@ -10198,11 +10187,14 @@ func (sc modifyBgm) Run(c *Char, _ []int32) bool {
 		if posSet {
 			sys.bgm.Seek(position)
 		}
-		if sl, ok := sys.bgm.volctrl.Streamer.(*StreamLooper); ok {
-			if (loopStartSet && sl.loopstart != loopstart) || (loopEndSet && sl.loopend != loopend) {
-				sys.bgm.SetLoopPoints(loopstart, loopend)
-			}
+		// if sl, ok := sys.bgm.volctrl.Streamer.(*StreamLooper); ok {
+		// if (loopStartSet && sl.loopstart != loopstart) || (loopEndSet && sl.loopend != loopend) {
+		if loopStartSet || loopEndSet {
+			fmt.Printf("[bytecode.go] loopStartSet=%v loopEndSet=%v loopstart=%v loopend=%v\n", loopStartSet, loopEndSet, loopstart, loopend)
+			sys.bgm.SetLoopPoints(loopstart, loopend)
 		}
+		// }
+		// }
 		if freqSet && sys.bgm.freqmul != freqmul {
 			sys.bgm.SetFreqMul(freqmul)
 		}
@@ -10343,18 +10335,22 @@ func (sc modifySnd) Run(c *Char, _ []int32) bool {
 				snd.SetPriority(pri)
 			}
 			if posSet {
-				snd.streamer.Seek(position)
+				snd.Seek(position)
+				fmt.Printf("[bytecode.go] position=%v\n", position)
 			}
 			if lcSet || loopSet {
-				if sl, ok := snd.sfx.streamer.(*StreamLooper); ok {
-					sl.loopcount = lc
-				}
+				// if sl, ok := snd.sfx.streamer.(*StreamLooper); ok {
+				// sl.loopcount = lc
+				// }
 			}
-			if sl, ok := snd.sfx.streamer.(*StreamLooper); ok {
-				if (loopStartSet && sl.loopstart != loopstart) || (loopEndSet && sl.loopend != loopend) {
-					snd.SetLoopPoints(loopstart, loopend)
-				}
+			// if sl, ok := snd.sfx.streamer.(*StreamLooper); ok {
+			// if (loopStartSet && sl.loopstart != loopstart) || (loopEndSet && sl.loopend != loopend) {
+			if loopStartSet || loopEndSet {
+				snd.SetLoopPoints(loopstart, loopend)
+				fmt.Printf("[bytecode.go] 2 loopStartSet=%v loopEndSet=%v loopstart=%v loopend=%v\n", loopStartSet, loopEndSet, loopstart, loopend)
 			}
+			// }
+			// }
 			if p != snd.sfx.p || ls != snd.sfx.ls || x != snd.sfx.x {
 				snd.SetPan(p*crun.facing, ls, x)
 			}
@@ -10396,7 +10392,7 @@ func (sc playBgm) Run(c *Char, _ []int32) bool {
 		switch id {
 		case playBgm_bgm:
 			if bgm = string(*(*[]byte)(unsafe.Pointer(&exp[0]))); bgm != "" {
-				bgm = SearchFile(bgm, []string{crun.gi().def, "", "sound/"})
+				bgm = SearchFile(bgm, []string{crun.gi().def, "", "sound/", "stages/"})
 			}
 			b = true
 		case playBgm_volume:

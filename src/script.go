@@ -2661,15 +2661,16 @@ func systemScriptInit(l *lua.LState) {
 		return 0
 	})
 	luaRegister(l, "sndPlaying", func(*lua.LState) int {
-		s, ok := toUserData(l, 1).(*Snd)
-		if !ok {
-			userDataError(l, 1, s)
-		}
-		var f bool
-		if w := s.Get([...]int32{int32(numArg(l, 2)), int32(numArg(l, 3))}); w != nil {
-			f = sys.soundChannels.IsPlaying(w)
-		}
-		l.Push(lua.LBool(f))
+		// s, ok := toUserData(l, 1).(*Snd)
+		// if !ok {
+		// 	userDataError(l, 1, s)
+		// }
+		// var f bool
+		// if w := s.Get([...]int32{int32(numArg(l, 2)), int32(numArg(l, 3))}); w != nil {
+		// 	f = sys.IsPlaying(w)
+		// }
+		// l.Push(lua.LBool(f))
+		l.Push(lua.LBool(false))
 		return 1
 	})
 	luaRegister(l, "sndStop", func(l *lua.LState) int {
@@ -2952,7 +2953,7 @@ func systemScriptInit(l *lua.LState) {
 		if !ok {
 			userDataError(l, 1, s)
 		}
-		sys.soundChannels.Play(s, 100, 0.0, 0, 0, 0)
+		sys.PlaySound(s)
 		return 0
 	})
 }
@@ -3132,19 +3133,11 @@ func triggerFunctions(l *lua.LState) {
 		return 1
 	})
 	luaRegister(l, "bgmlength", func(*lua.LState) int {
-		if sys.bgm.streamer == nil {
-			l.Push(lua.LNumber(0))
-		} else {
-			l.Push(lua.LNumber(int32(sys.bgm.streamer.Len())))
-		}
+		l.Push(lua.LNumber(sys.bgm.GetLength()))
 		return 1
 	})
 	luaRegister(l, "bgmposition", func(*lua.LState) int {
-		if sys.bgm.streamer == nil {
-			l.Push(lua.LNumber(0))
-		} else {
-			l.Push(lua.LNumber(int32(sys.bgm.streamer.Position())))
-		}
+		l.Push(lua.LNumber(sys.bgm.GetPosition()))
 		return 1
 	})
 	luaRegister(l, "bgmvar", func(*lua.LState) int {
@@ -3153,7 +3146,7 @@ func triggerFunctions(l *lua.LState) {
 
 		// If the streamer is nil, return nil for strings
 		if arg == "filename" {
-			if sys.bgm.streamer == nil {
+			if sys.bgm.Loaded() {
 				l.Push(lua.LNil)
 			} else {
 				l.Push(lua.LString(sys.bgm.filename))
@@ -3162,20 +3155,20 @@ func triggerFunctions(l *lua.LState) {
 		} else {
 			ln := lua.LNumber(0)
 
-			if sys.bgm.streamer != nil {
+			if sys.bgm.Loaded() {
 				switch arg {
 				case "length":
-					ln = lua.LNumber(int32(sys.bgm.streamer.Len()))
+					ln = lua.LNumber(int32(sys.bgm.GetLength()))
 				case "loopend":
-					if sl, ok := sys.bgm.volctrl.Streamer.(*StreamLooper); ok {
-						ln = lua.LNumber(sl.loopend)
-					}
+					// if sl, ok := sys.bgm.volctrl.Streamer.(*StreamLooper); ok {
+					ln = lua.LNumber(sys.bgm.GetLoopEnd())
+					// }
 				case "loopstart":
-					if sl, ok := sys.bgm.volctrl.Streamer.(*StreamLooper); ok {
-						ln = lua.LNumber(sl.loopstart)
-					}
+					// if sl, ok := sys.bgm.volctrl.Streamer.(*StreamLooper); ok {
+					ln = lua.LNumber(sys.bgm.GetLoopStart())
+					// }
 				case "position":
-					ln = lua.LNumber(int32(sys.bgm.streamer.Position()))
+					ln = lua.LNumber(int32(sys.bgm.GetPosition()))
 				case "startposition":
 					ln = lua.LNumber(int32(sys.bgm.startPos))
 				}
@@ -3593,7 +3586,7 @@ func triggerFunctions(l *lua.LState) {
 
 		switch arg {
 		case "sound.panningrange":
-			ln = lua.LNumber(int32(sys.bgm.streamer.Len()))
+			ln = lua.LNumber(int32(sys.bgm.GetLength()))
 		case "sound.wavchannels":
 			ln = lua.LNumber(sys.wavChannels)
 		case "sound.mastervolume":

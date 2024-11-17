@@ -69,9 +69,9 @@ func newFightFx() *FightFx {
 
 func loadFightFx(def string) error {
 	str, err := LoadText(def)
-	// fmt.Printf("[DEBUG][lifebar.go][loadFightFx] def=%v\n", def)
+	fmt.Printf("[lifebar.go][loadFightFx] def=%v\n", def)
 	if err != nil {
-		fmt.Printf("[DEBUG][lifebar.go][loadFightFx] err=%v\n", err)
+		fmt.Printf("[lifebar.go][loadFightFx] err=%v\n", err)
 		return err
 	}
 	ffx := newFightFx()
@@ -111,7 +111,7 @@ func loadFightFx(def string) error {
 				files = false
 				if is.LoadFile("sff", []string{def, sys.motifDir, "", "data/"},
 					func(filename string) error {
-						// fmt.Printf("[DEBUG][lifebar.go][loadFightFx] sff filename=%v\n", filename)
+						// fmt.Printf("[lifebar.go][loadFightFx] sff filename=%v\n", filename)
 						s, err := loadSff(filename, false, nil)
 						if err != nil {
 							return err
@@ -123,10 +123,10 @@ func loadFightFx(def string) error {
 				}
 				if is.LoadFile("air", []string{def, sys.motifDir, "", "data/"},
 					func(filename string) error {
-						// fmt.Printf("[DEBUG][lifebar.go][loadFightFx] sff filename=%v\n", filename)
+						// fmt.Printf("[lifebar.go][loadFightFx] air filename=%v\n", filename)
 						str, err := LoadText(filename)
 						if err != nil {
-							fmt.Printf("[DEBUG][lifebar.go][loadFightFx] err=%v\n", err)
+							fmt.Printf("[lifebar.go][loadFightFx] err=%v\n", err)
 							return err
 						}
 						lines, i := SplitAndTrim(str, "\n"), 0
@@ -137,7 +137,7 @@ func loadFightFx(def string) error {
 				}
 				if is.LoadFile("snd", []string{def, sys.motifDir, "", "data/"},
 					func(filename string) error {
-						// fmt.Printf("[DEBUG][lifebar.go][loadFightFx] sff filename=%v\n", filename)
+						fmt.Printf("[lifebar.go][loadFightFx] snd filename=%v\n", filename)
 						ffx.fsnd, err = LoadSnd(filename)
 						return err
 					}); err != nil {
@@ -154,6 +154,7 @@ func loadFightFx(def string) error {
 		sys.ffxRegexp += "|^(" + prefix + ")"
 	}
 	sys.ffx[prefix] = ffx
+	fmt.Printf("[lifebar.go][loadFightFx] def=%v prefix=%s\n", def, prefix)
 	return nil
 }
 
@@ -3041,7 +3042,7 @@ type Lifebar struct {
 }
 
 func loadLifebar(def string) (*Lifebar, error) {
-	// fmt.Printf("[DEBUG][lifebar.go][loadLifebar] def=%v\n", def)
+	// fmt.Printf("[lifebar.go][loadLifebar] def=%v\n", def)
 	str, err := LoadText(def)
 	if err != nil {
 		return nil, err
@@ -3121,10 +3122,10 @@ func loadLifebar(def string) (*Lifebar, error) {
 				filesflg = false
 				if is.LoadFile("sff", []string{def, sys.motifDir, "", "data/"},
 					func(filename string) error {
-						// fmt.Printf("[DEBUG][lifebar.go][loadLifebar] sff filename=%v\n", filename)
+						// fmt.Printf("[lifebar.go][loadLifebar] sff filename=%v\n", filename)
 						s, err := loadSff(filename, false, nil)
 						if err != nil {
-							fmt.Printf("[DEBUG][lifebar.go][loadLifebar] err=%v\n", err)
+							fmt.Printf("[lifebar.go][loadLifebar] err=%v\n", err)
 							return err
 						}
 						*l.sff = *s
@@ -3134,10 +3135,10 @@ func loadLifebar(def string) (*Lifebar, error) {
 				}
 				if is.LoadFile("snd", []string{def, sys.motifDir, "", "data/"},
 					func(filename string) error {
-						// fmt.Printf("[DEBUG][lifebar.go][loadLifebar] snd filename=%v\n", filename)
+						// fmt.Printf("[lifebar.go][loadLifebar] snd filename=%v\n", filename)
 						s, err := LoadSnd(filename)
 						if err != nil {
-							fmt.Printf("[DEBUG][lifebar.go][loadLifebar] err=%v\n", err)
+							fmt.Printf("[lifebar.go][loadLifebar] err=%v\n", err)
 							return err
 						}
 						*l.snd = *s
@@ -3147,10 +3148,10 @@ func loadLifebar(def string) (*Lifebar, error) {
 				}
 				if is.LoadFile("fightfx.sff", []string{def, sys.motifDir, "", "data/"},
 					func(filename string) error {
-						// fmt.Printf("[DEBUG][lifebar.go][loadLifebar] fightfx.sff filename=%v\n", filename)
+						// fmt.Printf("[lifebar.go][loadLifebar] fightfx.sff filename=%v\n", filename)
 						s, err := loadSff(filename, false, nil)
 						if err != nil {
-							fmt.Printf("[DEBUG][lifebar.go][loadLifebar] err=%v\n", err)
+							fmt.Printf("[lifebar.go][loadLifebar] err=%v\n", err)
 							return err
 						}
 						*ffx.fsff = *s
@@ -3160,10 +3161,10 @@ func loadLifebar(def string) (*Lifebar, error) {
 				}
 				if is.LoadFile("fightfx.air", []string{def, sys.motifDir, "", "data/"},
 					func(filename string) error {
-						// fmt.Printf("[DEBUG][lifebar.go][loadLifebar] fightfx.air filename=%v\n", filename)
+						// fmt.Printf("[lifebar.go][loadLifebar] fightfx.air filename=%v\n", filename)
 						str, err := LoadText(filename)
 						if err != nil {
-							fmt.Printf("[DEBUG][lifebar.go][loadLifebar] err=%v\n", err)
+							fmt.Printf("[lifebar.go][loadLifebar] err=%v\n", err)
 							return err
 						}
 						lines, i := SplitAndTrim(str, "\n"), 0
@@ -3174,7 +3175,7 @@ func loadLifebar(def string) (*Lifebar, error) {
 				}
 				if is.LoadFile("common.snd", []string{def, sys.motifDir, "", "data/"},
 					func(filename string) error {
-						// fmt.Printf("[DEBUG][lifebar.go][loadLifebar] common.snd filename=%v\n", filename)
+						fmt.Printf("[lifebar.go][loadLifebar] common.snd filename=%v\n", filename)
 						ffx.fsnd, err = LoadSnd(filename)
 						return err
 					}); err != nil {
@@ -3182,7 +3183,7 @@ func loadLifebar(def string) (*Lifebar, error) {
 				}
 				if is.LoadFile("common.air", []string{def, sys.motifDir, "", "data/"},
 					func(filename string) error {
-						// fmt.Printf("[DEBUG][lifebar.go][loadLifebar] common.air filename=%v\n", filename)
+						// fmt.Printf("[lifebar.go][loadLifebar] common.air filename=%v\n", filename)
 						if !sliceContains(sys.commonAir, filename, true) {
 							sys.commonAir = append(sys.commonAir, filename)
 						}
@@ -3192,7 +3193,7 @@ func loadLifebar(def string) (*Lifebar, error) {
 				}
 				if is.LoadFile("common.cmd", []string{def, sys.motifDir, "", "data/"},
 					func(filename string) error {
-						// fmt.Printf("[DEBUG][lifebar.go][loadLifebar] common.cmd filename=%v\n", filename)
+						// fmt.Printf("[lifebar.go][loadLifebar] common.cmd filename=%v\n", filename)
 						if !sliceContains(sys.commonCmd, filename, true) {
 							sys.commonCmd = append(sys.commonCmd, filename)
 						}
@@ -3222,7 +3223,7 @@ func loadLifebar(def string) (*Lifebar, error) {
 					if err := is.LoadFile(fmt.Sprintf("fx%v", i), []string{def, sys.motifDir, "", "data/"},
 						func(filename string) error {
 							if err := loadFightFx(filename); err != nil {
-								fmt.Printf("[DEBUG][lifebar.go][loadLifebar] err=%v\n", err)
+								fmt.Printf("[lifebar.go][loadLifebar] err=%v\n", err)
 								return err
 							}
 							return nil

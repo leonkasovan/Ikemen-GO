@@ -15,8 +15,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gopxl/beep/v2"
-	"github.com/gopxl/beep/v2/speaker"
 	lua "github.com/yuin/gopher-lua"
 )
 
@@ -44,9 +42,7 @@ var sys = System{
 	lifeMul:           1,
 	team1VS2Life:      1,
 	turnsRecoveryRate: 1.0 / 300,
-	soundMixer:        &beep.Mixer{},
 	bgm:               *newBgm(),
-	soundChannels:     newSoundChannels(16),
 	allPalFX:          *newPalFX(),
 	bgPalFX:           *newPalFX(),
 	ffx:               make(map[string]*FightFx),
@@ -124,171 +120,171 @@ type System struct {
 	debugFont               *TextSprite
 	debugDraw               bool
 	debugRef                [2]int // player number, helper index
-	soundMixer              *beep.Mixer
-	bgm                     Bgm
-	soundChannels           *SoundChannels
-	allPalFX, bgPalFX       PalFX
-	lifebar                 Lifebar
-	ffx                     map[string]*FightFx
-	ffxRegexp               string
-	sel                     Select
-	keyState                map[Key]bool
-	netInput                *NetInput
-	fileInput               *FileInput
-	aiInput                 [MaxSimul*2 + MaxAttachedChar]AiInput
-	keyConfig               []KeyConfig
-	joystickConfig          []KeyConfig
-	joystickDefaultConfig   map[string]KeyConfig
-	com                     [MaxSimul*2 + MaxAttachedChar]float32
-	autolevel               bool
-	home                    int
-	gameTime                int32
-	match                   int32
-	inputRemap              [MaxSimul*2 + MaxAttachedChar]int
-	listenPort              string
-	round                   int32
-	intro                   int32
-	time                    int32
-	lastHitter              [2]int
-	winTeam                 int
-	winType                 [2]WinType
-	winTrigger              [2]WinType
-	matchWins, wins         [2]int32
-	roundsExisted           [2]int32
-	draws                   int32
-	loader                  Loader
-	chars                   [MaxSimul*2 + MaxAttachedChar][]*Char
-	charList                CharList
-	cgi                     [MaxSimul*2 + MaxAttachedChar]CharGlobalInfo
-	tmode                   [2]TeamMode
-	numSimul, numTurns      [2]int32
-	esc                     bool
-	loadMutex               sync.Mutex
-	ignoreMostErrors        bool
-	stringPool              [MaxSimul*2 + MaxAttachedChar]StringPool
-	bcStack, bcVarStack     BytecodeStack
-	bcVar                   []BytecodeValue
-	workingChar             *Char
-	workingState            *StateBytecode
-	specialFlag             GlobalSpecialFlag
-	afterImageMax           int32
-	envShake                EnvShake
-	pause                   int32
-	pausetime               int32
-	pausebg                 bool
-	pauseendcmdbuftime      int32
-	pauseplayer             int
-	super                   int32
-	supertime               int32
-	superpausebg            bool
-	superendcmdbuftime      int32
-	superplayer             int
-	superdarken             bool
-	superanim               *Animation
-	superpmap               PalFX
-	superpos                [2]float32
-	superfacing             float32
-	superp2defmul           float32
-	envcol                  [3]int32
-	envcol_time             int32
-	envcol_under            bool
-	stage                   *Stage
-	stageList               map[int32]*Stage
-	stageLoop               bool
-	stageLoopNo             int
-	wireframeDraw           bool
-	helperMax               int32
-	nextCharId              int32
-	wincnt                  wincntMap
-	wincntFileName          string
-	powerShare              [2]bool
-	tickCount               int
-	oldTickCount            int
-	tickCountF              float32
-	lastTick                float32
-	nextAddTime             float32
-	oldNextAddTime          float32
-	screenleft              float32
-	screenright             float32
-	xmin, xmax              float32
-	winskipped              bool
-	paused, step            bool
-	roundResetFlg           bool
-	reloadFlg               bool
-	reloadStageFlg          bool
-	reloadLifebarFlg        bool
-	reloadCharSlot          [MaxSimul*2 + MaxAttachedChar]bool
-	shortcutScripts         map[ShortcutKey]*ShortcutScript
-	turbo                   float32
-	commandLine             chan string
-	drawScale               float32
-	zoomlag                 float32
-	zoomScale               float32
-	zoomPosXLag             float32
-	zoomPosYLag             float32
-	enableZoomtime          int32
-	zoomCameraBound         bool
-	zoomStageBound          bool
-	zoomPos                 [2]float32
-	debugWC                 *Char
-	cam                     Camera
-	finish                  FinishType
-	waitdown                int32
-	slowtime                int32
-	shuttertime             int32
-	fadeintime              int32
-	fadeouttime             int32
-	wintime                 int32
-	projs                   [MaxSimul*2 + MaxAttachedChar][]Projectile
-	explods                 [MaxSimul*2 + MaxAttachedChar][]Explod
-	explodsLayerN1          [MaxSimul*2 + MaxAttachedChar][]int
-	explodsLayer0           [MaxSimul*2 + MaxAttachedChar][]int
-	explodsLayer1           [MaxSimul*2 + MaxAttachedChar][]int
-	changeStateNest         int32
-	spritesLayerN1          DrawList
-	spritesLayerU           DrawList
-	spritesLayer0           DrawList
-	spritesLayer1           DrawList
-	shadows                 ShadowList
-	debugc1hit              ClsnRect
-	debugc1rev              ClsnRect
-	debugc1not              ClsnRect
-	debugc2                 ClsnRect
-	debugc2hb               ClsnRect
-	debugc2mtk              ClsnRect
-	debugc2grd              ClsnRect
-	debugc2stb              ClsnRect
-	debugcsize              ClsnRect
-	debugch                 ClsnRect
-	autoguard               [MaxSimul*2 + MaxAttachedChar]bool
-	accel                   float32
-	clsnSpr                 Sprite
-	clsnDraw                bool
-	statusDraw              bool
-	mainThreadTask          chan func()
-	explodMax               int
-	workpal                 []uint32
-	playerProjectileMax     int
-	errLog                  *log.Logger
-	nomusic                 bool
-	workBe                  []BytecodeExp
-	lifeShare               [2]bool
-	loseSimul               bool
-	loseTag                 bool
-	allowDebugKeys          bool
-	allowDebugMode          bool
-	keyInput                Key
-	keyString               string
-	timerCount              []int32
-	cmdFlags                map[string]string
-	wavChannels             int32
-	masterVolume            int
-	wavVolume               int
-	bgmVolume               int
-	audioDucking            bool
-	windowTitle             string
-	screenshotFolder        string
-	audioSampleRate         int32
+	// soundMixer              *beep.Mixer
+	bgm Bgm
+	// soundChannels         *SoundChannels
+	allPalFX, bgPalFX     PalFX
+	lifebar               Lifebar
+	ffx                   map[string]*FightFx
+	ffxRegexp             string
+	sel                   Select
+	keyState              map[Key]bool
+	netInput              *NetInput
+	fileInput             *FileInput
+	aiInput               [MaxSimul*2 + MaxAttachedChar]AiInput
+	keyConfig             []KeyConfig
+	joystickConfig        []KeyConfig
+	joystickDefaultConfig map[string]KeyConfig
+	com                   [MaxSimul*2 + MaxAttachedChar]float32
+	autolevel             bool
+	home                  int
+	gameTime              int32
+	match                 int32
+	inputRemap            [MaxSimul*2 + MaxAttachedChar]int
+	listenPort            string
+	round                 int32
+	intro                 int32
+	time                  int32
+	lastHitter            [2]int
+	winTeam               int
+	winType               [2]WinType
+	winTrigger            [2]WinType
+	matchWins, wins       [2]int32
+	roundsExisted         [2]int32
+	draws                 int32
+	loader                Loader
+	chars                 [MaxSimul*2 + MaxAttachedChar][]*Char
+	charList              CharList
+	cgi                   [MaxSimul*2 + MaxAttachedChar]CharGlobalInfo
+	tmode                 [2]TeamMode
+	numSimul, numTurns    [2]int32
+	esc                   bool
+	loadMutex             sync.Mutex
+	ignoreMostErrors      bool
+	stringPool            [MaxSimul*2 + MaxAttachedChar]StringPool
+	bcStack, bcVarStack   BytecodeStack
+	bcVar                 []BytecodeValue
+	workingChar           *Char
+	workingState          *StateBytecode
+	specialFlag           GlobalSpecialFlag
+	afterImageMax         int32
+	envShake              EnvShake
+	pause                 int32
+	pausetime             int32
+	pausebg               bool
+	pauseendcmdbuftime    int32
+	pauseplayer           int
+	super                 int32
+	supertime             int32
+	superpausebg          bool
+	superendcmdbuftime    int32
+	superplayer           int
+	superdarken           bool
+	superanim             *Animation
+	superpmap             PalFX
+	superpos              [2]float32
+	superfacing           float32
+	superp2defmul         float32
+	envcol                [3]int32
+	envcol_time           int32
+	envcol_under          bool
+	stage                 *Stage
+	stageList             map[int32]*Stage
+	stageLoop             bool
+	stageLoopNo           int
+	wireframeDraw         bool
+	helperMax             int32
+	nextCharId            int32
+	wincnt                wincntMap
+	wincntFileName        string
+	powerShare            [2]bool
+	tickCount             int
+	oldTickCount          int
+	tickCountF            float32
+	lastTick              float32
+	nextAddTime           float32
+	oldNextAddTime        float32
+	screenleft            float32
+	screenright           float32
+	xmin, xmax            float32
+	winskipped            bool
+	paused, step          bool
+	roundResetFlg         bool
+	reloadFlg             bool
+	reloadStageFlg        bool
+	reloadLifebarFlg      bool
+	reloadCharSlot        [MaxSimul*2 + MaxAttachedChar]bool
+	shortcutScripts       map[ShortcutKey]*ShortcutScript
+	turbo                 float32
+	commandLine           chan string
+	drawScale             float32
+	zoomlag               float32
+	zoomScale             float32
+	zoomPosXLag           float32
+	zoomPosYLag           float32
+	enableZoomtime        int32
+	zoomCameraBound       bool
+	zoomStageBound        bool
+	zoomPos               [2]float32
+	debugWC               *Char
+	cam                   Camera
+	finish                FinishType
+	waitdown              int32
+	slowtime              int32
+	shuttertime           int32
+	fadeintime            int32
+	fadeouttime           int32
+	wintime               int32
+	projs                 [MaxSimul*2 + MaxAttachedChar][]Projectile
+	explods               [MaxSimul*2 + MaxAttachedChar][]Explod
+	explodsLayerN1        [MaxSimul*2 + MaxAttachedChar][]int
+	explodsLayer0         [MaxSimul*2 + MaxAttachedChar][]int
+	explodsLayer1         [MaxSimul*2 + MaxAttachedChar][]int
+	changeStateNest       int32
+	spritesLayerN1        DrawList
+	spritesLayerU         DrawList
+	spritesLayer0         DrawList
+	spritesLayer1         DrawList
+	shadows               ShadowList
+	debugc1hit            ClsnRect
+	debugc1rev            ClsnRect
+	debugc1not            ClsnRect
+	debugc2               ClsnRect
+	debugc2hb             ClsnRect
+	debugc2mtk            ClsnRect
+	debugc2grd            ClsnRect
+	debugc2stb            ClsnRect
+	debugcsize            ClsnRect
+	debugch               ClsnRect
+	autoguard             [MaxSimul*2 + MaxAttachedChar]bool
+	accel                 float32
+	clsnSpr               Sprite
+	clsnDraw              bool
+	statusDraw            bool
+	mainThreadTask        chan func()
+	explodMax             int
+	workpal               []uint32
+	playerProjectileMax   int
+	errLog                *log.Logger
+	nomusic               bool
+	workBe                []BytecodeExp
+	lifeShare             [2]bool
+	loseSimul             bool
+	loseTag               bool
+	allowDebugKeys        bool
+	allowDebugMode        bool
+	keyInput              Key
+	keyString             string
+	timerCount            []int32
+	cmdFlags              map[string]string
+	wavChannels           int32
+	masterVolume          int
+	wavVolume             int
+	bgmVolume             int
+	audioDucking          bool
+	windowTitle           string
+	screenshotFolder      string
+	audioSampleRate       int32
 	//FLAC_FrameWait          int
 
 	// Common Files
@@ -450,9 +446,7 @@ func (s *System) init(w, h int32) *lua.LState {
 	// Now we proceed to init the render.
 	gfx.Init()
 	gfx.BeginFrame(false)
-	// And the audio.
-	speaker.Init(beep.SampleRate(sys.audioSampleRate), audioOutLen)
-	speaker.Play(NewNormalizer(s.soundMixer))
+	AudioInit()
 	l := lua.NewState()
 	l.Options.IncludeGoStackTrace = true
 	l.OpenLibs()
@@ -506,7 +500,7 @@ func (s *System) shutdown() {
 	}
 	gfx.Close()
 	s.window.Close()
-	speaker.Close()
+	AudioClose()
 }
 func (s *System) setWindowSize(w, h int32) {
 	s.scrrect[2], s.scrrect[3] = w, h
@@ -594,7 +588,7 @@ func (s *System) update() bool {
 	return s.await(FPS)
 }
 func (s *System) tickSound() {
-	s.soundChannels.Tick()
+	// s.soundChannels.Tick()
 	if !s.noSoundFlg {
 		for _, ch := range s.chars {
 			for _, c := range ch {
@@ -619,13 +613,6 @@ func (s *System) tickSound() {
 		s.bgm.UpdateVolume()
 		s.restoreAllVolume()
 	}
-
-	//if s.FLAC_FrameWait >= 0 {
-	//	if s.FLAC_FrameWait == 0 {
-	//		s.bgm.PlayMemAudio(s.bgm.loop, s.bgm.bgmVolume)
-	//	}
-	//	s.FLAC_FrameWait--
-	//}
 }
 func (s *System) resetRemapInput() {
 	for i := range s.inputRemap {
@@ -908,7 +895,7 @@ func (s *System) softenAllSound() {
 		for _, c := range p {
 			for i := 0; i < int(c.soundChannels.count()); i++ {
 				// Temporarily store the volume so it can be recalled later.
-				if c.soundChannels.channels[i].sfx != nil && c.soundChannels.channels[i].ctrl != nil {
+				if c.soundChannels.channels[i].sfx != nil && c.soundChannels.channels[i].GetCtrl() != nil {
 					c.soundChannels.volResume[i] = c.soundChannels.channels[i].sfx.volume
 					c.soundChannels.channels[i].SetVolume(float32(c.gi().data.volume * int32(s.pauseMasterVolume) / 100))
 
@@ -927,11 +914,11 @@ func (s *System) restoreAllVolume() {
 		for _, c := range p {
 			for i := 0; i < int(c.soundChannels.count()); i++ {
 				// Restore the volume we had.
-				if c.soundChannels.channels[i].sfx != nil && c.soundChannels.channels[i].ctrl != nil {
+				if c.soundChannels.channels[i].sfx != nil && c.soundChannels.channels[i].GetCtrl() != nil {
 					c.soundChannels.channels[i].SetVolume(c.soundChannels.volResume[i])
 
 					// Unpause
-					if c.soundChannels.channels[i].ctrl.Paused {
+					if c.soundChannels.channels[i].GetPaused() {
 						c.soundChannels.channels[i].SetPaused(false)
 					}
 				}
@@ -940,7 +927,7 @@ func (s *System) restoreAllVolume() {
 	}
 }
 func (s *System) clearAllSound() {
-	s.soundChannels.StopAll()
+	// s.soundChannels.StopAll()
 	s.stopAllSound()
 }
 func (s *System) playerClear(pn int, destroy bool) {
@@ -2207,8 +2194,8 @@ func (s *System) fight() (reload bool) {
 
 	// default bgm playback, used only in Quick VS or if externalized Lua implementaion is disabled
 	if s.round == 1 && (s.gameMode == "" || len(sys.commonLua) == 0) {
-		// fmt.Printf("[DEBUG][system.go] System.fight: %v\n", s.stage.bgmusic)
-		s.bgm.Open(s.stage.bgmusic, 1, int(s.stage.bgmvolume), int(s.stage.bgmloopstart), int(s.stage.bgmloopend), int(s.stage.bgmstartposition), s.stage.bgmfreqmul)
+		// fmt.Printf("[system.go] System.fight: %v\n", s.stage.bgmusic)
+		s.bgm.Open(SearchFile(s.stage.bgmusic, []string{"", "sound/", "stages/"}), 1, int(s.stage.bgmvolume), int(s.stage.bgmloopstart), int(s.stage.bgmloopend), int(s.stage.bgmstartposition), s.stage.bgmfreqmul)
 	}
 
 	oldWins, oldDraws := s.wins, s.draws
@@ -3009,7 +2996,7 @@ func (s *Select) addChar(def string) {
 	}
 }
 func (s *Select) AddStage(def string) error {
-	// fmt.Printf("[DEBUG][system.go] AddStage: %v\n", def)
+	// fmt.Printf("[system.go] AddStage: %v\n", def)
 	var zipDef, zipFileName, tstr string
 	tnow := time.Now()
 	defer func() {
@@ -3261,16 +3248,16 @@ func (l *Loader) loadChar(pn int) int {
 		if sys.cgi[pn].ikemenver[0] == 0 && sys.cgi[pn].ikemenver[1] == 0 {
 			if sys.cgi[pn].mugenver[0] == 1 && sys.cgi[pn].mugenver[1] == 1 {
 				sys.appendToConsole("Using Mugen 1.1 compatibility mode.")
-				fmt.Println("[DEBUG][system.go]loadChar: Using Mugen 1.1 compatibility mode.")
+				fmt.Println("[system.go]loadChar: Using Mugen 1.1 compatibility mode.")
 			} else if sys.cgi[pn].mugenver[0] == 1 && sys.cgi[pn].mugenver[1] == 0 {
 				sys.appendToConsole("Using Mugen 1.0 compatibility mode.")
-				fmt.Println("[DEBUG][system.go]loadChar: Using Mugen 1.0 compatibility mode.")
+				fmt.Println("[system.go]loadChar: Using Mugen 1.0 compatibility mode.")
 			} else if sys.cgi[pn].mugenver[0] != 1 {
 				sys.appendToConsole("Using WinMugen compatibility mode.")
-				fmt.Println("[DEBUG][system.go]loadChar: Using WinMugen compatibility mode.")
+				fmt.Println("[system.go]loadChar: Using WinMugen compatibility mode.")
 			} else {
 				sys.appendToConsole("Character with unknown engine version.")
-				fmt.Println("[DEBUG][system.go]loadChar: Character with unknown engine version.")
+				fmt.Println("[system.go]loadChar: Character with unknown engine version.")
 			}
 		}
 	}()
@@ -3470,14 +3457,14 @@ func (l *Loader) load() {
 	}
 	if sys.sel.selectedStageNo == -1 {
 		l.state = LS_Error
-		fmt.Printf("[DEBUG][system.go][load] No stage: selectedStageNo == -1\n")
+		fmt.Printf("[system.go][load] No stage: selectedStageNo == -1\n")
 		return
 	}
 	for !stageDone || !allCharDone() {
 		if !stageDone && sys.sel.selectedStageNo >= 0 {
 			if !l.loadStage() {
 				l.state = LS_Error
-				fmt.Printf("[DEBUG][system.go][load] load stage error\n")
+				fmt.Printf("[system.go][load] load stage error\n")
 				return
 			}
 			stageDone = true

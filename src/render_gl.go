@@ -66,7 +66,7 @@ type ShaderProgram struct {
 	t map[string]int
 }
 
-func newShaderProgram(vert, frag, id string) (s *ShaderProgram) {
+func newShaderProgram(vert, frag, _ string) (s *ShaderProgram) {
 	vertObj := compileShader(gl.VERTEX_SHADER, vert)
 	fragObj := compileShader(gl.FRAGMENT_SHADER, frag)
 	prog := linkProgram(vertObj, fragObj)

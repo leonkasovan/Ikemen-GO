@@ -318,7 +318,6 @@ func JoystickState(joy, button int) bool {
 		} else {
 			return false
 		}
-		return false
 	}
 }
 
