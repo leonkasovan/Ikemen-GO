@@ -408,6 +408,8 @@ func checkAxisForTrigger(joy int, axes *[]int16) string {
 				// do nothing
 			} else if (i == 2 || i == 5) && name == "Logitech Dual Action.linux.amd64.sdl" {
 				// do nothing
+			} else if (i == 4 || i == 5) && name == "Gamepad.linux.arm64.sdl" {
+				// do nothing
 			} else {
 				s = strconv.Itoa(-i*2 - 1)
 				fmt.Printf("[input_sdl.go][checkAxisForTrigger] 1.AXIS joy=%v i=%v s:%v axes[i]=%v\n", joy, i, s, (*axes)[i])

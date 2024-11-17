@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+	"runtime"
 )
 
 const (
@@ -467,6 +468,29 @@ func SearchFile(file string, dirs []string) string {
 	// fmt.Printf("[common.go][SearchFile] %v NOT FOUND in %v.\nOther method(trim filename only) fail too\n", file, dirs)
 	return file
 }
+// func SearchFile(file string, dirs []string) string {
+// 	for _, v := range dirs {
+// 		defdir := filepath.Dir(v)
+// 		if fp := FileExist(defdir + "/" + file); len(fp) > 0 {
+// 			return fp
+// 		}
+// 	}
+// 	lastIndex := strings.LastIndex(file, `\`)
+// 	if lastIndex == -1 {
+// 		lastIndex := strings.LastIndex(file, `/`)
+// 		if lastIndex == -1 {
+// 			// If no backslash is found, return the entire string
+// 			return file
+// 		}
+// 	}
+// 	for _, v := range dirs {
+// 		defdir := filepath.Dir(v)
+// 		if fp := FileExist(defdir + "/" + file[lastIndex+1:]); len(fp) > 0 {
+// 			return fp
+// 		}
+// 	}
+// 	return file
+// }
 
 // func SearchFile(file string, dirs []string) string {
 // 	for _, v := range dirs {

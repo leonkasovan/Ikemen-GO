@@ -33,8 +33,8 @@ function main() {
 			export GOARCH=amd64
 			export CC=x86_64-w64-mingw32-gcc
 			export CXX=x86_64-w64-mingw32-g++
-			binName="Ikemen_Go.exe"
-			echo "Win64 Build Release with GLFW and OpenGL"
+			binName="Ikemen_Go_Batch.exe"
+			echo "Win64 Build Batch Release with GLFW and OpenGL"
 			go build -tags=glfw,gl -trimpath -v -trimpath -ldflags "-s -w -H windowsgui" -o ./bin/$binName ./src
 			# echo "Win64 Build Release with SDL2 and OpenGL"
 			# go build -tags=sdl,static,gl -trimpath -v -trimpath -ldflags "-s -w -H windowsgui" -o ./bin/$binName ./src
@@ -46,8 +46,8 @@ function main() {
 			export GOARCH=386
 			export CC=i686-w64-mingw32-gcc
 			export CXX=i686-w64-mingw32-g++
-			binName="Ikemen_Go_x86.exe"
-			echo "Win32 Build Release with GLFW and OpenGL"
+			binName="Ikemen_Go_x86_Batch.exe"
+			echo "Win32 Build Batch Release with GLFW and OpenGL"
 			go build -tags=glfw,gl -trimpath -v -trimpath -ldflags "-s -w -H windowsgui" -o ./bin/$binName ./src
 			# echo "Win32 Build Release with SDL2 and OpenGL"
 			# go build -tags=sdl,static,gl -trimpath -v -trimpath -ldflags "-s -w -H windowsgui" -o ./bin/$binName ./src
@@ -70,14 +70,14 @@ function main() {
 			export GOARCH=arm64
 			# export CC=aarch64-buildroot-linux-gnu-gcc
 			# export CXX=aarch64-buildroot-linux-gnu-g++
-			binName="Ikemen_Go_RG353P"
-			echo "Linux Build Release for RG353P(Recalbox) with SDL and GLES"
+			binName="Ikemen_Go_RG353P_Batch"
+			echo "Linux Build Batch Release for RG353P(Recalbox) with SDL and GLES (with Batch Optimization)"
 			go build -tags=sdl,gles2 -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/$binName ./src
 		;;
 		steamdeck)
 			# export GOOS=linux
-			binName="Ikemen_Go_Steamdeck"
-			echo "Linux Build Release for Steamdeck(SteamOS) with GLFW and OpenGL"
+			binName="Ikemen_Go_Steamdeck_Batch"
+			echo "Linux Build Batch Release for Steamdeck(SteamOS) with GLFW and OpenGL (with Batch Optimization)"
 			go build -tags=glfw,gl -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/$binName ./src
 			# mkdir -p ~/Applications/IkemenGoDev
 			# cp bin/Ikemen_Go_Steamdeck ~/Applications/IkemenGoDev
@@ -87,19 +87,19 @@ function main() {
 		pi4)
 			export GOOS=linux
 			export GOARCH=arm64
-			binName="Ikemen_Go_Pi4"
-			echo "Linux Build Release for Raspberry Pi4 (Raspberry Pi OS 64) with SDL and GLES"
+			binName="Ikemen_Go_Pi4_Batch"
+			echo "Linux Build Batch Release for Raspberry Pi4 (Raspberry Pi OS 64) with SDL and GLES"
 			go build -tags=sdl,gles2 -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/$binName ./src
 		;;
 		psc)
-			binName="Ikemen_Go_PSC"
-			echo "Linux Build Release for PSC with SDL and GLES"
+			binName="Ikemen_Go_PSC_Batch"
+			echo "Linux Build Batch Release for PSC with SDL and GLES"
 			go build -tags=sdl,gles2 -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/$binName ./src
 			cp bin/$binName ~/Applications/mugen-1.1b1
    		;;
 		win64_sdl)
-			binName="Ikemen_Go_SDL.exe"
-			echo "Win64 Build Release with SDL and OpenGL"
+			binName="Ikemen_Go_SDL_Batch.exe"
+			echo "Win64 Build Batch Release with SDL and OpenGL"
 			go build -tags=sdl,gl -trimpath -v -trimpath -ldflags="-s -w" -o ./bin/$binName ./src
 			# cp bin/$binName /f/PortableApps/MUGEN-1.1bPLUS/
 			# cp bin/$binName /f/PortableApps/Mugen\ Ikemen/tmntxjlTurboRB/
