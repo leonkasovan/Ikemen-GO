@@ -174,8 +174,8 @@ func newBgm() *Bgm {
 }
 
 func (bgm *Bgm) Open(filename string, loop, bgmVolume, bgmLoopStart, bgmLoopEnd, startPosition int, freqmul float32) {
-	fmt.Printf("[sound.go][bgm.Open] filename=%v, loop=%v, bgmVolume=%v, bgmLoopStart=%v, bgmLoopEnd=%v, startPosition =%v, freqmul=%v\n",
-		filename, loop, bgmVolume, bgmLoopStart, bgmLoopEnd, startPosition, freqmul)
+	// fmt.Printf("[sound.go][bgm.Open] filename=%v, loop=%v, bgmVolume=%v, bgmLoopStart=%v, bgmLoopEnd=%v, startPosition =%v, freqmul=%v\n",
+	// filename, loop, bgmVolume, bgmLoopStart, bgmLoopEnd, startPosition, freqmul)
 	bgm.filename = filename
 	bgm.loop = loop
 	bgm.bgmVolume = bgmVolume
@@ -593,7 +593,7 @@ type SoundChannel struct {
 }
 
 func (s *SoundChannel) GetCtrl() *beep.Ctrl {
-	fmt.Printf("[sound.go] SoundChannel.GetCtrl=%v\n", s.ctrl)
+	// fmt.Printf("[sound.go] SoundChannel.GetCtrl=%v\n", s.ctrl)
 	return s.ctrl
 }
 
@@ -624,7 +624,7 @@ func (s *SoundChannel) IsPlaying() bool {
 	return s.sound != nil
 }
 func (s *SoundChannel) SetPaused(pause bool) {
-	fmt.Printf("[sound.go] SoundChannel.SetPaused pause=%v\n", pause)
+	// fmt.Printf("[sound.go] SoundChannel.SetPaused pause=%v\n", pause)
 	if s.ctrl == nil || s.ctrl.Paused == pause {
 		return
 	}
@@ -634,14 +634,14 @@ func (s *SoundChannel) SetPaused(pause bool) {
 }
 func (s *SoundChannel) GetPaused() bool {
 	if s.ctrl == nil {
-		fmt.Printf("[sound.go] SoundChannel.GetPaused=false\n")
+		// fmt.Printf("[sound.go] SoundChannel.GetPaused=false\n")
 		return false
 	}
-	fmt.Printf("[sound.go] SoundChannel.GetPaused=%v\n", s.ctrl.Paused)
+	// fmt.Printf("[sound.go] SoundChannel.GetPaused=%v\n", s.ctrl.Paused)
 	return s.ctrl.Paused
 }
 func (s *SoundChannel) Stop() {
-	fmt.Printf("[sound.go] %v SoundChannel.Stop\n", s)
+	// fmt.Printf("[sound.go] %v SoundChannel.Stop\n", s)
 	if s.ctrl != nil {
 		speaker.Lock()
 		s.ctrl.Streamer = nil
@@ -652,11 +652,11 @@ func (s *SoundChannel) Stop() {
 func (s *SoundChannel) SetVolume(vol float32) {
 	if s.ctrl != nil {
 		s.sfx.volume = ClampF(vol, 0, 512)
-		fmt.Printf("[sound.go] SoundChannel.SetVolume vol=%v s.sfx.volume=%v\n", vol, s.sfx.volume)
+		// fmt.Printf("[sound.go] SoundChannel.SetVolume vol=%v s.sfx.volume=%v\n", vol, s.sfx.volume)
 	}
 }
 func (s *SoundChannel) SetPan(p, ls float32, x *float32) {
-	fmt.Printf("[sound.go] SoundChannel.SetPan p=%v, ls=%v, x=%v\n", p, ls, x)
+	// fmt.Printf("[sound.go] SoundChannel.SetPan p=%v, ls=%v, x=%v\n", p, ls, x)
 	if s.ctrl != nil {
 		s.sfx.ls = ls
 		s.sfx.x = x
@@ -670,12 +670,12 @@ func (s *SoundChannel) SetPriority(priority int32) {
 }
 func (s *SoundChannel) SetChannel(channel int32) {
 	if s.ctrl != nil {
-		fmt.Printf("[sound.go] SoundChannel.SetChannel channel=%v\n", channel)
+		// fmt.Printf("[sound.go] SoundChannel.SetChannel channel=%v\n", channel)
 		s.sfx.channel = channel
 	}
 }
 func (s *SoundChannel) SetFreqMul(freqmul float32) {
-	fmt.Printf("[sound.go] SoundChannel.SetFreqMul freqmul=%v\n", freqmul)
+	// fmt.Printf("[sound.go] SoundChannel.SetFreqMul freqmul=%v\n", freqmul)
 	if s.ctrl != nil {
 		if s.sound != nil {
 			srcRate := s.sound.format.SampleRate
@@ -690,7 +690,7 @@ func (s *SoundChannel) SetFreqMul(freqmul float32) {
 	}
 }
 func (s *SoundChannel) SetLoopPoints(loopstart, loopend int) {
-	fmt.Printf("[sound.go] SoundChannel.SetLoopPoints loopstart=%v, loopend=%v\n", loopstart, loopend)
+	// fmt.Printf("[sound.go] SoundChannel.SetLoopPoints loopstart=%v, loopend=%v\n", loopstart, loopend)
 	// Set both at once, why not
 	if sl, ok := s.sfx.streamer.(*StreamLooper); ok {
 		if sl.loopstart != loopstart && sl.loopend != loopend {
@@ -714,7 +714,7 @@ func (s *SoundChannel) SetLoopPoints(loopstart, loopend int) {
 }
 
 func (s *SoundChannel) Seek(position int) {
-	fmt.Printf("[sound.go] SoundChannel.Seek channel=%v\n", position)
+	// fmt.Printf("[sound.go] SoundChannel.Seek channel=%v\n", position)
 	s.streamer.Seek(position)
 }
 
@@ -727,13 +727,13 @@ type SoundChannels struct {
 }
 
 func newSoundChannels(size int32) *SoundChannels {
-	fmt.Printf("[sound.go] newSoundChannels size=%v\n", size)
+	// fmt.Printf("[sound.go] newSoundChannels size=%v\n", size)
 	s := &SoundChannels{}
 	s.SetSize(size)
 	return s
 }
 func (s *SoundChannels) SetSize(size int32) {
-	fmt.Printf("[sound.go] SoundChannels.SetSize size=%v s.count()=%v\n", size, s.count())
+	// fmt.Printf("[sound.go] SoundChannels.SetSize size=%v s.count()=%v\n", size, s.count())
 	if size > s.count() {
 		c := make([]SoundChannel, size-s.count())
 		v := make([]float32, size-s.count())
@@ -757,7 +757,7 @@ func (s *SoundChannels) New(ch int32, lowpriority bool, priority int32) *SoundCh
 				if (lowpriority && priority <= s.channels[i].sfx.priority) || priority < s.channels[i].sfx.priority {
 					return nil
 				}
-				fmt.Printf("[sound.go] SoundChannels.New=channels[%v] ch=%v, lowpriority=%v, priority=%v\n", i, ch, lowpriority, priority)
+				// fmt.Printf("[sound.go] SoundChannels.New=channels[%v] ch=%v, lowpriority=%v, priority=%v\n", i, ch, lowpriority, priority)
 				s.channels[i].Stop()
 				return &s.channels[i]
 			}
@@ -768,7 +768,7 @@ func (s *SoundChannels) New(ch int32, lowpriority bool, priority int32) *SoundCh
 	}
 	for i := sys.wavChannels - 1; i >= 0; i-- {
 		if !s.channels[i].IsPlaying() {
-			fmt.Printf("[sound.go] SoundChannels.New=channels[%v] ch=%v, lowpriority=%v, priority=%v\n", i, ch, lowpriority, priority)
+			// fmt.Printf("[sound.go] SoundChannels.New=channels[%v] ch=%v, lowpriority=%v, priority=%v\n", i, ch, lowpriority, priority)
 			return &s.channels[i]
 		}
 	}
@@ -777,14 +777,14 @@ func (s *SoundChannels) New(ch int32, lowpriority bool, priority int32) *SoundCh
 func (s *SoundChannels) reserveChannel() *SoundChannel {
 	for i := range s.channels {
 		if !s.channels[i].IsPlaying() {
-			fmt.Printf("[sound.go] SoundChannels.reserveChannel ch=%v\n", i)
+			// fmt.Printf("[sound.go] SoundChannels.reserveChannel ch=%v\n", i)
 			return &s.channels[i]
 		}
 	}
 	return nil
 }
 func (s *SoundChannels) Get(ch int32) *SoundChannel {
-	fmt.Printf("[sound.go] SoundChannels.Get ch=%v\n", ch)
+	// fmt.Printf("[sound.go] SoundChannels.Get ch=%v\n", ch)
 	if ch >= 0 && ch < s.count() {
 		for i := range s.channels {
 			if s.channels[i].IsPlaying() && s.channels[i].sfx != nil && s.channels[i].sfx.channel == ch {
@@ -796,7 +796,7 @@ func (s *SoundChannels) Get(ch int32) *SoundChannel {
 	return nil
 }
 func (s *SoundChannels) Play(sound *Sound, volumescale int32, pan float32, loopStart, loopEnd, startPosition int) bool {
-	fmt.Printf("[sound.go] SoundChannels.Play sound=*Sound, volumescale=%v, pan=%v, loopStart=%v, loopEnd=%v, startPosition=%v\n", volumescale, pan, loopStart, loopEnd, startPosition)
+	// fmt.Printf("[sound.go] SoundChannels.Play sound=*Sound, volumescale=%v, pan=%v, loopStart=%v, loopEnd=%v, startPosition=%v\n", volumescale, pan, loopStart, loopEnd, startPosition)
 	if sound == nil {
 		return false
 	}
@@ -820,7 +820,7 @@ func (s *SoundChannels) Play(sound *Sound, volumescale int32, pan float32, loopS
 //		return false
 //	}
 func (s *SoundChannels) Stop(sound *Sound) {
-	fmt.Printf("[sound.go] SoundChannels.Stop sound=*Sound\n")
+	// fmt.Printf("[sound.go] SoundChannels.Stop sound=*Sound\n")
 	for k, v := range s.channels {
 		if v.sound != nil && v.sound == sound {
 			s.channels[k].Stop()
@@ -828,7 +828,7 @@ func (s *SoundChannels) Stop(sound *Sound) {
 	}
 }
 func (s *SoundChannels) StopAll() {
-	fmt.Printf("[sound.go] SoundChannels.StopAll\n")
+	// fmt.Printf("[sound.go] SoundChannels.StopAll\n")
 	for k, v := range s.channels {
 		if v.sound != nil {
 			s.channels[k].Stop()
@@ -839,7 +839,7 @@ func (s *SoundChannels) Tick() {
 	for i := range s.channels {
 		if s.channels[i].IsPlaying() {
 			if s.channels[i].streamer.Position() >= s.channels[i].sound.length && s.channels[i].sfx.loop != -1 {
-				fmt.Printf("[sound.go] SoundChannels.Tick channel=%v off\n", i)
+				// fmt.Printf("[sound.go] SoundChannels.Tick channel=%v off\n", i)
 				s.channels[i].sound = nil
 			}
 		}

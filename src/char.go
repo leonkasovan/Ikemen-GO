@@ -4096,7 +4096,7 @@ func (c *Char) playSound(ffx string, lowpriority bool, loopCount int32, g, n, ch
 			return
 		}
 	} else {
-		// fmt.Printf("[char.go] playSound ffx=[%v %v,%v ch=%v vol=%v]\n", ffx, g, n, chNo, vol)
+		// fmt.Printf("[char.go] playSound ffx=[%v %v,%v ch=%v vol=%v loopCount=%v]\n", ffx, g, n, chNo, vol, loopCount)
 	}
 	crun := c
 	if c.inheritChannels == 1 && c.parent() != nil {

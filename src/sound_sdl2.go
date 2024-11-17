@@ -219,7 +219,7 @@ func newSnd() *Snd {
 }
 
 func LoadSnd(filename string) (*Snd, error) {
-	fmt.Printf("[sound_sdl2.go] LoadSnd %v\n", filename)
+	// fmt.Printf("[sound_sdl2.go] LoadSnd %v\n", filename)
 	return LoadSndFiltered(filename, func(gn [2]int32) bool { return gn[0] >= 0 && gn[1] >= 0 }, 0)
 }
 
@@ -317,7 +317,7 @@ func (s *Snd) stop(gn [2]int32) {
 }
 
 func loadFromSnd(filename string, g, s int32, max uint32) (*Sound, error) {
-	fmt.Printf("[sound_sdl2.go] loadFromSnd filename=%v %v,%v\n", filename, g, s)
+	// fmt.Printf("[sound_sdl2.go] loadFromSnd filename=%v %v,%v\n", filename, g, s)
 	// Load the snd file
 	snd, err := LoadSndFiltered(filename, func(gn [2]int32) bool { return gn[0] == g && gn[1] == s }, max)
 	if err != nil {
@@ -398,7 +398,8 @@ func (s *SoundChannel) Play(sound *Sound, loop int32, freqmul float32, loopStart
 	if sound == nil {
 		return
 	}
-	// fmt.Printf("[sound_sdl2.go] SoundChannel.Play %v\n", sound)
+	// fmt.Printf("[sound_sdl2.go] SoundChannel.Play sound=*Sound, loop=%v, freqmul=%v, loopStart=%v, loopEnd=%v, startPosition=%v\n", loop, freqmul, loopStart, loopEnd, startPosition)
+	loop = 0 // just hack it for char with run sound loop
 	ch, err := sound.Play(-1, int(loop))
 	if err == nil {
 		s.sound = sound
