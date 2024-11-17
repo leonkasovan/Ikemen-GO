@@ -996,6 +996,18 @@ func setupConfig(is_mugen_game bool) configSettings {
 		}
 	}
 
+	if _, ok := sys.cmdFlags["-installrun"]; ok {
+		fmt.Printf("[main.go][setupConfig] Install default screenpack\n")
+		err := extractEmbed(screenpackZip)
+		if err != nil {
+			fmt.Printf("[main.go][setupConfig] Error extracting screenpack: %v\n", err)
+		}
+		err = extractEmbed(assetsZip)
+		if err != nil {
+			fmt.Printf("[main.go][setupConfig] Error extracting asset: %v\n", err)
+		}
+	}
+
 	if _, ok := sys.cmdFlags["-install"]; ok {
 		fmt.Printf("[main.go][setupConfig] Install default screenpack\n")
 		err := extractEmbed(screenpackZip)
@@ -1006,6 +1018,7 @@ func setupConfig(is_mugen_game bool) configSettings {
 		if err != nil {
 			fmt.Printf("[main.go][setupConfig] Error extracting asset: %v\n", err)
 		}
+		os.Exit(0)
 	}
 
 	if _, ok := sys.cmdFlags["-audit"]; ok {
