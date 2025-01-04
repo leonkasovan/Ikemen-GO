@@ -1,4 +1,4 @@
-//go:build !gles2
+//go:build gles2
 
 // IF YOU MAKE CHANGES TO THIS FILE, YOU MUST ALSO MAKE
 // EQUIVALENT CHANGES TO render_gl_gl32.go
@@ -13,31 +13,30 @@ import (
 	"glfw"
 	"math"
 	"runtime"
-	"strconv"
 	"unsafe"
 
-	gl "github.com/go-gl/gl/v2.1/gl"
 	mgl "github.com/go-gl/mathgl/mgl32"
+	gl "github.com/leonkasovan/gl/v3.1/gles2"
 	"golang.org/x/mobile/exp/f32"
 )
 
 //const GL_SHADER_VER = 120 // OpenGL 2.1
 
 // ------------------------------------------------------------------
-// ShaderProgram_GL21
+// ShaderProgram_GLES
 
-type ShaderProgram_GL21 struct {
+type ShaderProgram_GLES struct {
 	// Program
 	program uint32
 	// Attributes
 	a map[string]int32
 	// Uniforms
 	u map[string]int32
-	// Texture_GL21 units
+	// Texture_GLES units
 	t map[string]int
 }
 
-func (r *Renderer_GL21) newShaderProgram(vert, frag, geo, id string, crashWhenFail bool) (s *ShaderProgram_GL21, err error) {
+func (r *Renderer_GLES) newShaderProgram(vert, frag, geo, id string, crashWhenFail bool) (s *ShaderProgram_GLES, err error) {
 	var vertObj, fragObj, geoObj, prog uint32
 	if vertObj, err = r.compileShader(gl.VERTEX_SHADER, vert); chkEX(err, "Shader compliation error on "+id+"\n", crashWhenFail) {
 		return nil, err
@@ -57,38 +56,38 @@ func (r *Renderer_GL21) newShaderProgram(vert, frag, geo, id string, crashWhenFa
 			return nil, err
 		}
 	}
-	s = &ShaderProgram_GL21{program: prog}
+	s = &ShaderProgram_GLES{program: prog}
 	s.a = make(map[string]int32)
 	s.u = make(map[string]int32)
 	s.t = make(map[string]int)
 	return s, nil
 }
 
-func (r *ShaderProgram_GL21) glStr(s string) *uint8 {
+func (r *ShaderProgram_GLES) glStr(s string) *uint8 {
 	return gl.Str(s + "\x00")
 }
-func (s *ShaderProgram_GL21) RegisterAttributes(names ...string) {
+func (s *ShaderProgram_GLES) RegisterAttributes(names ...string) {
 	for _, name := range names {
 		s.a[name] = gl.GetAttribLocation(s.program, s.glStr(name))
 	}
 }
 
-func (s *ShaderProgram_GL21) RegisterUniforms(names ...string) {
+func (s *ShaderProgram_GLES) RegisterUniforms(names ...string) {
 	for _, name := range names {
 		s.u[name] = gl.GetUniformLocation(s.program, s.glStr(name))
 	}
 }
 
-func (s *ShaderProgram_GL21) RegisterTextures(names ...string) {
+func (s *ShaderProgram_GLES) RegisterTextures(names ...string) {
 	for _, name := range names {
 		s.u[name] = gl.GetUniformLocation(s.program, s.glStr(name))
 		s.t[name] = len(s.t)
 	}
 }
 
-func (r *Renderer_GL21) compileShader(shaderType uint32, src string) (shader uint32, err error) {
+func (r *Renderer_GLES) compileShader(shaderType uint32, src string) (shader uint32, err error) {
 	shader = gl.CreateShader(shaderType)
-	src = "#version 120\n" + src + "\x00"
+	src = "#version 300 es\nprecision mediump float;\n" + src + "\x00"
 	s, _ := gl.Strs(src)
 	var l int32 = int32(len(src) - 1)
 	gl.ShaderSource(shader, 1, s, &l)
@@ -114,16 +113,16 @@ func (r *Renderer_GL21) compileShader(shaderType uint32, src string) (shader uin
 	return shader, nil
 }
 
-func (r *Renderer_GL21) linkProgram(params ...uint32) (program uint32, err error) {
+func (r *Renderer_GLES) linkProgram(params ...uint32) (program uint32, err error) {
 	program = gl.CreateProgram()
 	for _, param := range params {
 		gl.AttachShader(program, param)
 	}
 	if len(params) > 2 {
 		// Geometry Shader Params
-		gl.ProgramParameteriARB(program, gl.GEOMETRY_INPUT_TYPE_ARB, gl.TRIANGLES)
-		gl.ProgramParameteriARB(program, gl.GEOMETRY_OUTPUT_TYPE_ARB, gl.TRIANGLE_STRIP)
-		gl.ProgramParameteriARB(program, gl.GEOMETRY_VERTICES_OUT_ARB, 3*6)
+		gl.ProgramParameteri(program, gl.GEOMETRY_LINKED_INPUT_TYPE_EXT, gl.TRIANGLES)
+		gl.ProgramParameteri(program, gl.GEOMETRY_LINKED_OUTPUT_TYPE_EXT, gl.TRIANGLE_STRIP)
+		gl.ProgramParameteri(program, gl.GEOMETRY_LINKED_VERTICES_OUT_EXT, 3*6)
 	}
 	gl.LinkProgram(program)
 	// Mark shaders for deletion when the program is deleted
@@ -152,9 +151,9 @@ func (r *Renderer_GL21) linkProgram(params ...uint32) (program uint32, err error
 }
 
 // ------------------------------------------------------------------
-// Texture_GL21
+// Texture_GLES
 
-type Texture_GL21 struct {
+type Texture_GLES struct {
 	width  int32
 	height int32
 	depth  int32
@@ -163,12 +162,12 @@ type Texture_GL21 struct {
 }
 
 // Generate a new texture name
-func (r *Renderer_GL21) newTexture(width, height, depth int32, filter bool) (t Texture) {
+func (r *Renderer_GLES) newTexture(width, height, depth int32, filter bool) (t Texture) {
 	var h uint32
 	gl.ActiveTexture(gl.TEXTURE0)
 	gl.GenTextures(1, &h)
-	t = &Texture_GL21{width, height, depth, filter, h}
-	runtime.SetFinalizer(t, func(t *Texture_GL21) {
+	t = &Texture_GLES{width, height, depth, filter, h}
+	runtime.SetFinalizer(t, func(t *Texture_GLES) {
 		sys.mainThreadTask <- func() {
 			gl.DeleteTextures(1, &t.handle)
 		}
@@ -176,12 +175,12 @@ func (r *Renderer_GL21) newTexture(width, height, depth int32, filter bool) (t T
 	return
 }
 
-func (r *Renderer_GL21) newDataTexture(width, height int32) (t Texture) {
+func (r *Renderer_GLES) newDataTexture(width, height int32) (t Texture) {
 	var h uint32
 	gl.ActiveTexture(gl.TEXTURE0)
 	gl.GenTextures(1, &h)
-	t = &Texture_GL21{width, height, 32, false, h}
-	runtime.SetFinalizer(t, func(t *Texture_GL21) {
+	t = &Texture_GLES{width, height, 32, false, h}
+	runtime.SetFinalizer(t, func(t *Texture_GLES) {
 		sys.mainThreadTask <- func() {
 			gl.DeleteTextures(1, &t.handle)
 		}
@@ -194,12 +193,12 @@ func (r *Renderer_GL21) newDataTexture(width, height int32) (t Texture) {
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
 	return
 }
-func (r *Renderer_GL21) newHDRTexture(width, height int32) (t Texture) {
+func (r *Renderer_GLES) newHDRTexture(width, height int32) (t Texture) {
 	var h uint32
 	gl.ActiveTexture(gl.TEXTURE0)
 	gl.GenTextures(1, &h)
-	t = &Texture_GL21{width, height, 24, false, h}
-	runtime.SetFinalizer(t, func(t *Texture_GL21) {
+	t = &Texture_GLES{width, height, 24, false, h}
+	runtime.SetFinalizer(t, func(t *Texture_GLES) {
 		sys.mainThreadTask <- func() {
 			gl.DeleteTextures(1, &t.handle)
 		}
@@ -212,19 +211,19 @@ func (r *Renderer_GL21) newHDRTexture(width, height int32) (t Texture) {
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.MIRRORED_REPEAT)
 	return
 }
-func (r *Renderer_GL21) newCubeMapTexture(widthHeight int32, mipmap bool) (t Texture) {
+func (r *Renderer_GLES) newCubeMapTexture(widthHeight int32, mipmap bool) (t Texture) {
 	var h uint32
 	gl.ActiveTexture(gl.TEXTURE0)
 	gl.GenTextures(1, &h)
-	t = &Texture_GL21{widthHeight, widthHeight, 24, false, h}
-	runtime.SetFinalizer(t, func(t *Texture_GL21) {
+	t = &Texture_GLES{widthHeight, widthHeight, 24, false, h}
+	runtime.SetFinalizer(t, func(t *Texture_GLES) {
 		sys.mainThreadTask <- func() {
 			gl.DeleteTextures(1, &t.handle)
 		}
 	})
 	gl.BindTexture(gl.TEXTURE_CUBE_MAP, h)
 	for i := 0; i < 6; i++ {
-		gl.TexImage2D(uint32(gl.TEXTURE_CUBE_MAP_POSITIVE_X+i), 0, gl.RGB32F_ARB, widthHeight, widthHeight, 0, gl.RGB, gl.FLOAT, nil)
+		gl.TexImage2D(uint32(gl.TEXTURE_CUBE_MAP_POSITIVE_X+i), 0, gl.RGB32F, widthHeight, widthHeight, 0, gl.RGB, gl.FLOAT, nil)
 	}
 	if mipmap {
 		gl.TexParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR)
@@ -240,7 +239,7 @@ func (r *Renderer_GL21) newCubeMapTexture(widthHeight int32, mipmap bool) (t Tex
 }
 
 // Bind a texture and upload texel data to it
-func (t *Texture_GL21) SetData(data []byte) {
+func (t *Texture_GLES) SetData(data []byte) {
 	var interp int32 = gl.NEAREST
 	if t.filter {
 		interp = gl.LINEAR
@@ -261,7 +260,7 @@ func (t *Texture_GL21) SetData(data []byte) {
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
 }
-func (t *Texture_GL21) SetDataG(data []byte, mag, min, ws, wt int32) {
+func (t *Texture_GLES) SetDataG(data []byte, mag, min, ws, wt int32) {
 
 	format := t.MapInternalFormat(Max(t.depth, 8))
 
@@ -274,28 +273,28 @@ func (t *Texture_GL21) SetDataG(data []byte, mag, min, ws, wt int32) {
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, ws)
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wt)
 }
-func (t *Texture_GL21) SetPixelData(data []float32) {
+func (t *Texture_GLES) SetPixelData(data []float32) {
 
 	gl.BindTexture(gl.TEXTURE_2D, t.handle)
 	gl.PixelStorei(gl.UNPACK_ALIGNMENT, 1)
-	gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F_ARB, t.width, t.height, 0, gl.RGBA, gl.FLOAT, unsafe.Pointer(&data[0]))
+	gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, t.width, t.height, 0, gl.RGBA, gl.FLOAT, unsafe.Pointer(&data[0]))
 }
-func (t *Texture_GL21) SetRGBPixelData(data []float32) {
+func (t *Texture_GLES) SetRGBPixelData(data []float32) {
 	gl.BindTexture(gl.TEXTURE_2D, t.handle)
 	gl.PixelStorei(gl.UNPACK_ALIGNMENT, 1)
-	gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGB32F_ARB, t.width, t.height, 0, gl.RGB, gl.FLOAT, unsafe.Pointer(&data[0]))
+	gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGB32F, t.width, t.height, 0, gl.RGB, gl.FLOAT, unsafe.Pointer(&data[0]))
 }
 
 // Return whether texture has a valid handle
-func (t *Texture_GL21) IsValid() bool {
+func (t *Texture_GLES) IsValid() bool {
 	return t.handle != 0
 }
 
-func (t *Texture_GL21) GetWidth() int32 {
+func (t *Texture_GLES) GetWidth() int32 {
 	return t.width
 }
 
-func (t *Texture_GL21) MapInternalFormat(i int32) uint32 {
+func (t *Texture_GLES) MapInternalFormat(i int32) uint32 {
 	var InternalFormatLUT = map[int32]uint32{
 		8:  gl.LUMINANCE,
 		24: gl.RGB,
@@ -305,34 +304,32 @@ func (t *Texture_GL21) MapInternalFormat(i int32) uint32 {
 }
 
 // ------------------------------------------------------------------
-// Renderer_GL21
+// Renderer_GLES
 
-type Renderer_GL21 struct {
+type Renderer_GLES struct {
 	fbo         uint32
 	fbo_texture uint32
 	// Normal rendering
 	rbo_depth uint32
 	// MSAA rendering
 	fbo_f         uint32
-	fbo_f_texture *Texture_GL21
+	fbo_f_texture *Texture_GLES
 	// Shadow Map
-	fbo_shadow              uint32
-	fbo_shadow_cube_texture [4]uint32
-	fbo_env                 uint32
+	fbo_env uint32
 	// Postprocessing FBOs
 	fbo_pp         []uint32
 	fbo_pp_texture []uint32
 	// Post-processing shaders
 	postVertBuffer   uint32
-	postShaderSelect []*ShaderProgram_GL21
+	postShaderSelect []*ShaderProgram_GLES
 	// Shader and vertex data for primitive rendering
-	spriteShader *ShaderProgram_GL21
+	spriteShader *ShaderProgram_GLES
 	vertexBuffer uint32
 	// Shader and index data for 3D model rendering
-	shadowMapShader         *ShaderProgram_GL21
-	modelShader             *ShaderProgram_GL21
-	panoramaToCubeMapShader *ShaderProgram_GL21
-	cubemapFilteringShader  *ShaderProgram_GL21
+	shadowMapShader         *ShaderProgram_GLES
+	modelShader             *ShaderProgram_GLES
+	panoramaToCubeMapShader *ShaderProgram_GLES
+	cubemapFilteringShader  *ShaderProgram_GLES
 	stageVertexBuffer       uint32
 	stageIndexBuffer        uint32
 
@@ -340,18 +337,14 @@ type Renderer_GL21 struct {
 	enableShadow bool
 }
 
-func (r *Renderer_GL21) GetName() string {
-	return "OpenGL 2.1"
+func (r *Renderer_GLES) GetName() string {
+	return "OpenGL ES"
 }
 
 // init 3D model shader
-func (r *Renderer_GL21) InitModelShader() error {
+func (r *Renderer_GLES) InitModelShader() error {
 	var err error
-	if r.enableShadow {
-		r.modelShader, err = r.newShaderProgram(modelVertShader, "#define ENABLE_SHADOW\n"+modelFragShader, "", "Model Shader", false)
-	} else {
-		r.modelShader, err = r.newShaderProgram(modelVertShader, modelFragShader, "", "Model Shader", false)
-	}
+	r.modelShader, err = r.newShaderProgram(modelVertShader, modelFragShaderES, "", "Model Shader", false)
 	if err != nil {
 		return err
 	}
@@ -369,20 +362,6 @@ func (r *Renderer_GL21) InitModelShader() error {
 	r.modelShader.RegisterTextures("tex", "morphTargetValues", "jointMatrices", "normalMap", "metallicRoughnessMap", "ambientOcclusionMap", "emissionMap", "lambertianEnvSampler", "GGXEnvSampler", "GGXLUT",
 		"shadowCubeMap[0]", "shadowCubeMap[1]", "shadowCubeMap[2]", "shadowCubeMap[3]")
 
-	if r.enableShadow {
-		r.shadowMapShader, err = r.newShaderProgram(shadowVertShader, shadowFragShader, shadowGeoShader, "Shadow Map Shader", false)
-		if err != nil {
-			return err
-		}
-		r.shadowMapShader.RegisterAttributes("vertexId", "position", "vertColor", "uv", "joints_0", "joints_1", "weights_0", "weights_1")
-		r.shadowMapShader.RegisterUniforms("model", "lightMatrices[0]", "lightMatrices[1]", "lightMatrices[2]", "lightMatrices[3]", "lightMatrices[4]", "lightMatrices[5]",
-			"lightMatrices[6]", "lightMatrices[7]", "lightMatrices[8]", "lightMatrices[9]", "lightMatrices[10]", "lightMatrices[11]",
-			"lightMatrices[12]", "lightMatrices[13]", "lightMatrices[14]", "lightMatrices[15]", "lightMatrices[16]", "lightMatrices[17]",
-			"lightMatrices[18]", "lightMatrices[19]", "lightMatrices[20]", "lightMatrices[21]", "lightMatrices[22]", "lightMatrices[23]",
-			"lightType[0]", "lightType[1]", "lightType[2]", "lightType[3]", "lightPos[0]", "lightPos[1]", "lightPos[2]", "lightPos[3]",
-			"farPlane", "numJoints", "morphTargetWeight", "morphTargetOffset", "morphTargetTextureDimension", "numTargets", "numVertices", "enableAlpha", "alphaThreshold", "baseColorFactor", "useTexture", "lightIndex")
-		r.shadowMapShader.RegisterTextures("morphTargetValues", "jointMatrices", "tex")
-	}
 	r.panoramaToCubeMapShader, err = r.newShaderProgram(identVertShader, panoramaToCubeMapFragShader, "", "Panorama To Cubemap Shader", false)
 	if err != nil {
 		return err
@@ -403,11 +382,11 @@ func (r *Renderer_GL21) InitModelShader() error {
 
 // Render initialization.
 // Creates the default shaders, the framebuffer and enables MSAA.
-func (r *Renderer_GL21) Init() {
+func (r *Renderer_GLES) Init() {
 	r.enableModel = sys.cfg.Video.EnableModel
-	r.enableShadow = sys.cfg.Video.EnableModelShadow
+	r.enableShadow = false //sys.cfg.Video.EnableModelShadow
 	chk(gl.Init())
-	sys.errLog.Printf("Using OpenGL %v (%v)", gl.GetString(gl.VERSION), gl.GetString(gl.RENDERER))
+	sys.errLog.Printf("Using OpenGL %v (%v)", gl.GetString(gl.Str(gl.VERSION)), gl.GetString(gl.Str(gl.RENDERER)))
 
 	var maxSamples int32
 	gl.GetIntegerv(gl.MAX_SAMPLES, &maxSamples)
@@ -419,7 +398,7 @@ func (r *Renderer_GL21) Init() {
 	// Store current timestamp
 	sys.prevTimestamp = glfw.GetTime()
 
-	r.postShaderSelect = make([]*ShaderProgram_GL21, 1+len(sys.cfg.Video.ExternalShaders))
+	r.postShaderSelect = make([]*ShaderProgram_GLES, 1+len(sys.cfg.Video.ExternalShaders))
 
 	// Data buffers for rendering
 	postVertData := f32.Bytes(binary.LittleEndian, -1, -1, 1, -1, -1, 1, 1, 1)
@@ -448,22 +427,18 @@ func (r *Renderer_GL21) Init() {
 	// Compile postprocessing shaders
 
 	// Calculate total amount of shaders loaded.
-	r.postShaderSelect = make([]*ShaderProgram_GL21, 1+len(sys.cfg.Video.ExternalShaders))
+	r.postShaderSelect = make([]*ShaderProgram_GLES, 1+len(sys.cfg.Video.ExternalShaders))
 
 	// Ident shader (no postprocessing)
 	r.postShaderSelect[0], _ = r.newShaderProgram(identVertShader, identFragShader, "", "Identity Postprocess", true)
 	r.postShaderSelect[0].RegisterAttributes("VertCoord")
-	r.postShaderSelect[0].RegisterUniforms("Texture_GL21", "TextureSize", "CurrentTime")
+	r.postShaderSelect[0].RegisterUniforms("Texture_GLES", "TextureSize", "CurrentTime")
 
 	// External Shaders
 	for i := 0; i < len(sys.cfg.Video.ExternalShaders); i++ {
 		r.postShaderSelect[1+i], _ = r.newShaderProgram(sys.externalShaders[0][i],
 			sys.externalShaders[1][i], "", fmt.Sprintf("Postprocess Shader #%v", i+1), true)
-		r.postShaderSelect[1+i].RegisterUniforms("Texture_GL21", "TextureSize", "CurrentTime")
-	}
-
-	if sys.msaa > 0 {
-		gl.Enable(gl.MULTISAMPLE)
+		r.postShaderSelect[1+i].RegisterUniforms("Texture_GLES", "TextureSize", "CurrentTime")
 	}
 
 	gl.ActiveTexture(gl.TEXTURE0)
@@ -471,39 +446,24 @@ func (r *Renderer_GL21) Init() {
 	// create a texture for r.fbo
 	gl.GenTextures(1, &r.fbo_texture)
 
-	if sys.msaa > 0 {
-		gl.BindTexture(gl.TEXTURE_2D_MULTISAMPLE, r.fbo_texture)
-	} else {
-		gl.BindTexture(gl.TEXTURE_2D, r.fbo_texture)
-	}
+	gl.BindTexture(gl.TEXTURE_2D, r.fbo_texture)
 
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
 
-	if sys.msaa > 0 {
-		gl.TexImage2DMultisample(
-			gl.TEXTURE_2D_MULTISAMPLE,
-			sys.msaa,
-			gl.RGBA,
-			sys.scrrect[2],
-			sys.scrrect[3],
-			true,
-		)
-	} else {
-		gl.TexImage2D(
-			gl.TEXTURE_2D,
-			0,
-			gl.RGBA,
-			sys.scrrect[2],
-			sys.scrrect[3],
-			0,
-			gl.RGBA,
-			gl.UNSIGNED_BYTE,
-			nil,
-		)
-	}
+	gl.TexImage2D(
+		gl.TEXTURE_2D,
+		0,
+		gl.RGBA,
+		sys.scrrect[2],
+		sys.scrrect[3],
+		0,
+		gl.RGBA,
+		gl.UNSIGNED_BYTE,
+		nil,
+	)
 
 	r.fbo_pp = make([]uint32, 2)
 	r.fbo_pp_texture = make([]uint32, 2)
@@ -546,7 +506,7 @@ func (r *Renderer_GL21) Init() {
 	}
 	gl.BindRenderbuffer(gl.RENDERBUFFER, 0)
 	if sys.msaa > 0 {
-		r.fbo_f_texture = r.newTexture(sys.scrrect[2], sys.scrrect[3], 32, false).(*Texture_GL21)
+		r.fbo_f_texture = r.newTexture(sys.scrrect[2], sys.scrrect[3], 32, false).(*Texture_GLES)
 		r.fbo_f_texture.SetData(nil)
 	} else {
 		//r.rbo_depth = gl.CreateRenderbuffer()
@@ -583,46 +543,23 @@ func (r *Renderer_GL21) Init() {
 
 	// create an FBO for our model stuff
 	if r.enableModel {
-		if r.enableShadow {
-			gl.GenFramebuffersEXT(1, &r.fbo_shadow)
-			gl.ActiveTexture(gl.TEXTURE0)
-			gl.GenTextures(4, &r.fbo_shadow_cube_texture[0])
-
-			for i := 0; i < 4; i++ {
-				gl.BindTexture(gl.TEXTURE_CUBE_MAP, r.fbo_shadow_cube_texture[i])
-				for j := 0; j < 6; j++ {
-					gl.TexImage2D(uint32(gl.TEXTURE_CUBE_MAP_POSITIVE_X+j), 0, gl.DEPTH_COMPONENT, 1024, 1024, 0, gl.DEPTH_COMPONENT, gl.FLOAT, nil)
-				}
-				gl.TexParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
-				gl.TexParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
-				gl.TexParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-				gl.TexParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-			}
-			gl.BindFramebufferEXT(gl.FRAMEBUFFER, r.fbo_shadow)
-			gl.DrawBuffer(gl.NONE)
-			gl.ReadBuffer(gl.NONE)
-			if status := gl.CheckFramebufferStatus(gl.FRAMEBUFFER); status != gl.FRAMEBUFFER_COMPLETE {
-				sys.errLog.Printf("framebuffer create failed: 0x%x", status)
-			}
-		}
-
 		gl.GenFramebuffers(1, &r.fbo_env)
 	}
 
 	gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
 }
 
-func (r *Renderer_GL21) Close() {
+func (r *Renderer_GLES) Close() {
 }
 
-func (r *Renderer_GL21) IsModelEnabled() bool {
+func (r *Renderer_GLES) IsModelEnabled() bool {
 	return r.enableModel
 }
 
-func (r *Renderer_GL21) IsShadowEnabled() bool {
+func (r *Renderer_GLES) IsShadowEnabled() bool {
 	return r.enableShadow
 }
-func (r *Renderer_GL21) BeginFrame(clearColor bool) {
+func (r *Renderer_GLES) BeginFrame(clearColor bool) {
 	sys.absTickCountF++
 	gl.BindFramebuffer(gl.FRAMEBUFFER, r.fbo)
 	gl.Viewport(0, 0, sys.scrrect[2], sys.scrrect[3])
@@ -633,11 +570,11 @@ func (r *Renderer_GL21) BeginFrame(clearColor bool) {
 	}
 }
 
-func (r *Renderer_GL21) BlendReset() {
+func (r *Renderer_GLES) BlendReset() {
 	gl.BlendEquation(r.MapBlendEquation(BlendAdd))
 	gl.BlendFunc(r.MapBlendFunction(BlendSrcAlpha), r.MapBlendFunction(BlendOneMinusSrcAlpha))
 }
-func (r *Renderer_GL21) EndFrame() {
+func (r *Renderer_GLES) EndFrame() {
 	x, y, width, height := int32(0), int32(0), int32(sys.scrrect[2]), int32(sys.scrrect[3])
 	time := glfw.GetTime() // consistent time across all shaders
 
@@ -709,7 +646,7 @@ func (r *Renderer_GL21) EndFrame() {
 		gl.UseProgram(postShader.program)
 
 		// set post-processing parameters
-		gl.Uniform1i(postShader.u["Texture_GL21"], 0)
+		gl.Uniform1i(postShader.u["Texture_GLES"], 0)
 		gl.Uniform2f(postShader.u["TextureSize"], float32(width), float32(height))
 		gl.Uniform1f(postShader.u["CurrentTime"], float32(time))
 		gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, scaleMode)
@@ -730,11 +667,11 @@ func (r *Renderer_GL21) EndFrame() {
 	}
 }
 
-func (r *Renderer_GL21) Await() {
+func (r *Renderer_GLES) Await() {
 	gl.Finish()
 }
 
-func (r *Renderer_GL21) MapBlendEquation(i BlendEquation) uint32 {
+func (r *Renderer_GLES) MapBlendEquation(i BlendEquation) uint32 {
 	var BlendEquationLUT = map[BlendEquation]uint32{
 		BlendAdd:             gl.FUNC_ADD,
 		BlendReverseSubtract: gl.FUNC_REVERSE_SUBTRACT,
@@ -742,7 +679,7 @@ func (r *Renderer_GL21) MapBlendEquation(i BlendEquation) uint32 {
 	return BlendEquationLUT[i]
 }
 
-func (r *Renderer_GL21) MapBlendFunction(i BlendFunc) uint32 {
+func (r *Renderer_GLES) MapBlendFunction(i BlendFunc) uint32 {
 	var BlendFunctionLUT = map[BlendFunc]uint32{
 		BlendOne:              gl.ONE,
 		BlendZero:             gl.ZERO,
@@ -752,7 +689,7 @@ func (r *Renderer_GL21) MapBlendFunction(i BlendFunc) uint32 {
 	return BlendFunctionLUT[i]
 }
 
-func (r *Renderer_GL21) MapPrimitiveMode(i PrimitiveMode) uint32 {
+func (r *Renderer_GLES) MapPrimitiveMode(i PrimitiveMode) uint32 {
 	var PrimitiveModeLUT = map[PrimitiveMode]uint32{
 		LINES:          gl.LINES,
 		LINE_LOOP:      gl.LINE_LOOP,
@@ -764,7 +701,7 @@ func (r *Renderer_GL21) MapPrimitiveMode(i PrimitiveMode) uint32 {
 	return PrimitiveModeLUT[i]
 }
 
-func (r *Renderer_GL21) SetPipeline(eq BlendEquation, src, dst BlendFunc) {
+func (r *Renderer_GLES) SetPipeline(eq BlendEquation, src, dst BlendFunc) {
 	gl.UseProgram(r.spriteShader.program)
 
 	gl.BlendEquation(r.MapBlendEquation(eq))
@@ -781,7 +718,7 @@ func (r *Renderer_GL21) SetPipeline(eq BlendEquation, src, dst BlendFunc) {
 	gl.VertexAttribPointerWithOffset(uint32(loc), 2, gl.FLOAT, false, 16, 8)
 }
 
-func (r *Renderer_GL21) ReleasePipeline() {
+func (r *Renderer_GLES) ReleasePipeline() {
 	loc := r.spriteShader.a["position"]
 	gl.DisableVertexAttribArray(uint32(loc))
 	loc = r.spriteShader.a["uv"]
@@ -789,9 +726,8 @@ func (r *Renderer_GL21) ReleasePipeline() {
 	gl.Disable(gl.BLEND)
 }
 
-func (r *Renderer_GL21) prepareShadowMapPipeline() {
+func (r *Renderer_GLES) prepareShadowMapPipeline() {
 	gl.UseProgram(r.shadowMapShader.program)
-	gl.BindFramebufferEXT(gl.FRAMEBUFFER, r.fbo_shadow)
 	gl.Viewport(0, 0, 1024, 1024)
 	gl.Enable(gl.TEXTURE_2D)
 	gl.Disable(gl.BLEND)
@@ -805,7 +741,7 @@ func (r *Renderer_GL21) prepareShadowMapPipeline() {
 	gl.BindBuffer(gl.ARRAY_BUFFER, r.stageVertexBuffer)
 	gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, r.stageIndexBuffer)
 }
-func (r *Renderer_GL21) setShadowMapPipeline(doubleSided, invertFrontFace, useUV, useNormal, useTangent, useVertColor, useJoint0, useJoint1 bool, numVertices, vertAttrOffset uint32) {
+func (r *Renderer_GLES) setShadowMapPipeline(doubleSided, invertFrontFace, useUV, useNormal, useTangent, useVertColor, useJoint0, useJoint1 bool, numVertices, vertAttrOffset uint32) {
 	if invertFrontFace {
 		gl.FrontFace(gl.CW)
 	} else {
@@ -895,7 +831,7 @@ func (r *Renderer_GL21) setShadowMapPipeline(doubleSided, invertFrontFace, useUV
 	}
 }
 
-func (r *Renderer_GL21) ReleaseShadowPipeline() {
+func (r *Renderer_GLES) ReleaseShadowPipeline() {
 	loc := r.modelShader.a["vertexId"]
 	gl.DisableVertexAttribArray(uint32(loc))
 	loc = r.modelShader.a["position"]
@@ -918,7 +854,7 @@ func (r *Renderer_GL21) ReleaseShadowPipeline() {
 	gl.Disable(gl.CULL_FACE)
 	gl.Disable(gl.BLEND)
 }
-func (r *Renderer_GL21) prepareModelPipeline(env *Environment) {
+func (r *Renderer_GLES) prepareModelPipeline(env *Environment) {
 	gl.UseProgram(r.modelShader.program)
 	gl.BindFramebuffer(gl.FRAMEBUFFER, r.fbo)
 	gl.Viewport(0, 0, sys.scrrect[2], sys.scrrect[3])
@@ -928,26 +864,18 @@ func (r *Renderer_GL21) prepareModelPipeline(env *Environment) {
 	gl.Enable(gl.BLEND)
 	gl.BindBuffer(gl.ARRAY_BUFFER, r.stageVertexBuffer)
 	gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, r.stageIndexBuffer)
-	if r.enableShadow {
-		for i := 0; i < 4; i++ {
-			loc, unit := r.modelShader.u["shadowCubeMap["+strconv.Itoa(i)+"]"], r.modelShader.t["shadowCubeMap["+strconv.Itoa(i)+"]"]
-			gl.ActiveTexture((uint32(gl.TEXTURE0 + unit)))
-			gl.BindTexture(gl.TEXTURE_CUBE_MAP, r.fbo_shadow_cube_texture[i])
-			gl.Uniform1i(loc, int32(unit))
-		}
-	}
 	if env != nil {
 		loc, unit := r.modelShader.u["lambertianEnvSampler"], r.modelShader.t["lambertianEnvSampler"]
 		gl.ActiveTexture((uint32(gl.TEXTURE0 + unit)))
-		gl.BindTexture(gl.TEXTURE_CUBE_MAP, env.lambertianTexture.tex.(*Texture_GL21).handle)
+		gl.BindTexture(gl.TEXTURE_CUBE_MAP, env.lambertianTexture.tex.(*Texture_GLES).handle)
 		gl.Uniform1i(loc, int32(unit))
 		loc, unit = r.modelShader.u["GGXEnvSampler"], r.modelShader.t["GGXEnvSampler"]
 		gl.ActiveTexture((uint32(gl.TEXTURE0 + unit)))
-		gl.BindTexture(gl.TEXTURE_CUBE_MAP, env.GGXTexture.tex.(*Texture_GL21).handle)
+		gl.BindTexture(gl.TEXTURE_CUBE_MAP, env.GGXTexture.tex.(*Texture_GLES).handle)
 		gl.Uniform1i(loc, int32(unit))
 		loc, unit = r.modelShader.u["GGXLUT"], r.modelShader.t["GGXLUT"]
 		gl.ActiveTexture((uint32(gl.TEXTURE0 + unit)))
-		gl.BindTexture(gl.TEXTURE_2D, env.GGXLUT.tex.(*Texture_GL21).handle)
+		gl.BindTexture(gl.TEXTURE_2D, env.GGXLUT.tex.(*Texture_GLES).handle)
 		gl.Uniform1i(loc, int32(unit))
 
 		loc = r.modelShader.u["environmentIntensity"]
@@ -976,7 +904,7 @@ func (r *Renderer_GL21) prepareModelPipeline(env *Environment) {
 		gl.Uniform1f(loc, 0)
 	}
 }
-func (r *Renderer_GL21) SetModelPipeline(eq BlendEquation, src, dst BlendFunc, depthTest, depthMask, doubleSided, invertFrontFace, useUV, useNormal, useTangent, useVertColor, useJoint0, useJoint1 bool, numVertices, vertAttrOffset uint32) {
+func (r *Renderer_GLES) SetModelPipeline(eq BlendEquation, src, dst BlendFunc, depthTest, depthMask, doubleSided, invertFrontFace, useUV, useNormal, useTangent, useVertColor, useJoint0, useJoint1 bool, numVertices, vertAttrOffset uint32) {
 	if depthTest {
 		gl.Enable(gl.DEPTH_TEST)
 		gl.DepthFunc(gl.LESS)
@@ -1079,7 +1007,7 @@ func (r *Renderer_GL21) SetModelPipeline(eq BlendEquation, src, dst BlendFunc, d
 		gl.VertexAttrib4f(uint32(loc), 0, 0, 0, 0)
 	}
 }
-func (r *Renderer_GL21) ReleaseModelPipeline() {
+func (r *Renderer_GLES) ReleaseModelPipeline() {
 	loc := r.modelShader.a["vertexId"]
 	gl.DisableVertexAttribArray(uint32(loc))
 	loc = r.modelShader.a["position"]
@@ -1101,37 +1029,28 @@ func (r *Renderer_GL21) ReleaseModelPipeline() {
 	gl.Disable(gl.DEPTH_TEST)
 	gl.Disable(gl.CULL_FACE)
 }
-func (r *Renderer_GL21) ProcessShadowMapTexture(index int) {
-	gl.BindTexture(gl.TEXTURE_CUBE_MAP, r.fbo_shadow_cube_texture[index])
-	data := make([]float32, 1024*1024)
-	gl.GetTexImage(gl.TEXTURE_CUBE_MAP_POSITIVE_X, 0, gl.DEPTH_COMPONENT, gl.FLOAT, unsafe.Pointer(&data[0]))
-	for i := 0; i < 4; i++ {
-		gl.TexImage2D(uint32(gl.TEXTURE_CUBE_MAP_POSITIVE_X+i+2), 0, gl.DEPTH_COMPONENT, 1024, 1024, 0, gl.DEPTH_COMPONENT, gl.FLOAT, unsafe.Pointer(&data[0]))
-	}
-}
-
-func (r *Renderer_GL21) ReadPixels(data []uint8, width, height int) {
+func (r *Renderer_GLES) ReadPixels(data []uint8, width, height int) {
 	// we defer the EndFrame(), SwapBuffers(), and BeginFrame() calls that were previously below now to
 	// a single spot in order to prevent the blank screenshot bug on single digit FPS
 	gl.BindFramebuffer(gl.READ_FRAMEBUFFER, 0)
 	gl.ReadPixels(0, 0, int32(width), int32(height), gl.RGBA, gl.UNSIGNED_BYTE, unsafe.Pointer(&data[0]))
 }
 
-func (r *Renderer_GL21) Scissor(x, y, width, height int32) {
+func (r *Renderer_GLES) Scissor(x, y, width, height int32) {
 	gl.Enable(gl.SCISSOR_TEST)
 	gl.Scissor(x, sys.scrrect[3]-(y+height), width, height)
 }
 
-func (r *Renderer_GL21) DisableScissor() {
+func (r *Renderer_GLES) DisableScissor() {
 	gl.Disable(gl.SCISSOR_TEST)
 }
 
-func (r *Renderer_GL21) SetUniformI(name string, val int) {
+func (r *Renderer_GLES) SetUniformI(name string, val int) {
 	loc := r.spriteShader.u[name]
 	gl.Uniform1i(loc, int32(val))
 }
 
-func (r *Renderer_GL21) SetUniformF(name string, values ...float32) {
+func (r *Renderer_GLES) SetUniformF(name string, values ...float32) {
 	loc := r.spriteShader.u[name]
 	switch len(values) {
 	case 1:
@@ -1145,7 +1064,7 @@ func (r *Renderer_GL21) SetUniformF(name string, values ...float32) {
 	}
 }
 
-func (r *Renderer_GL21) SetUniformFv(name string, values []float32) {
+func (r *Renderer_GLES) SetUniformFv(name string, values []float32) {
 	loc := r.spriteShader.u[name]
 	switch len(values) {
 	case 2:
@@ -1157,25 +1076,25 @@ func (r *Renderer_GL21) SetUniformFv(name string, values []float32) {
 	}
 }
 
-func (r *Renderer_GL21) SetUniformMatrix(name string, value []float32) {
+func (r *Renderer_GLES) SetUniformMatrix(name string, value []float32) {
 	loc := r.spriteShader.u[name]
 	gl.UniformMatrix4fv(loc, 1, false, &value[0])
 }
 
-func (r *Renderer_GL21) SetTexture(name string, tex Texture) {
-	t := tex.(*Texture_GL21)
+func (r *Renderer_GLES) SetTexture(name string, tex Texture) {
+	t := tex.(*Texture_GLES)
 	loc, unit := r.spriteShader.u[name], r.spriteShader.t[name]
 	gl.ActiveTexture((uint32(gl.TEXTURE0 + unit)))
 	gl.BindTexture(gl.TEXTURE_2D, t.handle)
 	gl.Uniform1i(loc, int32(unit))
 }
 
-func (r *Renderer_GL21) SetModelUniformI(name string, val int) {
+func (r *Renderer_GLES) SetModelUniformI(name string, val int) {
 	loc := r.modelShader.u[name]
 	gl.Uniform1i(loc, int32(val))
 }
 
-func (r *Renderer_GL21) SetModelUniformF(name string, values ...float32) {
+func (r *Renderer_GLES) SetModelUniformF(name string, values ...float32) {
 	loc := r.modelShader.u[name]
 	switch len(values) {
 	case 1:
@@ -1188,7 +1107,7 @@ func (r *Renderer_GL21) SetModelUniformF(name string, values ...float32) {
 		gl.Uniform4f(loc, values[0], values[1], values[2], values[3])
 	}
 }
-func (r *Renderer_GL21) SetModelUniformFv(name string, values []float32) {
+func (r *Renderer_GLES) SetModelUniformFv(name string, values []float32) {
 	loc := r.modelShader.u[name]
 	switch len(values) {
 	case 2:
@@ -1201,25 +1120,25 @@ func (r *Renderer_GL21) SetModelUniformFv(name string, values []float32) {
 		gl.Uniform4fv(loc, 2, &values[0])
 	}
 }
-func (r *Renderer_GL21) SetModelUniformMatrix(name string, value []float32) {
+func (r *Renderer_GLES) SetModelUniformMatrix(name string, value []float32) {
 	loc := r.modelShader.u[name]
 	gl.UniformMatrix4fv(loc, 1, false, &value[0])
 }
 
-func (r *Renderer_GL21) SetModelTexture(name string, tex Texture) {
-	t := tex.(*Texture_GL21)
+func (r *Renderer_GLES) SetModelTexture(name string, tex Texture) {
+	t := tex.(*Texture_GLES)
 	loc, unit := r.modelShader.u[name], r.modelShader.t[name]
 	gl.ActiveTexture((uint32(gl.TEXTURE0 + unit)))
 	gl.BindTexture(gl.TEXTURE_2D, t.handle)
 	gl.Uniform1i(loc, int32(unit))
 }
 
-func (r *Renderer_GL21) SetShadowMapUniformI(name string, val int) {
+func (r *Renderer_GLES) SetShadowMapUniformI(name string, val int) {
 	loc := r.shadowMapShader.u[name]
 	gl.Uniform1i(loc, int32(val))
 }
 
-func (r *Renderer_GL21) SetShadowMapUniformF(name string, values ...float32) {
+func (r *Renderer_GLES) SetShadowMapUniformF(name string, values ...float32) {
 	loc := r.shadowMapShader.u[name]
 	switch len(values) {
 	case 1:
@@ -1232,7 +1151,7 @@ func (r *Renderer_GL21) SetShadowMapUniformF(name string, values ...float32) {
 		gl.Uniform4f(loc, values[0], values[1], values[2], values[3])
 	}
 }
-func (r *Renderer_GL21) SetShadowMapUniformFv(name string, values []float32) {
+func (r *Renderer_GLES) SetShadowMapUniformFv(name string, values []float32) {
 	loc := r.shadowMapShader.u[name]
 	switch len(values) {
 	case 2:
@@ -1245,40 +1164,37 @@ func (r *Renderer_GL21) SetShadowMapUniformFv(name string, values []float32) {
 		gl.Uniform4fv(loc, 2, &values[0])
 	}
 }
-func (r *Renderer_GL21) SetShadowMapUniformMatrix(name string, value []float32) {
+func (r *Renderer_GLES) SetShadowMapUniformMatrix(name string, value []float32) {
 	loc := r.shadowMapShader.u[name]
 	gl.UniformMatrix4fv(loc, 1, false, &value[0])
 }
 
-func (r *Renderer_GL21) SetShadowMapTexture(name string, tex Texture) {
-	t := tex.(*Texture_GL21)
+func (r *Renderer_GLES) SetShadowMapTexture(name string, tex Texture) {
+	t := tex.(*Texture_GLES)
 	loc, unit := r.shadowMapShader.u[name], r.shadowMapShader.t[name]
 	gl.ActiveTexture((uint32(gl.TEXTURE0 + unit)))
 	gl.BindTexture(gl.TEXTURE_2D, t.handle)
 	gl.Uniform1i(loc, int32(unit))
 }
 
-func (r *Renderer_GL21) SetShadowFrameTexture(i uint32) {
-	//gl.FramebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, r.fbo_shadow_cube_texture[i], 0)
-	gl.FramebufferTextureLayer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, r.fbo_shadow_cube_texture[i], 0, 0)
-	gl.Clear(gl.DEPTH_BUFFER_BIT)
+func (r *Renderer_GLES) SetShadowFrameTexture(i uint32) {
+	//do nothing in GLES
 }
 
-func (r *Renderer_GL21) SetShadowFrameCubeTexture(i uint32) {
-	gl.FramebufferTextureEXT(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT_EXT, r.fbo_shadow_cube_texture[i], 0)
-	gl.Clear(gl.DEPTH_BUFFER_BIT)
+func (r *Renderer_GLES) SetShadowFrameCubeTexture(i uint32) {
+	//do nothing in GLES
 }
 
-func (r *Renderer_GL21) SetVertexData(values ...float32) {
+func (r *Renderer_GLES) SetVertexData(values ...float32) {
 	data := f32.Bytes(binary.LittleEndian, values...)
 	gl.BindBuffer(gl.ARRAY_BUFFER, r.vertexBuffer)
 	gl.BufferData(gl.ARRAY_BUFFER, len(data), unsafe.Pointer(&data[0]), gl.STATIC_DRAW)
 }
-func (r *Renderer_GL21) SetStageVertexData(values []byte) {
+func (r *Renderer_GLES) SetStageVertexData(values []byte) {
 	gl.BindBuffer(gl.ARRAY_BUFFER, r.stageVertexBuffer)
 	gl.BufferData(gl.ARRAY_BUFFER, len(values), unsafe.Pointer(&values[0]), gl.STATIC_DRAW)
 }
-func (r *Renderer_GL21) SetStageIndexData(values ...uint32) {
+func (r *Renderer_GLES) SetStageIndexData(values ...uint32) {
 	data := new(bytes.Buffer)
 	binary.Write(data, binary.LittleEndian, values)
 
@@ -1286,16 +1202,16 @@ func (r *Renderer_GL21) SetStageIndexData(values ...uint32) {
 	gl.BufferData(gl.ELEMENT_ARRAY_BUFFER, len(values)*4, unsafe.Pointer(&data.Bytes()[0]), gl.STATIC_DRAW)
 }
 
-func (r *Renderer_GL21) RenderQuad() {
+func (r *Renderer_GLES) RenderQuad() {
 	gl.DrawArrays(gl.TRIANGLE_STRIP, 0, 4)
 }
-func (r *Renderer_GL21) RenderElements(mode PrimitiveMode, count, offset int) {
+func (r *Renderer_GLES) RenderElements(mode PrimitiveMode, count, offset int) {
 	gl.DrawElementsWithOffset(r.MapPrimitiveMode(mode), int32(count), gl.UNSIGNED_INT, uintptr(offset))
 }
 
-func (r *Renderer_GL21) RenderCubeMap(envTex Texture, cubeTex Texture) {
-	envTexture := envTex.(*Texture_GL21)
-	cubeTexture := cubeTex.(*Texture_GL21)
+func (r *Renderer_GLES) RenderCubeMap(envTex Texture, cubeTex Texture) {
+	envTexture := envTex.(*Texture_GLES)
+	cubeTexture := cubeTex.(*Texture_GLES)
 	textureSize := cubeTexture.width
 	gl.BindFramebuffer(gl.FRAMEBUFFER, r.fbo_env)
 	gl.Viewport(0, 0, textureSize, textureSize)
@@ -1323,9 +1239,9 @@ func (r *Renderer_GL21) RenderCubeMap(envTex Texture, cubeTex Texture) {
 	gl.BindTexture(gl.TEXTURE_CUBE_MAP, cubeTexture.handle)
 	gl.GenerateMipmap(gl.TEXTURE_CUBE_MAP)
 }
-func (r *Renderer_GL21) RenderFilteredCubeMap(distribution int32, cubeTex Texture, filteredTex Texture, mipmapLevel, sampleCount int32, roughness float32) {
-	cubeTexture := cubeTex.(*Texture_GL21)
-	filteredTexture := filteredTex.(*Texture_GL21)
+func (r *Renderer_GLES) RenderFilteredCubeMap(distribution int32, cubeTex Texture, filteredTex Texture, mipmapLevel, sampleCount int32, roughness float32) {
+	cubeTexture := cubeTex.(*Texture_GLES)
+	filteredTexture := filteredTex.(*Texture_GLES)
 	textureSize := filteredTexture.width
 	currentTextureSize := textureSize >> mipmapLevel
 	gl.BindFramebuffer(gl.FRAMEBUFFER, r.fbo_env)
@@ -1364,9 +1280,9 @@ func (r *Renderer_GL21) RenderFilteredCubeMap(distribution int32, cubeTex Textur
 	}
 	gl.BindFramebuffer(gl.FRAMEBUFFER, r.fbo)
 }
-func (r *Renderer_GL21) RenderLUT(distribution int32, cubeTex Texture, lutTex Texture, sampleCount int32) {
-	cubeTexture := cubeTex.(*Texture_GL21)
-	lutTexture := lutTex.(*Texture_GL21)
+func (r *Renderer_GLES) RenderLUT(distribution int32, cubeTex Texture, lutTex Texture, sampleCount int32) {
+	cubeTexture := cubeTex.(*Texture_GLES)
+	lutTexture := lutTex.(*Texture_GLES)
 	textureSize := lutTexture.width
 	gl.BindFramebuffer(gl.FRAMEBUFFER, r.fbo_env)
 	gl.Viewport(0, 0, textureSize, textureSize)
@@ -1397,7 +1313,7 @@ func (r *Renderer_GL21) RenderLUT(distribution int32, cubeTex Texture, lutTex Te
 	gl.Uniform1i(loc, 1)
 
 	gl.BindTexture(gl.TEXTURE_2D, lutTexture.handle)
-	gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F_ARB, lutTexture.width, lutTexture.height, 0, gl.RGBA, gl.FLOAT, nil)
+	gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, lutTexture.width, lutTexture.height, 0, gl.RGBA, gl.FLOAT, nil)
 
 	gl.FramebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, lutTexture.handle, 0)
 	gl.Clear(gl.COLOR_BUFFER_BIT)

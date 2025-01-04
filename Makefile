@@ -75,3 +75,6 @@ appbundle:
 
 clean_appbundle:
 	rm -rf I.K.E.M.E.N-Go.app
+
+aarch64:
+	export CGO_ENABLED=1 && go build -tags="kmsdrm,gles2" -trimpath -ldflags="-s -w" -v -o ./bin/Ikemen_GO_aarch64 ./src

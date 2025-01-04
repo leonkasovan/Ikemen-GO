@@ -110,10 +110,12 @@ func main() {
 	defer sys.shutdown()
 
 	// Begin processing game using its lua scripts
+	no := 1
 	if err := sys.luaLState.DoFile(sys.cfg.Config.System); err != nil {
+		fmt.Printf("[%v]Error: %v\n", err, no)
 		// Display error logs.
 		errorLog := createLog("Ikemen.log")
-		defer closeLog(errorLog)
+		// defer closeLog(errorLog)
 		fmt.Fprintln(errorLog, err)
 		switch err.(type) {
 		case *lua.ApiError:
@@ -126,6 +128,8 @@ func main() {
 			ShowErrorDialog(fmt.Sprintf("%s\n\nError saved to Ikemen.log", err))
 			panic(err)
 		}
+		errorLog.Close()
+		no += 1
 	}
 }
 

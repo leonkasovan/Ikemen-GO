@@ -1,4 +1,4 @@
-//go:build !kinc
+//go:build !gles2
 
 // This is almost identical to render_gl.go except it uses a VAO
 // for GL 3.2 which is the minimum version that runs on modern
@@ -11,12 +11,12 @@ import (
 	_ "embed" // Support for go:embed resources
 	"encoding/binary"
 	"fmt"
+	"glfw"
 	"math"
 	"runtime"
 	"unsafe"
 
 	gl "github.com/go-gl/gl/v3.2-core/gl"
-	glfw "github.com/go-gl/glfw/v3.3/glfw"
 	mgl "github.com/go-gl/mathgl/mgl32"
 	"golang.org/x/mobile/exp/f32"
 )

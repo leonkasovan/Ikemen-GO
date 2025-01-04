@@ -43,17 +43,17 @@ COMPAT_VARYING vec4 lightSpacePos[4];
 
 mat4 getMatrixFromTexture(float index){
 	mat4 mat;
-	mat[0] = COMPAT_TEXTURE(jointMatrices,vec2(0.5/6.0,(index+0.5)/numJoints));
-	mat[1] = COMPAT_TEXTURE(jointMatrices,vec2(1.5/6.0,(index+0.5)/numJoints));
-	mat[2] = COMPAT_TEXTURE(jointMatrices,vec2(2.5/6.0,(index+0.5)/numJoints));
+	mat[0] = COMPAT_TEXTURE(jointMatrices,vec2(0.5/6.0,(index+0.5)/float(numJoints)));
+	mat[1] = COMPAT_TEXTURE(jointMatrices,vec2(1.5/6.0,(index+0.5)/float(numJoints)));
+	mat[2] = COMPAT_TEXTURE(jointMatrices,vec2(2.5/6.0,(index+0.5)/float(numJoints)));
 	mat[3] = vec4(0,0,0,1);
 	return transpose(mat);
 }
 mat4 getNormalMatrixFromTexture(float index){
 	mat4 mat;
-	mat[0] = COMPAT_TEXTURE(jointMatrices,vec2(3.5/6.0,(index+0.5)/numJoints));
-	mat[1] = COMPAT_TEXTURE(jointMatrices,vec2(4.5/6.0,(index+0.5)/numJoints));
-	mat[2] = COMPAT_TEXTURE(jointMatrices,vec2(5.5/6.0,(index+0.5)/numJoints));
+	mat[0] = COMPAT_TEXTURE(jointMatrices,vec2(3.5/6.0,(index+0.5)/float(numJoints)));
+	mat[1] = COMPAT_TEXTURE(jointMatrices,vec2(4.5/6.0,(index+0.5)/float(numJoints)));
+	mat[2] = COMPAT_TEXTURE(jointMatrices,vec2(5.5/6.0,(index+0.5)/float(numJoints)));
 	mat[3] = vec4(0,0,0,1);
 	return transpose(mat);
 }
@@ -93,25 +93,25 @@ void main(void) {
 	vec4 pos = vec4(position, 1.0);
 	normal = normalIn;
 	tangent = vec3(tangentIn);
-	if(morphTargetWeight[0][0] != 0){
+	if(morphTargetWeight[0][0] != 0.0){
 		for(int idx = 0; idx < numTargets; ++idx)
 		{
-			float i = idx*numVertices+vertexId;
-			vec2 xy = vec2((i+0.5)/morphTargetTextureDimension-floor(i/morphTargetTextureDimension),(floor(i/morphTargetTextureDimension)+0.5)/morphTargetTextureDimension);
-			if(idx < morphTargetOffset[0]){
+			float i = float(idx)*float(numVertices)+vertexId;
+			vec2 xy = vec2((i+0.5)/float(morphTargetTextureDimension)-floor(i/float(morphTargetTextureDimension)),(floor(i/float(morphTargetTextureDimension))+0.5)/float(morphTargetTextureDimension));
+			if(float(idx) < morphTargetOffset[0]){
 				pos += morphTargetWeight[idx/4][idx%4] * COMPAT_TEXTURE(morphTargetValues,xy);
-			}else if(idx < morphTargetOffset[1]){
+			}else if(float(idx) < morphTargetOffset[1]){
 				normal += morphTargetWeight[idx/4][idx%4] * vec3(COMPAT_TEXTURE(morphTargetValues,xy));
-			}else if(idx < morphTargetOffset[2]){
+			}else if(float(idx) < morphTargetOffset[2]){
 				tangent += morphTargetWeight[idx/4][idx%4] * vec3(COMPAT_TEXTURE(morphTargetValues,xy));
-			}else if(idx < morphTargetOffset[3]){
+			}else if(float(idx) < morphTargetOffset[3]){
 				texcoord += morphTargetWeight[idx/4][idx%4] * vec2(COMPAT_TEXTURE(morphTargetValues,xy));
 			}else{
 				vColor += morphTargetWeight[idx/4][idx%4] * COMPAT_TEXTURE(morphTargetValues,xy);
 			}
 		}
 	}
-	if(weights_0.x+weights_0.y+weights_0.z+weights_0.w+weights_1.x+weights_1.y+weights_1.z+weights_1.w > 0){
+	if(weights_0.x+weights_0.y+weights_0.z+weights_0.w+weights_1.x+weights_1.y+weights_1.z+weights_1.w > 0.0){
 		
 		mat4 jointMatrix = getJointMatrix();
 		mat3 jointNormalMatrix = getJointNormalMatrix();
@@ -129,9 +129,9 @@ void main(void) {
 		for(int i = 0;i < 4;i++){
 			lightSpacePos[i] = lightMatrices[i] * tmp2;
 		}
-		if(normal.x+normal.y+normal.z != 0){
+		if(normal.x+normal.y+normal.z != 0.0){
 			normal = normalize(mat3(normalMatrix) * normal);
-			if(tangent.x+tangent.y+tangent.z != 0){
+			if(tangent.x+tangent.y+tangent.z != 0.0){
 				tangent = normalize(vec3(model * vec4(tangent,0)));
 				bitangent = cross(normal, tangent) * tangentIn.w;
 			}

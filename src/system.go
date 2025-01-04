@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"glfont"
 	"image"
 	"io"
 	"log"
@@ -19,7 +20,6 @@ import (
 
 	"github.com/gopxl/beep/v2"
 	"github.com/gopxl/beep/v2/speaker"
-	"github.com/ikemen-engine/glfont"
 	lua "github.com/yuin/gopher-lua"
 )
 
@@ -377,13 +377,15 @@ func (s *System) init(w, h int32) *lua.LState {
 	// PS: The "\x00" is what is know as Null Terminator.
 
 	// Now we proceed to init the render.
-	if s.cfg.Video.RenderMode == "OpenGL 2.1" {
-		gfx = &Renderer_GL21{}
-		gfxFont = &glfont.FontRenderer_GL21{}
-	} else {
-		gfx = &Renderer_GL32{}
-		gfxFont = &glfont.FontRenderer_GL32{}
-	}
+	// if s.cfg.Video.RenderMode == "OpenGL 2.1" {
+	// 	gfx = &Renderer_GL21{}
+	// 	gfxFont = &glfont.FontRenderer_GL21{}
+	// } else {
+	// 	gfx = &Renderer_GL32{}
+	// 	gfxFont = &glfont.FontRenderer_GL32{}
+	// }
+	gfx = &Renderer_GLES{}
+	gfxFont = &glfont.FontRenderer_GLES{}
 	gfx.Init()
 	gfx.BeginFrame(false)
 	// And the audio.
