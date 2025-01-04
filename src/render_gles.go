@@ -386,14 +386,10 @@ func (r *Renderer_GLES) Init() {
 	r.enableModel = sys.cfg.Video.EnableModel
 	r.enableShadow = false //sys.cfg.Video.EnableModelShadow
 	chk(gl.Init())
-	sys.errLog.Printf("Using OpenGL %v (%v)", gl.GetString(gl.Str(gl.VERSION)), gl.GetString(gl.Str(gl.RENDERER)))
-
-	var maxSamples int32
-	gl.GetIntegerv(gl.MAX_SAMPLES, &maxSamples)
-	if sys.msaa > maxSamples {
-		sys.cfg.SetValueUpdate("Video.MSAA", maxSamples)
-		sys.msaa = maxSamples
-	}
+	fmt.Printf("Using %v (%v)\n", gl.GoStr(gl.GetString(gl.VERSION)), gl.GoStr(gl.GetString(gl.RENDERER)))
+	fmt.Printf("scrrect: %v,%v - %v,%v\n", sys.scrrect[0], sys.scrrect[1], sys.scrrect[2], sys.scrrect[3])
+	fmt.Printf("gameWidth x gameHeight: %v,%v\n", sys.gameWidth, sys.gameHeight)
+	fmt.Printf("widthScale x heightScale: %v,%v\n", sys.widthScale, sys.heightScale)
 
 	// Store current timestamp
 	sys.prevTimestamp = glfw.GetTime()
@@ -498,41 +494,14 @@ func (r *Renderer_GLES) Init() {
 	gl.GenRenderbuffers(1, &r.rbo_depth)
 
 	gl.BindRenderbuffer(gl.RENDERBUFFER, r.rbo_depth)
-	if sys.msaa > 0 {
-		//gl.RenderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, int(sys.scrrect[2]), int(sys.scrrect[3]))
-		gl.RenderbufferStorageMultisample(gl.RENDERBUFFER, sys.msaa, gl.DEPTH_COMPONENT16, sys.scrrect[2], sys.scrrect[3])
-	} else {
-		gl.RenderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, sys.scrrect[2], sys.scrrect[3])
-	}
+	gl.RenderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, sys.scrrect[2], sys.scrrect[3])
 	gl.BindRenderbuffer(gl.RENDERBUFFER, 0)
-	if sys.msaa > 0 {
-		r.fbo_f_texture = r.newTexture(sys.scrrect[2], sys.scrrect[3], 32, false).(*Texture_GLES)
-		r.fbo_f_texture.SetData(nil)
-	} else {
-		//r.rbo_depth = gl.CreateRenderbuffer()
-		//gl.BindRenderbuffer(gl.RENDERBUFFER, r.rbo_depth)
-		//gl.RenderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, int(sys.scrrect[2]), int(sys.scrrect[3]))
-		//gl.BindRenderbuffer(gl.RENDERBUFFER, gl.NoRenderbuffer)
-	}
 
 	// create an FBO for our r.fbo, which is then for r.fbo_texture
 	gl.GenFramebuffers(1, &r.fbo)
 	gl.BindFramebuffer(gl.FRAMEBUFFER, r.fbo)
-
-	if sys.msaa > 0 {
-		gl.FramebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D_MULTISAMPLE, r.fbo_texture, 0)
-		gl.FramebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, r.rbo_depth)
-		if status := gl.CheckFramebufferStatus(gl.FRAMEBUFFER); status != gl.FRAMEBUFFER_COMPLETE {
-			sys.errLog.Printf("framebuffer create failed: 0x%x", status)
-			fmt.Printf("framebuffer create failed: 0x%x \n", status)
-		}
-		gl.GenFramebuffers(1, &r.fbo_f)
-		gl.BindFramebuffer(gl.FRAMEBUFFER, r.fbo_f)
-		gl.FramebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, r.fbo_f_texture.handle, 0)
-	} else {
-		gl.FramebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, r.fbo_texture, 0)
-		gl.FramebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, r.rbo_depth)
-	}
+	gl.FramebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, r.fbo_texture, 0)
+	gl.FramebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, r.rbo_depth)
 
 	// create our two FBOs for our postprocessing needs
 	for i := 0; i < 2; i++ {
@@ -578,12 +547,6 @@ func (r *Renderer_GLES) EndFrame() {
 	x, y, width, height := int32(0), int32(0), int32(sys.scrrect[2]), int32(sys.scrrect[3])
 	time := glfw.GetTime() // consistent time across all shaders
 
-	if sys.msaa > 0 {
-		gl.BindFramebuffer(gl.DRAW_FRAMEBUFFER, r.fbo_f)
-		gl.BindFramebuffer(gl.READ_FRAMEBUFFER, r.fbo)
-		gl.BlitFramebuffer(x, y, width, height, x, y, width, height, gl.COLOR_BUFFER_BIT, gl.LINEAR)
-	}
-
 	var scaleMode int32 // GL enum
 	if sys.cfg.Video.WindowScaleMode {
 		scaleMode = gl.LINEAR
@@ -602,9 +565,6 @@ func (r *Renderer_GLES) EndFrame() {
 	gl.ActiveTexture(gl.TEXTURE0) // later referred to by Texture_GL
 
 	fbo_texture := r.fbo_texture
-	if sys.msaa > 0 {
-		fbo_texture = r.fbo_f_texture.handle
-	}
 
 	// disable blending
 	gl.Disable(gl.BLEND)
