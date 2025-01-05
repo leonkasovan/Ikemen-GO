@@ -1,6 +1,7 @@
 package main
 
 import (
+	"glfont"
 	"math"
 
 	mgl "github.com/go-gl/mathgl/mgl32"
@@ -8,6 +9,7 @@ import (
 
 // The global, platform-specific rendering backend
 var gfx = &Renderer{}
+var gfxFont glfont.FontRenderer
 
 // Blend constants
 type BlendFunc int

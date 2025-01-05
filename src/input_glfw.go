@@ -190,7 +190,7 @@ func (input *Input) IsJoystickPresent(joy int) bool {
 	if joy < 0 || joy >= len(input.joystick) {
 		return false
 	}
-	return input.joystick[joy].IsPresent()
+	return input.joystick[joy].Present()
 }
 
 func (input *Input) GetJoystickName(joy int) string {

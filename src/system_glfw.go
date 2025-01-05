@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"glfw"
 	"image"
-
-	gl "github.com/leonkasovan/gl-js"
 )
 
 type Window struct {
@@ -21,7 +19,7 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 	var monitor *glfw.Monitor
 
 	// Initialize OpenGL
-	chk(glfw.Init(gl.ContextWatcher))
+	chk(glfw.Init())
 
 	if monitor = glfw.GetPrimaryMonitor(); monitor == nil {
 		return nil, fmt.Errorf("failed to obtain primary monitor")
@@ -95,7 +93,7 @@ func (w *Window) GetSize() (int, int) {
 }
 
 func (w *Window) GetClipboardString() (string, error) {
-	return w.Window.GetClipboardString()
+	return w.Window.GetClipboardString(), nil
 }
 
 func (w *Window) toggleFullscreen() {

@@ -3,7 +3,6 @@
 package main
 
 import (
-	"glfont"
 	"io"
 	"os"
 
@@ -43,7 +42,7 @@ func LoadFntTtf(f *Fnt, fontfile string, filename string, height int32) {
 	} else {
 		f.Size[1] = uint16(height)
 	}
-	ttf, err := glfont.LoadFont(fileDir, height, int(sys.gameWidth), int(sys.gameHeight), sys.fontShaderVer)
+	ttf, err := gfxFont.LoadFont(fileDir, height, int(sys.gameWidth), int(sys.gameHeight))
 	if err != nil {
 		panic(err)
 	}
