@@ -380,130 +380,132 @@ func newSprite() *Sprite {
 	return &Sprite{palidx: -1}
 }
 
-/*func loadFromSff(filename string, g, n int16) (*Sprite, error) {
-	s := newSprite()
-	f, err := os.Open(filename)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { chk(f.Close()) }()
-	h := &SffHeader{}
-	var lofs, tofs uint32
-	if err := h.Read(f, &lofs, &tofs); err != nil {
-		return nil, err
-	}
-	var shofs, xofs, size uint32 = h.FirstSpriteHeaderOffset, 0, 0
-	var indexOfPrevious uint16
-	pl := &PaletteList{}
-	pl.init()
-	foo := func() error {
-		switch h.Ver0 {
-		case 1:
-			if err := s.readHeader(f, &xofs, &size, &indexOfPrevious); err != nil {
-				return err
-			}
-		case 2:
-			if err := s.readHeaderV2(f, &xofs, &size,
-				lofs, tofs, &indexOfPrevious); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-	var dummy *Sprite
-	var newSubHeaderOffset []uint32
-	newSubHeaderOffset = append(newSubHeaderOffset, shofs)
-	i := 0
-	for ; i < int(h.NumberOfSprites); i++ {
-		newSubHeaderOffset = append(newSubHeaderOffset, shofs)
-		f.Seek(int64(shofs), 0)
-		if err := foo(); err != nil {
+/*
+	func loadFromSff(filename string, g, n int16) (*Sprite, error) {
+		s := newSprite()
+		f, err := os.Open(filename)
+		if err != nil {
 			return nil, err
 		}
-		if s.palidx < 0 || s.Group == g && s.Number == n {
-			ip := len(newSubHeaderOffset)
-			for size == 0 {
-				if int(indexOfPrevious) >= ip {
-					return nil, Error("link is invalid")
-				}
-				ip = int(indexOfPrevious)
-				if h.Ver0 == 1 {
-					shofs = newSubHeaderOffset[ip]
-				} else {
-					shofs = h.FirstSpriteHeaderOffset + uint32(ip)*28
-				}
-				f.Seek(int64(shofs), 0)
-				if err := foo(); err != nil {
-					return nil, err
-				}
-			}
+		defer func() { chk(f.Close()) }()
+		h := &SffHeader{}
+		var lofs, tofs uint32
+		if err := h.Read(f, &lofs, &tofs); err != nil {
+			return nil, err
+		}
+		var shofs, xofs, size uint32 = h.FirstSpriteHeaderOffset, 0, 0
+		var indexOfPrevious uint16
+		pl := &PaletteList{}
+		pl.init()
+		foo := func() error {
 			switch h.Ver0 {
 			case 1:
-				if err := s.read(f, h, int64(shofs+32), size, xofs, dummy,
-					pl, false); err != nil {
-					return nil, err
+				if err := s.readHeader(f, &xofs, &size, &indexOfPrevious); err != nil {
+					return err
 				}
 			case 2:
-				if err := s.readV2(f, int64(xofs), size); err != nil {
+				if err := s.readHeaderV2(f, &xofs, &size,
+					lofs, tofs, &indexOfPrevious); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+		var dummy *Sprite
+		var newSubHeaderOffset []uint32
+		newSubHeaderOffset = append(newSubHeaderOffset, shofs)
+		i := 0
+		for ; i < int(h.NumberOfSprites); i++ {
+			newSubHeaderOffset = append(newSubHeaderOffset, shofs)
+			f.Seek(int64(shofs), 0)
+			if err := foo(); err != nil {
+				return nil, err
+			}
+			if s.palidx < 0 || s.Group == g && s.Number == n {
+				ip := len(newSubHeaderOffset)
+				for size == 0 {
+					if int(indexOfPrevious) >= ip {
+						return nil, Error("link is invalid")
+					}
+					ip = int(indexOfPrevious)
+					if h.Ver0 == 1 {
+						shofs = newSubHeaderOffset[ip]
+					} else {
+						shofs = h.FirstSpriteHeaderOffset + uint32(ip)*28
+					}
+					f.Seek(int64(shofs), 0)
+					if err := foo(); err != nil {
+						return nil, err
+					}
+				}
+				switch h.Ver0 {
+				case 1:
+					if err := s.read(f, h, int64(shofs+32), size, xofs, dummy,
+						pl, false); err != nil {
+						return nil, err
+					}
+				case 2:
+					if err := s.readV2(f, int64(xofs), size); err != nil {
+						return nil, err
+					}
+				}
+				if s.Group == g && s.Number == n {
+					break
+				}
+				dummy = &Sprite{palidx: s.palidx}
+			}
+			if h.Ver0 == 1 {
+				shofs = xofs
+			} else {
+				shofs += 28
+			}
+		}
+		if i == int(h.NumberOfSprites) {
+			return nil, Error(fmt.Sprintf("Sprite not found: %v, %v", g, n))
+		}
+		if h.Ver0 == 1 {
+			s.Pal = pl.Get(s.palidx)
+			s.palidx = -1
+			return s, nil
+		}
+		if s.rle > -11 {
+			read := func(x interface{}) error {
+				return binary.Read(f, binary.LittleEndian, x)
+			}
+			size = 0
+			indexOfPrevious = uint16(s.palidx)
+			ip := indexOfPrevious + 1
+			for size == 0 && ip != indexOfPrevious {
+				ip = indexOfPrevious
+				shofs = h.FirstPaletteHeaderOffset + uint32(ip)*16
+				f.Seek(int64(shofs)+6, 0)
+				if err := read(&indexOfPrevious); err != nil {
+					return nil, err
+				}
+				if err := read(&xofs); err != nil {
+					return nil, err
+				}
+				if err := read(&size); err != nil {
 					return nil, err
 				}
 			}
-			if s.Group == g && s.Number == n {
-				break
+			f.Seek(int64(lofs+xofs), 0)
+			s.Pal = make([]uint32, 256)
+			var rgba [4]byte
+			for i := 0; i < int(size)/4 && i < len(s.Pal); i++ {
+				if err := read(rgba[:]); err != nil {
+					return nil, err
+				}
+				if h.Ver2 == 0 {
+					rgba[3] = 255
+				}
+				s.Pal[i] = uint32(rgba[3])<<24 | uint32(rgba[2])<<16 | uint32(rgba[1])<<8 | uint32(rgba[0])
 			}
-			dummy = &Sprite{palidx: s.palidx}
+			s.palidx = -1
 		}
-		if h.Ver0 == 1 {
-			shofs = xofs
-		} else {
-			shofs += 28
-		}
-	}
-	if i == int(h.NumberOfSprites) {
-		return nil, Error(fmt.Sprintf("Sprite not found: %v, %v", g, n))
-	}
-	if h.Ver0 == 1 {
-		s.Pal = pl.Get(s.palidx)
-		s.palidx = -1
 		return s, nil
 	}
-	if s.rle > -11 {
-		read := func(x interface{}) error {
-			return binary.Read(f, binary.LittleEndian, x)
-		}
-		size = 0
-		indexOfPrevious = uint16(s.palidx)
-		ip := indexOfPrevious + 1
-		for size == 0 && ip != indexOfPrevious {
-			ip = indexOfPrevious
-			shofs = h.FirstPaletteHeaderOffset + uint32(ip)*16
-			f.Seek(int64(shofs)+6, 0)
-			if err := read(&indexOfPrevious); err != nil {
-				return nil, err
-			}
-			if err := read(&xofs); err != nil {
-				return nil, err
-			}
-			if err := read(&size); err != nil {
-				return nil, err
-			}
-		}
-		f.Seek(int64(lofs+xofs), 0)
-		s.Pal = make([]uint32, 256)
-		var rgba [4]byte
-		for i := 0; i < int(size)/4 && i < len(s.Pal); i++ {
-			if err := read(rgba[:]); err != nil {
-				return nil, err
-			}
-			if h.Ver2 == 0 {
-				rgba[3] = 255
-			}
-			s.Pal[i] = uint32(rgba[3])<<24 | uint32(rgba[2])<<16 | uint32(rgba[1])<<8 | uint32(rgba[0])
-		}
-		s.palidx = -1
-	}
-	return s, nil
-}*/
+*/
 func (s *Sprite) shareCopy(src *Sprite) {
 	s.Pal = src.Pal
 	s.Tex = src.Tex
@@ -547,8 +549,8 @@ func (s *Sprite) SetPxl(px []byte) {
 		)
 		gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
 		gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
-		gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP)
-		gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP)
+		gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_BORDER_EXT)
+		gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_BORDER_EXT)
 		gl.Disable(gl.TEXTURE_2D)
 	}
 }
@@ -1009,10 +1011,10 @@ func (s *Sprite) glDraw(pal []uint32, mask int32, x, y float32, tile *[4]int32,
 		//読み込み済みパレットの情報が渡されてるか //Is the loaded palette information passed?
 		if paltex != nil {
 			gl.ActiveTexture(gl.TEXTURE1)
-			gl.BindTexture(gl.TEXTURE_1D, uint32(*paltex))
+			gl.BindTexture(gl.TEXTURE_2D, uint32(*paltex))
 			RenderMugenPal(*s.Tex, mask, s.Size, x, y, tile, xts, xbs, ys, 1,
 				rxadd, agl, yagl, xagl, trans, window, rcx, rcy, neg, color, &padd, &pmul, projectionMode, fLength, xOffset, yOffset)
-			gl.Disable(gl.TEXTURE_1D)
+			gl.Disable(gl.TEXTURE_2D)
 			return
 		}
 		//無い場合暫定の方法でパレットテクスチャ生成 / If not, generate palette texture by provisional method
@@ -1032,25 +1034,25 @@ func (s *Sprite) glDraw(pal []uint32, mask int32, x, y float32, tile *[4]int32,
 				return
 			}
 			gl.ActiveTexture(gl.TEXTURE1)
-			gl.BindTexture(gl.TEXTURE_1D, uint32(*s.PalTex))
+			gl.BindTexture(gl.TEXTURE_2D, uint32(*s.PalTex))
 			RenderMugenPal(*s.Tex, mask, s.Size, x, y, tile, xts, xbs, ys, 1,
 				rxadd, agl, yagl, xagl, trans, window, rcx, rcy, neg, color, &padd, &pmul, projectionMode, fLength, xOffset, yOffset)
-			gl.Disable(gl.TEXTURE_1D)
+			gl.Disable(gl.TEXTURE_2D)
 		} else {
-			gl.Enable(gl.TEXTURE_1D)
+			gl.Enable(gl.TEXTURE_2D)
 			gl.ActiveTexture(gl.TEXTURE1)
 			s.PalTex = newTexture()
-			gl.BindTexture(gl.TEXTURE_1D, uint32(*s.PalTex))
+			gl.BindTexture(gl.TEXTURE_2D, uint32(*s.PalTex))
 			gl.PixelStorei(gl.UNPACK_ALIGNMENT, 1)
-			gl.TexImage1D(gl.TEXTURE_1D, 0, gl.RGBA, 256, 0, gl.RGBA, gl.UNSIGNED_BYTE,
+			gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE,
 				unsafe.Pointer(&pal[0]))
-			gl.TexParameteri(gl.TEXTURE_1D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
-			gl.TexParameteri(gl.TEXTURE_1D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+			gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+			gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
 			tmp := append([]uint32{}, pal...)
 			s.paltemp = tmp
 			RenderMugenPal(*s.Tex, mask, s.Size, x, y, tile, xts, xbs, ys, 1,
 				rxadd, agl, yagl, xagl, trans, window, rcx, rcy, neg, color, &padd, &pmul, projectionMode, fLength, xOffset, yOffset)
-			gl.Disable(gl.TEXTURE_1D)
+			gl.Disable(gl.TEXTURE_2D)
 		}
 	}
 }

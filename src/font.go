@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	findfont "github.com/flopp/go-findfont"
-	"github.com/ikemen-engine/glfont"
+	"github.com/leonkasovan/glfont"
 )
 
 // FntCharImage stores sprite and position
@@ -410,7 +410,7 @@ func loadFntSff(f *Fnt, fontfile string, filename string) {
 	}
 }
 
-//CharWidth returns the width that has a specified character
+// CharWidth returns the width that has a specified character
 func (f *Fnt) CharWidth(c rune, bt int32) int32 {
 	if c == ' ' {
 		return int32(f.Size[0])
@@ -422,8 +422,8 @@ func (f *Fnt) CharWidth(c rune, bt int32) int32 {
 	return int32(fci.w)
 }
 
-//TextWidth returns the width that has a specified text.
-//This depends on each char's width and font spacing
+// TextWidth returns the width that has a specified text.
+// This depends on each char's width and font spacing
 func (f *Fnt) TextWidth(txt string, bank int32) (w int32) {
 	if f.BankType != "sprite" {
 		bank = 0
@@ -463,7 +463,7 @@ func (f *Fnt) drawChar(
 	x, y,
 	xscl, yscl float32,
 	bank, bt int32,
-	c rune, pal []uint32, 
+	c rune, pal []uint32,
 	window *[4]int32,
 	palfx *PalFX,
 ) float32 {
@@ -495,7 +495,7 @@ func (f *Fnt) drawChar(
 		sys.brightness*255>>8|1<<9,
 		window, 0, 0,
 		nil, f.paltex,
-		0, 0, -xscl * float32(spr.Offset[0]), -yscl*float32(spr.Offset[1]),
+		0, 0, -xscl*float32(spr.Offset[0]), -yscl*float32(spr.Offset[1]),
 	)
 	if f.paltex == nil {
 		f.paltex = spr.PalTex
@@ -514,7 +514,7 @@ func (f *Fnt) Print(txt string, x, y, xscl, yscl float32, bank, align int32,
 	}
 }
 
-//DrawText prints on screen a specified text with the current font sprites
+// DrawText prints on screen a specified text with the current font sprites
 func (f *Fnt) DrawText(txt string, x, y, xscl, yscl float32, bank, align int32,
 	window *[4]int32, palfx *PalFX) {
 

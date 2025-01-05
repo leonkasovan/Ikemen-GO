@@ -135,7 +135,7 @@ func RenderInit() {
 		return
 	}
 	link := func(v, f uintptr) (program uintptr) {
-		program = gl.CreateProgramObjectARB()
+		program = gl.CreateProgram()
 		gl.AttachObjectARB(program, v)
 		gl.AttachObjectARB(program, f)
 		gl.LinkProgramARB(program)
@@ -649,20 +649,20 @@ func RenderMugenPal(tex Texture, mask int32, size [2]uint16,
 func RenderMugen(tex Texture, pal []uint32, mask int32, size [2]uint16,
 	x, y float32, tile *[4]int32, xts, xbs, ys, vs, rxadd, agl, yagl, xagl float32,
 	trans int32, window *[4]int32, rcx, rcy float32, projectionMode int32, fLength, xOffset, yOffset float32) {
-	gl.Enable(gl.TEXTURE_1D)
+	gl.Enable(gl.TEXTURE_2D)
 	gl.ActiveTexture(gl.TEXTURE1)
 	var paltex uint32
 	gl.GenTextures(1, &paltex)
-	gl.BindTexture(gl.TEXTURE_1D, paltex)
+	gl.BindTexture(gl.TEXTURE_2D, paltex)
 	gl.PixelStorei(gl.UNPACK_ALIGNMENT, 1)
-	gl.TexImage1D(gl.TEXTURE_1D, 0, gl.RGBA, 256, 0, gl.RGBA, gl.UNSIGNED_BYTE,
+	gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE,
 		unsafe.Pointer(&pal[0]))
-	gl.TexParameteri(gl.TEXTURE_1D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
-	gl.TexParameteri(gl.TEXTURE_1D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
 	RenderMugenPal(tex, mask, size, x, y, tile, xts, xbs, ys, vs, rxadd,
 		agl, yagl, xagl, trans, window, rcx, rcy, false, 1, &[3]float32{0, 0, 0}, &[3]float32{1, 1, 1}, projectionMode, fLength, xOffset, yOffset)
 	gl.DeleteTextures(1, &paltex)
-	gl.Disable(gl.TEXTURE_1D)
+	gl.Disable(gl.TEXTURE_2D)
 }
 
 func RenderMugenFc(tex Texture, size [2]uint16, x, y float32,

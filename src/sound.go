@@ -6,51 +6,19 @@ import (
 	"math"
 	"os"
 
-	"github.com/ikemen-engine/go-openal/openal"
+	"github.com/gopxl/beep/v2"
+	"github.com/gopxl/beep/v2/effects"
 
-	"github.com/faiface/beep"
-	"github.com/faiface/beep/effects"
-
-	"github.com/faiface/beep/mp3"
-	"github.com/faiface/beep/speaker"
-	"github.com/faiface/beep/vorbis"
-	"github.com/faiface/beep/wav"
+	"github.com/gopxl/beep/v2/mp3"
+	"github.com/gopxl/beep/v2/speaker"
+	"github.com/gopxl/beep/v2/vorbis"
+	"github.com/gopxl/beep/v2/wav"
 )
 
 const (
 	audioOutLen    = 2048
 	audioFrequency = 48000
 )
-
-// ------------------------------------------------------------------
-// Audio Source
-
-// AudioSource structure.
-// It contains OpenAl's sound destination and buffer
-type AudioSource struct {
-	Src  openal.Source
-	bufs openal.Buffers
-}
-
-func NewAudioSource() (s *AudioSource) {
-	s = &AudioSource{Src: openal.NewSource(), bufs: openal.NewBuffers(2)}
-	for i := range s.bufs {
-		s.bufs[i].SetDataInt16(openal.FormatStereo16, sys.nullSndBuf[:],
-			audioFrequency)
-	}
-	s.Src.QueueBuffers(s.bufs)
-	if err := openal.Err(); err != nil {
-		println(err.Error())
-	}
-	return
-}
-func (s *AudioSource) Delete() {
-	for s.Src.BuffersQueued() > 0 {
-		s.Src.UnqueueBuffer()
-	}
-	s.bufs.Delete()
-	s.Src.Delete()
-}
 
 // ------------------------------------------------------------------
 // Mixer
@@ -235,11 +203,11 @@ func (n *NormalizerLR) process(bai float64, sam *float32) float64 {
 // Bgm
 
 type Bgm struct {
-	filename            string
-	bgmVolume           int
-	bgmLoopStart        int
-	bgmLoopEnd          int
-	loop                int
+	filename     string
+	bgmVolume    int
+	bgmLoopStart int
+	bgmLoopEnd   int
+	loop         int
 	// TODO: Use this.
 	//sampleRate          beep.SampleRate
 	streamer  beep.StreamSeekCloser
@@ -260,7 +228,7 @@ func (bgm *Bgm) Open(filename string, loop, bgmVolume, bgmLoopStart, bgmLoopEnd 
 	bgm.bgmLoopStart = bgmLoopStart
 	bgm.bgmLoopEnd = bgmLoopEnd
 	speaker.Clear()
-	
+
 	// TODO: Throw a degbug warning if this triggers
 	if bgmVolume > sys.maxBgmVolume {
 		bgmVolume = sys.maxBgmVolume

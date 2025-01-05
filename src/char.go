@@ -1162,7 +1162,7 @@ func (e *Explod) update(oldVer bool, playerNo int) {
 		screen, playerNo == sys.superplayer, oldVer, e.facing, 1, int32(e.projection), fLength},
 		e.shadow[0]<<16|e.shadow[1]&0xff<<8|e.shadow[0]&0xff, sdwalp, 0, 0)
 	if sys.tickNextFrame() {
-    if e.bindtime > 0 {
+		if e.bindtime > 0 {
 			e.bindtime--
 		}
 		//if screen && e.bindtime == 0 {
@@ -1183,7 +1183,7 @@ func (e *Explod) update(oldVer bool, playerNo int) {
 		//		}
 		//	}
 		//}
-		if act {		
+		if act {
 			if e.palfx != nil && e.ownpal {
 				e.palfx.step()
 			}
@@ -2293,15 +2293,15 @@ func (c *Char) loadPallet() {
 					c.gi().palExist[i] = true
 
 					//パレットテクスチャ生成
-					gl.Enable(gl.TEXTURE_1D)
+					gl.Enable(gl.TEXTURE_2D)
 					c.gi().sff.palList.PalTex[i] = newTexture()
-					gl.BindTexture(gl.TEXTURE_1D, uint32(*c.gi().sff.palList.PalTex[i]))
+					gl.BindTexture(gl.TEXTURE_2D, uint32(*c.gi().sff.palList.PalTex[i]))
 					gl.PixelStorei(gl.UNPACK_ALIGNMENT, 1)
-					gl.TexImage1D(gl.TEXTURE_1D, 0, gl.RGBA, 256, 0, gl.RGBA, gl.UNSIGNED_BYTE,
+					gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE,
 						unsafe.Pointer(&pl[0]))
-					gl.TexParameteri(gl.TEXTURE_1D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
-					gl.TexParameteri(gl.TEXTURE_1D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
-					gl.Disable(gl.TEXTURE_1D)
+					gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+					gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+					gl.Disable(gl.TEXTURE_2D)
 
 					tmp = i + 1
 				}
@@ -2959,7 +2959,7 @@ func (c *Char) roundState() int32 {
 		return 1
 	case sys.intro >= 0 || sys.finish == FT_NotYet:
 		return 2
-	case sys.intro < -(sys.lifebar.ro.over_hittime+
+	case sys.intro < -(sys.lifebar.ro.over_hittime +
 		sys.lifebar.ro.over_waittime):
 		return 4
 	default:

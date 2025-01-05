@@ -36,3 +36,6 @@ Ikemen_GO_Linux: ${srcFiles}
 	
 Ikemen_GO_MacOS: ${srcFiles}
 	cd ./build && bash ./build.sh MacOS
+
+aarch64: ${srcFiles}
+	export CGO_ENABLED=1 && go build -tags="kmsdrm,gles2,linux,arm64" -trimpath -ldflags="-s -w" -v -o ./bin/Ikemen_GO_aarch64 ./src
