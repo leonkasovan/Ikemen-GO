@@ -1,13 +1,11 @@
-//go:build !kinc
-
 package main
 
 import (
 	"fmt"
+	"glfw"
 	"image"
 
-	gl "github.com/fyne-io/gl-js"
-	glfw "github.com/fyne-io/glfw-js"
+	gl "github.com/leonkasovan/gl-js"
 )
 
 type Window struct {

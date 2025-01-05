@@ -9,7 +9,7 @@ import (
 	"runtime"
 	"strings"
 
-	gl "github.com/fyne-io/gl-js"
+	gl "github.com/leonkasovan/gl-js"
 	"golang.org/x/mobile/exp/f32"
 )
 

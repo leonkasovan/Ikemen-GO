@@ -1,9 +1,7 @@
-//go:build !kinc
-
 package main
 
 import (
-	glfw "github.com/fyne-io/glfw-js"
+	"glfw"
 )
 
 type Input struct {
