@@ -12,7 +12,7 @@ import (
 	"runtime"
 	"unsafe"
 
-	"github.com/go-gl/gl/v2.1/gl"
+	gl "github.com/leonkasovan/gl/v3.1/gles2"
 )
 
 type TransType int32

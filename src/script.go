@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"glfw"
 	"math"
 	"math/rand"
 	"os"
@@ -11,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-gl/glfw/v3.3/glfw"
 	lua "github.com/yuin/gopher-lua"
 )
 
@@ -3231,7 +3231,7 @@ func triggerFunctions(l *lua.LState) {
 		if n <= 2 {
 			l.Push(lua.LString(sys.debugWC.name))
 		} else if ^n&1+1 == 1 {
-			if p := sys.debugWC.partner(n/2 - 1, false); p != nil {
+			if p := sys.debugWC.partner(n/2-1, false); p != nil {
 				l.Push(lua.LString(p.name))
 			} else {
 				l.Push(lua.LString(""))

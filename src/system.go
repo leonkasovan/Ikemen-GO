@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"glfw"
 	"image"
 	"io"
 	"io/ioutil"
@@ -18,10 +19,8 @@ import (
 
 	"github.com/faiface/beep"
 	"github.com/faiface/beep/speaker"
-	"github.com/go-gl/gl/v2.1/gl"
-	"github.com/go-gl/glfw/v3.3/glfw"
 	"github.com/ikemen-engine/go-openal/openal"
-	"github.com/sqweek/dialog"
+	gl "github.com/leonkasovan/gl/v3.1/gles2"
 	lua "github.com/yuin/gopher-lua"
 )
 
@@ -370,25 +369,25 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 	var err error
 	var window *glfw.Window
 	var monitor *glfw.Monitor
-	
+
 	if monitor = glfw.GetPrimaryMonitor(); monitor == nil {
 		return nil, fmt.Errorf("failed to obtain primary monitor")
 	}
 
 	var mode = monitor.GetVideoMode()
-	var x, y = (mode.Width-w)/2, (mode.Height-h)/2
+	var x, y = (mode.Width - w) / 2, (mode.Height - h) / 2
 
 	// Create main window.
 	// NOTE: Borderless fullscreen is in reality just a window without borders.
-	if s.fullscreen && !s.borderless  {
+	if s.fullscreen && !s.borderless {
 		window, err = glfw.CreateWindow(w, h, s.windowTitle, monitor, nil)
 	} else {
-		window, err = glfw.CreateWindow(w, h, s.windowTitle, nil, nil);
+		window, err = glfw.CreateWindow(w, h, s.windowTitle, nil, nil)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to create window: %w", err)
 	}
-	
+
 	// Set windows atributes
 	if s.fullscreen {
 		window.SetPos(0, 0)
@@ -522,7 +521,7 @@ func (s *System) init(w, h int32) *lua.LState {
 			f[i], err = os.Open(iconLocation)
 			if err != nil {
 				var dErr = "Icon file can not be found.\nPanic: " + err.Error()
-				dialog.Message(dErr).Title("I.K.E.M.E.N Error").Error()
+				print("I.K.E.M.E.N Error\n\n" + dErr)
 				panic(Error(dErr))
 			}
 			s.windowMainIcon[i], _, err = image.Decode(f[i])
@@ -895,7 +894,7 @@ func (s *System) playerClear(pn int, destroy bool) {
 		} else {
 			for i, ch := range p.children {
 				if ch != nil {
-					if (ch.preserve == 0 || (s.roundResetFlg && ch.preserve == s.round)) {
+					if ch.preserve == 0 || (s.roundResetFlg && ch.preserve == s.round) {
 						p.children[i] = nil
 					}
 				}
