@@ -24,6 +24,14 @@ srcFiles=src/anim.go \
 	src/util_desktop.go \
 	src/util_js.go
 
+# Generic aarch64 target (with cache build, faster, compile only what changed)
+aarch64:
+	export CGO_ENABLED=1 && go build -tags=linux,arm64,kmsdrm,gles2 -trimpath -v -trimpath -ldflags "-s -w" -o ./bin/ikemengo.0.99.0 ./src
+
+# Generic aarch64 target (with no cache build, slower, compile everything)
+aarch64_no_cache:	
+	export CGO_ENABLED=1 && go build -tags=linux,arm64,kmsdrm,gles2 -trimpath -a -v -trimpath -ldflags "-s -w" -o ./bin/ikemengo.0.99.0 ./src
+
 # Windows 64-bit target
 Ikemen_GO.exe: ${srcFiles}
 	cd ./build && bash ./build.sh Win64
@@ -39,6 +47,3 @@ Ikemen_GO_Linux: ${srcFiles}
 # MacOS x64 target
 Ikemen_GO_MacOS: ${srcFiles}
 	cd ./build && bash ./build.sh MacOS
-
-aarch64:
-	export CGO_ENABLED=1 && go build -tags=linux,arm64,kmsdrm,gles2 -trimpath -v -trimpath -ldflags "-s -w" -o ./bin/Ikemen_GO_aarch64 ./src
