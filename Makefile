@@ -78,3 +78,6 @@ clean_appbundle:
 
 aarch64:
 	export CGO_ENABLED=1 && go build -tags="kmsdrm,gles2" -trimpath -ldflags="-s -w" -v -o ./bin/Ikemen_GO_aarch64 ./src
+
+steamdeck:
+	export CGO_ENABLED=1 && go build -tags="x11" -trimpath -ldflags="-s -w" -v -o ./bin/Ikemen_GO_steamdeck ./src
