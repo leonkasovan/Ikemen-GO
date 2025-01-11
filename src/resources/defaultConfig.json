@@ -44,7 +44,7 @@
   "Difficulty": 5,
   "EscOpensMenu": true,
   "ExternalShaders": [],
-  "FirstRun": true,
+  "FirstRun": false,
   "FontShaderVer": 120,
   "ForceStageZoomin": 0,
   "ForceStageZoomout": 0,
