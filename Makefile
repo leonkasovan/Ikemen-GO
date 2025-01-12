@@ -33,9 +33,12 @@ Ikemen_GO_86.exe: ${srcFiles}
 	cd ./build && bash ./build.sh Win32
 
 # Linux target
-Ikemen_GO_Linux: ${srcFiles}
+Ikemen_GO_Linux: ${srcFiles} src/assets.zip
 	cd ./build && ./build.sh Linux
 
 # MacOS x64 target
 Ikemen_GO_MacOS: ${srcFiles}
 	cd ./build && bash ./build.sh MacOS
+
+src/assets.zip: data/* external/* font/*
+	zip -r src/assets.zip data external font
