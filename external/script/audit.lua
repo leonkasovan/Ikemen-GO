@@ -321,12 +321,12 @@ for line in content:gmatch('[^\r\n]+') do
 			-- table.insert(main.t_selGrid, {['chars'] = {}, ['slot'] = 1})
 			-- slot = true
 		elseif slot and lineCase:match('^%s*}%s*$') then --end of 'multiple chars in one slot' assignment
-			print("309", lineCase)
+			-- print("309", lineCase)
 			-- slot = false
 			-- csCell = csCell + 1
 		else
 			-- print("313", line)
-			if line ~= "randomselect" and line ~= "blank" and line ~= "}" and line ~= "empty" then
+			if line:lower() ~= "randomselect" and line:lower() ~= "blank" and line ~= "}" and line:lower() ~= "empty" then
 				local char_found
 				local c = f_strsplit(',', line)
 				local stripped_ch = c[1]:match("^%s*(.-)%s*$")
@@ -368,7 +368,7 @@ for line in content:gmatch('[^\r\n]+') do
 				-- table.insert(main.t_includeStage[1], row)
 				-- table.insert(main.t_includeStage[2], row)
 			elseif c:match('^music') then --musicX / musiclife / musicvictory
-				print("extrastages2", c)
+-- 				print("extrastages2", c)
 				-- local bgmvolume, bgmloopstart, bgmloopend = 100, 0, 0
 				-- c = c:gsub('%s+([0-9%s]+)$', function(m1)
 					-- for i, c in ipairs(main.f_strsplit('%s+', m1)) do --split using whitespace delimiter
@@ -395,7 +395,7 @@ for line in content:gmatch('[^\r\n]+') do
 				-- end
 				-- table.insert(t_ref, {bgmusic = bgmusic, bgmvolume = bgmvolume, bgmloopstart = bgmloopstart, bgmloopend = bgmloopend})
 			else
-				print("extrastages3", c)
+-- 				print("extrastages3", c)
 				local param, value = c:match('^(.-)%s*=%s*(.-)$')
 				if param ~= nil and value ~= nil and param ~= '' and value ~= '' then
 					-- main.t_selStages[row][param] = tonumber(value)
@@ -406,7 +406,7 @@ for line in content:gmatch('[^\r\n]+') do
 						-- end
 						-- table.insert(main.t_orderStages[main.t_selStages[row].order], row)
 					-- end
-					print("extrastages3 param, value", param, value)
+-- 					print("extrastages3 param, value", param, value)
 				end
 			end
 			--default order
@@ -525,8 +525,8 @@ for index, stage in ipairs(stages_selection) do
 				if param ~= nil and value ~= nil then --param = value pattern matched
 					value = value:gsub('"', '') --remove brackets from value
 					stageDir = stage:match(".*"..sep)
-					if param == "spr" or param == "model" or param == "bgMusic" then
-						f_checkFile(value, "\t"..param, {stageDir, "stages"..sep, "data"..sep})
+					if param:lower() == "spr" or param:lower() == "model" or param:lower() == "bgmusic" then
+						f_checkFile(value, "\t"..param, {stageDir, "stages"..sep, "data"..sep, "sound"..sep})
 					end
 				end
 			end

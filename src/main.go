@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -485,7 +484,7 @@ func main() {
 	os.Mkdir("save/replays", os.ModeSticky|0755)
 
 	// Try reading stats
-	if _, err := ioutil.ReadFile("save/stats.json"); err != nil {
+	if _, err := os.ReadFile("save/stats.json"); err != nil {
 		// If there was an error reading, write an empty json file
 		f, err := os.Create("save/stats.json")
 		chk(err)
@@ -712,6 +711,37 @@ type configSettings struct {
 //go:embed resources/defaultConfig.json
 var defaultConfig []byte
 
+func renameFilesToLowerCase(root string) error {
+	// Walk through the directory recursively
+	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Skip directories
+		if info.IsDir() {
+			return nil
+		}
+
+		// Get the directory and the lowercase file name
+		dir := filepath.Dir(path)
+		lowercaseName := strings.ToLower(info.Name())
+
+		// Check if renaming is needed
+		if info.Name() != lowercaseName {
+			newPath := filepath.Join(dir, lowercaseName)
+
+			// Rename the file
+			err := os.Rename(path, newPath)
+			if err != nil {
+				return fmt.Errorf("failed to rename %s to %s: %w", path, newPath, err)
+			}
+			fmt.Printf("Renamed: %s -> %s\n", path, newPath)
+		}
+		return nil
+	})
+}
+
 // Sets default config settings, then attemps to load existing config from disk
 func setupConfig(is_mugen_game bool) configSettings {
 	// Unmarshal default config string into a struct
@@ -814,7 +844,7 @@ func setupConfig(is_mugen_game bool) configSettings {
 	}
 	// Save config file, indent with two spaces to match calls to json.encode() in the Lua code
 	cfg, _ := json.MarshalIndent(tmp, "", "  ")
-	chk(ioutil.WriteFile(cfgPath, cfg, 0644))
+	chk(os.WriteFile(cfgPath, cfg, 0644))
 
 	// Set each config property to the system object
 	sys.afterImageMax = tmp.MaxAfterImage
@@ -954,7 +984,7 @@ func setupConfig(is_mugen_game bool) configSettings {
 		os.Exit(0)
 	}
 
-	if _, ok := sys.cmdFlags["-audit"]; ok {
+	if _, ok := sys.cmdFlags["-validate"]; ok {
 		if FileExist("external/script/audit.lua") == "" {
 			err := extractFileFromEmbed(assetsZip, "external/script/audit.lua")
 			if err != nil {
@@ -973,9 +1003,26 @@ func setupConfig(is_mugen_game bool) configSettings {
 		l.Options.IncludeGoStackTrace = true
 		l.OpenLibs()
 		systemScriptInit(l)
-		fmt.Printf("\n\n==================================\nVerifying included the game assets...\n")
+		fmt.Printf("\n\n==================================\nValidating included the game assets...\n")
 		if err := l.DoFile("external/script/audit.lua"); err != nil {
-			fmt.Printf("[main.go][setupConfig] Error running audit script: %v\n", err)
+			fmt.Printf("[main.go][setupConfig] Error running validation script: %v\n", err)
+		}
+		os.Exit(0)
+	}
+
+	if _, ok := sys.cmdFlags["-fix"]; ok {
+		renameFilesToLowerCase("chars")
+		renameFilesToLowerCase("stages")
+		renameFilesToLowerCase("font")
+		renameFilesToLowerCase("data")
+		renameFilesToLowerCase("sound")
+		l := lua.NewState()
+		l.Options.IncludeGoStackTrace = true
+		l.OpenLibs()
+		systemScriptInit(l)
+		fmt.Printf("\n\n==================================\nFixing game assets...\n")
+		if err := l.DoFile("external/script/fix.lua"); err != nil {
+			fmt.Printf("[main.go][setupConfig] Error running fix script: %v\n", err)
 		}
 		os.Exit(0)
 	}
