@@ -436,9 +436,12 @@ func (c *Compiler) helper(is IniSection, sc *StateControllerBase, _ int8) (State
 		}
 		if err := c.stateParam(is, "name", func(data string) error {
 			if len(data) < 2 || data[0] != '"' || data[len(data)-1] != '"' {
-				return Error("Not enclosed in \"")
+				// return Error("Not enclosed in \"")
+				// sc.add(helper_name, sc.beToExp(BytecodeExp(data[0:len(data)])))
+				sc.add(helper_name, sc.beToExp(BytecodeExp(data)))
+			} else {
+				sc.add(helper_name, sc.beToExp(BytecodeExp(data[1:len(data)-1])))
 			}
-			sc.add(helper_name, sc.beToExp(BytecodeExp(data[1:len(data)-1])))
 			return nil
 		}); err != nil {
 			return err
