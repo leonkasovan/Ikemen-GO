@@ -43,10 +43,15 @@ struct Light
 };
 
 uniform sampler2D tex;
+uniform mat3 texTransform;
 uniform sampler2D normalMap;
+uniform mat3 normalMapTransform;
 uniform sampler2D metallicRoughnessMap;
+uniform mat3 metallicRoughnessMapTransform;
 uniform sampler2D ambientOcclusionMap;
+uniform mat3 ambientOcclusionMapTransform;
 uniform sampler2D emissionMap;
+uniform mat3 emissionMapTransform;
 uniform samplerCube lambertianEnvSampler;
 uniform samplerCube GGXEnvSampler;
 uniform sampler2D GGXLUT;
@@ -189,7 +194,7 @@ vec3 getNormal()
         ng *= -1.0;
     }
     if(useNormalMap){
-        return normalize(mat3(t, b, ng) * normalize(COMPAT_TEXTURE(normalMap, texcoord).xyz * 2.0 - vec3(1.0)));
+        return normalize(mat3(t, b, ng) * normalize(COMPAT_TEXTURE(normalMap, vec2(normalMapTransform*vec3(texcoord,1))).xyz * 2.0 - vec3(1.0)));
     }else{
         return ng;
     }
@@ -400,7 +405,7 @@ vec3 hue_shift(vec3 color, float dhue) {
 void main(void) {
     FragColor = vec4(1.0);
 	if(useTexture){
-		FragColor = COMPAT_TEXTURE(tex, texcoord);
+		FragColor = COMPAT_TEXTURE(tex, vec2(texTransform*vec3(texcoord,1)));
         FragColor.rgb = pow(FragColor.rgb,vec3(2.2));
 	}
     FragColor *= baseColorFactor;
@@ -412,15 +417,15 @@ void main(void) {
         }
         vec2 metallicRoughnessF = metallicRoughness;
         if(useMetallicRoughnessMap){
-            metallicRoughnessF = COMPAT_TEXTURE(metallicRoughnessMap, texcoord).bg;
+            metallicRoughnessF = COMPAT_TEXTURE(metallicRoughnessMap, vec2(metallicRoughnessMapTransform*vec3(texcoord,1))).bg;
         }
         float ambientOcclusion = 1;
         if(ambientOcclusionStrength > 0){
-            ambientOcclusion = 1+ambientOcclusionStrength*(COMPAT_TEXTURE(ambientOcclusionMap, texcoord).r-1);
+            ambientOcclusion = 1+ambientOcclusionStrength*(COMPAT_TEXTURE(ambientOcclusionMap, vec2(ambientOcclusionMapTransform*vec3(texcoord,1))).r-1);
         }
         FragColor.rgb = pbr(worldSpacePos,normalize(cameraPosition - worldSpacePos),normalize(normalF),FragColor.rgb,metallicRoughnessF[0],metallicRoughnessF[1],ambientOcclusion);
         if(useEmissionMap){
-            FragColor.rgb += emission * pow(COMPAT_TEXTURE(emissionMap, texcoord).rgb,vec3(2.2));
+            FragColor.rgb += emission * pow(COMPAT_TEXTURE(emissionMap, vec2(emissionMapTransform*vec3(texcoord,1))).rgb,vec3(2.2));
         }else{
             FragColor.rgb += emission;
         }

@@ -226,7 +226,7 @@ ignoreHitPause{
 
 if teamSide = 0 {
 	# Do nothing, global code executed by stage
-} else if roundState = 0 {
+} else if roundTime = 0 {
 	map(_iksys_firstAttackFlag) := 0;
 	map(_iksys_counterHitFlag) := 0;
 	map(_iksys_technicalFlag) := 0;

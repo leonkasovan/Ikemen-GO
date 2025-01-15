@@ -56,6 +56,7 @@ type Renderer interface {
 	SetModelUniformF(name string, values ...float32)
 	SetModelUniformFv(name string, values []float32)
 	SetModelUniformMatrix(name string, value []float32)
+	SetModelUniformMatrix3(name string, value []float32)
 	SetModelTexture(name string, t Texture)
 	SetShadowMapUniformI(name string, val int)
 	SetShadowMapUniformF(name string, values ...float32)

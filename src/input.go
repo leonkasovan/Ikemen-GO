@@ -499,140 +499,142 @@ func (ir *InputReader) LocalInput(in int) (bool, bool, bool, bool, bool, bool, b
 	return U, D, L, R, a, b, c, x, y, z, s, d, w, m
 }
 
-// Resolve U and D conflicts based on SOCD resolution config
-func (ir *InputReader) resolveUpDown(U, D bool) (bool, bool) {
-	// Check first direction held
-	if U || D {
-		if !U {
-			ir.SocdFirst[0] = false
-		}
-		if !D {
-			ir.SocdFirst[1] = false
-		}
-		if !ir.SocdFirst[0] && !ir.SocdFirst[1] {
-			if D {
-				ir.SocdFirst[1] = true
-			} else {
-				ir.SocdFirst[0] = true
-			}
-		}
-	} else {
-		ir.SocdFirst[0] = false
-		ir.SocdFirst[1] = false
-	}
-
-	// Apply SOCD resolution according to config
-	if D && U {
-		switch sys.cfg.Input.SOCDResolution {
-		case 0: // Allow both directions (no resolution)
-			ir.SocdAllow[0] = true
-			ir.SocdAllow[1] = true
-		case 1: // Last direction priority
-			if ir.SocdFirst[0] {
-				ir.SocdAllow[0] = false
-				ir.SocdAllow[1] = true
-			} else {
-				ir.SocdAllow[0] = true
-				ir.SocdAllow[1] = false
-			}
-		case 2: // Absolute priority (offense over defense)
-			ir.SocdAllow[0] = true
-			ir.SocdAllow[1] = false
-		case 3: // First direction priority
-			if ir.SocdFirst[0] {
-				ir.SocdAllow[0] = true
-				ir.SocdAllow[1] = false
-			} else {
-				ir.SocdAllow[0] = false
-				ir.SocdAllow[1] = true
-			}
-		default: // Deny either direction (neutral resolution)
-			ir.SocdAllow[0] = false
-			ir.SocdAllow[1] = false
-		}
-	} else {
-		ir.SocdAllow[0] = true
-		ir.SocdAllow[1] = true
-	}
-
-	return U, D
-}
-
-// Resolve B and F conflicts based on SOCD resolution config
-func (ir *InputReader) resolveBackForward(B, F bool) (bool, bool) {
-	// Check first direction held
-	if B || F {
-		if !B {
-			ir.SocdFirst[2] = false
-		}
-		if !F {
-			ir.SocdFirst[3] = false
-		}
-		if !ir.SocdFirst[2] && !ir.SocdFirst[3] {
-			if B {
-				ir.SocdFirst[2] = true
-			} else {
-				ir.SocdFirst[3] = true
-			}
-		}
-	} else {
-		ir.SocdFirst[2] = false
-		ir.SocdFirst[3] = false
-	}
-
-	// Apply SOCD resolution according to config
-	if B && F {
-		switch sys.cfg.Input.SOCDResolution {
-		case 0: // Allow both directions (no resolution)
-			ir.SocdAllow[2] = true
-			ir.SocdAllow[3] = true
-		case 1: // Last direction priority
-			if ir.SocdFirst[3] {
-				ir.SocdAllow[2] = true
-				ir.SocdAllow[3] = false
-			} else {
-				ir.SocdAllow[2] = false
-				ir.SocdAllow[3] = true
-			}
-		case 2: // Absolute priority (offense over defense)
-			ir.SocdAllow[2] = false
-			ir.SocdAllow[3] = true
-		case 3: // First direction priority
-			if ir.SocdFirst[3] {
-				ir.SocdAllow[2] = false
-				ir.SocdAllow[3] = true
-			} else {
-				ir.SocdAllow[2] = true
-				ir.SocdAllow[3] = false
-			}
-		default: // Deny either direction (neutral resolution)
-			ir.SocdAllow[2] = false
-			ir.SocdAllow[3] = false
-		}
-	} else {
-		ir.SocdAllow[2] = true
-		ir.SocdAllow[3] = true
-	}
-
-	return B, F
-}
-
 // Resolve Simultaneous Opposing Cardinal Directions (SOCD)
 // Left and Right are solved in CommandList Input based on B and F outcome
 func (ir *InputReader) SocdResolution(U, D, B, F bool) (bool, bool, bool, bool) {
-	// Absolute priority SOCD resolution is enforced during netplay
+
+	// Resolve U and D conflicts based on SOCD resolution config
+	resolveUD := func(U, D bool) (bool, bool) {
+		// Check first direction held
+		if U || D {
+			if !U {
+				ir.SocdFirst[0] = false
+			}
+			if !D {
+				ir.SocdFirst[1] = false
+			}
+			if !ir.SocdFirst[0] && !ir.SocdFirst[1] {
+				if D {
+					ir.SocdFirst[1] = true
+				} else {
+					ir.SocdFirst[0] = true
+				}
+			}
+		} else {
+			ir.SocdFirst[0] = false
+			ir.SocdFirst[1] = false
+		}
+		// Apply SOCD resolution according to config
+		if D && U {
+			switch sys.cfg.Input.SOCDResolution {
+			case 0: // Allow both directions (no resolution)
+				ir.SocdAllow[0] = true
+				ir.SocdAllow[1] = true
+			case 1: // Last direction priority
+				if ir.SocdFirst[0] {
+					ir.SocdAllow[0] = false
+					ir.SocdAllow[1] = true
+				} else {
+					ir.SocdAllow[0] = true
+					ir.SocdAllow[1] = false
+				}
+			case 2: // Absolute priority (offense over defense)
+				ir.SocdAllow[0] = true
+				ir.SocdAllow[1] = false
+			case 3: // First direction priority
+				if ir.SocdFirst[0] {
+					ir.SocdAllow[0] = true
+					ir.SocdAllow[1] = false
+				} else {
+					ir.SocdAllow[0] = false
+					ir.SocdAllow[1] = true
+				}
+			default: // Deny either direction (neutral resolution)
+				ir.SocdAllow[0] = false
+				ir.SocdAllow[1] = false
+			}
+		} else {
+			ir.SocdAllow[0] = true
+			ir.SocdAllow[1] = true
+		}
+
+		return U, D
+	}
+
+	// Resolve B and F conflicts based on SOCD resolution config
+	resolveBF := func(B, F bool) (bool, bool) {
+		// Check first direction held
+		if B || F {
+			if !B {
+				ir.SocdFirst[2] = false
+			}
+			if !F {
+				ir.SocdFirst[3] = false
+			}
+			if !ir.SocdFirst[2] && !ir.SocdFirst[3] {
+				if B {
+					ir.SocdFirst[2] = true
+				} else {
+					ir.SocdFirst[3] = true
+				}
+			}
+		} else {
+			ir.SocdFirst[2] = false
+			ir.SocdFirst[3] = false
+		}
+		// Apply SOCD resolution according to config
+		if B && F {
+			switch sys.cfg.Input.SOCDResolution {
+			case 0: // Allow both directions (no resolution)
+				ir.SocdAllow[2] = true
+				ir.SocdAllow[3] = true
+			case 1: // Last direction priority
+				if ir.SocdFirst[3] {
+					ir.SocdAllow[2] = true
+					ir.SocdAllow[3] = false
+				} else {
+					ir.SocdAllow[2] = false
+					ir.SocdAllow[3] = true
+				}
+			case 2: // Absolute priority (offense over defense)
+				ir.SocdAllow[2] = false
+				ir.SocdAllow[3] = true
+			case 3: // First direction priority
+				if ir.SocdFirst[3] {
+					ir.SocdAllow[2] = false
+					ir.SocdAllow[3] = true
+				} else {
+					ir.SocdAllow[2] = true
+					ir.SocdAllow[3] = false
+				}
+			default: // Deny either direction (neutral resolution)
+				ir.SocdAllow[2] = false
+				ir.SocdAllow[3] = false
+			}
+		} else {
+			ir.SocdAllow[2] = true
+			ir.SocdAllow[3] = true
+		}
+
+		return B, F
+	}
+
+	// Neutral resolution is enforced during netplay
+	// Note: Since configuration does not work online yet, it's best if the forced setting matches the default config
 	if sys.netInput != nil || sys.fileInput != nil {
 		if U && D {
+			U = false
 			D = false
 		}
 		if B && F {
 			B = false
+			F = false
 		}
 	} else {
 		// Resolve up and down
-		U, D = ir.resolveUpDown(U, D)
+		U, D = resolveUD(U, D)
 		// Resolve back and forward
-		B, F = ir.resolveBackForward(B, F)
+		B, F = resolveBF(B, F)
 		// Apply resulting resolution
 		U = U && ir.SocdAllow[0]
 		D = D && ir.SocdAllow[1]
@@ -1495,7 +1497,6 @@ type cmdElem struct {
 
 // Used to detect consecutive directions
 func (ce *cmdElem) IsDirection() bool {
-	//ここで~は方向コマンドとして返さない
 	// Released directions are not taken into account here
 	return !ce.slash && len(ce.key) == 1 && ce.key[0].IsDirectionPress()
 }
@@ -1548,14 +1549,14 @@ type Command struct {
 	hold                [][]CommandKey
 	held                []bool
 	cmd                 []cmdElem
-	cmdi, chargei       int
+	cmdidx, chargeidx   int
 	time, curtime       int32
 	buftime, curbuftime int32
 	completeflag        bool
 }
 
 func newCommand() *Command {
-	return &Command{chargei: -1, time: 1, buftime: 1}
+	return &Command{chargeidx: -1, time: 1, buftime: 1}
 }
 
 // This is used to first compile the commands
@@ -1889,8 +1890,8 @@ func ReadCommand(name, cmdstr string, kr *CommandKeyRemap) (*Command, error) {
 }
 
 func (c *Command) Clear(bufreset bool) {
-	c.cmdi = 0
-	c.chargei = -1
+	c.cmdidx = 0
+	c.chargeidx = -1
 	c.curtime = 0
 	if bufreset {
 		c.curbuftime = 0
@@ -1915,7 +1916,7 @@ func (c *Command) bufTest(cbuf *CommandBuffer, ai bool, holdTemp *[CK_Last + 1]b
 			func() {
 				for _, k := range h {
 					ks := cbuf.State(k)
-					if ks == 1 && (c.cmdi > 0 || len(c.hold) > 1) && !c.held[i] && (*holdTemp)[int(k)] {
+					if ks == 1 && (c.cmdidx > 0 || len(c.hold) > 1) && !c.held[i] && (*holdTemp)[int(k)] {
 						c.held[i], (*holdTemp)[int(k)] = true, false
 					}
 					if ks > 0 {
@@ -1930,42 +1931,42 @@ func (c *Command) bufTest(cbuf *CommandBuffer, ai bool, holdTemp *[CK_Last + 1]b
 				notHeld += 1
 			}
 		}
-		if c.cmdi == len(c.cmd)-1 && (!allHold || notHeld > 1) {
-			return anyHeld || c.cmdi > 0
+		if c.cmdidx == len(c.cmd)-1 && (!allHold || notHeld > 1) {
+			return anyHeld || c.cmdidx > 0
 		}
 	}
-	if !ai && c.cmd[c.cmdi].slash {
-		if c.cmdi > 0 {
+	if !ai && c.cmd[c.cmdidx].slash {
+		if c.cmdidx > 0 {
 			if notHeld == 1 {
-				if len(c.cmd[c.cmdi-1].key) != 1 {
+				if len(c.cmd[c.cmdidx-1].key) != 1 {
 					return false
 				}
-				if c.cmd[c.cmdi-1].key[0].IsButtonPress() {
-					ks := cbuf.State(c.cmd[c.cmdi-1].key[0])
+				if c.cmd[c.cmdidx-1].key[0].IsButtonPress() {
+					ks := cbuf.State(c.cmd[c.cmdidx-1].key[0])
 					if ks > 0 && ks <= cbuf.LastDirectionTime() {
 						return true
 					}
 				}
-			} else if len(c.cmd[c.cmdi-1].key) > 1 {
-				for _, k := range c.cmd[c.cmdi-1].key {
+			} else if len(c.cmd[c.cmdidx-1].key) > 1 {
+				for _, k := range c.cmd[c.cmdidx-1].key {
 					if k >= CK_a && k <= CK_m && cbuf.State(k) > 0 {
 						return false
 					}
 				}
 			}
 		}
-		c.cmdi++
+		c.cmdidx++
 		return true
 	}
 	fail := func() bool {
 		// Fist input requires something to be pressed/held
-		if c.cmdi == 0 {
+		if c.cmdidx == 0 {
 			return anyHeld
 		}
 		// ">" type input check
 		// There's a bug here where for instance pressing DF does not invalidate F, F. Mugen does the same thing, however
-		if !ai && c.cmd[c.cmdi].greater {
-			for _, k := range c.cmd[c.cmdi-1].key {
+		if !ai && c.cmd[c.cmdidx].greater {
+			for _, k := range c.cmd[c.cmdidx-1].key {
 				if Abs(cbuf.State2(k)) == cbuf.LastChangeTime() {
 					return true
 				}
@@ -1975,40 +1976,40 @@ func (c *Command) bufTest(cbuf *CommandBuffer, ai bool, holdTemp *[CK_Last + 1]b
 		}
 		return true
 	}
-	if c.chargei != c.cmdi {
+	if c.chargeidx != c.cmdidx {
 		// If current element must be charged
-		if c.cmd[c.cmdi].chargetime > 1 {
-			for _, k := range c.cmd[c.cmdi].key {
+		if c.cmd[c.cmdidx].chargetime > 1 {
+			for _, k := range c.cmd[c.cmdidx].key {
 				ks := cbuf.State(k)
 				if ks > 0 {
 					return ai
 				}
 				if func() bool {
 					if ai {
-						return Rand(0, c.cmd[c.cmdi].chargetime) != 0
+						return Rand(0, c.cmd[c.cmdidx].chargetime) != 0
 					}
-					return -ks < c.cmd[c.cmdi].chargetime
+					return -ks < c.cmd[c.cmdidx].chargetime
 				}() {
-					return anyHeld || c.cmdi > 0
+					return anyHeld || c.cmdidx > 0
 				}
 			}
-			c.chargei = c.cmdi
+			c.chargeidx = c.cmdidx
 			// Not sure what this is reproducing yet
-		} else if c.cmdi > 0 && len(c.cmd[c.cmdi-1].key) == 1 && len(c.cmd[c.cmdi].key) == 1 && // If elements are single key
-			c.cmd[c.cmdi-1].key[0] < CK_Us && c.cmd[c.cmdi].key[0] < CK_rU && // "Not sign" then "not sign not release" (simple direction)
-			(c.cmd[c.cmdi-1].key[0]%14 == c.cmd[c.cmdi].key[0]%14) { // Same direction, regardless of symbol. There are 14 directions
+		} else if c.cmdidx > 0 && len(c.cmd[c.cmdidx-1].key) == 1 && len(c.cmd[c.cmdidx].key) == 1 && // If elements are single key
+			c.cmd[c.cmdidx-1].key[0] < CK_Us && c.cmd[c.cmdidx].key[0] < CK_rU && // "Not sign" then "not sign not release" (simple direction)
+			(c.cmd[c.cmdidx-1].key[0]%14 == c.cmd[c.cmdidx].key[0]%14) { // Same direction, regardless of symbol. There are 14 directions
 			if cbuf.B < 0 && cbuf.D < 0 && cbuf.F < 0 && cbuf.U < 0 { // If no direction held
-				c.chargei = c.cmdi
+				c.chargeidx = c.cmdidx
 			} else {
 				return fail()
 			}
 		}
 	}
 	foo := false
-	for _, k := range c.cmd[c.cmdi].key {
+	for _, k := range c.cmd[c.cmdidx].key {
 		n := cbuf.State2(k)
 		// If "/" then buffer can be any positive number
-		if c.cmd[c.cmdi].slash {
+		if c.cmd[c.cmdidx].slash {
 			foo = foo || n > 0
 			// If not pressed or taking too long to press all keys (?)
 		} else if n < 1 || n > 7 {
@@ -2021,9 +2022,9 @@ func (c *Command) bufTest(cbuf *CommandBuffer, ai bool, holdTemp *[CK_Last + 1]b
 		return fail()
 	}
 	// Conditions met. Go to next element
-	c.cmdi++
+	c.cmdidx++
 	// Both elements in a direction to button transition are checked in same the frame
-	if c.cmdi < len(c.cmd) && c.cmd[c.cmdi-1].IsDirToButton(c.cmd[c.cmdi]) {
+	if c.cmdidx < len(c.cmd) && c.cmd[c.cmdidx-1].IsDirToButton(c.cmd[c.cmdidx]) {
 		return c.bufTest(cbuf, ai, holdTemp)
 	}
 	return true
@@ -2045,19 +2046,19 @@ func (c *Command) Step(cbuf *CommandBuffer, ai, hitpause bool, buftime int32) {
 	}()
 	var holdTemp *[CK_Last + 1]bool
 	if cbuf == nil || !c.bufTest(cbuf, ai, holdTemp) {
-		foo := c.chargei == 0 && c.cmdi == 0
+		foo := c.chargeidx == 0 && c.cmdidx == 0
 		c.Clear(false)
 		if foo {
-			c.chargei = 0
+			c.chargeidx = 0
 		}
 		return
 	}
-	if c.cmdi == 1 && c.cmd[0].slash {
+	if c.cmdidx == 1 && c.cmd[0].slash {
 		c.curtime = 0
 	} else {
 		c.curtime++
 	}
-	c.completeflag = (c.cmdi == len(c.cmd))
+	c.completeflag = (c.cmdidx == len(c.cmd))
 	if !c.completeflag && (ai || c.curtime <= c.time) {
 		return
 	}
@@ -2088,18 +2089,22 @@ func NewCommandList(cb *CommandBuffer) *CommandList {
 }
 
 // Read inputs locally
-func (cl *CommandList) Input(controller int, facing int32, aiLevel float32, ib InputBits) bool {
+func (cl *CommandList) Input(controller int, facing int32, aiLevel float32, ib InputBits, script bool) bool {
 	if cl.Buffer == nil {
 		return false
 	}
-	// This check causes 1 frame delay in several places of the code
+
+	// This check is currently needed to prevent screenpack inputs from rapid firing
+	// Previously it was checked outside of screenpacks as well, but that caused 1 frame delay in several places of the code
 	// Such as making players wait one frame after creation to input anything or a continuous NoInput flag only resetting the buffer every two frames
-	// Seems responsible for https://github.com/ikemen-engine/Ikemen-GO/issues/1201 and https://github.com/ikemen-engine/Ikemen-GO/issues/2203
-	// But currently it is necessary so that menu inputs do not "turbo fire", among perhaps other things
-	step := cl.Buffer.Bb != 0
+	// https://github.com/ikemen-engine/Ikemen-GO/issues/1201 and https://github.com/ikemen-engine/Ikemen-GO/issues/2203
+	step := true
+	if script {
+		step = cl.Buffer.Bb != 0
+	}
 
 	if controller < 0 && ^controller < len(sys.aiInput) {
-		sys.aiInput[^controller].Update(aiLevel) // 乱数を使うので同期がずれないようここで / Since random numbers are used, we handle it here to avoid desync
+		sys.aiInput[^controller].Update(aiLevel) // Since random numbers are used, we handle it here to avoid desync
 	}
 	_else := controller < 0
 	if _else {

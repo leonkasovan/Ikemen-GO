@@ -7,6 +7,7 @@
 #endif
 
 uniform sampler2D tex;
+uniform mat3 texTransform;
 uniform bool enableAlpha;
 uniform bool useTexture;
 uniform float alphaThreshold;
@@ -27,7 +28,7 @@ void main()
 {
     vec4 color = baseColorFactor;
     if(useTexture){
-        color = color * COMPAT_TEXTURE(tex, texcoord0);
+        color = color * COMPAT_TEXTURE(tex, vec2(texTransform*vec3(texcoord0,1)));
     }
     color.a *= vColorAlpha;
     if((enableAlpha && color.a <= 0) || (color.a < alphaThreshold)){

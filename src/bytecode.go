@@ -736,8 +736,14 @@ const (
 	OC_ex2_palfxvar_all_invertall
 	OC_ex2_palfxvar_all_invertblend
 	OC_ex2_introstate
+	OC_ex2_continuescreen
+	OC_ex2_victoryscreen
+	OC_ex2_winscreen
 	OC_ex2_bgmvar_filename
+	OC_ex2_bgmvar_freqmul
 	OC_ex2_bgmvar_length
+	OC_ex2_bgmvar_loop
+	OC_ex2_bgmvar_loopcount
 	OC_ex2_bgmvar_loopend
 	OC_ex2_bgmvar_loopstart
 	OC_ex2_bgmvar_position
@@ -1458,7 +1464,7 @@ func (be BytecodeExp) run(c *Char) BytecodeValue {
 			sys.bcStack.Push(BytecodeSF())
 			i += int(*(*int32)(unsafe.Pointer(&be[i]))) + 4
 		case OC_enemynear:
-			if c = c.enemyNear(sys.bcStack.Pop().ToI()); c != nil {
+			if c = c.enemyNearTrigger(sys.bcStack.Pop().ToI()); c != nil {
 				i += 4
 				continue
 			}
@@ -1493,7 +1499,7 @@ func (be BytecodeExp) run(c *Char) BytecodeValue {
 			sys.bcStack.Push(BytecodeSF())
 			i += int(*(*int32)(unsafe.Pointer(&be[i]))) + 4
 		case OC_helperindex:
-			if c = c.getPlayerHelperIndex(sys.bcStack.Pop().ToI(), false); c != nil {
+			if c = c.getPlayerHelperIndex(sys.bcStack.Pop().ToI(), true); c != nil {
 				i += 4
 				continue
 			}
@@ -2180,48 +2186,38 @@ func (be BytecodeExp) run_const(c *Char, i *int, oc *Char) {
 		*i += 4
 	case OC_const_p2name:
 		p2 := c.p2()
-		sys.bcStack.PushB(p2 != nil && p2.gi().nameLow ==
-			sys.stringPool[sys.workingState.playerNo].List[*(*int32)(
-				unsafe.Pointer(&be[*i]))])
+		sys.bcStack.PushB(p2 != nil &&
+			p2.gi().nameLow == sys.stringPool[sys.workingState.playerNo].List[*(*int32)(unsafe.Pointer(&be[*i]))])
 		*i += 4
 	case OC_const_p3name:
 		p3 := c.partner(0, false)
-		sys.bcStack.PushB(p3 != nil && p3.gi().nameLow ==
-			sys.stringPool[sys.workingState.playerNo].List[*(*int32)(
-				unsafe.Pointer(&be[*i]))])
+		sys.bcStack.PushB(p3 != nil &&
+			p3.gi().nameLow == sys.stringPool[sys.workingState.playerNo].List[*(*int32)(unsafe.Pointer(&be[*i]))])
 		*i += 4
 	case OC_const_p4name:
-		p4 := sys.charList.enemyNear(c, 1, true, true, false)
-		sys.bcStack.PushB(p4 != nil && !(p4.scf(SCF_ko) && p4.scf(SCF_over)) &&
-			p4.gi().nameLow ==
-				sys.stringPool[sys.workingState.playerNo].List[*(*int32)(
-					unsafe.Pointer(&be[*i]))])
+		p4 := sys.charList.enemyNear(c, 1, true, false)
+		sys.bcStack.PushB(p4 != nil &&
+			p4.gi().nameLow == sys.stringPool[sys.workingState.playerNo].List[*(*int32)(unsafe.Pointer(&be[*i]))])
 		*i += 4
 	case OC_const_p5name:
 		p5 := c.partner(1, false)
-		sys.bcStack.PushB(p5 != nil && p5.gi().nameLow ==
-			sys.stringPool[sys.workingState.playerNo].List[*(*int32)(
-				unsafe.Pointer(&be[*i]))])
+		sys.bcStack.PushB(p5 != nil &&
+			p5.gi().nameLow == sys.stringPool[sys.workingState.playerNo].List[*(*int32)(unsafe.Pointer(&be[*i]))])
 		*i += 4
 	case OC_const_p6name:
-		p6 := sys.charList.enemyNear(c, 2, true, true, false)
-		sys.bcStack.PushB(p6 != nil && !(p6.scf(SCF_ko) && p6.scf(SCF_over)) &&
-			p6.gi().nameLow ==
-				sys.stringPool[sys.workingState.playerNo].List[*(*int32)(
-					unsafe.Pointer(&be[*i]))])
+		p6 := sys.charList.enemyNear(c, 2, true, false)
+		sys.bcStack.PushB(p6 != nil &&
+			p6.gi().nameLow == sys.stringPool[sys.workingState.playerNo].List[*(*int32)(unsafe.Pointer(&be[*i]))])
 		*i += 4
 	case OC_const_p7name:
 		p7 := c.partner(2, false)
-		sys.bcStack.PushB(p7 != nil && p7.gi().nameLow ==
-			sys.stringPool[sys.workingState.playerNo].List[*(*int32)(
-				unsafe.Pointer(&be[*i]))])
+		sys.bcStack.PushB(p7 != nil &&
+			p7.gi().nameLow == sys.stringPool[sys.workingState.playerNo].List[*(*int32)(unsafe.Pointer(&be[*i]))])
 		*i += 4
 	case OC_const_p8name:
-		p8 := sys.charList.enemyNear(c, 3, true, true, false)
-		sys.bcStack.PushB(p8 != nil && !(p8.scf(SCF_ko) && p8.scf(SCF_over)) &&
-			p8.gi().nameLow ==
-				sys.stringPool[sys.workingState.playerNo].List[*(*int32)(
-					unsafe.Pointer(&be[*i]))])
+		p8 := sys.charList.enemyNear(c, 3, true, false)
+		sys.bcStack.PushB(p8 != nil &&
+			p8.gi().nameLow == sys.stringPool[sys.workingState.playerNo].List[*(*int32)(unsafe.Pointer(&be[*i]))])
 		*i += 4
 	case OC_const_stagevar_info_name:
 		sys.bcStack.PushB(sys.stage.nameLow ==
@@ -3179,22 +3175,31 @@ func (be BytecodeExp) run_ex2(c *Char, i *int, oc *Char) {
 		sys.bcStack.PushI(sys.palfxvar(-2, 2))
 	case OC_ex2_introstate:
 		sys.bcStack.PushI(sys.introState())
+	case OC_ex2_continuescreen:
+		sys.bcStack.PushB(sys.continueScreenFlg)
+	case OC_ex2_victoryscreen:
+		sys.bcStack.PushB(sys.victoryScreenFlg)
+	case OC_ex2_winscreen:
+		sys.bcStack.PushB(sys.winScreenFlg)
+	case OC_ex2_bgmvar_filename:
+		sys.bcStack.PushB(sys.bgm.filename ==
+			sys.stringPool[sys.workingState.playerNo].List[*(*int32)(
+				unsafe.Pointer(&be[*i]))])
+		*i += 4
+	case OC_ex2_bgmvar_freqmul:
+		sys.bcStack.PushF(sys.bgm.freqmul)
 	case OC_ex2_bgmvar_length:
 		if sys.bgm.streamer == nil {
 			sys.bcStack.PushI(0)
 		} else {
 			sys.bcStack.PushI(int32(sys.bgm.streamer.Len()))
 		}
-	case OC_ex2_bgmvar_position:
-		if sys.bgm.streamer == nil {
-			sys.bcStack.PushI(0)
-		} else {
-			sys.bcStack.PushI(int32(sys.bgm.streamer.Position()))
-		}
-	case OC_ex2_bgmvar_loopstart:
+	case OC_ex2_bgmvar_loop:
+		sys.bcStack.PushI(int32(sys.bgm.loop))
+	case OC_ex2_bgmvar_loopcount:
 		if sys.bgm.volctrl != nil {
 			if sl, ok := sys.bgm.volctrl.Streamer.(*StreamLooper); ok {
-				sys.bcStack.PushI(int32(sl.loopstart))
+				sys.bcStack.PushI(int32(sl.loopcount))
 			} else {
 				sys.bcStack.PushI(0)
 			}
@@ -3211,15 +3216,26 @@ func (be BytecodeExp) run_ex2(c *Char, i *int, oc *Char) {
 		} else {
 			sys.bcStack.PushI(0)
 		}
+	case OC_ex2_bgmvar_loopstart:
+		if sys.bgm.volctrl != nil {
+			if sl, ok := sys.bgm.volctrl.Streamer.(*StreamLooper); ok {
+				sys.bcStack.PushI(int32(sl.loopstart))
+			} else {
+				sys.bcStack.PushI(0)
+			}
+		} else {
+			sys.bcStack.PushI(0)
+		}
+	case OC_ex2_bgmvar_position:
+		if sys.bgm.streamer == nil {
+			sys.bcStack.PushI(0)
+		} else {
+			sys.bcStack.PushI(int32(sys.bgm.streamer.Position()))
+		}
 	case OC_ex2_bgmvar_startposition:
 		sys.bcStack.PushI(int32(sys.bgm.startPos))
 	case OC_ex2_bgmvar_volume:
 		sys.bcStack.PushI(int32(sys.bgm.bgmVolume))
-	case OC_ex2_bgmvar_filename:
-		sys.bcStack.PushB(sys.bgm.filename ==
-			sys.stringPool[sys.workingState.playerNo].List[*(*int32)(
-				unsafe.Pointer(&be[*i]))])
-		*i += 4
 	case OC_ex2_clsnvar_left:
 		idx := int(sys.bcStack.Pop().ToI())
 		id := int(sys.bcStack.Pop().ToI())
@@ -11701,13 +11717,10 @@ func (sc modifyStageVar) Run(c *Char, _ []int32) bool {
 		case modifyStageVar_shadow_intensity:
 			s.sdw.intensity = Clamp(exp[0].evalI(c), 0, 255)
 		case modifyStageVar_shadow_color:
-			// mugen 1.1 removed support for color
-			if (s.mugenver[0] != 1 || s.mugenver[1] != 1) && (s.sff.header.Ver0 != 2 || s.sff.header.Ver2 != 1) {
-				r := Clamp(exp[0].evalI(c), 0, 255)
-				g := Clamp(exp[1].evalI(c), 0, 255)
-				b := Clamp(exp[2].evalI(c), 0, 255)
-				s.sdw.color = uint32(r<<16 | g<<8 | b)
-			}
+			r := Clamp(exp[0].evalI(c), 0, 255)
+			g := Clamp(exp[1].evalI(c), 0, 255)
+			b := Clamp(exp[2].evalI(c), 0, 255)
+			s.sdw.color = uint32(r<<16 | g<<8 | b)
 		case modifyStageVar_shadow_yscale:
 			s.sdw.yscale = exp[0].evalF(c)
 		case modifyStageVar_shadow_fade_range:
@@ -11726,13 +11739,10 @@ func (sc modifyStageVar) Run(c *Char, _ []int32) bool {
 		case modifyStageVar_reflection_xshear:
 			s.reflection.xshear = exp[0].evalF(c)
 		case modifyStageVar_reflection_color:
-			// mugen 1.1 removed support for color
-			if (s.mugenver[0] != 1 || s.mugenver[1] != 1) && (s.sff.header.Ver0 != 2 || s.sff.header.Ver2 != 1) {
-				r := Clamp(exp[0].evalI(c), 0, 255)
-				g := Clamp(exp[1].evalI(c), 0, 255)
-				b := Clamp(exp[2].evalI(c), 0, 255)
-				s.reflection.color = uint32(r<<16 | g<<8 | b)
-			}
+			r := Clamp(exp[0].evalI(c), 0, 255)
+			g := Clamp(exp[1].evalI(c), 0, 255)
+			b := Clamp(exp[2].evalI(c), 0, 255)
+			s.reflection.color = uint32(r<<16 | g<<8 | b)
 		case modifyStageVar_reflection_offset:
 			s.reflection.offset[0] = exp[0].evalF(c)
 			s.reflection.offset[1] = exp[1].evalF(c)

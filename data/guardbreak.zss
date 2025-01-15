@@ -144,7 +144,7 @@ if time >= 60 {
 
 if !const(Default.Enable.GuardBreak) || isHelper || teamSide = 0 {
 	# Do nothing, global code disabled locally or executed by helper/stage
-} else if roundState = 0 {
+} else if roundTime = 0 {
 	# Initialize points and variables
 	guardPointsSet{value: guardPointsMax}
 	map(_iksys_guardPointsTimer) := 0;

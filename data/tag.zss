@@ -227,7 +227,7 @@ if animTime >= 0 {
 
 if !const(Default.Enable.Tag) || isHelper || teamSide = 0 {
 	# do nothing, global code disabled locally or executed by helper/stage
-} else if roundState = 0 && teamMode = Tag {
+} else if roundTime = 0 && teamMode = Tag {
 	map(_iksys_tagActive) := 1;
 	map(_iksys_tagLastId) := 0;
 	map(_iksys_tagPartnerId) := 0;

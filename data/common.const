@@ -13,7 +13,6 @@ Default.Enable.Tag = 1
 
 ; Backward compatibility toggles
 Default.LegacyGameDistanceSpec = 1  ; 1 prevents GameWidth/GameHeight from being affected by stage zoom for mugenversion 1.0 chars
-Default.IgnoreDefeatedEnemies = 1   ; 1 prevents EnemyNear from redirecting defeated enemies
 Input.PauseOnHitPause = 1           ; 1 makes inputs to be retained during hit pause
 
 ; Rules

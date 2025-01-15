@@ -37,8 +37,14 @@ if player($pn),ctrl = 0 {
 [StateDef -4]
 
 ignoreHitPause if gameMode = "training" && teamSide = 2 && !isHelper {
-	if roundState = 0 {
+	if roundTime = 0 {
 		# Round start reset
+		map(_iksys_trainingDummyControl) := 0;
+		map(_iksys_trainingDummyMode) := 0;
+		map(_iksys_trainingGuardMode) := 0;
+		map(_iksys_trainingFallRecovery) := 0;
+		map(_iksys_trainingDistance) := 0;
+		map(_iksys_trainingButtonJam) := 0;
 		powerSet{value: player(1),powerMax; redirectid: player(1),id}
 		powerSet{value: player(2),powerMax; redirectid: player(2),id}
 		map(_iksys_trainingLifeTimer) := 0;

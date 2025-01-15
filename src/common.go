@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode"
@@ -997,4 +998,15 @@ func (ats *AnimTextSnd) End(dt int32, inf bool) bool {
 				ats.anim.anim.current == int32(len(ats.anim.anim.frames)-1))
 	}
 	return dt >= ats.displaytime
+}
+
+// SortedKeys returns the keys of the map sorted in ascending order.
+// It works with any map where the key is a string.
+func SortedKeys[T any](m map[string][]T) []string {
+	keys := make([]string, 0, len(m))
+	for key := range m {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }

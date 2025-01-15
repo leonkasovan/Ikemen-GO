@@ -3178,6 +3178,7 @@ function start.f_resultInit()
 			end
 		end
 	end
+	toggleWinScreen(true)
 	if main.resultsTable.sounds_enabled == 0 then
 		clearAllSound()
 		toggleNoSound(true)
@@ -3226,6 +3227,7 @@ function start.f_result()
 	end
 	if not main.f_frameChange() then
 		start.t_result.active = false
+		toggleWinScreen(false)
 		toggleNoSound(false)
 		return false
 	end
@@ -3367,6 +3369,7 @@ function start.f_victoryInit()
 			end
 		end
 	end
+	toggleVictoryScreen(true)
 	if motif.victory_screen.sounds_enabled == 0 then
 		clearAllSound()
 		toggleNoSound(true)
@@ -3445,6 +3448,7 @@ function start.f_victory()
 	end
 	if not main.f_frameChange() then
 		start.t_victory.active = false
+		toggleVictoryScreen(false)
 		toggleNoSound(false)
 		return false
 	end
@@ -3497,6 +3501,7 @@ function start.f_continueInit()
 	else
 		start.t_continue.t_btnSkip = {'pal', 's'}
 	end
+	toggleContinueScreen(true)
 	if motif.continue_screen.sounds_enabled == 0 then
 		clearAllSound()
 		toggleNoSound(true)
@@ -3723,6 +3728,7 @@ function start.f_continue()
 	if not main.f_frameChange() then
 		start.t_continue.active = false
 		setContinue(start.t_continue.continue)
+		toggleContinueScreen(false)
 		toggleNoSound(false)
 		return false
 	end

@@ -5,7 +5,7 @@
 
 if !const(Default.Enable.Score) || teamSide = 0 {
 	# do nothing, global code disabled locally or executed by stage
-} else if roundState = 0 {
+} else if roundTime = 0 {
 	map(_iksys_scoreTimeVitalFlag) := 0;
 } else if roundState = 4 && !isHelper {
 	# score: time vital bonus
