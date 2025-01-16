@@ -226,6 +226,18 @@ func (input *Input) GetJoystickGUID(joy int) string {
 	return input.joystick[joy].GetGUID()
 }
 
+func (input *Input) GetGamepadState(joy int) *glfw.GamepadState {
+	if joy < 0 || joy >= len(input.joystick) {
+		return nil
+	}
+	return input.joystick[joy].GetGamepadState()
+}
+
+// Update Gamepad Mapping
+func (input *Input) UpdateGamepadMappings(mappings string) bool {
+	return glfw.UpdateGamepadMappings(mappings)
+}
+
 func (input *Input) GetJoystickIndices(guid string) []int {
 	if guid != "" {
 		numIdenticalJoyFound := 0
@@ -314,4 +326,58 @@ func CheckAxisForTrigger(joy int, axes *[]float32) string {
 		}
 	}
 	return s
+}
+
+// Reads controllers and converts inputs to letters for later processing
+func (ir *InputReader) LocalInput(in int) (bool, bool, bool, bool, bool, bool, bool, bool, bool, bool, bool, bool, bool, bool) {
+	var U, D, L, R, a, b, c, x, y, z, s, d, w, m bool
+	// Keyboard
+	if in < len(sys.keyConfig) {
+		joy := sys.keyConfig[in].Joy
+		if joy == -1 {
+			U = sys.keyConfig[in].U()
+			D = sys.keyConfig[in].D()
+			L = sys.keyConfig[in].L()
+			R = sys.keyConfig[in].R()
+			a = sys.keyConfig[in].a()
+			b = sys.keyConfig[in].b()
+			c = sys.keyConfig[in].c()
+			x = sys.keyConfig[in].x()
+			y = sys.keyConfig[in].y()
+			z = sys.keyConfig[in].z()
+			s = sys.keyConfig[in].s()
+			d = sys.keyConfig[in].d()
+			w = sys.keyConfig[in].w()
+			m = sys.keyConfig[in].m()
+		}
+	}
+	// Joystick
+	if in < len(sys.joystickConfig) {
+		joyS := sys.joystickConfig[in].Joy
+		if joyS >= 0 {
+			state := input.GetGamepadState(joyS)
+			// Does not override keyboard
+			if state != nil {
+				U = U || state.Buttons[glfw.ButtonDpadUp] != 0 || state.Axes[glfw.AxisLeftY] < -sys.cfg.Input.ControllerStickSensitivity
+				D = D || state.Buttons[glfw.ButtonDpadDown] != 0 || state.Axes[glfw.AxisLeftY] > sys.cfg.Input.ControllerStickSensitivity
+				L = L || state.Buttons[glfw.ButtonDpadLeft] != 0 || state.Axes[glfw.AxisLeftX] < -sys.cfg.Input.ControllerStickSensitivity
+				R = R || state.Buttons[glfw.ButtonDpadRight] != 0 || state.Axes[glfw.AxisLeftX] > sys.cfg.Input.ControllerStickSensitivity
+				a = a || state.Buttons[glfw.ButtonA] != 0
+				b = b || state.Buttons[glfw.ButtonB] != 0
+				c = c || state.Buttons[glfw.ButtonLeftBumper] != 0
+				x = x || state.Buttons[glfw.ButtonX] != 0
+				y = y || state.Buttons[glfw.ButtonY] != 0
+				z = z || state.Buttons[glfw.ButtonRightBumper] != 0
+				s = s || state.Buttons[glfw.ButtonBack] != 0
+				d = d || state.Buttons[glfw.ButtonStart] != 0
+				w = w || state.Buttons[glfw.ButtonBack] != 0
+				m = m || state.Buttons[glfw.ButtonStart] != 0
+			}
+		}
+	}
+	// Button assist is checked locally so that the sent inputs are already processed
+	if sys.cfg.Input.ButtonAssist {
+		a, b, c, x, y, z, s, d, w = ir.ButtonAssistCheck(a, b, c, x, y, z, s, d, w)
+	}
+	return U, D, L, R, a, b, c, x, y, z, s, d, w, m
 }

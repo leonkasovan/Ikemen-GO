@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/binary"
+	"glfw"
 	"net"
 	"os"
 	"strings"
@@ -346,6 +347,9 @@ func (kc KeyConfig) s() bool { return JoystickState(kc.Joy, kc.kS) }
 func (kc KeyConfig) d() bool { return JoystickState(kc.Joy, kc.kD) }
 func (kc KeyConfig) w() bool { return JoystickState(kc.Joy, kc.kW) }
 func (kc KeyConfig) m() bool { return JoystickState(kc.Joy, kc.kM) }
+func (kc KeyConfig) GamepadState() *glfw.GamepadState {
+	return input.GetGamepadState(kc.Joy)
+}
 
 type InputBits int32
 
@@ -447,56 +451,6 @@ func NewInputReader() *InputReader {
 		ButtonAssist:       false,
 		ButtonAssistBuffer: [9]bool{},
 	}
-}
-
-// Reads controllers and converts inputs to letters for later processing
-func (ir *InputReader) LocalInput(in int) (bool, bool, bool, bool, bool, bool, bool, bool, bool, bool, bool, bool, bool, bool) {
-	var U, D, L, R, a, b, c, x, y, z, s, d, w, m bool
-	// Keyboard
-	if in < len(sys.keyConfig) {
-		joy := sys.keyConfig[in].Joy
-		if joy == -1 {
-			U = sys.keyConfig[in].U()
-			D = sys.keyConfig[in].D()
-			L = sys.keyConfig[in].L()
-			R = sys.keyConfig[in].R()
-			a = sys.keyConfig[in].a()
-			b = sys.keyConfig[in].b()
-			c = sys.keyConfig[in].c()
-			x = sys.keyConfig[in].x()
-			y = sys.keyConfig[in].y()
-			z = sys.keyConfig[in].z()
-			s = sys.keyConfig[in].s()
-			d = sys.keyConfig[in].d()
-			w = sys.keyConfig[in].w()
-			m = sys.keyConfig[in].m()
-		}
-	}
-	// Joystick
-	if in < len(sys.joystickConfig) {
-		joyS := sys.joystickConfig[in].Joy
-		if joyS >= 0 {
-			U = U || sys.joystickConfig[in].U() // Does not override keyboard
-			D = D || sys.joystickConfig[in].D()
-			L = L || sys.joystickConfig[in].L()
-			R = R || sys.joystickConfig[in].R()
-			a = a || sys.joystickConfig[in].a()
-			b = b || sys.joystickConfig[in].b()
-			c = c || sys.joystickConfig[in].c()
-			x = x || sys.joystickConfig[in].x()
-			y = y || sys.joystickConfig[in].y()
-			z = z || sys.joystickConfig[in].z()
-			s = s || sys.joystickConfig[in].s()
-			d = d || sys.joystickConfig[in].d()
-			w = w || sys.joystickConfig[in].w()
-			m = m || sys.joystickConfig[in].m()
-		}
-	}
-	// Button assist is checked locally so that the sent inputs are already processed
-	if sys.cfg.Input.ButtonAssist {
-		a, b, c, x, y, z, s, d, w = ir.ButtonAssistCheck(a, b, c, x, y, z, s, d, w)
-	}
-	return U, D, L, R, a, b, c, x, y, z, s, d, w, m
 }
 
 // Resolve U and D conflicts based on SOCD resolution config

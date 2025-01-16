@@ -611,7 +611,7 @@ func (r *Renderer_GL32) Init() {
 			gl.DrawBuffer(gl.NONE)
 			gl.ReadBuffer(gl.NONE)
 			if status := gl.CheckFramebufferStatus(gl.FRAMEBUFFER); status != gl.FRAMEBUFFER_COMPLETE {
-				sys.errLog.Printf("framebuffer create failed: 0x%x", status)
+				sys.errLog.Printf("[GL32] framebuffer create failed: 0x%x", status)
 			}
 		}
 		gl.GenFramebuffers(1, &r.fbo_env)

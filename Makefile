@@ -76,8 +76,12 @@ appbundle:
 clean_appbundle:
 	rm -rf I.K.E.M.E.N-Go.app
 
-aarch64:
+aarch64: src/assets.zip
 	export CGO_ENABLED=1 && go build -tags="kmsdrm,gles2" -trimpath -ldflags="-s -w" -v -o ./bin/Ikemen_GO_aarch64 ./src
 
-steamdeck:
+steamdeck: src/assets.zip
 	export CGO_ENABLED=1 && go build -tags="x11" -trimpath -ldflags="-s -w" -v -o ./bin/Ikemen_GO_steamdeck ./src
+
+src/assets.zip: data/* external/* font/*
+	zip -r src/assets.zip data external font
+	

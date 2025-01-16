@@ -319,6 +319,28 @@ func (s *System) init(w, h int32) *lua.LState {
 	s.window, err = s.newWindow(int(s.scrrect[2]), int(s.scrrect[3]))
 	chk(err)
 
+	// Update gamepad mappings
+	fileName := FileExist(s.cfg.Config.GamepadMappings)
+	if fileName != "" {
+		mappings, _ := LoadText(fileName)
+		if input.UpdateGamepadMappings(mappings) {
+			fmt.Printf("Gamepad mappings updated from %v.\n", fileName)
+		} else {
+			fmt.Printf("Failed to update gamepad mappings from %v.\n", fileName)
+		}
+	}
+
+	// Print connected joysticks
+	for i := 0; i < input.GetMaxJoystickCount(); i++ {
+		if input.IsJoystickPresent(i) {
+			if input.joystick[i].IsGamepad() {
+				fmt.Printf("Gamepad-%v [%v] GUID:%v connected.\n", i, input.GetJoystickName(i), input.GetJoystickGUID(i))
+			} else {
+				fmt.Printf("Joystick-%v [%v] GUID:%v connected but has no gamepad mapping.\n", i, input.GetJoystickName(i), input.GetJoystickGUID(i))
+			}
+		}
+	}
+
 	// Correct the joystick mappings (macOS)
 	if runtime.GOOS == "darwin" {
 		for i := 0; i < len(sys.joystickConfig); i++ {
