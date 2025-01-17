@@ -2438,6 +2438,9 @@ func (c *Char) init(n int, idx int32) {
 		facing:        1,
 		minus:         2,
 		winquote:      -1,
+		attackDistX:   [2]float32{c.size.attack.dist.width[0], c.size.attack.dist.width[1]},
+		attackDistY:   [2]float32{c.size.attack.dist.height[0], c.size.attack.dist.height[1]},
+		attackDistZ:   [2]float32{c.size.attack.dist.depth[0], c.size.attack.dist.depth[1]},
 		clsnBaseScale: [2]float32{1, 1},
 		clsnScaleMul:  [2]float32{1, 1},
 		clsnScale:     [2]float32{1, 1},
@@ -4583,6 +4586,10 @@ func (c *Char) stateChange1(no int32, pn int) bool {
 		return false
 	}
 	c.ss.no, c.ss.prevno, c.ss.time = Max(0, no), c.ss.no, 0
+	c.attackDistX = [2]float32{c.size.attack.dist.width[0], c.size.attack.dist.width[1]}
+	c.attackDistY = [2]float32{c.size.attack.dist.height[0], c.size.attack.dist.height[1]}
+	c.attackDistZ = [2]float32{c.size.attack.dist.depth[0], c.size.attack.dist.depth[1]}
+
 	// Local scale updates
 	// If the new state uses a different localcoord, some values need to be updated in the same frame
 	if newLs := 320 / sys.chars[pn][0].localcoord; c.localscl != newLs {
@@ -7525,9 +7532,6 @@ func (c *Char) actionPrepare() {
 				}
 			}
 			c.pushPriority = 0 // Reset player pushing priority
-			c.attackDistX = [2]float32{c.size.attack.dist.width[0], c.size.attack.dist.width[1]}
-			c.attackDistY = [2]float32{c.size.attack.dist.height[0], c.size.attack.dist.height[1]}
-			c.attackDistZ = [2]float32{c.size.attack.dist.depth[0], c.size.attack.dist.depth[1]}
 			// HitBy timers
 			// In Mugen this seems to happen at the end of each frame instead
 			for i, hb := range c.hitby {

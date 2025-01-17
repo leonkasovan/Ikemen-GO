@@ -1171,14 +1171,8 @@ func (s *System) addFrameTime(t float32) bool {
 	return true
 }
 func (s *System) resetFrameTime() {
-	// Without this workaround, for some reason, sys.tickCount (RoundTime trigger) starts with 1 when the round is restarted via F4.
-	if s.roundResetFlg {
-		s.tickCount, s.oldTickCount, s.tickCountF, s.lastTick, s.absTickCountF = -1, -2, -1, -1, -1
-		s.nextAddTime, s.oldNextAddTime = 0, 0
-	} else {
-		s.tickCount, s.oldTickCount, s.tickCountF, s.lastTick, s.absTickCountF = 0, -1, 0, 0, 0
-		s.nextAddTime, s.oldNextAddTime = 1, 1
-	}
+	s.tickCount, s.oldTickCount, s.tickCountF, s.lastTick, s.absTickCountF = 0, -1, 0, 0, 0
+	s.nextAddTime, s.oldNextAddTime = 1, 1
 }
 
 func (s *System) charUpdate() {
@@ -2352,6 +2346,14 @@ func (s *System) fight() (reload bool) {
 		// Update game state
 		s.action()
 
+		debugInput()
+		if !s.addFrameTime(s.turbo) {
+			if !s.eventUpdate() {
+				return false
+			}
+			continue
+		}
+
 		// F4 pressed to restart round
 		if s.roundResetFlg && !s.postMatchFlg {
 			sys.paused = false
@@ -2362,13 +2364,6 @@ func (s *System) fight() (reload bool) {
 			return true
 		}
 
-		debugInput()
-		if !s.addFrameTime(s.turbo) {
-			if !s.eventUpdate() {
-				return false
-			}
-			continue
-		}
 		// Render frame
 		if !s.frameSkip {
 			x, y, scl := s.cam.Pos[0], s.cam.Pos[1], s.cam.Scale/s.cam.BaseScale()

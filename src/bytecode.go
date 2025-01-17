@@ -1789,21 +1789,9 @@ func (be BytecodeExp) run(c *Char) BytecodeValue {
 			// In Winmugen a helper's PalNo is always 1
 			// That behavior has no apparent benefits and even Mugen 1.0 compatibility mode does not keep it
 		case OC_pos_x:
-			var bindVelx float32
-			if c.bindToId > 0 && !math.IsNaN(float64(c.bindPos[0])) && c.stWgi().ikemenver[0] == 0 && c.stWgi().ikemenver[1] == 0 {
-				if sys.playerID(c.bindToId) != nil {
-					bindVelx = c.vel[0]
-				}
-			}
-			sys.bcStack.PushF(((c.pos[0]+bindVelx)*(c.localscl/oc.localscl) - sys.cam.Pos[0]/oc.localscl))
+			sys.bcStack.PushF((c.pos[0]*(c.localscl/oc.localscl) - sys.cam.Pos[0]/oc.localscl))
 		case OC_pos_y:
-			var bindVely float32
-			if c.bindToId > 0 && !math.IsNaN(float64(c.bindPos[1])) && c.stWgi().ikemenver[0] == 0 && c.stWgi().ikemenver[1] == 0 {
-				if sys.playerID(c.bindToId) != nil {
-					bindVely = c.vel[1]
-				}
-			}
-			sys.bcStack.PushF((c.pos[1] + bindVely - c.groundLevel - c.platformPosY) * (c.localscl / oc.localscl))
+			sys.bcStack.PushF((c.pos[1] - c.groundLevel - c.platformPosY) * (c.localscl / oc.localscl))
 		case OC_power:
 			sys.bcStack.PushI(c.getPower())
 		case OC_powermax:
