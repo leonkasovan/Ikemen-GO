@@ -453,6 +453,10 @@ func NewInputReader() *InputReader {
 	}
 }
 
+// Resolve Simultaneous Opposing Cardinal Directions (SOCD)
+// Left and Right are solved in CommandList Input based on B and F outcome
+func (ir *InputReader) SocdResolution(U, D, B, F bool) (bool, bool, bool, bool) {
+
 	// Resolve U and D conflicts based on SOCD resolution config
 	resolveUD := func(U, D bool) (bool, bool) {
 		// Check first direction held
