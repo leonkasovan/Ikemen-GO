@@ -199,7 +199,7 @@ if !dizzy || time > 300 {
 
 if !const(Default.Enable.Dizzy) || isHelper || teamSide = 0 {
 	# Do nothing, global code disabled locally or executed by helper/stage
-} else if roundState = 0 {
+} else if roundTime = 0 {
 	# Initialize points and variables
 	dizzyPointsSet{value: dizzyPointsMax}
 	map(_iksys_dizzyPointsTimer) := 0;

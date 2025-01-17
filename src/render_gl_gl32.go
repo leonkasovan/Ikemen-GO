@@ -359,7 +359,7 @@ func (r *Renderer_GL32) InitModelShader() error {
 	r.modelShader.RegisterUniforms("model", "view", "projection", "normalMatrix", "unlit", "baseColorFactor", "add", "mult", "useTexture", "useNormalMap", "useMetallicRoughnessMap", "useEmissionMap", "neg", "gray", "hue",
 		"enableAlpha", "alphaThreshold", "numJoints", "morphTargetWeight", "morphTargetOffset", "morphTargetTextureDimension", "numTargets", "numVertices",
 		"metallicRoughness", "ambientOcclusionStrength", "emission", "environmentIntensity", "mipCount",
-		"cameraPosition", "environmentRotation",
+		"cameraPosition", "environmentRotation", "texTransform", "normalMapTransform", "metallicRoughnessMapTransform", "ambientOcclusionMapTransform", "emissionMapTransform",
 		"lightMatrices[0]", "lightMatrices[1]", "lightMatrices[2]", "lightMatrices[3]",
 		"lights[0].direction", "lights[0].range", "lights[0].color", "lights[0].intensity", "lights[0].position", "lights[0].innerConeCos", "lights[0].outerConeCos", "lights[0].type", "lights[0].shadowBias", "lights[0].shadowMapFar",
 		"lights[1].direction", "lights[1].range", "lights[1].color", "lights[1].intensity", "lights[1].position", "lights[1].innerConeCos", "lights[1].outerConeCos", "lights[1].type", "lights[1].shadowBias", "lights[1].shadowMapFar",
@@ -380,7 +380,7 @@ func (r *Renderer_GL32) InitModelShader() error {
 			"lightMatrices[12]", "lightMatrices[13]", "lightMatrices[14]", "lightMatrices[15]", "lightMatrices[16]", "lightMatrices[17]",
 			"lightMatrices[18]", "lightMatrices[19]", "lightMatrices[20]", "lightMatrices[21]", "lightMatrices[22]", "lightMatrices[23]",
 			"lightType[0]", "lightType[1]", "lightType[2]", "lightType[3]", "lightPos[0]", "lightPos[1]", "lightPos[2]", "lightPos[3]",
-			"farPlane[0]", "farPlane[1]", "farPlane[2]", "farPlane[3]", "numJoints", "morphTargetWeight", "morphTargetOffset", "morphTargetTextureDimension", "numTargets", "numVertices", "enableAlpha", "alphaThreshold", "baseColorFactor", "useTexture", "layerOffset", "lightIndex")
+			"farPlane[0]", "farPlane[1]", "farPlane[2]", "farPlane[3]", "numJoints", "morphTargetWeight", "morphTargetOffset", "morphTargetTextureDimension", "numTargets", "numVertices", "enableAlpha", "alphaThreshold", "baseColorFactor", "useTexture", "texTransform", "layerOffset", "lightIndex")
 		r.shadowMapShader.RegisterTextures("morphTargetValues", "jointMatrices", "tex")
 	}
 	r.panoramaToCubeMapShader, err = r.newShaderProgram(identVertShader, panoramaToCubeMapFragShader, "", "Panorama To Cubemap Shader", false)
@@ -1211,6 +1211,11 @@ func (r *Renderer_GL32) SetModelUniformFv(name string, values []float32) {
 func (r *Renderer_GL32) SetModelUniformMatrix(name string, value []float32) {
 	loc := r.modelShader.u[name]
 	gl.UniformMatrix4fv(loc, 1, false, &value[0])
+}
+
+func (r *Renderer_GL32) SetModelUniformMatrix3(name string, value []float32) {
+	loc := r.modelShader.u[name]
+	gl.UniformMatrix3fv(loc, 1, false, &value[0])
 }
 
 func (r *Renderer_GL32) SetModelTexture(name string, tex Texture) {

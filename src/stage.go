@@ -403,7 +403,7 @@ func (bg backGround) draw(pos [2]float32, drawscl, bgscl, stglscl float32,
 	y := bg.start[1] - yScrollPos + bg.bga.offset[1]
 
 	// Calculate Y scaling based on vertical scroll position and delta
-	ys2 := bg.scaledelta[1] * pos[1] * bg.delta[1] * bgscl
+	ys2 := bg.scaledelta[1] * pos[1] * bg.delta[1] * bgscl / drawscl
 	ys := ((100-(pos[1])*bg.yscaledelta)*bgscl/bg.yscalestart)*bg.scalestart[1] + ys2
 	xs := bg.scaledelta[0] * pos[0] * bg.delta[0] * bgscl
 	x *= bgscl
@@ -1052,15 +1052,15 @@ func loadStage(def string, maindef bool) (*Stage, error) {
 		sec[0].ReadF32("boundhighzoomdelta", &s.stageCamera.boundhighzoomdelta)
 		sec[0].ReadF32("verticalfollowzoomdelta", &s.stageCamera.verticalfollowzoomdelta)
 		sec[0].ReadBool("lowestcap", &s.stageCamera.lowestcap)
-		if sys.cfg.Config.ForceStageZoomin == 0 {
-			sec[0].ReadF32("zoomin", &s.stageCamera.zoomin)
-		} else {
-			s.stageCamera.zoomin = sys.cfg.Config.ForceStageZoomin
-		}
-		if sys.cfg.Config.ForceStageZoomout == 0 {
-			sec[0].ReadF32("zoomout", &s.stageCamera.zoomout)
-		} else {
-			s.stageCamera.zoomout = sys.cfg.Config.ForceStageZoomout
+		sec[0].ReadF32("zoomin", &s.stageCamera.zoomin)
+		sec[0].ReadF32("zoomout", &s.stageCamera.zoomout)
+		if s.stageCamera.zoomin == 1 && s.stageCamera.zoomout == 1 {
+			if sys.cfg.Debug.ForceStageZoomin > 0 {
+				s.stageCamera.zoomin = sys.cfg.Debug.ForceStageZoomin
+			}
+			if sys.cfg.Debug.ForceStageZoomout > 0 {
+				s.stageCamera.zoomout = sys.cfg.Debug.ForceStageZoomout
+			}
 		}
 		anchor, _, _ := sec[0].getText("zoomanchor")
 		if strings.ToLower(anchor) == "bottom" {
@@ -1282,13 +1282,13 @@ func loadStage(def string, maindef bool) (*Stage, error) {
 			bgcdef.bg, bgcdef.looptime = nil, -1
 			if ids := is.readI32CsvForStage("ctrlid"); len(ids) > 0 &&
 				(len(ids) > 1 || ids[0] != -1) {
-				kishutu := make(map[int32]bool)
+				uniqueIDs := make(map[int32]bool)
 				for _, id := range ids {
-					if kishutu[id] {
+					if uniqueIDs[id] {
 						continue
 					}
 					bgcdef.bg = append(bgcdef.bg, s.getBg(id)...)
-					kishutu[id] = true
+					uniqueIDs[id] = true
 				}
 			} else {
 				bgcdef.bg = append(bgcdef.bg, s.bg...)
@@ -1300,13 +1300,13 @@ func loadStage(def string, maindef bool) (*Stage, error) {
 			if ids := is.readI32CsvForStage("ctrlid"); len(ids) > 0 {
 				bgc.bg = nil
 				if len(ids) > 1 || ids[0] != -1 {
-					kishutu := make(map[int32]bool)
+					uniqueIDs := make(map[int32]bool)
 					for _, id := range ids {
-						if kishutu[id] {
+						if uniqueIDs[id] {
 							continue
 						}
 						bgc.bg = append(bgc.bg, s.getBg(id)...)
-						kishutu[id] = true
+						uniqueIDs[id] = true
 					}
 				} else {
 					bgc.bg = append(bgc.bg, s.bg...)
@@ -1854,6 +1854,7 @@ const (
 	TRSScale
 	TRSRotation
 	MorphTargetWeight
+	AnimVec2
 	AnimVec3
 	AnimVec4
 	AnimVecElem
@@ -1925,21 +1926,41 @@ const (
 )
 
 type Material struct {
-	name                      string
-	alphaMode                 AlphaMode
-	alphaCutoff               GLTFAnimatableProperty // float32
-	textureIndex              *uint32
-	normalMapIndex            *uint32
-	ambientOcclusionMapIndex  *uint32
-	metallicRoughnessMapIndex *uint32
-	emissionMapIndex          *uint32
-	baseColorFactor           GLTFAnimatableProperty // [4]float32
-	doubleSided               bool
-	ambientOcclusion          GLTFAnimatableProperty // float32
-	metallic                  GLTFAnimatableProperty // float32
-	roughness                 GLTFAnimatableProperty // float32
-	emission                  GLTFAnimatableProperty // [3]float32
-	unlit                     bool
+	name                          string
+	alphaMode                     AlphaMode
+	alphaCutoff                   GLTFAnimatableProperty // float32
+	textureIndex                  *uint32
+	textureOffset                 GLTFAnimatableProperty // [3]float32
+	textureRotation               GLTFAnimatableProperty // [4]float32
+	textureScale                  GLTFAnimatableProperty // [3]float32
+	textureTransform              [9]float32
+	normalMapIndex                *uint32
+	normalMapOffset               GLTFAnimatableProperty // [3]float32
+	normalMapRotation             GLTFAnimatableProperty // [4]float32
+	normalMapScale                GLTFAnimatableProperty // [3]float32
+	normalMapTransform            [9]float32
+	ambientOcclusionMapIndex      *uint32
+	ambientOcclusionMapOffset     GLTFAnimatableProperty // [3]float32
+	ambientOcclusionMapRotation   GLTFAnimatableProperty // [4]float32
+	ambientOcclusionMapScale      GLTFAnimatableProperty // [3]float32
+	ambientOcclusionMapTransform  [9]float32
+	metallicRoughnessMapIndex     *uint32
+	metallicRoughnessMapOffset    GLTFAnimatableProperty // [3]float32
+	metallicRoughnessMapRotation  GLTFAnimatableProperty // [4]float32
+	metallicRoughnessMapScale     GLTFAnimatableProperty // [3]float32
+	metallicRoughnessMapTransform [9]float32
+	emissionMapIndex              *uint32
+	emissionMapOffset             GLTFAnimatableProperty // [3]float32
+	emissionMapRotation           GLTFAnimatableProperty // [4]float32
+	emissionMapScale              GLTFAnimatableProperty // [3]float32
+	emissionMapTransform          [9]float32
+	baseColorFactor               GLTFAnimatableProperty // [4]float32
+	doubleSided                   bool
+	ambientOcclusion              GLTFAnimatableProperty // float32
+	metallic                      GLTFAnimatableProperty // float32
+	roughness                     GLTFAnimatableProperty // float32
+	emission                      GLTFAnimatableProperty // [3]float32
+	unlit                         bool
 }
 type Trans byte
 
@@ -2234,24 +2255,93 @@ func loadglTFStage(filepath string) (*Model, error) {
 	mdl.materials = make([]*Material, 0, len(doc.Materials))
 	for _, m := range doc.Materials {
 		material := &Material{
-			baseColorFactor:  GLTFAnimatableProperty{isAnimated: false, restValue: [4]float32{1, 1, 1, 1}},
-			roughness:        GLTFAnimatableProperty{isAnimated: false, restValue: float32(1.0)},
-			metallic:         GLTFAnimatableProperty{isAnimated: false, restValue: float32(1.0)},
-			ambientOcclusion: GLTFAnimatableProperty{isAnimated: false, restValue: float32(1.0)},
-			emission:         GLTFAnimatableProperty{isAnimated: false, restValue: [3]float32{0, 0, 0}},
-			alphaCutoff:      GLTFAnimatableProperty{isAnimated: false, restValue: float32(0.0)},
+			baseColorFactor:              GLTFAnimatableProperty{isAnimated: false, restValue: [4]float32{1, 1, 1, 1}},
+			roughness:                    GLTFAnimatableProperty{isAnimated: false, restValue: float32(1.0)},
+			metallic:                     GLTFAnimatableProperty{isAnimated: false, restValue: float32(1.0)},
+			ambientOcclusion:             GLTFAnimatableProperty{isAnimated: false, restValue: float32(1.0)},
+			emission:                     GLTFAnimatableProperty{isAnimated: false, restValue: [3]float32{0, 0, 0}},
+			alphaCutoff:                  GLTFAnimatableProperty{isAnimated: false, restValue: float32(0.0)},
+			textureOffset:                GLTFAnimatableProperty{isAnimated: false, restValue: [2]float32{0.0, 0.0}},
+			textureRotation:              GLTFAnimatableProperty{isAnimated: false, restValue: float32(0.0)},
+			textureScale:                 GLTFAnimatableProperty{isAnimated: false, restValue: [2]float32{1.0, 1.0}},
+			normalMapOffset:              GLTFAnimatableProperty{isAnimated: false, restValue: [2]float32{0.0, 0.0}},
+			normalMapRotation:            GLTFAnimatableProperty{isAnimated: false, restValue: float32(0.0)},
+			normalMapScale:               GLTFAnimatableProperty{isAnimated: false, restValue: [2]float32{1.0, 1.0}},
+			ambientOcclusionMapOffset:    GLTFAnimatableProperty{isAnimated: false, restValue: [2]float32{0.0, 0.0}},
+			ambientOcclusionMapRotation:  GLTFAnimatableProperty{isAnimated: false, restValue: float32(0.0)},
+			ambientOcclusionMapScale:     GLTFAnimatableProperty{isAnimated: false, restValue: [2]float32{1.0, 1.0}},
+			metallicRoughnessMapOffset:   GLTFAnimatableProperty{isAnimated: false, restValue: [2]float32{0.0, 0.0}},
+			metallicRoughnessMapRotation: GLTFAnimatableProperty{isAnimated: false, restValue: float32(0.0)},
+			metallicRoughnessMapScale:    GLTFAnimatableProperty{isAnimated: false, restValue: [2]float32{1.0, 1.0}},
+			emissionMapOffset:            GLTFAnimatableProperty{isAnimated: false, restValue: [2]float32{0.0, 0.0}},
+			emissionMapRotation:          GLTFAnimatableProperty{isAnimated: false, restValue: float32(0.0)},
+			emissionMapScale:             GLTFAnimatableProperty{isAnimated: false, restValue: [2]float32{1.0, 1.0}},
 		}
 		if m.PBRMetallicRoughness.BaseColorTexture != nil {
 			material.textureIndex = new(uint32)
 			*material.textureIndex = m.PBRMetallicRoughness.BaseColorTexture.Index
+			if m.PBRMetallicRoughness.BaseColorTexture.Extensions != nil {
+				if l, ok := m.PBRMetallicRoughness.BaseColorTexture.Extensions["KHR_texture_transform"]; ok {
+					var ext interface{}
+					err := json.Unmarshal(l.(json.RawMessage), &ext)
+					if err != nil {
+						return nil, err
+					}
+					if offset, ok := ext.(map[string]interface{})["offset"].([]interface{}); ok {
+						material.textureOffset.restAt([2]float32{float32(offset[0].(float64)), float32(offset[1].(float64))})
+					}
+					if rotation, ok := ext.(map[string]interface{})["rotation"].(float64); ok {
+						material.textureRotation.restAt(float32(rotation))
+					}
+					if scale, ok := ext.(map[string]interface{})["scale"].([]interface{}); ok {
+						material.textureScale.restAt([2]float32{float32(scale[0].(float64)), float32(scale[1].(float64))})
+					}
+				}
+			}
 		}
 		if m.NormalTexture != nil {
 			material.normalMapIndex = new(uint32)
 			*material.normalMapIndex = *m.NormalTexture.Index
+			if m.NormalTexture.Extensions != nil {
+				if l, ok := m.NormalTexture.Extensions["KHR_texture_transform"]; ok {
+					var ext interface{}
+					err := json.Unmarshal(l.(json.RawMessage), &ext)
+					if err != nil {
+						return nil, err
+					}
+					if offset, ok := ext.(map[string]interface{})["offset"].([]interface{}); ok {
+						material.normalMapOffset.restAt([2]float32{float32(offset[0].(float64)), float32(offset[1].(float64))})
+					}
+					if rotation, ok := ext.(map[string]interface{})["rotation"].(float64); ok {
+						material.normalMapRotation.restAt(float32(rotation))
+					}
+					if scale, ok := ext.(map[string]interface{})["scale"].([]interface{}); ok {
+						material.normalMapScale.restAt([2]float32{float32(scale[0].(float64)), float32(scale[1].(float64))})
+					}
+				}
+			}
 		}
 		if m.PBRMetallicRoughness.MetallicRoughnessTexture != nil {
 			material.metallicRoughnessMapIndex = new(uint32)
 			*material.metallicRoughnessMapIndex = m.PBRMetallicRoughness.MetallicRoughnessTexture.Index
+			if m.PBRMetallicRoughness.MetallicRoughnessTexture.Extensions != nil {
+				if l, ok := m.PBRMetallicRoughness.MetallicRoughnessTexture.Extensions["KHR_texture_transform"]; ok {
+					var ext interface{}
+					err := json.Unmarshal(l.(json.RawMessage), &ext)
+					if err != nil {
+						return nil, err
+					}
+					if offset, ok := ext.(map[string]interface{})["offset"].([]interface{}); ok {
+						material.metallicRoughnessMapOffset.restAt([2]float32{float32(offset[0].(float64)), float32(offset[1].(float64))})
+					}
+					if rotation, ok := ext.(map[string]interface{})["rotation"].(float64); ok {
+						material.metallicRoughnessMapRotation.restAt(float32(rotation))
+					}
+					if scale, ok := ext.(map[string]interface{})["scale"].([]interface{}); ok {
+						material.metallicRoughnessMapScale.restAt([2]float32{float32(scale[0].(float64)), float32(scale[1].(float64))})
+					}
+				}
+			}
 		}
 		if m.PBRMetallicRoughness.BaseColorFactor != nil {
 			material.baseColorFactor.restAt(*m.PBRMetallicRoughness.BaseColorFactor)
@@ -2269,6 +2359,24 @@ func loadglTFStage(filepath string) (*Model, error) {
 			if m.OcclusionTexture.Strength != nil {
 				material.ambientOcclusion.restAt(*m.OcclusionTexture.Strength)
 			}
+			if m.OcclusionTexture.Extensions != nil {
+				if l, ok := m.OcclusionTexture.Extensions["KHR_texture_transform"]; ok {
+					var ext interface{}
+					err := json.Unmarshal(l.(json.RawMessage), &ext)
+					if err != nil {
+						return nil, err
+					}
+					if offset, ok := ext.(map[string]interface{})["offset"].([]interface{}); ok {
+						material.ambientOcclusionMapOffset.restAt([2]float32{float32(offset[0].(float64)), float32(offset[1].(float64))})
+					}
+					if rotation, ok := ext.(map[string]interface{})["rotation"].(float64); ok {
+						material.ambientOcclusionMapRotation.restAt(float32(rotation))
+					}
+					if scale, ok := ext.(map[string]interface{})["scale"].([]interface{}); ok {
+						material.ambientOcclusionMapScale.restAt([2]float32{float32(scale[0].(float64)), float32(scale[1].(float64))})
+					}
+				}
+			}
 		} else {
 			material.ambientOcclusion.restAt(float32(0))
 		}
@@ -2276,6 +2384,24 @@ func loadglTFStage(filepath string) (*Model, error) {
 		if m.EmissiveTexture != nil {
 			material.emissionMapIndex = new(uint32)
 			*material.emissionMapIndex = m.EmissiveTexture.Index
+			if m.EmissiveTexture.Extensions != nil {
+				if l, ok := m.EmissiveTexture.Extensions["KHR_texture_transform"]; ok {
+					var ext interface{}
+					err := json.Unmarshal(l.(json.RawMessage), &ext)
+					if err != nil {
+						return nil, err
+					}
+					if offset, ok := ext.(map[string]interface{})["offset"].([]interface{}); ok {
+						material.emissionMapOffset.restAt([2]float32{float32(offset[0].(float64)), float32(offset[1].(float64))})
+					}
+					if rotation, ok := ext.(map[string]interface{})["rotation"].(float64); ok {
+						material.emissionMapRotation.restAt(float32(rotation))
+					}
+					if scale, ok := ext.(map[string]interface{})["scale"].([]interface{}); ok {
+						material.emissionMapScale.restAt([2]float32{float32(scale[0].(float64)), float32(scale[1].(float64))})
+					}
+				}
+			}
 		}
 		material.name = m.Name
 		material.alphaMode, _ = map[gltf.AlphaMode]AlphaMode{
@@ -2739,6 +2865,10 @@ func loadglTFStage(filepath string) (*Model, error) {
 		if n.Mesh != nil {
 			node.meshIndex = new(uint32)
 			*node.meshIndex = *n.Mesh
+			if len(n.Weights) == 0 {
+				m := mdl.meshes[*n.Mesh]
+				node.morphTargetWeights.restAt(m.morphTargetWeights.getValue())
+			}
 		}
 		node.trans = TransNone
 		node.castShadow = true
@@ -2992,6 +3122,55 @@ func (n *Node) calculateWorldTransform(parentTransorm mgl.Mat4, nodes []*Node) {
 	}
 	return
 }
+func (mdl *Model) calculateTextureTransform() {
+	for _, m := range mdl.materials {
+		if index := m.textureIndex; index != nil {
+			t := m.textureOffset.getValue().([2]float32)
+			mat := mgl.Translate2D(t[0], t[1])
+			r := m.textureRotation.getValue().(float32)
+			mat = mat.Mul3(mgl.HomogRotate2D(r).Transpose())
+			s := m.textureScale.getValue().([2]float32)
+			mat = mat.Mul3(mgl.Scale2D(s[0], s[1]))
+			m.textureTransform = mat
+		}
+		if index := m.normalMapIndex; index != nil {
+			t := m.normalMapOffset.getValue().([2]float32)
+			mat := mgl.Translate2D(t[0], t[1])
+			r := m.normalMapRotation.getValue().(float32)
+			mat = mat.Mul3(mgl.HomogRotate2D(r).Transpose())
+			s := m.normalMapScale.getValue().([2]float32)
+			mat = mat.Mul3(mgl.Scale2D(s[0], s[1]))
+			m.normalMapTransform = mat
+		}
+		if index := m.ambientOcclusionMapIndex; index != nil {
+			t := m.ambientOcclusionMapOffset.getValue().([2]float32)
+			mat := mgl.Translate2D(t[0], t[1])
+			r := m.ambientOcclusionMapRotation.getValue().(float32)
+			mat = mat.Mul3(mgl.HomogRotate2D(r).Transpose())
+			s := m.ambientOcclusionMapScale.getValue().([2]float32)
+			mat = mat.Mul3(mgl.Scale2D(s[0], s[1]))
+			m.ambientOcclusionMapTransform = mat
+		}
+		if index := m.metallicRoughnessMapIndex; index != nil {
+			t := m.metallicRoughnessMapOffset.getValue().([2]float32)
+			mat := mgl.Translate2D(t[0], t[1])
+			r := m.metallicRoughnessMapRotation.getValue().(float32)
+			mat = mat.Mul3(mgl.HomogRotate2D(r).Transpose())
+			s := m.metallicRoughnessMapScale.getValue().([2]float32)
+			mat = mat.Mul3(mgl.Scale2D(s[0], s[1]))
+			m.metallicRoughnessMapTransform = mat
+		}
+		if index := m.emissionMapIndex; index != nil {
+			t := m.emissionMapOffset.getValue().([2]float32)
+			mat := mgl.Translate2D(t[0], t[1])
+			r := m.emissionMapRotation.getValue().(float32)
+			mat = mat.Mul3(mgl.HomogRotate2D(r).Transpose())
+			s := m.emissionMapScale.getValue().([2]float32)
+			mat = mat.Mul3(mgl.Scale2D(s[0], s[1]))
+			m.emissionMapTransform = mat
+		}
+	}
+}
 func calculateAnimationData(mdl *Model, n *Node) {
 	for _, index := range n.childrenIndex {
 		calculateAnimationData(mdl, mdl.nodes[index])
@@ -3161,6 +3340,11 @@ func drawNode(mdl *Model, scene *Scene, n *Node, camOffset [3]float32, drawBlend
 		//gfx.SetModelUniformF("ambientOcclusion", 1)
 		gfx.SetModelUniformF("metallicRoughness", mat.metallic.getValue().(float32), mat.roughness.getValue().(float32))
 		gfx.SetModelUniformF("ambientOcclusionStrength", mat.ambientOcclusion.getValue().(float32))
+		gfx.SetModelUniformMatrix3("texTransform", mat.textureTransform[:])
+		gfx.SetModelUniformMatrix3("normalMapTransform", mat.normalMapTransform[:])
+		gfx.SetModelUniformMatrix3("metallicRoughnessMapTransform", mat.metallicRoughnessMapTransform[:])
+		gfx.SetModelUniformMatrix3("ambientOcclusionMapTransform", mat.ambientOcclusionMapTransform[:])
+		gfx.SetModelUniformMatrix3("emissionMapTransform", mat.emissionMapTransform[:])
 
 		gfx.SetModelUniformF("cameraPosition", -camOffset[0], -camOffset[1], -camOffset[2])
 
@@ -3289,6 +3473,7 @@ func drawNodeShadow(mdl *Model, scene *Scene, n *Node, camOffset [3]float32, dra
 		} else {
 			gfx.SetShadowMapUniformI("useTexture", 0)
 		}
+		gfx.SetModelUniformMatrix3("texTransform", mat.textureTransform[:])
 		for i := 0; i < numLights; i++ {
 			gfx.SetShadowMapUniformI("layerOffset", i*6)
 			gfx.SetShadowMapUniformI("lightIndex", i+lightIndex)
@@ -3322,6 +3507,7 @@ func (s *Stage) drawModel(pos [2]float32, yofs float32, scl float32, sceneNumber
 	view = view.Mul4(mgl.HomogRotate3DZ(rotation[2]))
 	view = view.Mul4(mgl.Scale3D(scale[0], scale[1], scale[2]))
 	scene := s.model.scenes[sceneNumber]
+	s.model.calculateTextureTransform()
 	for _, index := range scene.nodes {
 		s.model.nodes[index].calculateWorldTransform(mgl.Ident4(), s.model.nodes)
 		calculateAnimationData(s.model, s.model.nodes[index])
@@ -3585,6 +3771,50 @@ func (channel *GLTFAnimationChannel) parseAnimationPointer(m *Model, pointer str
 			switch components[4] {
 			case "scale":
 				return Error("invalid/unsupported JSON pointer: " + pointer)
+			case "extensions":
+				switch components[5] {
+				case "KHR_texture_transform":
+					switch components[6] {
+					case "offset":
+						channel.target = &material.normalMapOffset
+						channel.targetType = AnimVec2
+					case "scale":
+						channel.target = &material.normalMapScale
+						channel.targetType = AnimVec2
+					case "rotation":
+						channel.target = &material.normalMapRotation
+						channel.targetType = AnimFloat
+					default:
+						return Error("invalid/unsupported JSON pointer: " + pointer)
+					}
+				default:
+					return Error("invalid/unsupported JSON pointer: " + pointer)
+				}
+			default:
+				return Error("invalid/unsupported JSON pointer: " + pointer)
+			}
+		case "emissiveTexture":
+			switch components[4] {
+			case "extensions":
+				switch components[5] {
+				case "KHR_texture_transform":
+					switch components[6] {
+					case "offset":
+						channel.target = &material.emissionMapOffset
+						channel.targetType = AnimVec2
+					case "scale":
+						channel.target = &material.emissionMapScale
+						channel.targetType = AnimVec2
+					case "rotation":
+						channel.target = &material.emissionMapRotation
+						channel.targetType = AnimFloat
+					default:
+						return Error("invalid/unsupported JSON pointer: " + pointer)
+					}
+				default:
+					return Error("invalid/unsupported JSON pointer: " + pointer)
+				}
+
 			default:
 				return Error("invalid/unsupported JSON pointer: " + pointer)
 			}
@@ -3593,6 +3823,26 @@ func (channel *GLTFAnimationChannel) parseAnimationPointer(m *Model, pointer str
 			case "strength":
 				channel.target = &material.ambientOcclusion
 				channel.targetType = AnimFloat
+			case "extensions":
+				switch components[5] {
+				case "KHR_texture_transform":
+					switch components[6] {
+					case "offset":
+						channel.target = &material.ambientOcclusionMapOffset
+						channel.targetType = AnimVec2
+					case "scale":
+						channel.target = &material.ambientOcclusionMapScale
+						channel.targetType = AnimVec2
+					case "rotation":
+						channel.target = &material.ambientOcclusionMapRotation
+						channel.targetType = AnimFloat
+					default:
+						return Error("invalid/unsupported JSON pointer: " + pointer)
+					}
+				default:
+					return Error("invalid/unsupported JSON pointer: " + pointer)
+				}
+
 			default:
 				return Error("invalid/unsupported JSON pointer: " + pointer)
 			}
@@ -3607,6 +3857,25 @@ func (channel *GLTFAnimationChannel) parseAnimationPointer(m *Model, pointer str
 			case "roughnessFactor":
 				channel.target = &material.roughness
 				channel.targetType = AnimFloat
+			case "extensions":
+				switch components[5] {
+				case "KHR_texture_transform":
+					switch components[6] {
+					case "offset":
+						channel.target = &material.metallicRoughnessMapOffset
+						channel.targetType = AnimVec2
+					case "scale":
+						channel.target = &material.metallicRoughnessMapScale
+						channel.targetType = AnimVec2
+					case "rotation":
+						channel.target = &material.metallicRoughnessMapRotation
+						channel.targetType = AnimFloat
+					default:
+						return Error("invalid/unsupported JSON pointer: " + pointer)
+					}
+				default:
+					return Error("invalid/unsupported JSON pointer: " + pointer)
+				}
 			default:
 				return Error("invalid/unsupported JSON pointer: " + pointer)
 			}
@@ -3830,6 +4099,9 @@ func (model *Model) step() {
 			case MorphTargetWeight, AnimVec:
 				newVals := model.calculateAnimInterpolation(sampler.interpolation, sampler, anim.time, prevIndex, len(channel.target.getValue().([]float32)))
 				channel.target.animate(newVals)
+			case AnimVec2:
+				newVals := model.calculateAnimInterpolation(sampler.interpolation, sampler, anim.time, prevIndex, 2)
+				channel.target.animate([2]float32{newVals[0], newVals[1]})
 			case AnimVec3:
 				newVals := model.calculateAnimInterpolation(sampler.interpolation, sampler, anim.time, prevIndex, 3)
 				channel.target.animate([3]float32{newVals[0], newVals[1], newVals[2]})

@@ -40,7 +40,7 @@ func parseQueryPath(query string) []queryPart {
 // -------------------------------------------------------------------
 
 // findFieldByINITag recursively searches for a struct field with a matching INI tag
-func findFieldByINITag(v reflect.Value, tag string) (reflect.Value, bool) {
+func findFieldByINITag(v reflect.Value, tag string) (reflect.Value, reflect.StructField, bool) {
 	val := v
 	typ := val.Type()
 
@@ -50,17 +50,17 @@ func findFieldByINITag(v reflect.Value, tag string) (reflect.Value, bool) {
 		iniTag := field.Tag.Get("ini")
 
 		if iniTag != "" && strings.EqualFold(iniTag, tag) && field.PkgPath == "" {
-			return fVal, true
+			return fVal, field, true
 		}
 		// If the field is an embedded struct, search recursively
 		if field.Anonymous && field.Type.Kind() == reflect.Struct {
-			rv, found := findFieldByINITag(fVal, tag)
+			rv, rf, found := findFieldByINITag(fVal, tag)
 			if found {
-				return rv, true
+				return rv, rf, true
 			}
 		}
 	}
-	return reflect.Value{}, false
+	return reflect.Value{}, reflect.StructField{}, false
 }
 
 // findMapFieldWithTag searches for a map field in a struct with a specific INI tag
@@ -88,8 +88,45 @@ func findDefaultField(v reflect.Value) (reflect.Value, bool) {
 }
 
 // -------------------------------------------------------------------
-// Default Tag Applying Functions
+// Default Tag Applying and Maps initialization Functions
 // -------------------------------------------------------------------
+// initMaps traverses all fields/slices/maps of the given struct Value
+// and initializes maps if they are nil.
+func initMaps(v reflect.Value) {
+	switch v.Kind() {
+	case reflect.Ptr:
+		if !v.IsNil() {
+			initMaps(v.Elem())
+		}
+	case reflect.Struct:
+		t := v.Type()
+		for i := 0; i < v.NumField(); i++ {
+			fieldVal := v.Field(i)
+			fieldType := t.Field(i)
+
+			// Only recurse on exported fields
+			if fieldType.PkgPath != "" {
+				continue
+			}
+			initMaps(fieldVal)
+		}
+	case reflect.Slice, reflect.Array:
+		for i := 0; i < v.Len(); i++ {
+			initMaps(v.Index(i))
+		}
+	case reflect.Map:
+		// If map is nil, we "make" it
+		if v.IsNil() && v.CanSet() {
+			v.Set(reflect.MakeMap(v.Type()))
+		}
+
+		// Then we also want to recurse into each key/value pair
+		for _, key := range v.MapKeys() {
+			val := v.MapIndex(key)
+			initMaps(val)
+		}
+	}
+}
 
 // applyDefaultsToValue applies default-tagged values to any zero fields.
 // This works recursively on structs, pointers, slices, and arrays.
@@ -215,13 +252,13 @@ func isZeroValue(v reflect.Value) bool {
 // -------------------------------------------------------------------
 
 // setFieldValue assigns a value to a field based on its type
-func setFieldValue(fieldVal reflect.Value, value interface{}, keyPath string) error {
+func setFieldValue(fieldVal reflect.Value, value interface{}, defTag string, keyPath string) error {
 
-	// Set to zero-value
+	// Helper to zero-out the field
 	setNil := func(fieldVal reflect.Value) {
 		switch fieldVal.Kind() {
 		case reflect.Map:
-			// We leave maps as-is if nil, or keep the existing map if not nil
+			// do not destroy existing map
 			return
 		case reflect.Slice:
 			fieldVal.Set(reflect.MakeSlice(fieldVal.Type(), 0, 0))
@@ -242,25 +279,25 @@ func setFieldValue(fieldVal reflect.Value, value interface{}, keyPath string) er
 		}
 	}
 
+	// If "value" is literally nil, treat like empty string, but preserve maps.
 	if value == nil {
 		switch fieldVal.Kind() {
 		case reflect.Map:
-			// we leave the map as is (nil or existing)
-			return nil
+			return nil // no change
 		default:
 			setNil(fieldVal)
 			return nil
 		}
 	}
 
-	// If value is an array of strings
+	// If value is []string, handle that first
 	if arr, ok := value.([]string); ok {
 		switch fieldVal.Kind() {
 		case reflect.Slice:
 			newSlice := reflect.MakeSlice(fieldVal.Type(), 0, len(arr))
 			for _, v := range arr {
 				elem := reflect.New(fieldVal.Type().Elem()).Elem()
-				if err := setFieldValue(elem, v, keyPath); err != nil {
+				if err := setFieldValue(elem, v, defTag, keyPath); err != nil {
 					return err
 				}
 				newSlice = reflect.Append(newSlice, elem)
@@ -270,15 +307,17 @@ func setFieldValue(fieldVal reflect.Value, value interface{}, keyPath string) er
 		case reflect.Array:
 			for i := 0; i < fieldVal.Len() && i < len(arr); i++ {
 				elem := fieldVal.Index(i)
-				if err := setFieldValue(elem, arr[i], keyPath); err != nil {
+				if err := setFieldValue(elem, arr[i], defTag, keyPath); err != nil {
 					return err
 				}
 			}
 			return nil
 		default:
+			// if there's at least one element, treat arr[0] as the final string
 			if len(arr) > 0 {
-				return setFieldValue(fieldVal, arr[0], keyPath)
+				return setFieldValue(fieldVal, arr[0], defTag, keyPath)
 			}
+			// else empty => zero out
 			setNil(fieldVal)
 			return nil
 		}
@@ -291,82 +330,112 @@ func setFieldValue(fieldVal reflect.Value, value interface{}, keyPath string) er
 	}
 	trimmedValue := strings.TrimSpace(strVal)
 
-	fieldKind := fieldVal.Kind()
-	if fieldKind == reflect.Ptr {
+	// Unwrap pointer
+	if fieldVal.Kind() == reflect.Ptr {
 		if fieldVal.IsNil() {
 			fieldVal.Set(reflect.New(fieldVal.Type().Elem()))
 			applyDefaultsToValue(fieldVal)
 		}
 		fieldVal = fieldVal.Elem()
-		fieldKind = fieldVal.Kind()
 	}
 
+	// If the user explicitly gave an empty line => use the defTag if any
 	if trimmedValue == "" {
-		// If we have an empty string, set to zero-value
-		setNil(fieldVal)
-		return nil
+		if defTag == "" {
+			// If no default tag => zero out
+			setNil(fieldVal)
+			return nil
+		}
+		// If there's a default tag => parse it as if user typed it
+		trimmedValue = defTag
 	}
 
-	switch fieldKind {
+	// Now parse the final (non-empty) string
+	switch fieldVal.Kind() {
 	case reflect.Bool:
 		parsed, err := strconv.ParseBool(trimmedValue)
 		if err != nil {
 			return fmt.Errorf("failed to parse bool for '%s': %v", keyPath, err)
 		}
 		fieldVal.SetBool(parsed)
+
 	case reflect.Slice:
-		// Potentially split on commas
+		var parts []string
 		if strings.Contains(trimmedValue, ",") {
-			parts := strings.Split(trimmedValue, ",")
-			newSlice := reflect.MakeSlice(fieldVal.Type(), 0, len(parts))
-			for _, p := range parts {
-				p = strings.TrimSpace(p)
-				elem := reflect.New(fieldVal.Type().Elem()).Elem()
-				if err := setFieldValue(elem, p, keyPath); err != nil {
-					return err
-				}
-				newSlice = reflect.Append(newSlice, elem)
-			}
-			fieldVal.Set(newSlice)
-			return nil
+			parts = strings.Split(trimmedValue, ",")
 		} else {
-			newElem := reflect.New(fieldVal.Type().Elem()).Elem()
-			if err := setFieldValue(newElem, trimmedValue, keyPath); err != nil {
+			parts = []string{trimmedValue}
+		}
+		newSlice := reflect.MakeSlice(fieldVal.Type(), 0, len(parts))
+
+		for _, p := range parts {
+			elem := reflect.New(fieldVal.Type().Elem()).Elem()
+			if err := setFieldValue(elem, strings.TrimSpace(p), "", keyPath); err != nil {
 				return err
 			}
-			fieldVal.Set(reflect.Append(fieldVal, newElem))
-			return nil
+			newSlice = reflect.Append(newSlice, elem)
 		}
-	case reflect.Int32, reflect.Int, reflect.Int64:
+		fieldVal.Set(newSlice)
+
+	case reflect.Array:
+		separator := ","
+		if strings.Contains(trimmedValue, "&") {
+			separator = "&"
+		}
+		parts := strings.Split(trimmedValue, separator)
+
+		// Also parse defTag in case we do partial merges
+		defParts := []string{}
+		if defTag != "" && defTag != trimmedValue {
+			// Only parse defParts if defTag != trimmedValue, to avoid loops
+			defParts = strings.Split(defTag, ",")
+		}
+
+		// If user supplied partial => fill leftover elements from defTag (if present)
+		for i := 0; i < fieldVal.Len(); i++ {
+			var valStr string
+			if i < len(parts) && strings.TrimSpace(parts[i]) != "" {
+				// user explicitly set element i
+				valStr = strings.TrimSpace(parts[i])
+			} else if i < len(defParts) && strings.TrimSpace(defParts[i]) != "" {
+				// fallback to defTag for element i
+				valStr = strings.TrimSpace(defParts[i])
+			} else {
+				// if defTag doesn't have it => zero
+				valStr = "0"
+			}
+
+			elem := fieldVal.Index(i)
+			if err := setFieldValue(elem, valStr, "", keyPath); err != nil {
+				return err
+			}
+		}
+
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		parsed, err := strconv.ParseInt(trimmedValue, 10, 64)
 		if err != nil {
 			return fmt.Errorf("failed to parse int: %v", err)
 		}
 		fieldVal.SetInt(parsed)
+
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		parsed, err := strconv.ParseUint(trimmedValue, 10, 64)
+		if err != nil {
+			return fmt.Errorf("failed to parse uint: %v", err)
+		}
+		fieldVal.SetUint(parsed)
+
 	case reflect.Float32, reflect.Float64:
 		parsed, err := strconv.ParseFloat(trimmedValue, 64)
 		if err != nil {
 			return fmt.Errorf("failed to parse float: %v", err)
 		}
 		fieldVal.SetFloat(parsed)
+
 	case reflect.String:
-		parsed := strings.Trim(trimmedValue, "\"")
+		parsed := strings.Trim(trimmedValue, "\"") // "
 		fieldVal.SetString(parsed)
-	case reflect.Array:
-		// We also handle a possible "&" separator
-		separator := ","
-		if strings.Contains(trimmedValue, "&") {
-			separator = "&"
-		}
-		parts := strings.Split(trimmedValue, separator)
-		for i := 0; i < fieldVal.Len() && i < len(parts); i++ {
-			elem := fieldVal.Index(i)
-			valStr := strings.TrimSpace(parts[i])
-			if err := setFieldValue(elem, valStr, keyPath); err != nil {
-				continue
-			}
-		}
-		return nil
+
 	case reflect.Struct:
 		// If the struct has a default field, set its value
 		defaultField, found := findDefaultField(fieldVal)
@@ -374,13 +443,103 @@ func setFieldValue(fieldVal reflect.Value, value interface{}, keyPath string) er
 			applyDefaultsToValue(fieldVal)
 			return nil
 		}
-		err := setFieldValue(defaultField, trimmedValue, keyPath)
+		if err := setFieldValue(defaultField, trimmedValue, "", keyPath); err != nil {
+			return err
+		}
 		applyDefaultsToValue(fieldVal)
-		return err
+
 	default:
-		return fmt.Errorf("unsupported field kind: %s", fieldKind)
+		return fmt.Errorf("unsupported field kind: %s", fieldVal.Kind())
 	}
+
 	return nil
+}
+
+func assignToPatternMap(v reflect.Value, lastPartName string, value interface{}, final bool) (bool, reflect.Value, error) {
+	if v.Kind() != reflect.Struct {
+		return false, v, nil
+	}
+
+	t := v.Type()
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		iniTag := field.Tag.Get("ini")
+		if iniTag == "" || field.PkgPath != "" {
+			continue
+		}
+
+		if strings.HasPrefix(strings.ToLower(iniTag), "map:") {
+			pattern := iniTag[4:]
+			if pattern == "" {
+				continue
+			}
+			re, err := regexp.Compile(pattern)
+			if err != nil {
+				continue
+			}
+			if re.MatchString(lastPartName) {
+				fieldVal := v.Field(i)
+				if fieldVal.Kind() == reflect.Map && fieldVal.Type().Key().Kind() == reflect.String {
+					if fieldVal.IsNil() {
+						fieldVal.Set(reflect.MakeMap(fieldVal.Type()))
+					}
+					mapKey := reflect.ValueOf(strings.ToLower(lastPartName))
+					elemType := fieldVal.Type().Elem()
+					mapElem := fieldVal.MapIndex(mapKey)
+
+					// If we're applying a final value, we create/set a fully updated entry
+					if final {
+						var newVal reflect.Value
+						if elemType.Kind() == reflect.Ptr {
+							// If it's pointer-based, copy existing data if present
+							if mapElem.IsValid() {
+								newVal = reflect.New(elemType.Elem())
+								newVal.Elem().Set(mapElem.Elem())
+							} else {
+								newVal = reflect.New(elemType.Elem())
+							}
+						} else {
+							// Non-pointer map element
+							if mapElem.IsValid() {
+								newVal = reflect.New(elemType).Elem()
+								newVal.Set(mapElem)
+							} else {
+								newVal = reflect.New(elemType).Elem()
+							}
+						}
+						applyDefaultsToValue(newVal)
+
+						// setFieldValue takes (fieldVal, value, keyPath, lastPartName)
+						if err := setFieldValue(newVal, value, "", lastPartName); err != nil {
+							return false, v, err
+						}
+						// Store the updated element back into the map
+						fieldVal.SetMapIndex(mapKey, newVal)
+						mapElem = fieldVal.MapIndex(mapKey)
+
+					} else {
+						// Not final: just create a fresh entry if the key doesn't exist
+						if !mapElem.IsValid() {
+							var newVal reflect.Value
+							if elemType.Kind() == reflect.Ptr {
+								newVal = reflect.New(elemType.Elem())
+							} else {
+								newVal = reflect.New(elemType).Elem()
+							}
+							applyDefaultsToValue(newVal)
+							fieldVal.SetMapIndex(mapKey, newVal)
+							mapElem = fieldVal.MapIndex(mapKey)
+						} else {
+							// We still apply defaults if the mapElem is valid
+							applyDefaultsToValue(mapElem)
+						}
+					}
+					return true, mapElem, nil
+				}
+			}
+		}
+	}
+	return false, v, nil
 }
 
 // assignField assigns a value to a struct field based on query parts
@@ -404,72 +563,14 @@ func assignField(structPtr interface{}, parts []queryPart, value interface{}) er
 
 	assignDirect := func(v reflect.Value, part queryPart, value interface{}) (bool, error) {
 		if v.Kind() == reflect.Struct {
-			fieldVal, found := findFieldByINITag(v, part.name)
+			fieldVal, fieldType, found := findFieldByINITag(v, part.name)
 			if found {
-				err := setFieldValue(fieldVal, value, strings.Join(extractNames(parts), "."))
+				defTag := fieldType.Tag.Get("default") // read the struct's default tag
+				err := setFieldValue(fieldVal, value, defTag, strings.Join(extractNames(parts), "."))
 				return true, err
 			}
 		}
 		return false, nil
-	}
-
-	assignToPatternMap := func(v reflect.Value, lastPartName string, value interface{}, final bool) (bool, reflect.Value, error) {
-		if v.Kind() != reflect.Struct {
-			return false, v, nil
-		}
-
-		t := v.Type()
-		for i := 0; i < t.NumField(); i++ {
-			field := t.Field(i)
-			iniTag := field.Tag.Get("ini")
-			if iniTag == "" || field.PkgPath != "" {
-				continue
-			}
-
-			if strings.HasPrefix(strings.ToLower(iniTag), "map:") {
-				pattern := iniTag[4:]
-				if pattern == "" {
-					continue
-				}
-				re, err := regexp.Compile(pattern)
-				if err != nil {
-					continue
-				}
-				if re.MatchString(lastPartName) {
-					fieldVal := v.Field(i)
-					if fieldVal.Kind() == reflect.Map && fieldVal.Type().Key().Kind() == reflect.String {
-						if fieldVal.IsNil() {
-							fieldVal.Set(reflect.MakeMap(fieldVal.Type()))
-						}
-						mapKey := reflect.ValueOf(strings.ToLower(lastPartName))
-						elemType := fieldVal.Type().Elem()
-
-						var newVal reflect.Value
-						if elemType.Kind() == reflect.Ptr {
-							newVal = reflect.New(elemType.Elem())
-						} else {
-							newVal = reflect.New(elemType).Elem()
-						}
-						applyDefaultsToValue(newVal)
-
-						if final {
-							if err := setFieldValue(newVal, value, lastPartName); err != nil {
-								return false, v, err
-							}
-						}
-						mapElem := fieldVal.MapIndex(mapKey)
-						if !mapElem.IsValid() {
-							fieldVal.SetMapIndex(mapKey, newVal)
-							mapElem = fieldVal.MapIndex(mapKey)
-						} else {
-							applyDefaultsToValue(mapElem)
-						}
-						return true, mapElem, nil
-					}
-				}
-			}
-		}
-		return false, v, nil
 	}
 
 	for i := 0; i < len(parts); i++ {
@@ -520,7 +621,7 @@ func assignField(structPtr interface{}, parts []queryPart, value interface{}) er
 				}
 				applyDefaultsToValue(newVal)
 
-				if err := setFieldValue(newVal, value, strings.Join(extractNames(parts), ".")); err != nil {
+				if err := setFieldValue(newVal, value, "", strings.Join(extractNames(parts), ".")); err != nil {
 					return err
 				}
 				v.SetMapIndex(mapKey, newVal)
@@ -531,7 +632,7 @@ func assignField(structPtr interface{}, parts []queryPart, value interface{}) er
 		}
 
 		if v.Kind() == reflect.Struct {
-			fieldVal, found := findFieldByINITag(v, part.name)
+			fieldVal, _, found := findFieldByINITag(v, part.name)
 			if found {
 				v = fieldVal
 				continue
@@ -670,7 +771,7 @@ func updateINIFile(obj interface{}, iniFile *ini.File, query string, value strin
 		switch currentValue.Kind() {
 		case reflect.Struct:
 			// First, see if we can find a field with ini:"part.name"
-			fieldVal, found := findFieldByINITag(currentValue, part.name)
+			fieldVal, _, found := findFieldByINITag(currentValue, part.name)
 			if found {
 				// We found a direct field. We'll record its iniTag as the "section" or "subKey".
 				var structField reflect.StructField
@@ -894,7 +995,7 @@ func GetValue(structPtr interface{}, query string) (interface{}, error) {
 		switch current.Kind() {
 		case reflect.Struct:
 			// 1) Try normal ini tag
-			fieldVal, found := findFieldByINITag(current, part.name)
+			fieldVal, _, found := findFieldByINITag(current, part.name)
 			if found {
 				current = fieldVal
 			} else {
