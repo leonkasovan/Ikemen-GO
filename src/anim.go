@@ -670,7 +670,7 @@ func (a *Animation) Draw(window *[4]int32, x, y, xcs, ycs, xs, xbs, ys,
 	rxadd float32, rot Rotation, rcx float32, pfx *PalFX, old bool, facing float32,
 	isReflection bool, airOffsetFix [2]float32, projectionMode int32, fLength float32, color uint32) {
 	// Skip blank sprites
-	if a.spr == nil || a.spr.Tex == nil {
+	if a.spr == nil || a.spr.Tex == nil || xs == 0 || ys == 0 {
 		return
 	}
 	h, v, angle := a.drawSub1(rot.angle, facing)

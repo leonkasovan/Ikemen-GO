@@ -725,7 +725,7 @@ type Stage struct {
 	bgct              bgcTimeLine
 	bga               bgAction
 	sdw               stageShadow
-	p                 [8]stagePlayer
+	p                 [MaxSimul*2 + MaxAttachedChar]stagePlayer
 	leftbound         float32
 	rightbound        float32
 	screenleft        int32

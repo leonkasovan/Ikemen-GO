@@ -2069,6 +2069,7 @@ func (p *Projectile) cueDraw(oldVer bool, playerNo int) {
 	if sys.tickFrame() && p.ani != nil && notpause {
 		p.ani.UpdateSprite()
 	}
+
 	// Projectile Clsn display
 	if sys.clsnDraw && p.ani != nil {
 		if frm := p.ani.drawFrame(); frm != nil {
@@ -2086,6 +2087,7 @@ func (p *Projectile) cueDraw(oldVer bool, playerNo int) {
 			}
 		}
 	}
+
 	if sys.tickNextFrame() && (notpause || !p.paused(playerNo)) {
 		if p.ani != nil && notpause {
 			p.ani.Action()
@@ -2308,7 +2310,7 @@ type Char struct {
 	playerNo            int
 	teamside            int
 	keyctrl             [4]bool
-	player              bool
+	playerFlag          bool // Root and player type helpers
 	hprojectile         bool // Helper type projectile. Currently unused
 	animPN              int
 	animNo              int32
@@ -2456,11 +2458,11 @@ func (c *Char) init(n int, idx int32) {
 
 	// Set player or helper defaults
 	if idx == 0 {
-		c.player = true
+		c.playerFlag = true
 		c.kovelocity = true
 		c.keyctrl = [4]bool{true, true, true, true}
 	} else {
-		c.player = false
+		c.playerFlag = false
 		c.kovelocity = false
 		c.keyctrl = [4]bool{false, false, false, true}
 		c.mapArray = make(map[string]float32)
@@ -2530,7 +2532,7 @@ func (c *Char) addChild(ch *Char) {
 	c.children = append(c.children, ch)
 }
 
-// Clear enemy near list. For instance when player positions change
+// Clear EnemyNear and P2 lists. For instance when player positions change
 // A new list will be built the next time the redirect is called
 // In Mugen, EnemyNear is updated instantly when the character uses PosAdd, but "P2" is not
 func (c *Char) enemyNearP2Clear() {
@@ -3484,10 +3486,18 @@ func (c *Char) scf(scf SystemCharFlag) bool {
 
 func (c *Char) setSCF(scf SystemCharFlag) {
 	c.systemFlag |= scf
+	// Clear enemy lists if changing flags that affect them
+	if c.playerFlag && (scf == SCF_disabled || scf == SCF_over_ko || scf == SCF_standby) {
+		sys.charList.enemyNearChanged = true
+	}
 }
 
 func (c *Char) unsetSCF(scf SystemCharFlag) {
 	c.systemFlag &^= scf
+	// Clear enemy lists if changing flags that affect them
+	if c.playerFlag && (scf == SCF_disabled || scf == SCF_over_ko || scf == SCF_standby) {
+		sys.charList.enemyNearChanged = true
+	}
 }
 
 func (c *Char) csf(csf CharSpecialFlag) bool {
@@ -3621,15 +3631,15 @@ func (c *Char) enemy(n int32) *Char {
 		sys.appendToConsole(c.warn() + fmt.Sprintf("has no enemy: %v", n))
 		return nil
 	}
-	if c.teamside == -1 {
-		return sys.chars[n][0]
-	}
-	for i := n*2 + int32(^c.playerNo&1); i < sys.numSimul[^c.playerNo&1]*2; i += 2 {
-		if !sys.chars[i][0].scf(SCF_standby) && !sys.chars[i][0].scf(SCF_disabled) {
-			return sys.chars[i][0]
+	var count int32
+	for _, e := range sys.chars {
+		if len(e) > 0 && e[0] != nil && e[0].teamside >= 0 && e[0].teamside != c.teamside && !e[0].scf(SCF_disabled) {
+			if count == n {
+				return e[0]
+			}
+			count++
 		}
 	}
-	//return sys.chars[n*2+int32(^c.playerNo&1)][0]
 	return nil
 }
 
@@ -3951,16 +3961,8 @@ func (c *Char) mugenVersionF() float32 {
 
 func (c *Char) numEnemy() int32 {
 	var n int32
-	if c.teamside == -1 {
-		for i := 0; i < int(sys.numSimul[0]+sys.numSimul[1]); i++ {
-			if len(sys.chars[i]) > 0 && !sys.chars[i][0].scf(SCF_standby) && !sys.chars[i][0].scf(SCF_disabled) {
-				n += 1
-			}
-		}
-		return n
-	}
-	for i := ^c.playerNo & 1; i < int(sys.numSimul[^c.playerNo&1]*2); i += 2 {
-		if len(sys.chars[i]) > 0 && !sys.chars[i][0].scf(SCF_standby) && !sys.chars[i][0].scf(SCF_disabled) {
+	for _, e := range sys.chars {
+		if len(e) > 0 && e[0] != nil && e[0].teamside >= 0 && e[0].teamside != c.teamside && !e[0].scf(SCF_disabled) {
 			n += 1
 		}
 	}
@@ -3970,7 +3972,6 @@ func (c *Char) numEnemy() int32 {
 func (c *Char) numPlayer() int32 {
 	n := int32(0)
 	for i := 0; i < len(sys.chars)-1; i++ {
-		//&& !sys.chars[i][0].scf(SCF_standby)
 		if len(sys.chars[i]) > 0 && !sys.chars[i][0].scf(SCF_disabled) {
 			n += 1
 		}
@@ -4735,8 +4736,9 @@ func (c *Char) destroy() {
 		c.exitTarget()
 		c.receivedDmg = 0
 		c.receivedHits = 0
-		if c.player {
-			sys.charList.p2enemyDelete(c) // Every status change that invalidates the P2 reference must run this
+		if c.playerFlag {
+			// sys.charList.p2enemyDelete(c)
+			sys.charList.enemyNearChanged = true
 		}
 		for _, tid := range c.targets {
 			if t := sys.playerID(tid); t != nil {
@@ -5098,13 +5100,10 @@ func (c *Char) setPosX(x float32) {
 		// We do this because Mugen is very sensitive to enemy position changes
 		// Perhaps what it does is only calculate who "enemynear" is when the trigger is called?
 		// "P2" enemy reference is less sensitive than this however
-		c.enemyNearP2Clear()
-		if c.player {
-			for i := ^c.playerNo & 1; i < len(sys.chars); i += 2 {
-				for j := range sys.chars[i] {
-					sys.chars[i][j].enemyNearP2Clear()
-				}
-			}
+		if c.playerFlag {
+			sys.charList.enemyNearChanged = true
+		} else {
+			c.enemyNearP2Clear()
 		}
 	}
 }
@@ -5118,7 +5117,7 @@ func (c *Char) setPosZ(z float32) {
 }
 
 func (c *Char) posReset() {
-	if c.teamside == -1 {
+	if c.teamside == -1 || c.playerNo < 0 || c.playerNo >= len(sys.stage.p) {
 		c.facing = 1
 		c.setX(0)
 		c.setY(0)
@@ -5190,7 +5189,7 @@ func (c *Char) hitAdd(h int32) {
 			}
 		}
 	} else if c.teamside != -1 {
-		// in mugen HitAdd increases combo count even without targets
+		// In Mugen, HitAdd can increase combo count even without targets
 		for i, p := range sys.chars {
 			if len(p) > 0 && c.teamside == ^i&1 {
 				if p[0].receivedHits != 0 || p[0].ss.moveType == MT_H {
@@ -5798,7 +5797,7 @@ func (c *Char) targetLifeAdd(tar []int32, add int32, kill, absolute, dizzy, redl
 
 func (c *Char) targetPowerAdd(tar []int32, power int32) {
 	for _, tid := range tar {
-		if t := sys.playerID(tid); t != nil && t.player {
+		if t := sys.playerID(tid); t != nil && t.playerFlag {
 			t.powerAdd(power)
 		}
 	}
@@ -5830,7 +5829,7 @@ func (c *Char) targetRedLifeAdd(tar []int32, add int32, absolute bool) {
 
 func (c *Char) targetScoreAdd(tar []int32, s float32) {
 	for _, tid := range tar {
-		if t := sys.playerID(tid); t != nil && t.player {
+		if t := sys.playerID(tid); t != nil && t.playerFlag {
 			t.scoreAdd(s)
 		}
 	}
@@ -6031,7 +6030,7 @@ func (c *Char) lifeSet(life int32) {
 	c.life = Clamp(life, 0, c.lifeMax)
 	if c.life == 0 {
 		// Check win type
-		if c.player && c.teamside != -1 {
+		if c.playerFlag && c.teamside != -1 {
 			if c.alive() && c.helperIndex == 0 {
 				if c.ss.moveType != MT_H {
 					if c.playerNo == c.ss.sb.playerNo {
@@ -7523,7 +7522,7 @@ func (c *Char) actionPrepare() {
 			c.specialFlag = 0
 			c.inputFlag = 0
 			c.setCSF(CSF_stagebound)
-			if c.player {
+			if c.playerFlag {
 				if c.alive() || c.ss.no != 5150 || c.numPartner() == 0 {
 					c.setCSF(CSF_screenbound | CSF_movecamera_x | CSF_movecamera_y)
 				}
@@ -7596,21 +7595,21 @@ func (c *Char) actionRun() {
 	if !c.pauseBool {
 		// Run state -3
 		c.minus = -3
-		if c.ss.sb.playerNo == c.playerNo && (c.player || c.keyctrl[2]) {
+		if c.ss.sb.playerNo == c.playerNo && (c.playerFlag || c.keyctrl[2]) {
 			if sb, ok := c.gi().states[-3]; ok {
 				sb.run(c)
 			}
 		}
 		// Run state -2
 		c.minus = -2
-		if c.player || c.keyctrl[1] {
+		if c.playerFlag || c.keyctrl[1] {
 			if sb, ok := c.gi().states[-2]; ok {
 				sb.run(c)
 			}
 		}
 		// Run state -1
 		c.minus = -1
-		if c.ss.sb.playerNo == c.playerNo && (c.player || c.keyctrl[0]) {
+		if c.ss.sb.playerNo == c.playerNo && (c.playerFlag || c.keyctrl[0]) {
 			if sb, ok := c.gi().states[-1]; ok {
 				sb.run(c)
 			}
@@ -7874,7 +7873,6 @@ func (c *Char) actionFinish() {
 	}
 	if c.ss.no == 5150 && !c.scf(SCF_over_ko) { // Actual KO is not required in Mugen
 		c.setSCF(SCF_over_ko)
-		sys.charList.p2enemyDelete(c)
 	}
 	c.minus = 1
 }
@@ -8004,6 +8002,10 @@ func (c *Char) update() {
 		c.atktmp = int8(Btoi(c.ss.moveType != MT_I || c.hitdef.reversal_attr > 0))
 		c.hoIdx = -1
 		c.hoKeepState = false
+		// Apply SuperPause p2defmul
+		if sys.supertime < 0 && c.teamside != sys.superplayer&1 {
+			c.superDefenseMul *= sys.superp2defmul
+		}
 		// Update final defense
 		var customDefense float32 = 1
 		if !c.defenseMulDelay || c.ss.moveType == MT_H {
@@ -8011,6 +8013,7 @@ func (c *Char) update() {
 		}
 		c.finalDefense = float64(((float32(c.gi().data.defence) * customDefense * c.superDefenseMul * c.fallDefenseMul) / 100))
 	}
+	// Update position interpolation
 	if c.acttmp > 0 {
 		spd := sys.tickInterpolation()
 		if c.pushed {
@@ -8199,10 +8202,8 @@ func (c *Char) tick() {
 	c.pushed = false
 }
 
-func (c *Char) cueDraw() {
-	if c.helperIndex < 0 || c.scf(SCF_disabled) {
-		return
-	}
+// Prepare collision boxes and debug text for drawing
+func (c *Char) cueDebugDraw() {
 	x := c.pos[0] * c.localscl
 	y := c.pos[1] * c.localscl
 	xoff := x + c.offsetX()*c.localscl
@@ -8377,6 +8378,15 @@ func (c *Char) cueDraw() {
 			}
 		}
 	}
+}
+
+// Prepare character sprites for drawing
+func (c *Char) cueDraw() {
+	if c.helperIndex < 0 || c.scf(SCF_disabled) {
+		return
+	}
+	// Add debug info
+	c.cueDebugDraw()
 	// Add char sprite
 	if c.anim != nil {
 		pos := [2]float32{c.interPos[0]*c.localscl + c.offsetX()*c.localscl,
@@ -8407,6 +8417,7 @@ func (c *Char) cueDraw() {
 				agl *= -1
 			}
 		}
+
 		rec := sys.tickNextFrame() && c.acttmp > 0
 
 		//if rec {
@@ -8476,9 +8487,6 @@ func (c *Char) cueDraw() {
 		}
 	}
 	if sys.tickNextFrame() {
-		if sys.supertime < 0 && c.teamside != sys.superplayer&1 {
-			c.superDefenseMul *= sys.superp2defmul
-		}
 		c.minus = 2
 		c.oldPos = c.pos
 		c.dustOldPos = c.pos[0]
@@ -8486,8 +8494,10 @@ func (c *Char) cueDraw() {
 }
 
 type CharList struct {
-	runOrder, drawOrder []*Char
-	idMap               map[int32]*Char
+	runOrder         []*Char
+	drawOrder        []*Char
+	idMap            map[int32]*Char
+	enemyNearChanged bool
 }
 
 func (cl *CharList) clear() {
@@ -8499,7 +8509,7 @@ func (cl *CharList) add(c *Char) {
 	// Append to run order
 	cl.runOrder = append(cl.runOrder, c)
 	c.index = int32(len(cl.runOrder))
-	// If any entries in the draw order are empty, use that one
+	// If any entry in the draw order is empty, use that one
 	i := 0
 	for ; i < len(cl.drawOrder); i++ {
 		if cl.drawOrder[i] == nil {
@@ -8507,7 +8517,7 @@ func (cl *CharList) add(c *Char) {
 			break
 		}
 	}
-	// Otherwise appends to the end
+	// Otherwise append to the end
 	if i >= len(cl.drawOrder) {
 		cl.drawOrder = append(cl.drawOrder, c)
 	}
@@ -8516,17 +8526,17 @@ func (cl *CharList) add(c *Char) {
 
 func (cl *CharList) replace(dc *Char, pn int, idx int32) bool {
 	var ok bool
-	// Replace run order
+	// Replace in run order
 	for i, c := range cl.runOrder {
 		if c.playerNo == pn && c.helperIndex == idx {
-			c.index = int32(i) + 1
 			cl.runOrder[i] = dc
+			c.index = int32(i) + 1
 			ok = true
 			break
 		}
 	}
 	if ok {
-		// Replace draw order
+		// Replace in draw order
 		for i, c := range cl.drawOrder {
 			if c.playerNo == pn && c.helperIndex == idx {
 				cl.drawOrder[i] = dc
@@ -8546,9 +8556,17 @@ func (cl *CharList) delete(dc *Char) {
 			break
 		}
 	}
+	// You'd expect Mugen to remove the slot from the drawing order, but it does keep it open like this
+	//for i, c := range cl.drawOrder {
+	//	if c == dc {
+	//		cl.drawOrder[i] = nil
+	//		break
+	//	}
+	//}
+	// However removing it creates a more predictable drawing order
 	for i, c := range cl.drawOrder {
 		if c == dc {
-			cl.drawOrder[i] = nil
+			cl.drawOrder = append(cl.drawOrder[:i], cl.drawOrder[i+1:]...)
 			break
 		}
 	}
@@ -9308,13 +9326,13 @@ func (cl *CharList) hitDetection(getter *Char, proj bool) {
 		if hitType > 0 {
 			if Abs(hitType) == 1 {
 				c.powerAdd(hd.hitgetpower)
-				if getter.player {
+				if getter.playerFlag {
 					getter.powerAdd(hd.hitgivepower)
 					getter.ghv.power += hd.hitgivepower
 				}
 			} else {
 				c.powerAdd(hd.guardgetpower)
-				if getter.player {
+				if getter.playerFlag {
 					getter.powerAdd(hd.guardgivepower)
 					getter.ghv.power += hd.guardgivepower
 				}
@@ -9338,7 +9356,7 @@ func (cl *CharList) hitDetection(getter *Char, proj bool) {
 				c.scoreAdd(hd.score[0])
 				getter.ghv.score = hd.score[0] // TODO: The gethitvar refers to the enemy's score, which is counterintuitive
 			}
-			if getter.player {
+			if getter.playerFlag {
 				if !math.IsNaN(float64(hd.score[1])) {
 					getter.scoreAdd(hd.score[1])
 				}
@@ -10016,12 +10034,13 @@ func (cl *CharList) pushDetection(getter *Char) {
 				}
 
 				// Compare player weights and apply pushing factors
+				// Weight determines which player is pushed more. Factor determines how fast the player overlap is resolved
 				cfactor := float32(getter.size.weight) / float32(c.size.weight+getter.size.weight) * c.size.pushfactor * cpushed
 				gfactor := float32(c.size.weight) / float32(c.size.weight+getter.size.weight) * getter.size.pushfactor * gpushed
 
 				// Determine in which axes to push the players
-				// This needs to check both if the players have velocity or if their positions changed
-				pushx := sys.zmin == sys.zmax ||
+				// This needs to check both if the players have velocity or if their positions have changed
+				pushx := sys.zmin == sys.zmax || c.pos[2] == getter.pos[2] ||
 					getter.vel[0] != 0 || c.vel[0] != 0 || getter.pos[0] != getter.oldPos[0] || c.pos[0] != c.oldPos[0]
 				pushz := sys.zmin != sys.zmax &&
 					(getter.vel[2] != 0 || c.vel[2] != 0 || getter.pos[2] != getter.oldPos[2] || c.pos[2] != c.oldPos[2])
@@ -10096,7 +10115,6 @@ func (cl *CharList) pushDetection(getter *Char) {
 					// Clamp Z positions
 					c.zDepthBound()
 					getter.zDepthBound()
-
 				}
 
 				if getter.trackableByCamera() && getter.csf(CSF_screenbound) {
@@ -10167,9 +10185,21 @@ func (cl *CharList) tick() {
 	}
 }
 
+// Prepare characters for drawing
+// We once again check the movetype to minimize the difference between player sides
 func (cl *CharList) cueDraw() {
 	for _, c := range cl.drawOrder {
-		if c != nil {
+		if c != nil && c.ss.moveType == MT_A {
+			c.cueDraw()
+		}
+	}
+	for _, c := range cl.drawOrder {
+		if c != nil && c.ss.moveType == MT_I {
+			c.cueDraw()
+		}
+	}
+	for _, c := range cl.drawOrder {
+		if c != nil && c.ss.moveType == MT_H {
 			c.cueDraw()
 		}
 	}
@@ -10230,16 +10260,18 @@ func (cl *CharList) getHelperIndex(c *Char, id int32, log bool) *Char {
 }
 
 // Remove player from P2 references if it becomes invalid (standby etc)
-func (cl *CharList) p2enemyDelete(c *Char) {
-	for _, e := range cl.runOrder {
-		for i, p2cl := range e.p2EnemyList {
-			if p2cl == c {
-				e.p2EnemyList = append(e.p2EnemyList[:i], e.p2EnemyList[i+1:]...)
-				break
-			}
-		}
-	}
-}
+// This function was added to selectively update every player's "P2 enemy" list instead of just clearing them,
+// But because the lists are already being cleared essentially every frame anyway, the performance gain of doing this is lost
+//func (cl *CharList) p2enemyDelete(c *Char) {
+//	for _, e := range cl.runOrder {
+//		for i, p2cl := range e.p2EnemyList {
+//			if p2cl == c {
+//				e.p2EnemyList = append(e.p2EnemyList[:i], e.p2EnemyList[i+1:]...)
+//				break
+//			}
+//		}
+//	}
+//}
 
 // Update enemy near or "P2" lists and return specified index
 // The current approach makes the distance calculation loops only be done when necessary, using cached enemies the rest of the time
@@ -10251,6 +10283,13 @@ func (cl *CharList) enemyNear(c *Char, n int32, p2list, log bool) *Char {
 			sys.appendToConsole(c.warn() + fmt.Sprintf("has no nearest enemy: %v", n))
 		}
 		return nil
+	}
+	// Clear every player's lists if something changed
+	if cl.enemyNearChanged {
+		for _, c := range cl.runOrder {
+			c.enemyNearP2Clear()
+		}
+		cl.enemyNearChanged = false
 	}
 	// Select EnemyNear or P2 cache
 	var cache *[]*Char
@@ -10297,7 +10336,7 @@ func (cl *CharList) enemyNear(c *Char, n int32, p2list, log bool) *Char {
 	}
 	// Search valid enemies
 	for _, e := range cl.runOrder {
-		if e.player && e.teamside != c.teamside {
+		if e.playerFlag && e.teamside >= 0 && e.teamside != c.teamside && !e.scf(SCF_disabled) {
 			// P2 checks for alive enemies even if they are player type helpers
 			if p2list && !e.scf(SCF_standby) && !e.scf(SCF_over_ko) {
 				addEnemy(e, 0)

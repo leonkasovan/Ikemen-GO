@@ -183,8 +183,8 @@ type RenderParams struct {
 }
 
 func (rp *RenderParams) IsValid() bool {
-	return rp.tex.IsValid() && IsFinite(rp.x+rp.y+rp.xts+rp.xbs+rp.ys+rp.vs+
-		rp.rxadd+rp.rot.angle+rp.rcx+rp.rcy)
+	return rp.tex.IsValid() && rp.size[0] != 0 && rp.size[1] != 0 &&
+		IsFinite(rp.x+rp.y+rp.xts+rp.xbs+rp.ys+rp.vs+rp.rxadd+rp.rot.angle+rp.rcx+rp.rcy)
 }
 
 func drawQuads(modelview mgl.Mat4, x1, y1, x2, y2, x3, y3, x4, y4 float32) {
