@@ -402,17 +402,17 @@ func (s *System) init(w, h int32) *lua.LState {
 	// PS: The "\x00" is what is know as Null Terminator.
 
 	// Now we proceed to init the render.
-	if s.cfg.Video.RenderMode == "OpenGL 2.1" {
-		gfx = &Renderer_GL21{}
-		gfxFont = &glfont.FontRenderer_GL21{}
-	} else {
-		gfx = &Renderer_GL32{}
-		gfxFont = &glfont.FontRenderer_GL32{}
-	}
+	// if s.cfg.Video.RenderMode == "OpenGL 2.1" {
+	// 	gfx = &Renderer_GL21{}
+	// 	gfxFont = &glfont.FontRenderer_GL21{}
+	// } else {
+	// 	gfx = &Renderer_GL32{}
+	// 	gfxFont = &glfont.FontRenderer_GL32{}
+	// }
 	// [EDIT HERE] Switch to OpenGL ES
 	// This code should be moved to the respective renderers.
-	// gfx = &Renderer_GLES{}
-	// gfxFont = &glfont.FontRenderer_GLES{}
+	gfx = &Renderer_GLES{}
+	gfxFont = &glfont.FontRenderer_GLES{}
 	gfx.Init()
 	gfx.BeginFrame(false)
 	// And the audio.
