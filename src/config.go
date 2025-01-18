@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bufio"
 	_ "embed" // Support for go:embed resources
 	"fmt"
+	"os"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -214,7 +217,7 @@ type Config struct {
 }
 
 // Loads and parses the INI file into a Config struct.
-func loadConfig(def string) (*Config, error) {
+func loadConfig(def string, is_mugen_game bool) (*Config, error) {
 	// Define load options if needed
 	// https://github.com/go-ini/ini/blob/main/ini.go
 	options := ini.LoadOptions{
@@ -282,6 +285,54 @@ func loadConfig(def string) (*Config, error) {
 	c.IniFile = iniFile
 	c.normalize()
 	c.sysSet()
+	//Import Mugen setting
+	if is_mugen_game {
+		fmt.Printf("[config.go] import data/mugen.cfg\n")
+		file, err := os.Open("data/mugen.cfg")
+		if err != nil {
+			fmt.Printf("[config.go] Error loading data/mugen.cfg\n")
+		}
+		defer file.Close()
+
+		scanner := bufio.NewScanner(file)
+		var result []string
+		var line string
+		for scanner.Scan() {
+			line = scanner.Text()
+			if len(line) < 1 {
+				continue
+			}
+			if line[0] == ';' {
+				continue
+			}
+			result = regexp.MustCompile(`[Mm]otif\s*=\s*(\S+)`).FindStringSubmatch(line)
+			if result != nil {
+				c.Config.Motif = strings.ReplaceAll(result[1], "\\", "/")
+				fmt.Printf("[config.go] Import Motif=%v\n", c.Config.Motif)
+				continue
+			}
+			result = regexp.MustCompile(`[Ss]tart[Ss]tage\s*=\s*(\S+)`).FindStringSubmatch(line)
+			if result != nil {
+				c.Debug.StartStage = strings.ReplaceAll(result[1], "\\", "/")
+				fmt.Printf("[config.go] Import StartStage=%v\n", c.Debug.StartStage)
+				continue
+			}
+			result = regexp.MustCompile(`[Gg]ame[Ww]idth\s*=\s*(\d+)`).FindStringSubmatch(line)
+			if result != nil {
+				c.Video.GameWidth = int32(Atoi(result[1]))
+				fmt.Printf("[config.go] Import GameWidth=%v\n", c.Video.GameWidth)
+				continue
+			}
+			result = regexp.MustCompile(`[Gg]ame[Hh]eight\s*=\s*(\d+)`).FindStringSubmatch(line)
+			if result != nil {
+				c.Video.GameHeight = int32(Atoi(result[1]))
+				fmt.Printf("[config.go] Import GameHeight=%v\n", c.Video.GameHeight)
+				continue
+			}
+		}
+	} else {
+		fmt.Printf("[config.go] NOT importing data/mugen.cfg\n")
+	}
 	c.Save(def)
 	return &c, nil
 }
