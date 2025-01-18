@@ -1084,6 +1084,11 @@ func (r *Renderer_GLES) SetModelUniformMatrix(name string, value []float32) {
 	gl.UniformMatrix4fv(loc, 1, false, &value[0])
 }
 
+func (r *Renderer_GL21) SetModelUniformMatrix3(name string, value []float32) {
+	loc := r.modelShader.u[name]
+	gl.UniformMatrix3fv(loc, 1, false, &value[0])
+}
+
 func (r *Renderer_GLES) SetModelTexture(name string, tex Texture) {
 	t := tex.(*Texture_GLES)
 	loc, unit := r.modelShader.u[name], r.modelShader.t[name]
