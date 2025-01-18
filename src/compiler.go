@@ -1250,7 +1250,7 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 	var err error
 	switch c.token {
 	case "":
-		return bvNone(), Error("Nothing assigned")
+		return bvNone(), nil
 	case "root", "player", "parent", "helper", "target", "partner",
 		"enemy", "enemynear", "playerid", "playerindex", "p2", "stateowner", "helperindex":
 		switch c.token {
@@ -5103,7 +5103,7 @@ func (c *Compiler) paramTrans(is IniSection, sc *StateControllerBase,
 	prefix string, id byte, afterImage bool) error {
 	return c.stateParam(is, prefix+"trans", false, func(data string) error {
 		if len(data) == 0 {
-			return Error("Value not specified")
+			return nil
 		}
 		tt := TT_default
 		data = strings.ToLower(data)
