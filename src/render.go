@@ -2,10 +2,10 @@ package main
 
 import (
 	_ "embed"
-	"glfont"
 	"math"
 
 	mgl "github.com/go-gl/mathgl/mgl32"
+	"github.com/leonkasovan/glfont"
 )
 
 type Texture interface {

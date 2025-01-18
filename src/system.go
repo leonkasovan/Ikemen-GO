@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"glfont"
 	"image"
 	"io"
 	"log"
@@ -20,6 +19,7 @@ import (
 
 	"github.com/gopxl/beep/v2"
 	"github.com/gopxl/beep/v2/speaker"
+	"github.com/leonkasovan/glfont"
 	lua "github.com/yuin/gopher-lua"
 )
 
