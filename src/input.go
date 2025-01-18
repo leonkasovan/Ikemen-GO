@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/binary"
-	"glfw"
 	"net"
 	"os"
 	"strings"
@@ -347,9 +346,6 @@ func (kc KeyConfig) s() bool { return JoystickState(kc.Joy, kc.kS) }
 func (kc KeyConfig) d() bool { return JoystickState(kc.Joy, kc.kD) }
 func (kc KeyConfig) w() bool { return JoystickState(kc.Joy, kc.kW) }
 func (kc KeyConfig) m() bool { return JoystickState(kc.Joy, kc.kM) }
-func (kc KeyConfig) GamepadState() *glfw.GamepadState {
-	return input.GetGamepadState(kc.Joy)
-}
 
 type InputBits int32
 

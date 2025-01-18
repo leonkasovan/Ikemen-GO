@@ -2,11 +2,12 @@ package main
 
 import (
 	"fmt"
-	"glfw"
 	"math"
 	"runtime"
 	"strconv"
 	"strings"
+
+	glfw "github.com/leonkasovan/glfw/v3.5/glfw"
 )
 
 type Input struct {
@@ -380,4 +381,8 @@ func (ir *InputReader) LocalInput(in int) (bool, bool, bool, bool, bool, bool, b
 		a, b, c, x, y, z, s, d, w = ir.ButtonAssistCheck(a, b, c, x, y, z, s, d, w)
 	}
 	return U, D, L, R, a, b, c, x, y, z, s, d, w, m
+}
+
+func (kc KeyConfig) GamepadState() *glfw.GamepadState {
+	return input.GetGamepadState(kc.Joy)
 }

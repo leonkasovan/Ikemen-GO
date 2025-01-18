@@ -2,8 +2,9 @@ package main
 
 import (
 	"fmt"
-	"glfw"
 	"image"
+
+	glfw "github.com/leonkasovan/glfw/v3.5/glfw"
 )
 
 type Window struct {
@@ -11,6 +12,10 @@ type Window struct {
 	title      string
 	fullscreen bool
 	x, y, w, h int
+}
+
+func (s *System) GetTime() float64 {
+	return glfw.GetTime()
 }
 
 func (s *System) newWindow(w, h int) (*Window, error) {

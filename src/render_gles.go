@@ -10,7 +10,6 @@ import (
 	_ "embed" // Support for go:embed resources
 	"encoding/binary"
 	"fmt"
-	"glfw"
 	"math"
 	"runtime"
 	"unsafe"
@@ -392,7 +391,7 @@ func (r *Renderer_GLES) Init() {
 	fmt.Printf("widthScale x heightScale: %v,%v\n", sys.widthScale, sys.heightScale)
 
 	// Store current timestamp
-	sys.prevTimestamp = glfw.GetTime()
+	sys.prevTimestamp = sys.GetTime()
 
 	r.postShaderSelect = make([]*ShaderProgram_GLES, 1+len(sys.cfg.Video.ExternalShaders))
 
@@ -545,7 +544,7 @@ func (r *Renderer_GLES) BlendReset() {
 }
 func (r *Renderer_GLES) EndFrame() {
 	x, y, width, height := int32(0), int32(0), int32(sys.scrrect[2]), int32(sys.scrrect[3])
-	time := glfw.GetTime() // consistent time across all shaders
+	time := sys.GetTime() // consistent time across all shaders
 
 	var scaleMode int32 // GL enum
 	if sys.cfg.Video.WindowScaleMode {

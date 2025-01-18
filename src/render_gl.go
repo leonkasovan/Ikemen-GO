@@ -10,7 +10,6 @@ import (
 	_ "embed" // Support for go:embed resources
 	"encoding/binary"
 	"fmt"
-	"glfw"
 	"math"
 	"runtime"
 	"strconv"
@@ -417,7 +416,7 @@ func (r *Renderer_GL21) Init() {
 	}
 
 	// Store current timestamp
-	sys.prevTimestamp = glfw.GetTime()
+	sys.prevTimestamp = sys.GetTime()
 
 	r.postShaderSelect = make([]*ShaderProgram_GL21, 1+len(sys.cfg.Video.ExternalShaders))
 
@@ -639,7 +638,7 @@ func (r *Renderer_GL21) BlendReset() {
 }
 func (r *Renderer_GL21) EndFrame() {
 	x, y, width, height := int32(0), int32(0), int32(sys.scrrect[2]), int32(sys.scrrect[3])
-	time := glfw.GetTime() // consistent time across all shaders
+	time := sys.GetTime() // consistent time across all shaders
 
 	if sys.msaa > 0 {
 		gl.BindFramebuffer(gl.DRAW_FRAMEBUFFER, r.fbo_f)
