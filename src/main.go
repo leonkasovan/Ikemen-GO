@@ -419,7 +419,7 @@ func closeLog(f *os.File) {
 
 func main() {
 	is_mugen_game := false
-	fmt.Printf("[main.go][main] Running at OS=[%v] ARCH=[%v]\n", runtime.GOOS, runtime.GOARCH)
+	fmt.Printf("[main.go] Running in OS=[%v] ARCH=[%v]\n", runtime.GOOS, runtime.GOARCH)
 
 	exePath, err := os.Executable()
 	if err != nil {
@@ -440,7 +440,7 @@ func main() {
 		if err != nil {
 			fmt.Printf("[main.go] Error extracting asset: %v\n", err)
 		}
-		fmt.Println("[main.go][main] Mugen Game detected. Assets extraction completed successfully.")
+		fmt.Println("[main.go] Mugen Game detected. Assets extraction completed successfully.")
 		is_mugen_game = true
 	}
 

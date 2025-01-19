@@ -330,8 +330,6 @@ func loadConfig(def string, is_mugen_game bool) (*Config, error) {
 				continue
 			}
 		}
-	} else {
-		fmt.Printf("[config.go] NOT importing data/mugen.cfg\n")
 	}
 	c.Save(def)
 	return &c, nil

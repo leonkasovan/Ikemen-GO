@@ -333,21 +333,26 @@ func (s *System) init(w, h int32) *lua.LState {
 	}
 
 	// Print connected joysticks
-	need_mapping := true
+	n_gamepads := 0
+	n_joysticks := 0
 	for i := 0; i < input.GetMaxJoystickCount(); i++ {
 		if input.IsJoystickPresent(i) {
 			if input.joystick[i].IsGamepad() {
 				fmt.Printf("Gamepad-%v [%v] GUID:%v connected.\n", i, input.GetGamepadName(i), input.GetJoystickGUID(i))
-				need_mapping = false
+				n_gamepads++
 			} else {
 				fmt.Printf("Joystick-%v [%v] GUID:%v connected but has no gamepad mapping.\n", i, input.GetJoystickName(i), input.GetJoystickGUID(i))
+				n_joysticks++
 			}
 		}
 	}
 
-	if need_mapping {
-		fmt.Println("Update " + s.cfg.Config.GamepadMappings + " or use the gamepad mapping tool.")
-		os.Exit(0)
+	if n_joysticks > 0 && n_gamepads == 0 {
+		fmt.Println("Update " + s.cfg.Config.GamepadMappings + " or use the gamepad mapping tool.\n")
+	}
+
+	if n_gamepads == 0 {
+		fmt.Println("No gamepads found. Using only keyboard.\n")
 	}
 
 	// Correct the joystick mappings (macOS)
