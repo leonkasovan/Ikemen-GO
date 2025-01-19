@@ -113,7 +113,7 @@ function build() {
 function buildWin() {
 	#echo "buildWin"
 	#echo "$binName"
-	go build -trimpath -v -trimpath -ldflags "-H windowsgui" -o ./bin/$binName ./src
+	go build -trimpath -v -trimpath -ldflags "-s -w -H windowsgui" -o ./bin/$binName ./src
 }
 
 # Determine the target OS.

@@ -3,7 +3,7 @@
 package main
 
 import (
-	"glfw"
+	glfw "github.com/leonkasovan/glfw/v3.5/glfw"
 
 	"github.com/leonkasovan/glfont"
 )
