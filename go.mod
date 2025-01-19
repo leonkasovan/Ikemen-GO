@@ -16,7 +16,11 @@ require (
 	golang.org/x/mobile v0.0.0-20221110043201-43a038452099
 )
 
-require gopkg.in/ini.v1 v1.67.0
+require (
+	github.com/leonkasovan/glfont v0.0.0-20250118083950-50aaefdaa676
+	github.com/leonkasovan/glfw/v3.5/glfw v0.0.0-20250119045712-70de455ffca5
+	gopkg.in/ini.v1 v1.67.0
+)
 
 require github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
 

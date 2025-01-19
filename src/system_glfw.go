@@ -22,27 +22,34 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 	var err error
 	var window *glfw.Window
 	var monitor *glfw.Monitor
+	var fullscreen bool
+	var x, y int
+	var mode *glfw.VidMode
+	var w2, h2 int
+	var drm_mode bool
 
 	// Initialize OpenGL
 	chk(glfw.Init())
 
-	if monitor = glfw.GetPrimaryMonitor(); monitor == nil {
-		return nil, fmt.Errorf("failed to obtain primary monitor")
+	if monitor = glfw.GetPrimaryMonitor(); monitor == nil { // Get primary monitor, if it nil then we are using KMS DRM mode in fullscreen
+		fullscreen = true
+		x, y = 0, 0
+		w2, h2 = w, h
+		drm_mode = true
+	} else {
+		// "-windowed" overrides the configuration setting but does not change it
+		_, forceWindowed := sys.cmdFlags["-windowed"]
+		fullscreen = s.cfg.Video.Fullscreen && !forceWindowed
+		// Calculate window size & offset it
+		mode = monitor.GetVideoMode()
+		w2, h2 = w, h
+		if !fullscreen && (sys.cfg.Video.WindowWidth > 0 || sys.cfg.Video.WindowHeight > 0) {
+			w2, h2 = sys.cfg.Video.WindowWidth, sys.cfg.Video.WindowHeight
+		}
+		x, y = (mode.Width-w2)/2, (mode.Height-h2)/2
+		glfw.WindowHint(glfw.Resizable, glfw.True)
+		drm_mode = false
 	}
-
-	// "-windowed" overrides the configuration setting but does not change it
-	_, forceWindowed := sys.cmdFlags["-windowed"]
-	fullscreen := s.cfg.Video.Fullscreen && !forceWindowed
-
-	// Calculate window size & offset it
-	var mode = monitor.GetVideoMode()
-	var w2, h2 = w, h
-	if !fullscreen && (sys.cfg.Video.WindowWidth > 0 || sys.cfg.Video.WindowHeight > 0) {
-		w2, h2 = sys.cfg.Video.WindowWidth, sys.cfg.Video.WindowHeight
-	}
-	var x, y = (mode.Width - w2) / 2, (mode.Height - h2) / 2
-
-	glfw.WindowHint(glfw.Resizable, glfw.True)
 
 	// only GL 3.2 needs this
 	// if sys.cfg.Video.RenderMode == "OpenGL 3.2" {
@@ -72,18 +79,20 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 	}
 
 	// Set windows attributes
-	if fullscreen {
-		window.SetPos(0, 0)
-		if s.cfg.Video.Borderless {
-			window.SetAttrib(glfw.Decorated, 0)
-			window.SetSize(mode.Width, mode.Height)
-		}
-		window.SetInputMode(glfw.CursorMode, glfw.CursorHidden)
-	} else {
-		window.SetSize(w2, h2)
-		window.SetInputMode(glfw.CursorMode, glfw.CursorNormal)
-		if s.cfg.Video.WindowCentered {
-			window.SetPos(x, y)
+	if !drm_mode {
+		if fullscreen {
+			window.SetPos(0, 0)
+			if s.cfg.Video.Borderless {
+				window.SetAttrib(glfw.Decorated, 0)
+				window.SetSize(mode.Width, mode.Height)
+			}
+			window.SetInputMode(glfw.CursorMode, glfw.CursorHidden)
+		} else {
+			window.SetSize(w2, h2)
+			window.SetInputMode(glfw.CursorMode, glfw.CursorNormal)
+			if s.cfg.Video.WindowCentered {
+				window.SetPos(x, y)
+			}
 		}
 	}
 
@@ -94,6 +103,10 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 	// V-Sync
 	if s.cfg.Video.VSync >= 0 {
 		glfw.SwapInterval(s.cfg.Video.VSync)
+	}
+
+	if drm_mode { // KMS DRM mode, override window size
+		w, h = window.GetSize()
 	}
 
 	ret := &Window{window, s.cfg.Config.WindowTitle, fullscreen, x, y, w, h}

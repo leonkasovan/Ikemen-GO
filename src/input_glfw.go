@@ -203,6 +203,13 @@ func (input *Input) GetJoystickName(joy int) string {
 	if joy < 0 || joy >= len(input.joystick) {
 		return ""
 	}
+	return input.joystick[joy].GetName()
+}
+
+func (input *Input) GetGamepadName(joy int) string {
+	if joy < 0 || joy >= len(input.joystick) {
+		return ""
+	}
 	return input.joystick[joy].GetGamepadName()
 }
 
