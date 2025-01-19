@@ -1018,10 +1018,7 @@ func compareNatural(a, b string) bool {
 	}
 
 	// Parse numeric part (default to 0 if empty)
-	aNum, _ := strconv.Atoi(aNumStr)
-	bNum, _ := strconv.Atoi(bNumStr)
-
-	return aNum < bNum
+	return Atoi(aNumStr) < Atoi(bNumStr)
 }
 
 // SortedKeys returns the keys of the map sorted in natural order.

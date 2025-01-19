@@ -2000,7 +2000,7 @@ func (s *System) fight() (reload bool) {
 	// Reset variables
 	s.gameTime, s.paused, s.accel = 0, false, 1
 	s.aiInput = [len(s.aiInput)]AiInput{}
-	if sys.netInput != nil || sys.fileInput != nil {
+	if sys.netInput != nil {
 		s.clsnDraw = false
 		s.debugDraw = false
 		s.statusDraw = false

@@ -6782,8 +6782,8 @@ func (c *Compiler) Compile(pn int, def string, constants map[string]float32) (ma
 			if files {
 				files = false
 				cmd, stcommon = is["cmd"], is["stcommon"]
-
 				re := regexp.MustCompile(`^st[0-9]*$`)
+				// Sorted starting with "st" and followed by "st<num>" in natural order
 				for _, v := range SortedKeys(is) {
 					if re.MatchString(v) {
 						st = append(st, is[v])

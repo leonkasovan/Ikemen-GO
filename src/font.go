@@ -678,20 +678,15 @@ func (ts *TextSprite) Draw() {
 			}
 
 			// Draws the visible line
-			ts.DrawLine(line[:charsToShow], newY)
+			if ts.fnt.Type == "truetype" {
+				ts.fnt.DrawTtf(line[:charsToShow], ts.x, newY, ts.xscl, ts.yscl, ts.align, true, &ts.window, ts.frgba)
+			} else {
+				ts.fnt.DrawText(line[:charsToShow], ts.x, newY, ts.xscl, ts.yscl, ts.bank, ts.align, &ts.window, ts.palfx)
+			}
 
 			if ts.textDelay > 0 && totalCharsShown >= int(maxChars) {
 				break
 			}
 		}
-	}
-}
-
-// Helper function to draw a line
-func (ts *TextSprite) DrawLine(line string, y float32) {
-	if ts.fnt.Type == "truetype" {
-		ts.fnt.DrawTtf(line, ts.x, y, ts.xscl, ts.yscl, ts.align, true, &ts.window, ts.frgba)
-	} else {
-		ts.fnt.DrawText(line, ts.x, y, ts.xscl, ts.yscl, ts.bank, ts.align, &ts.window, ts.palfx)
 	}
 }
