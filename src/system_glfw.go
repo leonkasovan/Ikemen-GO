@@ -95,12 +95,12 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 	if drm_mode { // KMS DRM mode, override window size
 		w, h = window.GetSize()
 		if s.cfg.Video.WindowWidth != w {
-			s.cfg.Video.WindowWidth = w
 			fmt.Printf("Overriding configuration Video.WindowWidth(%d) with Monitor's width(%d)\n", s.cfg.Video.WindowWidth, w)
+			s.cfg.Video.WindowWidth = w
 		}
 		if s.cfg.Video.WindowHeight != h {
-			s.cfg.Video.WindowHeight = h
 			fmt.Printf("Overriding configuration Video.WindowHeight(%d) with Monitor's height(%d)\n", s.cfg.Video.WindowHeight, h)
+			s.cfg.Video.WindowHeight = h
 		}
 	}
 
