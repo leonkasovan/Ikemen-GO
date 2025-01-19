@@ -76,12 +76,36 @@ appbundle:
 clean_appbundle:
 	rm -rf I.K.E.M.E.N-Go.app
 
-aarch64: src/assets.zip
-	export CGO_ENABLED=1 && go build -tags="kmsdrm,gles2" -trimpath -ldflags="-s -w" -v -o ./bin/Ikemen_GO_aarch64 ./src
+# Tag usage:
+# 	OpenGL ES: gles2
+#	OpenGL: <default>
+#
+# 	Linux DRM: kmsdrm
+#	Linux X11: x11
+#	Linux Wayland: wayland
+#	Mac OS: darwin
+#	Windows: <default>
 
+# Steamdeck (SteamOS X11)
 steamdeck: src/assets.zip
-	export CGO_ENABLED=1 && go build -tags="x11" -trimpath -ldflags="-s -w" -v -o ./bin/Ikemen_GO_steamdeck ./src
+	export CGO_ENABLED=1 && go build -tags="x11" -trimpath -ldflags="-s -w" -v -o ./bin/ikemen_steamdeck ./src
+
+# Retroid Pocket 5 (Rocknix Linux)
+rp5: src/assets.zip
+	export CGO_ENABLED=1 && go build -tags="wayland" -trimpath -ldflags="-s -w" -v -o ./bin/ikemen_rp5 ./src
+
+# Raspberry Pi 4 (Raspberry OS)
+rpi4: src/assets.zip
+	export CGO_ENABLED=1 && go build -tags="kmsdrm,gles2" -trimpath -ldflags="-s -w" -v -o ./bin/ikemen_rpi4 ./src
+#	export CGO_ENABLED=1 && go build -tags="kmsdrm" -trimpath -ldflags="-s -w" -v -o ./bin/ikemen_rpi4 ./src
+
+# Anbernic RG353 variant (Batocera, Recalbox, EmuELEC, ArkOS)
+rg353_drm: src/assets.zip
+	export CGO_ENABLED=1 && go build -tags="kmsdrm,gles2" -trimpath -ldflags="-s -w" -v -o ./bin/ikemen_rg353_drm ./src
+
+# Anbernic RG353 variant (Rocknix Linux)
+rg353_wayland: src/assets.zip
+	export CGO_ENABLED=1 && go build -tags="wayland,gles2" -trimpath -ldflags="-s -w" -v -o ./bin/ikemen_rg353_wayland ./src
 
 src/assets.zip: data/* external/* font/*
 	zip -r src/assets.zip data external font
-	

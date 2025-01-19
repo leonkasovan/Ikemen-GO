@@ -51,21 +51,8 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 		drm_mode = false
 	}
 
-	// only GL 3.2 needs this
-	// if sys.cfg.Video.RenderMode == "OpenGL 3.2" {
-	// 	glfw.WindowHint(glfw.ContextVersionMajor, 3)
-	// 	glfw.WindowHint(glfw.ContextVersionMinor, 2)
-	// 	glfw.WindowHint(glfw.OpenGLForwardCompatible, glfw.True)
-	// 	glfw.WindowHint(glfw.OpenGLProfile, glfw.OpenGLCoreProfile)
-	// } else {
-	// 	glfw.WindowHint(glfw.ContextVersionMajor, 2)
-	// 	glfw.WindowHint(glfw.ContextVersionMinor, 1)
-	// }
-	// [EDIT HERE] Switch to OpenGL ES
-	glfw.WindowHint(glfw.ClientAPI, glfw.OpenGLESAPI)
-	glfw.WindowHint(glfw.ContextVersionMajor, 3)
-	glfw.WindowHint(glfw.ContextVersionMinor, 0)
-	glfw.WindowHint(glfw.ContextCreationAPI, glfw.EGLContextAPI)
+	// Initialize Gfx with OpenGL (ES)
+	s.initGfx()
 
 	// Create main window.
 	// NOTE: Borderless fullscreen is in reality just a window without borders.
@@ -107,6 +94,14 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 
 	if drm_mode { // KMS DRM mode, override window size
 		w, h = window.GetSize()
+		if s.cfg.Video.WindowWidth != w {
+			s.cfg.Video.WindowWidth = w
+			fmt.Printf("Overriding configuration Video.WindowWidth(%d) with Monitor's width(%d)\n", s.cfg.Video.WindowWidth, w)
+		}
+		if s.cfg.Video.WindowHeight != h {
+			s.cfg.Video.WindowHeight = h
+			fmt.Printf("Overriding configuration Video.WindowHeight(%d) with Monitor's height(%d)\n", s.cfg.Video.WindowHeight, h)
+		}
 	}
 
 	ret := &Window{window, s.cfg.Config.WindowTitle, fullscreen, x, y, w, h}
