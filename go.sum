@@ -26,8 +26,8 @@ github.com/leonkasovan/gl v0.0.0-20240302015147-1ee9f5b02a16 h1:amIxWenjZ+EWyTWc
 github.com/leonkasovan/gl v0.0.0-20240302015147-1ee9f5b02a16/go.mod h1:FsbmKnamadwCMU92a/aFYYc4s9NXRx5N0mbSmL3voA8=
 github.com/leonkasovan/glfont v0.0.0-20250118083950-50aaefdaa676 h1:RXpdxInXZFi6y9u9Q+gYF2xOVGnXZRkV0LwJvyvoaTY=
 github.com/leonkasovan/glfont v0.0.0-20250118083950-50aaefdaa676/go.mod h1:7ZTBw2r0ElexHuYDavHzIbBEH5zPM6ZorOLxoF5T8x4=
-github.com/leonkasovan/glfw/v3.5/glfw v0.0.0-20250119221728-e82618932d60 h1:gzjirCo3wkov6skJQgQTl7wgZrqpPcAfknSJPqFAz4I=
-github.com/leonkasovan/glfw/v3.5/glfw v0.0.0-20250119221728-e82618932d60/go.mod h1:GywoQb8yIYl9WN4yVGssUnL8paof5XhY7BOmJs87Gm4=
+github.com/leonkasovan/glfw/v3.5/glfw v0.0.0-20250120150510-b8287121b4ac h1:4SYfZGnnwTcwT8QD4pJDMIm7JOWzopLFLJCDoCZyRWU=
+github.com/leonkasovan/glfw/v3.5/glfw v0.0.0-20250120150510-b8287121b4ac/go.mod h1:GywoQb8yIYl9WN4yVGssUnL8paof5XhY7BOmJs87Gm4=
 github.com/lucasb-eyer/go-colorful v1.2.0 h1:1nnpGOrhyZZuNyfu1QjKiUICQ74+3FNCN69Aj6K7nkY=
 github.com/lucasb-eyer/go-colorful v1.2.0/go.mod h1:R4dSotOR9KMtayYi1e77YzuveK+i7ruzyGqttikkLy0=
 github.com/lukegb/dds v0.0.0-20190402175749-8b7170e64003 h1:6g1XsQmpC332a2qx+qkrEVBHeNucWaiXHIUBKW4W62s=
