@@ -4300,8 +4300,10 @@ func (l *Lifebar) draw(layerno int16) {
 			for ti := range sys.tmode {
 				for i, v := range l.order[ti] {
 					index := i*2 + ti
-					l.hb[l.ref[ti]][index].bgDraw(layerno)
-					l.hb[l.ref[ti]][index].draw(layerno, v, l.hb[l.ref[ti]][v], l.fnt[:])
+					if !sys.chars[v][0].asf(ASF_nolifebardisplay) {
+						l.hb[l.ref[ti]][index].bgDraw(layerno)
+						l.hb[l.ref[ti]][index].draw(layerno, v, l.hb[l.ref[ti]][v], l.fnt[:])
+					}
 				}
 			}
 			// PowerBar
@@ -4325,40 +4327,52 @@ func (l *Lifebar) draw(layerno int16) {
 			for ti := range sys.tmode {
 				for i, v := range l.order[ti] {
 					index := i*2 + ti
-					l.gb[l.ref[ti]][index].bgDraw(layerno)
-					l.gb[l.ref[ti]][index].draw(layerno, v, l.gb[l.ref[ti]][v], l.fnt[:])
+					if !sys.chars[v][0].asf(ASF_noguardbardisplay) {
+						l.gb[l.ref[ti]][index].bgDraw(layerno)
+						l.gb[l.ref[ti]][index].draw(layerno, v, l.gb[l.ref[ti]][v], l.fnt[:])
+					}
 				}
 			}
 			// StunBar
 			for ti := range sys.tmode {
 				for i, v := range l.order[ti] {
 					index := i*2 + ti
-					l.sb[l.ref[ti]][index].bgDraw(layerno)
-					l.sb[l.ref[ti]][index].draw(layerno, v, l.sb[l.ref[ti]][v], l.fnt[:])
+					if !sys.chars[v][0].asf(ASF_nostunbardisplay) {
+						l.sb[l.ref[ti]][index].bgDraw(layerno)
+						l.sb[l.ref[ti]][index].draw(layerno, v, l.sb[l.ref[ti]][v], l.fnt[:])
+					}
 				}
 			}
 			// LifeBarFace
 			for ti := range sys.tmode {
 				for i, v := range l.order[ti] {
 					index := i*2 + ti
-					l.fa[l.ref[ti]][index].bgDraw(layerno)
-					l.fa[l.ref[ti]][index].draw(layerno, v, l.fa[l.ref[ti]][v])
+					if !sys.chars[v][0].asf(ASF_nofacedisplay) {
+						l.fa[l.ref[ti]][index].bgDraw(layerno)
+						l.fa[l.ref[ti]][index].draw(layerno, v, l.fa[l.ref[ti]][v])
+					}
 				}
 			}
 			// LifeBarName
 			for ti := range sys.tmode {
 				for i, v := range l.order[ti] {
 					index := i*2 + ti
-					l.nm[l.ref[ti]][index].bgDraw(layerno)
-					l.nm[l.ref[ti]][index].draw(layerno, v, l.fnt[:], ti)
+					if !sys.chars[v][0].asf(ASF_nonamedisplay) {
+						l.nm[l.ref[ti]][index].bgDraw(layerno)
+						l.nm[l.ref[ti]][index].draw(layerno, v, l.fnt[:], ti)
+					}
 				}
 			}
 			// LifeBarTime
 			l.ti.bgDraw(layerno)
 			l.ti.draw(layerno, l.fnt[:])
 			// LifeBarWinIcon
-			for i := range l.wi {
-				l.wi[i].draw(layerno, l.fnt[:], i)
+			for ti := range l.wi {
+				for _, v := range l.order[ti] {
+					if !sys.chars[v][0].asf(ASF_nowinicondisplay) {
+						l.wi[ti].draw(layerno, l.fnt[:], ti)
+					}
+				}
 			}
 			// LifeBarRatio
 			for ti, tm := range sys.tmode {

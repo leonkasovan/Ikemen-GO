@@ -3984,8 +3984,20 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_noturntarget))
 		case "noinput":
 			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_noinput))
+		case "nolifebardisplay":
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_nolifebardisplay))
 		case "nopowerbardisplay":
 			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_nopowerbardisplay))
+		case "noguardbardisplay":
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_noguardbardisplay))
+		case "nostunbardisplay":
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_nostunbardisplay))
+		case "nofacedisplay":
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_nofacedisplay))
+		case "nonamedisplay":
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_nonamedisplay))
+		case "nowinicondisplay":
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_nowinicondisplay))
 		case "autoguard":
 			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_autoguard))
 		case "animatehitpause":

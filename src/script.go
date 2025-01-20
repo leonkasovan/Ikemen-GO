@@ -5390,8 +5390,20 @@ func triggerFunctions(l *lua.LState) {
 			l.Push(lua.LBool(sys.debugWC.asf(ASF_nokovelocity)))
 		case "nomakedust":
 			l.Push(lua.LBool(sys.debugWC.asf(ASF_nomakedust)))
+		case "nolifebardisplay":
+			l.Push(lua.LBool(sys.debugWC.asf(ASF_nolifebardisplay)))
 		case "nopowerbardisplay":
 			l.Push(lua.LBool(sys.debugWC.asf(ASF_nopowerbardisplay)))
+		case "noguardbardisplay":
+			l.Push(lua.LBool(sys.debugWC.asf(ASF_noguardbardisplay)))
+		case "nostunbardisplay":
+			l.Push(lua.LBool(sys.debugWC.asf(ASF_nostunbardisplay)))
+		case "nofacedisplay":
+			l.Push(lua.LBool(sys.debugWC.asf(ASF_nofacedisplay)))
+		case "nonamedisplay":
+			l.Push(lua.LBool(sys.debugWC.asf(ASF_nonamedisplay)))
+		case "nowinicondisplay":
+			l.Push(lua.LBool(sys.debugWC.asf(ASF_nowinicondisplay)))
 		case "noredlifedamage":
 			l.Push(lua.LBool(sys.debugWC.asf(ASF_noredlifedamage)))
 		case "nostand":

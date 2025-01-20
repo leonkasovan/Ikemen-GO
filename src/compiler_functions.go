@@ -172,8 +172,20 @@ func (c *Compiler) assertSpecial(is IniSection, sc *StateControllerBase, _ int8)
 				sc.add(assertSpecial_flag, sc.i64ToExp(int64(ASF_noturntarget)))
 			case "noinput":
 				sc.add(assertSpecial_flag, sc.i64ToExp(int64(ASF_noinput)))
+			case "nolifebardisplay":
+				sc.add(assertSpecial_flag, sc.i64ToExp(int64(ASF_nolifebardisplay)))
 			case "nopowerbardisplay":
 				sc.add(assertSpecial_flag, sc.i64ToExp(int64(ASF_nopowerbardisplay)))
+			case "noguardbardisplay":
+				sc.add(assertSpecial_flag, sc.i64ToExp(int64(ASF_noguardbardisplay)))
+			case "nostunbardisplay":
+				sc.add(assertSpecial_flag, sc.i64ToExp(int64(ASF_nostunbardisplay)))
+			case "nofacedisplay":
+				sc.add(assertSpecial_flag, sc.i64ToExp(int64(ASF_nofacedisplay)))
+			case "nonamedisplay":
+				sc.add(assertSpecial_flag, sc.i64ToExp(int64(ASF_nonamedisplay)))
+			case "nowinicondisplay":
+				sc.add(assertSpecial_flag, sc.i64ToExp(int64(ASF_nowinicondisplay)))
 			case "autoguard":
 				sc.add(assertSpecial_flag, sc.i64ToExp(int64(ASF_autoguard)))
 			case "animfreeze":

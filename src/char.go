@@ -75,7 +75,13 @@ const (
 	ASF_nofalldefenceup
 	ASF_noturntarget
 	ASF_noinput
+	ASF_nolifebardisplay
 	ASF_nopowerbardisplay
+	ASF_noguardbardisplay
+	ASF_nostunbardisplay
+	ASF_nofacedisplay
+	ASF_nonamedisplay
+	ASF_nowinicondisplay
 	ASF_autoguard
 	ASF_animfreeze
 	ASF_postroundinput
