@@ -288,17 +288,24 @@ end
 --sets lifebar elements, round time, rounds to win
 function start.f_setRounds(roundTime, t_rounds)
 	setLifebarElements(main.lifebar)
-	--round time
+	-- Round time
 	local frames = main.timeFramesPerCount
 	local p1FramesMul = 1
 	local p2FramesMul = 1
-	if start.p[1].teamMode == 3 then --Tag
+	if start.p[1].teamMode == 3 then -- Tag
 		p1FramesMul = start.p[1].numChars
 	end
-	if start.p[2].teamMode == 3 then --Tag
+	if start.p[2].teamMode == 3 then -- Tag
 		p2FramesMul = start.p[2].numChars
 	end
-	frames = frames * math.max(p1FramesMul, p2FramesMul)
+	if (start.p[1].teamMode == 3 or start.p[2].teamMode == 3) and gameOption('Options.Tag.TimeScaling') > 0 then
+		-- Calculate the maximum team size
+		local maxTeamSize = math.max(p1FramesMul, p2FramesMul)
+		-- Apply a base multiplier for team size
+		local adjustedFrames = frames * (1 + (maxTeamSize - 1) * gameOption('Options.Tag.TimeScaling'))
+		-- Enforce a minimum threshold to avoid overly short rounds
+		frames = main.f_round(math.max(adjustedFrames, frames), 0)
+	end
 	setTimeFramesPerCount(frames)
 	if roundTime ~= nil then
 		setRoundTime(math.max(-1, roundTime * frames)) --round time predefined
@@ -1146,7 +1153,7 @@ function start.f_playWave(ref, name, g, n, loops)
 		if main.t_selStages[ref][name .. '_wave_data'] == nil then
 			main.t_selStages[ref][name .. '_wave_data'] = getWaveData(a.dir .. a.sound, g, n, loops or -1)
 		end
-		wavePlay(main.t_selStages[ref][name .. '_wave_data'])
+		wavePlay(main.t_selStages[ref][name .. '_wave_data'], g, n)
 	else
 		local sound = start.f_getCharData(ref).sound
 		if sound == nil or sound == '' then
@@ -1155,7 +1162,7 @@ function start.f_playWave(ref, name, g, n, loops)
 		if start.f_getCharData(ref)[name .. '_wave_data'] == nil then
 			start.f_getCharData(ref)[name .. '_wave_data'] = getWaveData(start.f_getCharData(ref).dir .. sound, g, n, loops or -1)
 		end
-		wavePlay(start.f_getCharData(ref)[name .. '_wave_data'])
+		wavePlay(start.f_getCharData(ref)[name .. '_wave_data'], g, n)
 	end
 end
 

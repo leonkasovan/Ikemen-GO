@@ -501,7 +501,7 @@ func (s *Snd) Get(gn [2]int32) *Sound {
 }
 func (s *Snd) play(gn [2]int32, volumescale int32, pan float32, loopstart, loopend, startposition int) bool {
 	sound := s.Get(gn)
-	return sys.soundChannels.Play(sound, volumescale, pan, loopstart, loopend, startposition)
+	return sys.soundChannels.Play(sound, gn[0], gn[1], volumescale, pan, loopstart, loopend, startposition)
 }
 func (s *Snd) stop(gn [2]int32) {
 	sound := s.Get(gn)
@@ -533,6 +533,7 @@ type SoundEffect struct {
 	channel  int32
 	loop     int32
 	freqmul  float32
+	startPos int
 }
 
 func (s *SoundEffect) Stream(samples [][2]float64) (n int, ok bool) {
@@ -573,13 +574,17 @@ type SoundChannel struct {
 	sound             *Sound
 	stopOnGetHit      bool
 	stopOnChangeState bool
+	group             int32
+	number            int32
 }
 
-func (s *SoundChannel) Play(sound *Sound, loop int32, freqmul float32, loopStart, loopEnd, startPosition int) {
+func (s *SoundChannel) Play(sound *Sound, group, number, loop int32, freqmul float32, loopStart, loopEnd, startPosition int) {
 	if sound == nil {
 		return
 	}
 	s.sound = sound
+	s.group = group
+	s.number = number
 	s.streamer = s.sound.GetStreamer()
 	loopCount := int(0)
 	if loop < 0 {
@@ -589,7 +594,7 @@ func (s *SoundChannel) Play(sound *Sound, loop int32, freqmul float32, loopStart
 	}
 	// going to continue using our streamLooper which is now modified from beep.Loop2
 	looper := newStreamLooper(s.streamer, loopCount, loopStart, loopEnd)
-	s.sfx = &SoundEffect{streamer: looper, volume: 256, priority: 0, channel: -1, loop: int32(loopCount), freqmul: freqmul}
+	s.sfx = &SoundEffect{streamer: looper, volume: 256, priority: 0, channel: -1, loop: int32(loopCount), freqmul: freqmul, startPos: startPosition}
 	srcRate := s.sound.format.SampleRate
 	dstRate := beep.SampleRate(float32(sys.cfg.Sound.SampleRate) / s.sfx.freqmul)
 	resampler := beep.Resample(audioResampleQuality, srcRate, dstRate, s.sfx)
@@ -746,7 +751,7 @@ func (s *SoundChannels) Get(ch int32) *SoundChannel {
 	}
 	return nil
 }
-func (s *SoundChannels) Play(sound *Sound, volumescale int32, pan float32, loopStart, loopEnd, startPosition int) bool {
+func (s *SoundChannels) Play(sound *Sound, group, number, volumescale int32, pan float32, loopStart, loopEnd, startPosition int) bool {
 	if sound == nil {
 		return false
 	}
@@ -754,7 +759,7 @@ func (s *SoundChannels) Play(sound *Sound, volumescale int32, pan float32, loopS
 	if c == nil {
 		return false
 	}
-	c.Play(sound, 0, 1.0, loopStart, loopEnd, startPosition)
+	c.Play(sound, group, number, 0, 1.0, loopStart, loopEnd, startPosition)
 	c.SetVolume(float32(volumescale * 64 / 25))
 	c.SetPan(pan, 0, nil)
 	return true
