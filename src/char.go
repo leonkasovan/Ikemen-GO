@@ -4186,6 +4186,110 @@ func (c *Char) projVar(pid BytecodeValue, idx BytecodeValue, flag BytecodeValue,
 	return v
 }
 
+func (c *Char) soundVar(chid BytecodeValue, vtype OpCode) BytecodeValue {
+	if chid.IsSF() {
+		return BytecodeSF()
+	}
+
+	// See compiler.go:SoundVar
+	var id = chid.ToI()
+	if id > 0 {
+		id--
+	}
+
+	var ch *SoundChannel
+
+	// First, grab a channel.
+	if id >= 0 {
+		ch = c.soundChannels.Get(id)
+	} else {
+		for _, *ch = range c.soundChannels.channels {
+			if ch.sfx != nil {
+				break
+			}
+		}
+	}
+
+	// Now get the data we want
+	switch vtype {
+	case OC_ex2_soundvar_group:
+		if ch != nil && ch.sound != nil {
+			return BytecodeInt(ch.group)
+		}
+		return BytecodeInt(-1)
+	case OC_ex2_soundvar_number:
+		if ch != nil && ch.sound != nil {
+			return BytecodeInt(ch.number)
+		}
+		return BytecodeInt(-1)
+	case OC_ex2_soundvar_freqmul:
+		if ch != nil && ch.sfx != nil {
+			return BytecodeFloat(ch.sfx.freqmul)
+		}
+		return BytecodeFloat(1)
+	case OC_ex2_soundvar_isplaying:
+		if ch != nil && ch.sfx != nil {
+			return BytecodeBool(ch.IsPlaying())
+		}
+		return BytecodeBool(false)
+	case OC_ex2_soundvar_length:
+		if ch != nil && ch.streamer != nil {
+			return BytecodeInt64(int64(ch.streamer.Len()))
+		}
+		return BytecodeInt64(int64(0))
+	case OC_ex2_soundvar_loopcount:
+		if ch != nil {
+			if sl, ok := ch.sfx.streamer.(*StreamLooper); ok {
+				return BytecodeInt(int32(sl.loopcount))
+			}
+		}
+		return BytecodeInt(0)
+	case OC_ex2_soundvar_loopend:
+		if ch != nil {
+			if sl, ok := ch.sfx.streamer.(*StreamLooper); ok {
+				return BytecodeInt64(int64(sl.loopend))
+			}
+		}
+		return BytecodeInt64(0)
+	case OC_ex2_soundvar_loopstart:
+		if ch != nil {
+			if sl, ok := ch.sfx.streamer.(*StreamLooper); ok {
+				return BytecodeInt64(int64(sl.loopstart))
+			}
+		}
+		return BytecodeInt64(0)
+	case OC_ex2_soundvar_pan:
+		if ch != nil && ch.sfx != nil {
+			return BytecodeFloat(ch.sfx.p)
+		}
+		return BytecodeFloat(0)
+	case OC_ex2_soundvar_position:
+		if ch != nil {
+			if sl, ok := ch.sfx.streamer.(*StreamLooper); ok {
+				return BytecodeInt64(int64(sl.Position()))
+			}
+		}
+		return BytecodeInt64(0)
+	case OC_ex2_soundvar_priority:
+		if ch != nil && ch.sfx != nil {
+			return BytecodeInt(ch.sfx.priority)
+		}
+		return BytecodeInt(0)
+	case OC_ex2_soundvar_startposition:
+		if ch != nil && ch.sfx != nil {
+			return BytecodeInt64(int64(ch.sfx.startPos))
+		}
+		return BytecodeInt64(int64(0))
+	case OC_ex2_soundvar_volumescale:
+		if ch != nil && ch.sfx != nil {
+			return BytecodeFloat(ch.sfx.volume / 256.0 * 100.0)
+		}
+		return BytecodeFloat(0)
+	}
+
+	return BytecodeSF()
+}
+
 func (c *Char) numHelper(hid BytecodeValue) BytecodeValue {
 	if hid.IsSF() {
 		return BytecodeSF()
@@ -4540,7 +4644,7 @@ func (c *Char) playSound(ffx string, lowpriority bool, loopCount int32, g, n, ch
 		crun = c.root()
 	}
 	if ch := crun.soundChannels.New(chNo, lowpriority, priority); ch != nil {
-		ch.Play(s, loopCount, freqmul, loopstart, loopend, startposition)
+		ch.Play(s, g, n, loopCount, freqmul, loopstart, loopend, startposition)
 		vol = Clamp(vol, -25600, 25600)
 		//if c.gi().mugenver[0] == 1 {
 		if ffx != "" {

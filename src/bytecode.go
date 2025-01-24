@@ -845,6 +845,19 @@ const (
 	OC_ex2_hitdefvar_shaketime
 	OC_ex2_hitdefvar_guard_shaketime
 	OC_ex2_hitbyattr
+	OC_ex2_soundvar_group
+	OC_ex2_soundvar_number
+	OC_ex2_soundvar_freqmul
+	OC_ex2_soundvar_isplaying
+	OC_ex2_soundvar_length
+	OC_ex2_soundvar_loopcount
+	OC_ex2_soundvar_loopstart
+	OC_ex2_soundvar_loopend
+	OC_ex2_soundvar_pan
+	OC_ex2_soundvar_position
+	OC_ex2_soundvar_priority
+	OC_ex2_soundvar_startposition
+	OC_ex2_soundvar_volumescale
 )
 const (
 	NumVar     = 60
@@ -3529,6 +3542,36 @@ func (be BytecodeExp) run_ex2(c *Char, i *int, oc *Char) {
 	case OC_ex2_hitbyattr:
 		sys.bcStack.PushB(c.hitByAttrTrigger(*(*int32)(unsafe.Pointer(&be[*i]))))
 		*i += 4
+	// BEGIN FALLTHROUGH (soundvar)
+	case OC_ex2_soundvar_group:
+		fallthrough
+	case OC_ex2_soundvar_number:
+		fallthrough
+	case OC_ex2_soundvar_freqmul:
+		fallthrough
+	case OC_ex2_soundvar_isplaying:
+		fallthrough
+	case OC_ex2_soundvar_length:
+		fallthrough
+	case OC_ex2_soundvar_loopcount:
+		fallthrough
+	case OC_ex2_soundvar_loopend:
+		fallthrough
+	case OC_ex2_soundvar_loopstart:
+		fallthrough
+	case OC_ex2_soundvar_pan:
+		fallthrough
+	case OC_ex2_soundvar_position:
+		fallthrough
+	case OC_ex2_soundvar_priority:
+		fallthrough
+	case OC_ex2_soundvar_startposition:
+		fallthrough
+	case OC_ex2_soundvar_volumescale:
+		// END FALLTHROUGH (soundvar)
+		// get the channel
+		ch := sys.bcStack.Pop()
+		sys.bcStack.Push(c.soundVar(ch, opc))
 	default:
 		sys.errLog.Printf("%v\n", be[*i-1])
 		c.panic()

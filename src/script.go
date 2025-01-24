@@ -2973,7 +2973,14 @@ func systemScriptInit(l *lua.LState) {
 		if !ok {
 			userDataError(l, 1, s)
 		}
-		sys.soundChannels.Play(s, 100, 0.0, 0, 0, 0)
+		var g, n int32
+		if !nilArg(l, 2) {
+			g = int32(numArg(l, 2))
+		}
+		if !nilArg(l, 3) {
+			n = int32(numArg(l, 3))
+		}
+		sys.soundChannels.Play(s, g, n, 100, 0.0, 0, 0, 0)
 		return 0
 	})
 }
@@ -4712,6 +4719,80 @@ func triggerFunctions(l *lua.LState) {
 	luaRegister(l, "selfanimexist", func(*lua.LState) int {
 		l.Push(lua.LBool(sys.debugWC.selfAnimExist(
 			BytecodeInt(int32(numArg(l, 1)))).ToB()))
+		return 1
+	})
+	luaRegister(l, "soundvar", func(*lua.LState) int {
+		var lv lua.LValue
+		id := int32(numArg(l, 1))
+		vname := strArg(l, 2)
+		var ch *SoundChannel
+
+		if id < 0 {
+			for _, ch := range sys.debugWC.soundChannels.channels {
+				if ch.sfx != nil {
+					if ch.IsPlaying() {
+						break
+					}
+				}
+			}
+		} else {
+			ch = sys.debugWC.soundChannels.Get(id)
+		}
+
+		if ch != nil && ch.sfx != nil {
+			switch strings.ToLower(vname) {
+			case "group":
+				lv = lua.LNumber(ch.group)
+			case "number":
+				lv = lua.LNumber(ch.number)
+			case "freqmul":
+				lv = lua.LNumber(ch.sfx.freqmul)
+			case "isplaying":
+				lv = lua.LBool(ch.IsPlaying())
+			case "length":
+				if ch.streamer != nil {
+					lv = lua.LNumber(ch.streamer.Len())
+				} else {
+					lv = lua.LNumber(0)
+				}
+			case "loopcount":
+				if sl, ok := ch.sfx.streamer.(*StreamLooper); ok {
+					lv = lua.LNumber(sl.loopcount)
+				} else {
+					lv = lua.LNumber(0)
+				}
+			case "loopend":
+				if sl, ok := ch.sfx.streamer.(*StreamLooper); ok {
+					lv = lua.LNumber(sl.loopend)
+				} else {
+					lv = lua.LNumber(0)
+				}
+			case "loopstart":
+				if sl, ok := ch.sfx.streamer.(*StreamLooper); ok {
+					lv = lua.LNumber(sl.loopstart)
+				} else {
+					lv = lua.LNumber(0)
+				}
+			case "pan":
+				lv = lua.LNumber(ch.sfx.p)
+			case "position":
+				if sl, ok := ch.sfx.streamer.(*StreamLooper); ok {
+					lv = lua.LNumber(sl.Position())
+				} else {
+					lv = lua.LNumber(0)
+				}
+			case "priority":
+				lv = lua.LNumber(ch.sfx.priority)
+			case "startposition":
+				lv = lua.LNumber(ch.sfx.startPos)
+			case "volumescale":
+				lv = lua.LNumber(ch.sfx.volume / 256.0 * 100.0)
+			default:
+				l.RaiseError("\nInvalid argument: %v\n", vname)
+				break
+			}
+		}
+		l.Push(lv)
 		return 1
 	})
 	luaRegister(l, "stateno", func(*lua.LState) int {

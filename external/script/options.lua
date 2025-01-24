@@ -157,6 +157,7 @@ options.t_itemname = {
 			modifyGameOption('Options.Tag.Max', 4)
 			modifyGameOption('Options.Tag.Match.Wins', 2)
 			modifyGameOption('Options.Tag.LoseOnKO', false)	
+			modifyGameOption('Options.Tag.TimeScaling', 1)
 			modifyGameOption('Options.Turns.Min', 2)
 			modifyGameOption('Options.Turns.Max', 4)
 			modifyGameOption('Options.Turns.Recovery.Base', 0)
