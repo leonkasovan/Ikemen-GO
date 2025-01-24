@@ -30,7 +30,7 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 
 	// Initialize OpenGL
 	chk(glfw.Init())
-
+	glfw.InitHint(glfw.WAYLAND_LIBDECOR, glfw.WAYLAND_DISABLE_LIBDECOR)
 	if monitor = glfw.GetPrimaryMonitor(); monitor == nil { // Get primary monitor, if it nil then we are using KMS DRM mode in fullscreen
 		fullscreen = true
 		x, y = 0, 0
