@@ -29,8 +29,11 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 	var drm_mode bool
 
 	// Initialize OpenGL
+	glfw.InitHint(0x00053001, 0x00038002) // disable libdecor for wayland
 	chk(glfw.Init())
-	glfw.InitHint(glfw.WAYLAND_LIBDECOR, glfw.WAYLAND_DISABLE_LIBDECOR)
+
+	fmt.Printf("Platform: %v\n", glfw.GetVersionString())
+
 	if monitor = glfw.GetPrimaryMonitor(); monitor == nil { // Get primary monitor, if it nil then we are using KMS DRM mode in fullscreen
 		fullscreen = true
 		x, y = 0, 0
@@ -66,22 +69,22 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 	}
 
 	// Set windows attributes
-	if !drm_mode {
-		if fullscreen {
-			window.SetPos(0, 0)
-			if s.cfg.Video.Borderless {
-				window.SetAttrib(glfw.Decorated, 0)
-				window.SetSize(mode.Width, mode.Height)
-			}
-			window.SetInputMode(glfw.CursorMode, glfw.CursorHidden)
-		} else {
-			window.SetSize(w2, h2)
-			window.SetInputMode(glfw.CursorMode, glfw.CursorNormal)
-			if s.cfg.Video.WindowCentered {
-				window.SetPos(x, y)
-			}
-		}
-	}
+	// if !drm_mode {
+	// 	if fullscreen {
+	// 		window.SetPos(0, 0)
+	// 		if s.cfg.Video.Borderless {
+	// 			window.SetAttrib(glfw.Decorated, 0)
+	// 			window.SetSize(mode.Width, mode.Height)
+	// 		}
+	// 		window.SetInputMode(glfw.CursorMode, glfw.CursorHidden)
+	// 	} else {
+	// 		window.SetSize(w2, h2)
+	// 		window.SetInputMode(glfw.CursorMode, glfw.CursorNormal)
+	// 		if s.cfg.Video.WindowCentered {
+	// 			window.SetPos(x, y)
+	// 		}
+	// 	}
+	// }
 
 	window.MakeContextCurrent()
 	window.SetKeyCallback(keyCallback)

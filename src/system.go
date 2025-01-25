@@ -414,6 +414,7 @@ func (s *System) init(w, h int32) *lua.LState {
 
 	// Now we proceed to init the render.
 	s.loadGfx()
+	fmt.Printf("Gfx Renderer: %v\n", gfx.GetName())
 	gfx.Init()
 	gfx.BeginFrame(false)
 	// And the audio.
@@ -458,7 +459,7 @@ func (s *System) init(w, h int32) *lua.LState {
 			}
 			s.windowMainIcon[i], _, err = image.Decode(f[i])
 		}
-		s.window.SetIcon(s.windowMainIcon)
+		// s.window.SetIcon(s.windowMainIcon)
 		chk(err)
 	}
 	// [Icon add end]
