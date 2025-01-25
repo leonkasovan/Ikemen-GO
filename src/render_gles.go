@@ -337,7 +337,7 @@ type Renderer_GLES struct {
 }
 
 func (r *Renderer_GLES) GetName() string {
-	return "OpenGL ES"
+	return "OpenGL ES 3.1"
 }
 
 // init 3D model shader

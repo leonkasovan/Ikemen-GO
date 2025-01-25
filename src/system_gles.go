@@ -11,7 +11,7 @@ import (
 func (s *System) loadGfx() {
 	if s.cfg.Video.RenderMode == "OpenGL ES 3.2" {
 		gfx = &Renderer_GLES32{}
-		gfxFont = &glfont.FontRenderer_GLES{}
+		gfxFont = &glfont.FontRenderer_GLES32{}
 	} else {
 		gfx = &Renderer_GLES{}
 		gfxFont = &glfont.FontRenderer_GLES{}
