@@ -1,8 +1,8 @@
 #!/bin/bash
-# change glfw with module name to be updated
+# Script to update leonkasovan's module from github
 
-sed -i '/glfw/d' go.sum
-sed -i '/glfw/d' go.mod
-rm -r ~/go/pkg/mod/github.com/leonkasovan/glfw
-rm -r ~/go/pkg/mod/cache/
+sed -i '/leonkasovan/d' go.sum
+sed -i '/leonkasovan/d' go.mod
+rm -r ~/go/pkg/mod/github.com/leonkasovan
+rm -r ~/go/pkg/mod/cache
 go mod tidy
