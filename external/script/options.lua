@@ -792,6 +792,28 @@ options.t_itemname = {
 		end
 		return true
 	end,
+	--gles32
+	['gles32'] = function(t, item, cursorPosY, moveTxt)
+		if main.f_input(main.t_players, {'pal', 's'}) then
+			sndPlay(motif.files.snd_data, motif.option_info.cursor_move_snd[1], motif.option_info.cursor_move_snd[2])
+			modifyGameOption('Video.RenderMode', "OpenGL ES 3.2")
+			options.modified = true
+			options.needReload = true
+			return false
+		end
+		return true
+	end,
+	--gles31
+	['gles31'] = function(t, item, cursorPosY, moveTxt)
+		if main.f_input(main.t_players, {'pal', 's'}) then
+			sndPlay(motif.files.snd_data, motif.option_info.cursor_move_snd[1], motif.option_info.cursor_move_snd[2])
+			modifyGameOption('Video.RenderMode', "OpenGL ES 3.1")
+			options.modified = true
+			options.needReload = true
+			return false
+		end
+		return true
+	end,
 	--Resolution (submenu)
 	['resolution'] = function(t, item, cursorPosY, moveTxt)
 		if main.f_input(main.t_players, {'$F', '$B', 'pal', 's'}) then

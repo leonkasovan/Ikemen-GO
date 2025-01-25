@@ -2024,6 +2024,8 @@ function motif.setBaseOptionInfo()
 	motif.option_info.menu_itemname_menuvideo_renderer = "Renderer" --reserved submenu
 	motif.option_info.menu_itemname_menuvideo_renderer_gl32 = "OpenGL 3.2"
 	motif.option_info.menu_itemname_menuvideo_renderer_gl21 = "OpenGL 2.1"
+	motif.option_info.menu_itemname_menuvideo_renderer_gles32 = "OpenGL ES 3.2"
+	motif.option_info.menu_itemname_menuvideo_renderer_gles31 = "OpenGL ES 3.1"
 	motif.option_info.menu_itemname_menuvideo_renderer_empty = ""
 	motif.option_info.menu_itemname_menuvideo_renderer_back = "Back"
 	motif.option_info.menu_itemname_menuvideo_resolution = "Resolution" --reserved submenu
@@ -2159,6 +2161,8 @@ function motif.setBaseOptionInfo()
 		"menuvideo_renderer",
 		"menuvideo_renderer_gl32",
 		"menuvideo_renderer_gl21",
+		"menuvideo_renderer_gles32",
+		"menuvideo_renderer_gles31",
 		"menuvideo_renderer_empty",
 		"menuvideo_renderer_back",
 		"menuvideo_resolution",

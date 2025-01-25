@@ -419,7 +419,7 @@ func closeLog(f *os.File) {
 
 func main() {
 	is_mugen_game := false
-	fmt.Printf("[main.go] Running in OS=[%v] ARCH=[%v]\n", runtime.GOOS, runtime.GOARCH)
+	fmt.Printf("Ikemen running on OS=[%v] ARCH=[%v]\n", runtime.GOOS, runtime.GOARCH)
 
 	exePath, err := os.Executable()
 	if err != nil {

@@ -90,25 +90,33 @@ windows:
 	go build -trimpath -ldflags="-s -w -H=windowsgui" -v -o ./bin/ikemen_win.exe ./src
 
 # Steamdeck (SteamOS X11)
-steamdeck: src/assets.zip
+steamdeck: ${srcFiles} src/assets.zip
 	export CGO_ENABLED=1 && go build -tags="x11" -trimpath -ldflags="-s -w" -v -o ./bin/ikemen_steamdeck ./src
 
 # Retroid Pocket 5 (Rocknix Linux)
-rp5: src/assets.zip
+rp5: ${srcFiles} src/assets.zip
 	export CGO_ENABLED=1 && go build -tags="wayland" -trimpath -ldflags="-s -w" -v -o ./bin/ikemen_rp5 ./src
 
 # Raspberry Pi 4 (Raspberry OS)
-rpi4: src/assets.zip
+rpi4: ${srcFiles} src/assets.zip
 	export CGO_ENABLED=1 && go build -tags="kmsdrm,gles2" -trimpath -ldflags="-s -w" -v -o ./bin/ikemen_rpi4 ./src
 #	export CGO_ENABLED=1 && go build -tags="kmsdrm" -trimpath -ldflags="-s -w" -v -o ./bin/ikemen_rpi4 ./src
 
 # Anbernic RG353 variant (Batocera, Recalbox, EmuELEC, ArkOS)
-rg353_drm: src/assets.zip
+rg353_drm: ${srcFiles} src/assets.zip
 	export CGO_ENABLED=1 && go build -tags="kmsdrm,gles2" -trimpath -ldflags="-s -w" -v -o ./bin/ikemen_rg353_drm ./src
 
 # Anbernic RG353 variant (Rocknix Linux)
-rg353_wayland: src/assets.zip
+rg353_wayland: ${srcFiles} src/assets.zip
 	export CGO_ENABLED=1 && go build -tags="wayland,gles2" -trimpath -ldflags="-s -w" -v -o ./bin/ikemen_rg353_wayland ./src
+
+# Generic Linux Wayland
+wayland: ${srcFiles} src/assets.zip
+	export CGO_ENABLED=1 && go build -tags="wayland,gles2" -trimpath -ldflags="-s -w" -v -o ./bin/ikemen_wayland ./src	
+
+# Generic Linux KMS DRM
+drm: ${srcFiles} src/assets.zip
+	export CGO_ENABLED=1 && go build -tags="kmsdrm,gles2" -trimpath -ldflags="-s -w" -v -o ./bin/ikemen_drm ./src	
 
 src/assets.zip: data/* external/* font/*
 	zip -r src/assets.zip data external font

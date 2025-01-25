@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"image"
+	"strings"
 
 	glfw "github.com/leonkasovan/glfw/v3.5/glfw"
 )
@@ -22,37 +23,35 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 	var err error
 	var window *glfw.Window
 	var monitor *glfw.Monitor
-	var fullscreen bool
-	var x, y int
 	var mode *glfw.VidMode
-	var w2, h2 int
-	var drm_mode bool
 
-	// Initialize OpenGL
+	fullscreen := true
+	x, y := 0, 0
+	w2, h2 := w, h
+
+	// Initialize Windowing system
 	glfw.InitHint(0x00053001, 0x00038002) // disable libdecor for wayland
 	chk(glfw.Init())
-
 	fmt.Printf("Platform: %v\n", glfw.GetVersionString())
 
-	if monitor = glfw.GetPrimaryMonitor(); monitor == nil { // Get primary monitor, if it nil then we are using KMS DRM mode in fullscreen
-		fullscreen = true
-		x, y = 0, 0
-		w2, h2 = w, h
-		drm_mode = true
-	} else {
+	// Check if we are running in KMS DRM mode
+	if !strings.Contains(glfw.GetVersionString(), "KMSDRM") {
+		monitor = glfw.GetPrimaryMonitor();
 		// "-windowed" overrides the configuration setting but does not change it
 		_, forceWindowed := sys.cmdFlags["-windowed"]
 		fullscreen = s.cfg.Video.Fullscreen && !forceWindowed
 		// Calculate window size & offset it
 		mode = monitor.GetVideoMode()
+		fmt.Printf("Monitor size: %dx%d\n", mode.Width, mode.Height)
 		w2, h2 = w, h
 		if !fullscreen && (sys.cfg.Video.WindowWidth > 0 || sys.cfg.Video.WindowHeight > 0) {
 			w2, h2 = sys.cfg.Video.WindowWidth, sys.cfg.Video.WindowHeight
 		}
 		x, y = (mode.Width-w2)/2, (mode.Height-h2)/2
 		glfw.WindowHint(glfw.Resizable, glfw.True)
-		drm_mode = false
 	}
+	fmt.Printf("Window size: %dx%d\n", w2, h2)
+	fmt.Printf("Window position: %d,%d\n", x, y)
 
 	// Initialize Gfx with OpenGL (ES)
 	s.initGfx()
@@ -69,22 +68,22 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 	}
 
 	// Set windows attributes
-	// if !drm_mode {
-	// 	if fullscreen {
-	// 		window.SetPos(0, 0)
-	// 		if s.cfg.Video.Borderless {
-	// 			window.SetAttrib(glfw.Decorated, 0)
-	// 			window.SetSize(mode.Width, mode.Height)
-	// 		}
-	// 		window.SetInputMode(glfw.CursorMode, glfw.CursorHidden)
-	// 	} else {
-	// 		window.SetSize(w2, h2)
-	// 		window.SetInputMode(glfw.CursorMode, glfw.CursorNormal)
-	// 		if s.cfg.Video.WindowCentered {
-	// 			window.SetPos(x, y)
-	// 		}
-	// 	}
-	// }
+	if !strings.Contains(glfw.GetVersionString(), "KMSDRM") && !strings.Contains(glfw.GetVersionString(), "Wayland") {
+		if fullscreen {
+			window.SetPos(0, 0)
+			if s.cfg.Video.Borderless {
+				window.SetAttrib(glfw.Decorated, 0)
+				window.SetSize(mode.Width, mode.Height)
+			}
+			window.SetInputMode(glfw.CursorMode, glfw.CursorHidden)
+		} else {
+			window.SetSize(w2, h2)
+			window.SetInputMode(glfw.CursorMode, glfw.CursorNormal)
+			if s.cfg.Video.WindowCentered {
+				window.SetPos(x, y)
+			}
+		}
+	}
 
 	window.MakeContextCurrent()
 	window.SetKeyCallback(keyCallback)
@@ -95,7 +94,7 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 		glfw.SwapInterval(s.cfg.Video.VSync)
 	}
 
-	if drm_mode { // KMS DRM mode, override window size
+	if strings.Contains(glfw.GetVersionString(), "KMSDRM") { // KMS DRM mode, override window size
 		w, h = window.GetSize()
 		if s.cfg.Video.WindowWidth != w {
 			fmt.Printf("Overriding configuration Video.WindowWidth(%d) with Monitor's width(%d)\n", s.cfg.Video.WindowWidth, w)
@@ -113,17 +112,22 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 
 func (w *Window) SwapBuffers() {
 	w.Window.SwapBuffers()
-	// Retrieve GL timestamp now
-	glNow := glfw.GetTime()
-	if glNow-sys.prevTimestamp >= 1 {
-		sys.gameFPS = sys.absTickCountF / float32(glNow-sys.prevTimestamp)
-		sys.absTickCountF = 0
-		sys.prevTimestamp = glNow
+	// in Debug mode, retrieve GL timestamp now and calculate FPS
+	if sys.cfg.Debug.AllowDebugMode {
+		glNow := glfw.GetTime()
+		if glNow-sys.prevTimestamp >= 1 {
+			sys.gameFPS = sys.absTickCountF / float32(glNow-sys.prevTimestamp)
+			sys.absTickCountF = 0
+			sys.prevTimestamp = glNow
+		}
 	}
 }
 
 func (w *Window) SetIcon(icon []image.Image) {
-	w.Window.SetIcon(icon)
+	// Some Wayland platform does not support setting the window icon, so we skip it
+	if !strings.Contains(glfw.GetVersionString(), "Wayland") {
+		w.Window.SetIcon(icon)
+	}
 }
 
 func (w *Window) SetSwapInterval(interval int) {

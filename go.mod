@@ -18,7 +18,7 @@ require (
 require (
 	github.com/leonkasovan/gl v0.0.0-20250124141628-d79f807815dd
 	github.com/leonkasovan/glfont v0.0.0-20250124225202-0c5138225ac1
-	github.com/leonkasovan/glfw/v3.5/glfw v0.0.0-20250121142041-c5a377be8c43
+	github.com/leonkasovan/glfw/v3.5/glfw v0.0.0-20250125141848-41c70b7f7f9c
 	gopkg.in/ini.v1 v1.67.0
 )
 
