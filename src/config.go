@@ -285,7 +285,6 @@ func loadConfig(def string, is_mugen_game bool) (*Config, error) {
 
 	c.IniFile = iniFile
 	c.normalize()
-	c.sysSet()
 	//Import Mugen setting
 	if is_mugen_game {
 		fmt.Printf("[config.go] import data/mugen.cfg\n")
@@ -309,29 +308,34 @@ func loadConfig(def string, is_mugen_game bool) (*Config, error) {
 			result = regexp.MustCompile(`[Mm]otif\s*=\s*(\S+)`).FindStringSubmatch(line)
 			if result != nil {
 				c.Config.Motif = strings.ReplaceAll(result[1], "\\", "/")
+				c.SetValueUpdate("Config.Motif", c.Config.Motif)
 				fmt.Printf("[config.go] Import Motif=%v\n", c.Config.Motif)
 				continue
 			}
 			result = regexp.MustCompile(`[Ss]tart[Ss]tage\s*=\s*(\S+)`).FindStringSubmatch(line)
 			if result != nil {
 				c.Debug.StartStage = strings.ReplaceAll(result[1], "\\", "/")
+				c.SetValueUpdate("Debug.StartStage", c.Debug.StartStage)
 				fmt.Printf("[config.go] Import StartStage=%v\n", c.Debug.StartStage)
 				continue
 			}
 			result = regexp.MustCompile(`[Gg]ame[Ww]idth\s*=\s*(\d+)`).FindStringSubmatch(line)
 			if result != nil {
 				c.Video.GameWidth = int32(Atoi(result[1]))
+				c.SetValueUpdate("Video.GameWidth", c.Video.GameWidth)
 				fmt.Printf("[config.go] Import GameWidth=%v\n", c.Video.GameWidth)
 				continue
 			}
 			result = regexp.MustCompile(`[Gg]ame[Hh]eight\s*=\s*(\d+)`).FindStringSubmatch(line)
 			if result != nil {
 				c.Video.GameHeight = int32(Atoi(result[1]))
+				c.SetValueUpdate("Video.GameHeight", c.Video.GameHeight)
 				fmt.Printf("[config.go] Import GameHeight=%v\n", c.Video.GameHeight)
 				continue
 			}
 		}
 	}
+	c.sysSet()
 	c.Save(def)
 	return &c, nil
 }
