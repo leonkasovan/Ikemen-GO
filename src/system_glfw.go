@@ -186,7 +186,7 @@ func (w *Window) toggleFullscreen() {
 		w.SetInputMode(glfw.CursorMode, glfw.CursorNormal)
 	} else {
 		w.SetAttrib(glfw.Decorated, 0)
-		if sys.cfg.Video.Borderless {
+		if sys.cfg.Video.Borderless || strings.Contains(glfw.GetVersionString(), "Wayland"){
 			w.SetSize(mode.Width, mode.Height)
 			w.SetMonitor(&glfw.Monitor{}, 0, 0, mode.Width, mode.Height, mode.RefreshRate)
 		} else {
