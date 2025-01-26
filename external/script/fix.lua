@@ -81,7 +81,7 @@ function f_strsplit(delimiter, text)
 	return list
 end
 
-function f_checkFile(file, msg, dirs)
+function f_checkFile(file, dirs)
 	local found_in = ""
 	if #file == 0 then 
 		status = "n/a"
@@ -99,11 +99,6 @@ function f_checkFile(file, msg, dirs)
 				end
 			end
 		end
-	end
-	if #found_in > 0 then
-		print(string.format('%s: %s(%s) [%s]', msg, file, found_in, status))
-	else
-		print(string.format('%s: %s [%s]', msg, file, status))
 	end
 	return status == "OK"
 end
@@ -201,10 +196,15 @@ os.rename(config.Motif..".fix", config.Motif)
 -------------------------------------------------------------------
 -- CHECK motif.select: select.def
 -------------------------------------------------------------------
+local motif_dir, _ = config.Motif:match("^(.*)(/.*)$")
+if motif_dir then
+	motif.select = motif_dir.."/"..motif.select
+end
+print("Checking "..motif.select)
 content = f_fileRead(motif.select)
 if content == nil then
-	print("[ERROR] Can not read "..motif.select)
-	return
+		print("[ERROR] Can not read "..motif.select)
+		return
 end
 
 local file = io.open(motif.select..".fix", 'w')
@@ -309,6 +309,7 @@ os.rename(motif.select..".fix", motif.select)
 -- CHECK Characters: chars/*/*.def
 -------------------------------------------------------------------
 for i, ch in ipairs(chars_selection) do
+	print("Checking "..ch)
 	content = f_fileRead(ch)
 	if content == nil then
 		print("[ERROR] Can not read chars "..ch)
@@ -339,7 +340,16 @@ for i, ch in ipairs(chars_selection) do
 							filename = value
 							dir = ""
 						end
-						new_code = string.format("%s = %s%s", param, dir, filename:lower())
+						filename = filename:lower()
+						-- check filename has ext ".cns"
+						if filename:match(".cns$") then
+							if f_checkFile(dir..filename..".zss", {ch:match(".*/"), "chars/", "data/"}) then
+								new_code = string.format("%s = %s%s.zss", param, dir, filename)
+							else
+								new_code = string.format("%s = %s%s", param, dir, filename)
+							end
+						end
+						print("modify char", new_code)
 					end
 				end
 			end
