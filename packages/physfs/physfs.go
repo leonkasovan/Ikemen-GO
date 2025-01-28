@@ -103,11 +103,7 @@ func Unmount(archive string) bool {
 
 // OpenRead opens a file for reading.
 func OpenRead(filename string) *File {
-    // fmt.Printf("filename=%v [%v] [%v]\n", filename, filename[0:2], filename[2:])
-    fmt.Printf("filename=%v [%v]\n", filename, filepath.Clean(filename))
-    // if filename[0:2] == "./" || filename[0:2] == ".\\" {
-    //     filename = filename[2:]
-    // }
+    // fmt.Printf("filename=%v [%v]\n", filename, filepath.Clean(filename))
     cFilename := C.CString(filepath.Clean(filename))
     defer C.free(unsafe.Pointer(cFilename))
     return (*File)(C.PHYSFS_openRead(cFilename))
@@ -183,4 +179,60 @@ func EnumerateFiles(dir string) ([]string, error) {
 // GetDirSeparator returns the directory separator.
 func GetDirSeparator() string {
     return C.GoString(C.PHYSFS_getDirSeparator())
+}
+
+// ReadFile reads the content of the file and returns it as a byte slice.
+func ReadFile(filename string) ([]byte, error) {
+    // fmt.Printf("physfs.ReadFile(%v)\n", filepath.Clean(filename))
+    file := OpenRead(filepath.Clean(filename))
+    if file == nil {
+        return nil, errors.New("failed to open file")
+    }
+    defer file.Close()
+
+    fileLength := C.PHYSFS_fileLength((*C.PHYSFS_File)(file))
+    if fileLength < 0 {
+        return nil, errors.New("failed to get file length")
+    }
+
+    if fileLength == 0 {
+        return nil, nil
+    }
+
+    buffer := make([]byte, fileLength)
+    n, err := file.Read(buffer)
+    if err != nil && err != io.EOF {
+        return nil, err
+    }
+    return buffer[:n], nil
+}
+
+// FileInfo represents information about a file.
+type FileInfo struct {
+    Name     string
+    Exists   bool
+    IsDir    bool
+    ModTime  int64
+    FileSize int64
+}
+
+// Stat retrieves information about a file.
+func Stat(filename string) (*FileInfo, error) {
+    var stat C.PHYSFS_Stat
+    cFilename := C.CString(filename)
+    defer C.free(unsafe.Pointer(cFilename))
+
+    if C.PHYSFS_stat(cFilename, &stat) == 0 {
+        return nil, errors.New("failed to stat file")
+    }
+
+    fileInfo := &FileInfo{
+        Name:     filename,
+        Exists:   stat.filetype != C.PHYSFS_FILETYPE_OTHER,
+        IsDir:    stat.filetype == C.PHYSFS_FILETYPE_DIRECTORY,
+        ModTime:  int64(stat.modtime),
+        FileSize: int64(stat.filesize),
+    }
+
+    return fileInfo, nil
 }

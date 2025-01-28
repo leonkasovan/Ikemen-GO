@@ -3,13 +3,15 @@ package main
 import (
 	"fmt"
 	"math"
-	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"unicode"
+	"os"
+
+	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
 )
 
 const (
@@ -382,7 +384,7 @@ func NormalizeNewlines(input string) string {
 }
 
 func LoadText(filename string) (string, error) {
-	bytes, err := os.ReadFile(filename)
+	bytes, err := physfs.ReadFile(filename)
 	if err != nil {
 		return "", err
 	}

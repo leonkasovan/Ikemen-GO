@@ -24,6 +24,7 @@ import (
 	"github.com/qmuntal/gltf"
 	"github.com/qmuntal/gltf/modeler"
 	"golang.org/x/mobile/exp/f32"
+	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
 )
 
 type StageProps struct {
@@ -2084,6 +2085,7 @@ func loadEnvironment(filepath string) (*Environment, error) {
 	env.GGXSampleCount = 1024
 	env.GGXLUTSampleCount = 512
 	env.environmentIntensity = 1
+	fmt.Printf("[src/stage.go] loadEnvironment os.Open(%v)\n", filepath)
 	file, err := os.Open(filepath)
 	if err != nil {
 		return nil, err
@@ -2162,7 +2164,7 @@ func loadglTFStage(filepath string) (*Model, error) {
 				}
 			} else {
 				if err := LoadFile(&img.URI, []string{filepath, "", sys.motifDir, "data/"}, func(filename string) error {
-					data, err := os.ReadFile(filename)
+					data, err := physfs.ReadFile(filename)
 					if err != nil {
 						return err
 					}

@@ -20,6 +20,7 @@ import (
 	"github.com/gopxl/beep/v2"
 	"github.com/gopxl/beep/v2/speaker"
 	lua "github.com/yuin/gopher-lua"
+	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
 )
 
 const (
@@ -322,13 +323,12 @@ func (s *System) init(w, h int32) *lua.LState {
 	chk(err)
 
 	// Update gamepad mappings
-	fileName := FileExist(s.cfg.Config.GamepadMappings)
-	if fileName != "" {
-		mappings, _ := LoadText(fileName)
+	if physfs.Exists(s.cfg.Config.GamepadMappings) {
+		mappings, _ := LoadText(s.cfg.Config.GamepadMappings)
 		if input.UpdateGamepadMappings(mappings) {
-			fmt.Printf("Gamepad mappings updated from %v.\n", fileName)
+			fmt.Printf("Gamepad mappings updated from %v.\n", s.cfg.Config.GamepadMappings)
 		} else {
-			fmt.Printf("Failed to update gamepad mappings from %v.\n", fileName)
+			fmt.Printf("Failed to update gamepad mappings from %v.\n", s.cfg.Config.GamepadMappings)
 		}
 	}
 
@@ -396,14 +396,14 @@ func (s *System) init(w, h int32) *lua.LState {
 			shaderLocation = strings.Replace(shaderLocation, "\\", "/", -1)
 
 			// Load vert shaders.
-			content, err := os.ReadFile(shaderLocation + ".vert")
+			content, err := physfs.ReadFile(shaderLocation + ".vert")
 			if err != nil {
 				chk(err)
 			}
 			s.externalShaders[0][i] = string(content) + "\x00"
 
 			// Load frag shaders.
-			content, err = os.ReadFile(shaderLocation + ".frag")
+			content, err = physfs.ReadFile(shaderLocation + ".frag")
 			if err != nil {
 				chk(err)
 			}
@@ -451,6 +451,7 @@ func (s *System) init(w, h int32) *lua.LState {
 					os.Chdir("../../../")
 				}
 			}
+			fmt.Printf("[src/system.go] System.init os.Open(%v)\n", iconLocation)
 			f[i], err = os.Open(iconLocation)
 			if err != nil {
 				var dErr = "Icon file can not be found.\nPanic: " + err.Error()
@@ -2472,7 +2473,7 @@ type wincntMap map[string][]int32 // Map of character definitions to their win c
 // Initializes the win count map by reading from 'autolevel.save' file
 func (wm *wincntMap) init() {
 	if sys.autolevel {
-		b, err := os.ReadFile(sys.wincntFileName) // Read the autolevel.save file
+		b, err := physfs.ReadFile(sys.wincntFileName) // Read the autolevel.save file
 		if err != nil {
 			return
 		}

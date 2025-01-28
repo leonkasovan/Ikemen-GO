@@ -535,7 +535,7 @@ func main() {
 	os.Mkdir("save/replays", os.ModeSticky|0755)
 
 	// Try reading stats
-	if _, err := os.ReadFile("save/stats.json"); err != nil {
+	if _, err := physfs.ReadFile("save/stats.json"); err != nil {
 		// If there was an error reading, write an empty json file
 		f, err := os.Create("save/stats.json")
 		chk(err)

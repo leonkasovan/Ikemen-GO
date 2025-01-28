@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"gopkg.in/ini.v1"
+	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
 )
 
 //go:embed resources/defaultConfig.ini
@@ -242,17 +243,16 @@ func loadConfig(def string, is_mugen_game bool) (*Config, error) {
 	// Load the INI file
 	var iniFile *ini.File
 	var err error
-	if fp := FileExist(def); len(fp) == 0 {
-		iniFile, err = ini.LoadSources(options, defaultConfig)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read data: %v", err)
-		}
-	} else {
+	fmt.Printf("[src/config.go] def=%v\n", def)
+	if physfs.Exists(def) {
 		iniFile, err = ini.LoadSources(options, defaultConfig, def)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read data: %v", err)
-		}
+	} else {
+		iniFile, err = ini.LoadSources(options, defaultConfig)
 	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to read data: %v", err)
+	}
+
 	var c Config
 	c.Def = def
 	c.initStruct()
