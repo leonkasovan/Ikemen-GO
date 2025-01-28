@@ -7,6 +7,7 @@ import (
 	"os"
 
 	findfont "github.com/flopp/go-findfont"
+	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
 )
 
 // Log writer implementation
@@ -29,7 +30,7 @@ func LoadFntTtf(f *Fnt, fontfile string, filename string, height int32) {
 	fileDir := SearchFile(filename, []string{fontfile, sys.motifDir, "", "data/", "font/"})
 	// Search in system directory
 	fp := fileDir
-	if fp = FileExist(fp); len(fp) == 0 {
+	if !physfs.FileExist(fp) {
 		var err error
 		fileDir, err = findfont.Find(fileDir)
 		if err != nil {

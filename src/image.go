@@ -1092,7 +1092,7 @@ func loadSff(filename string, char bool) (*Sff, error) {
 	}
 	s := newSff()
 	s.filename = filename
-	fmt.Printf("[src/image.go] loadSff physfs.OpenRead(%v)\n", filename)
+	// fmt.Printf("[src/image.go] loadSff physfs.OpenRead(%v)\n", filename)
 	f := physfs.OpenRead(filename)
 	if f == nil {
 		return nil, Error(fmt.Sprintf("File not found: %v", filename))
@@ -1237,7 +1237,7 @@ func loadSff(filename string, char bool) (*Sff, error) {
 }
 func preloadSff(filename string, char bool, preloadSpr map[[2]int16]bool) (*Sff, []int32, error) {
 	sff := newSff()
-	fmt.Printf("[src/image.go] preloadSff physfs.OpenRead(%v)\n", filename)
+	// fmt.Printf("[src/image.go] preloadSff physfs.OpenRead(%v)\n", filename)
 	f := physfs.OpenRead(filename)
 	if f == nil {
 		return nil, nil, Error(fmt.Sprintf("File not found: %v", filename))
@@ -1427,7 +1427,7 @@ func captureScreen() {
 	}
 	for i := sys.captureNum; i < 999; i++ {
 		filename := fmt.Sprintf("%sikemen%03d.png", sys.cfg.Config.ScreenshotFolder, i)
-		if _, err := os.Stat(filename); os.IsNotExist(err) {
+		if physfs.Exists(filename) {
 			file, _ := os.Create(filename)
 			defer file.Close()
 			png.Encode(file, img)

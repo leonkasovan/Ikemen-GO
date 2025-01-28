@@ -466,9 +466,7 @@ func main() {
 	}
 
 	// Check if the "external" directory exists and data/mugen.cfg, if not exists then extract assets from embedded
-	_, err1 := os.Stat("external")
-	_, err2 := os.Stat("data/mugen.cfg")
-	if os.IsNotExist(err1) && err2 == nil {
+	if !physfs.Exists("external") && physfs.Exists("data/mugen.cfg") {
 		err := extractEmbed(assetsZip)
 		if err != nil {
 			fmt.Printf("[main.go] Error extracting asset: %v\n", err)
@@ -557,14 +555,14 @@ func main() {
 	}
 
 	if _, ok := sys.cmdFlags["-validate"]; ok {
-		if FileExist("external/script/audit.lua") == "" {
+		if !physfs.FileExist("external/script/audit.lua") {
 			err := extractFileFromEmbed(assetsZip, "external/script/audit.lua")
 			if err != nil {
 				fmt.Printf("[main.go] Error extracting audit.lua: %v\n", err)
 				os.Exit(0)
 			}
 		}
-		if FileExist("external/script/json.lua") == "" {
+		if !physfs.FileExist("external/script/json.lua") {
 			err := extractFileFromEmbed(assetsZip, "external/script/json.lua")
 			if err != nil {
 				fmt.Printf("[main.go] Error extracting json.lua: %v\n", err)

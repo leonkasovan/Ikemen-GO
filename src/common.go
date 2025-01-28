@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
-	"os"
 
 	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
 )
@@ -395,37 +394,13 @@ func LoadText(filename string) (string, error) {
 	return string(bytes), nil
 }
 
-func FileExist(filename string) string {
-	if info, err := os.Stat(filename); !os.IsNotExist(err) {
-		if info == nil || info.IsDir() {
-			return ""
-		}
-		return filename
-	}
-	var pattern string
-	for _, r := range filename {
-		if r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' {
-			pattern += "[" + string(unicode.ToLower(r)) +
-				string(unicode.ToLower(r)+'A'-'a') + "]"
-		} else if r == '*' || r == '?' || r == '[' {
-			pattern += "\\" + string(r)
-		} else {
-			pattern += string(r)
-		}
-	}
-	if m, _ := filepath.Glob(pattern); len(m) > 0 {
-		return m[0]
-	}
-	return ""
-}
-
 // SearchFile returns full path to specified file
 func SearchFile(file string, dirs []string) string {
 	file = strings.Replace(file, "\\", "/", -1)
 	for _, v := range dirs {
-		defdir := filepath.Dir(strings.Replace(v, "\\", "/", -1))
-		if fp := FileExist(defdir + "/" + file); len(fp) > 0 {
-			return fp
+		fullpath := filepath.Dir(strings.Replace(v, "\\", "/", -1)) + "/" + file
+		if physfs.FileExist(fullpath) {
+			return fullpath
 		}
 	}
 	return file
