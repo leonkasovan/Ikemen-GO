@@ -13,6 +13,7 @@ import (
 	"time"
 
 	lua "github.com/yuin/gopher-lua"
+	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
 )
 
 // Data handlers
@@ -1414,13 +1415,11 @@ func systemScriptInit(l *lua.LState) {
 		} else {
 			def += ".def"
 		}
-		if chk := FileExist(def); len(chk) != 0 {
-			def = chk
-		} else {
+		if !physfs.FileExist(def) {
 			if strings.ToLower(def[0:6]) != "chars/" && strings.ToLower(def[1:3]) != ":/" && (def[0] != '/' || idx > 0 && !strings.Contains(def[:idx], ":")) {
 				def = "chars/" + def
 			}
-			if def = FileExist(def); len(def) == 0 {
+			if !physfs.FileExist(def) {
 				return 0
 			}
 		}
