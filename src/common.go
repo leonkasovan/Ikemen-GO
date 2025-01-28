@@ -430,6 +430,9 @@ func SearchFile(file string, dirs []string) string {
 }
 
 func LoadFile(file *string, dirs []string, load func(string) error) error {
+	if len(*file) == 0 {
+		return Error("Filename is empty")
+	}
 	fp := SearchFile(*file, dirs)
 	if err := load(fp); err != nil {
 		return Error(dirs[0] + ":\n" + fp + "\n" + err.Error())

@@ -5,9 +5,12 @@ import (
 	"encoding/gob"
 	"math"
 	"os"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"unsafe"
+
+	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
 )
 
 type StateType int32
@@ -10377,9 +10380,9 @@ func (sc loadFile) Run(c *Char, _ []int32) bool {
 		return true
 	})
 	if path != "" {
-		decodeFile, err := os.Open(filepath.Dir(c.gi().def) + "/" + path)
-		if err != nil {
-			defer decodeFile.Close()
+		fmt.Printf("[src/bytecode.go] loadFile.Run physfs.OpenRead(%v)\n", filepath.Dir(c.gi().def) + "/" + path)
+		decodeFile := physfs.OpenRead(filepath.Dir(c.gi().def) + "/" + path)
+		if decodeFile == nil {
 			return false
 		}
 		defer decodeFile.Close()

@@ -5,16 +5,14 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
-	"os"
 
 	"github.com/gopxl/beep/v2"
 	"github.com/gopxl/beep/v2/effects"
-
-	"github.com/gopxl/beep/v2/midi"
 	"github.com/gopxl/beep/v2/mp3"
 	"github.com/gopxl/beep/v2/speaker"
 	"github.com/gopxl/beep/v2/vorbis"
 	"github.com/gopxl/beep/v2/wav"
+	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
 )
 
 const (
@@ -198,14 +196,15 @@ func (bgm *Bgm) Open(filename string, loop, bgmVolume, bgmLoopStart, bgmLoopEnd,
 	if filename == "" {
 		return
 	}
-
-	f, err := os.Open(bgm.filename)
-	if err != nil {
-		// sys.bgm = *newBgm() // removing this gets pause step playsnd to work correctly 100% of the time
-		sys.errLog.Printf("Failed to open bgm: %v", err)
+	fmt.Printf("[src/sound.go] bgm.Open physfs.OpenRead(%v)\n", bgm.filename)
+	f := physfs.OpenRead(filename)
+	if f == nil {
+		sys.errLog.Printf("Failed to open bgm: %v", filename)
 		return
 	}
+
 	var format beep.Format
+	var err error
 	if HasExtension(bgm.filename, ".ogg") {
 		bgm.streamer, format, err = vorbis.Decode(f)
 		bgm.format = "ogg"
@@ -219,13 +218,6 @@ func (bgm *Bgm) Open(filename string, loop, bgmVolume, bgmLoopStart, bgmLoopEnd,
 		//} else if HasExtension(bgm.filename, ".flac") {
 		//	bgm.streamer, format, err = flac.Decode(f)
 		//	bgm.format = "flac"
-	} else if HasExtension(bgm.filename, ".mid") || HasExtension(bgm.filename, ".midi") {
-		if soundfont, sferr := loadSoundFont(audioSoundFont); sferr != nil {
-			err = sferr
-		} else {
-			bgm.streamer, format, err = midi.Decode(f, soundfont, beep.SampleRate(int(sys.cfg.Sound.SampleRate)))
-			bgm.format = "midi"
-		}
 	} else {
 		err = Error(fmt.Sprintf("unsupported file extension: %v", bgm.filename))
 	}
@@ -263,19 +255,6 @@ func (bgm *Bgm) Open(filename string, loop, bgmVolume, bgmLoopStart, bgmLoopEnd,
 	bgm.UpdateVolume()
 	bgm.streamer.Seek(startPosition)
 	speaker.Play(bgm.ctrl)
-}
-
-func loadSoundFont(filename string) (*midi.SoundFont, error) {
-	f, err := os.Open(filename)
-	if err != nil {
-		return nil, err
-	}
-	soundfont, err := midi.NewSoundFont(f)
-	if err != nil {
-		f.Close()
-		return nil, err
-	}
-	return soundfont, nil
 }
 
 func (bgm *Bgm) SetPaused(pause bool) {
@@ -369,7 +348,7 @@ type Sound struct {
 	length  int
 }
 
-func readSound(f *os.File, size uint32) (*Sound, error) {
+func readSound(f *physfs.File, size uint32) (*Sound, error) {
 	if size < 128 {
 		return nil, fmt.Errorf("wav size is too small")
 	}
@@ -423,13 +402,15 @@ func LoadSnd(filename string) (*Snd, error) {
 // If max > 0, the function returns immediately when a matching entry is found. It also gives up after "max" non-matching entries.
 func LoadSndFiltered(filename string, keepItem func([2]int32) bool, max uint32) (*Snd, error) {
 	s := newSnd()
-	f, err := os.Open(filename)
-	if err != nil {
-		return nil, err
+	fmt.Printf("[src/sound.go] LoadSndFiltered physfs.OpenRead(%v)\n", filename)
+	f := physfs.OpenRead(filename)
+	if f == nil {
+		return nil, Error(fmt.Sprintf("File not found: %v", filename))
 	}
-	defer func() { chk(f.Close()) }()
+	defer f.Close()
 	buf := make([]byte, 12)
 	var n int
+	var err error
 	if n, err = f.Read(buf); err != nil {
 		return nil, err
 	}

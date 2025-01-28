@@ -9,6 +9,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
 	"runtime"
 	"unsafe"
 )
@@ -522,132 +523,6 @@ func newSprite() *Sprite {
 	return &Sprite{palidx: -1}
 }
 
-/*
-	func loadFromSff(filename string, g, n int16) (*Sprite, error) {
-		s := newSprite()
-		f, err := os.Open(filename)
-		if err != nil {
-			return nil, err
-		}
-		defer func() { chk(f.Close()) }()
-		h := &SffHeader{}
-		var lofs, tofs uint32
-		if err := h.Read(f, &lofs, &tofs); err != nil {
-			return nil, err
-		}
-		var shofs, xofs, size uint32 = h.FirstSpriteHeaderOffset, 0, 0
-		var indexOfPrevious uint16
-		pl := &PaletteList{}
-		pl.init()
-		foo := func() error {
-			switch h.Ver0 {
-			case 1:
-				if err := s.readHeader(f, &xofs, &size, &indexOfPrevious); err != nil {
-					return err
-				}
-			case 2:
-				if err := s.readHeaderV2(f, &xofs, &size,
-					lofs, tofs, &indexOfPrevious); err != nil {
-					return err
-				}
-			}
-			return nil
-		}
-		var dummy *Sprite
-		var newSubHeaderOffset []uint32
-		newSubHeaderOffset = append(newSubHeaderOffset, shofs)
-		i := 0
-		for ; i < int(h.NumberOfSprites); i++ {
-			newSubHeaderOffset = append(newSubHeaderOffset, shofs)
-			f.Seek(int64(shofs), 0)
-			if err := foo(); err != nil {
-				return nil, err
-			}
-			if s.palidx < 0 || s.Group == g && s.Number == n {
-				ip := len(newSubHeaderOffset)
-				for size == 0 {
-					if int(indexOfPrevious) >= ip {
-						return nil, Error("link is invalid")
-					}
-					ip = int(indexOfPrevious)
-					if h.Ver0 == 1 {
-						shofs = newSubHeaderOffset[ip]
-					} else {
-						shofs = h.FirstSpriteHeaderOffset + uint32(ip)*28
-					}
-					f.Seek(int64(shofs), 0)
-					if err := foo(); err != nil {
-						return nil, err
-					}
-				}
-				switch h.Ver0 {
-				case 1:
-					if err := s.read(f, h, int64(shofs+32), size, xofs, dummy,
-						pl, false); err != nil {
-						return nil, err
-					}
-				case 2:
-					if err := s.readV2(f, int64(xofs), size); err != nil {
-						return nil, err
-					}
-				}
-				if s.Group == g && s.Number == n {
-					break
-				}
-				dummy = &Sprite{palidx: s.palidx}
-			}
-			if h.Ver0 == 1 {
-				shofs = xofs
-			} else {
-				shofs += 28
-			}
-		}
-		if i == int(h.NumberOfSprites) {
-			return nil, Error(fmt.Sprintf("Sprite not found: %v, %v", g, n))
-		}
-		if h.Ver0 == 1 {
-			s.Pal = pl.Get(s.palidx)
-			s.palidx = -1
-			return s, nil
-		}
-		if s.coldepth <= 8 {
-			read := func(x interface{}) error {
-				return binary.Read(f, binary.LittleEndian, x)
-			}
-			size = 0
-			indexOfPrevious = uint16(s.palidx)
-			ip := indexOfPrevious + 1
-			for size == 0 && ip != indexOfPrevious {
-				ip = indexOfPrevious
-				shofs = h.FirstPaletteHeaderOffset + uint32(ip)*16
-				f.Seek(int64(shofs)+6, 0)
-				if err := read(&indexOfPrevious); err != nil {
-					return nil, err
-				}
-				if err := read(&xofs); err != nil {
-					return nil, err
-				}
-				if err := read(&size); err != nil {
-					return nil, err
-				}
-			}
-			f.Seek(int64(lofs+xofs), 0)
-			s.Pal = make([]uint32, 256)
-			var rgba [4]byte
-			for i := 0; i < int(size)/4 && i < len(s.Pal); i++ {
-				if err := read(rgba[:]); err != nil {
-					return nil, err
-				}
-				if h.Ver2 == 0 {
-					rgba[3] = 255
-				}
-				s.Pal[i] = uint32(rgba[3])<<24 | uint32(rgba[2])<<16 | uint32(rgba[1])<<8 | uint32(rgba[0])
-			}
-			s.palidx = -1
-		}
-		return s, nil
-	}
-*/
 func (s *Sprite) shareCopy(src *Sprite) {
 	s.Pal = src.Pal
 	s.Tex = src.Tex
@@ -717,7 +592,7 @@ func (s *Sprite) readHeader(r io.Reader, ofs, size *uint32,
 	}
 	return nil
 }
-func (s *Sprite) readPcxHeader(f *os.File, offset int64) error {
+func (s *Sprite) readPcxHeader(f *physfs.File, offset int64) error {
 	f.Seek(offset, 0)
 	read := func(x interface{}) error {
 		return binary.Read(f, binary.LittleEndian, x)
@@ -787,7 +662,7 @@ func (s *Sprite) RlePcxDecode(rle []byte) (p []byte) {
 	s.rle = 0
 	return
 }
-func (s *Sprite) read(f *os.File, sh *SffHeader, offset int64, datasize uint32,
+func (s *Sprite) read(f *physfs.File, sh *SffHeader, offset int64, datasize uint32,
 	nextSubheader uint32, prev *Sprite, pl *PaletteList, c00 bool) error {
 	if int64(nextSubheader) > offset {
 		// Ignore datasize except last
@@ -1041,7 +916,7 @@ func (s *Sprite) Lz5Decode(rle []byte) (p []byte) {
 	}
 	return
 }
-func (s *Sprite) readV2(f *os.File, offset int64, datasize uint32) error {
+func (s *Sprite) readV2(f *physfs.File, offset int64, datasize uint32) error {
 	var px []byte
 	var isRaw bool = false
 
@@ -1217,11 +1092,12 @@ func loadSff(filename string, char bool) (*Sff, error) {
 	}
 	s := newSff()
 	s.filename = filename
-	f, err := os.Open(filename)
-	if err != nil {
-		return nil, err
+	fmt.Printf("[src/image.go] loadSff physfs.OpenRead(%v)\n", filename)
+	f := physfs.OpenRead(filename)
+	if f == nil {
+		return nil, Error(fmt.Sprintf("File not found: %v", filename))
 	}
-	defer func() { chk(f.Close()) }()
+	defer f.Close()
 	var lofs, tofs uint32
 	if err := s.header.Read(f, &lofs, &tofs); err != nil {
 		return nil, err
@@ -1361,11 +1237,12 @@ func loadSff(filename string, char bool) (*Sff, error) {
 }
 func preloadSff(filename string, char bool, preloadSpr map[[2]int16]bool) (*Sff, []int32, error) {
 	sff := newSff()
-	f, err := os.Open(filename)
-	if err != nil {
-		return nil, nil, err
+	fmt.Printf("[src/image.go] preloadSff physfs.OpenRead(%v)\n", filename)
+	f := physfs.OpenRead(filename)
+	if f == nil {
+		return nil, nil, Error(fmt.Sprintf("File not found: %v", filename))
 	}
-	defer func() { chk(f.Close()) }()
+	defer f.Close()
 	h := &SffHeader{}
 	var lofs, tofs uint32
 	if err := h.Read(f, &lofs, &tofs); err != nil {

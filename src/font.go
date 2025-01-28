@@ -3,9 +3,10 @@ package main
 import (
 	"encoding/binary"
 	"math"
-	"os"
+	"fmt"
 	"regexp"
 	"strings"
+	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
 )
 
 // FntCharImage stores sprite and position
@@ -55,14 +56,12 @@ func loadFnt(filename string, height int32) (*Fnt, error) {
 func loadFntV1(filename string) (*Fnt, error) {
 	f := newFnt()
 	f.images[0] = make(map[rune]*FntCharImage)
-
-	fp, err := os.Open(filename)
-
-	if err != nil {
-		return nil, Error("File not found")
+	fmt.Printf("[src/font.go] loadFntV1 physfs.OpenRead(%v)\n", filename)
+	fp := physfs.OpenRead(filename)
+	if fp == nil {
+		return nil, Error(fmt.Sprintf("Font not found: %v", filename))
 	}
-
-	defer func() { chk(fp.Close()) }()
+	defer fp.Close()
 
 	// Read header
 	buf := make([]byte, 12)

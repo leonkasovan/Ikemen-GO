@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"os"
 	"strings"
+	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
 )
 
 const MaxPalNo = 12
@@ -3260,11 +3260,17 @@ func (c *Char) loadPalette() {
 		tmp := 0
 		for i := 0; i < MaxPalNo; i++ {
 			pl := gi.palettedata.palList.Get(i)
-			var f *os.File
+			var f *physfs.File
 			var err error
 			if LoadFile(&gi.pal[i], []string{gi.def, "", sys.motifDir, "data/"}, func(file string) error {
-				f, err = os.Open(file)
-				return err
+				fmt.Printf("[src/char.go] loadPalette[%v] physfs.OpenRead(%v)\n", i, file)
+				f = physfs.OpenRead(file)
+				if f == nil {
+					fmt.Printf("File palette not found: %v\n", file)
+					return Error("File palette not found")
+				} else {
+					return nil
+				}
 			}) == nil {
 				for i := 255; i >= 0; i-- {
 					var rgb [3]byte

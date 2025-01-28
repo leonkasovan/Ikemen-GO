@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
 	lua "github.com/yuin/gopher-lua"
 )
 
@@ -418,6 +419,38 @@ func closeLog(f *os.File) {
 }
 
 func main() {
+	if !physfs.Init(os.Args[0]) {
+		fmt.Println("Error: initialize file system\n")
+		return
+	}
+	defer physfs.Deinit()
+
+	// Find zip files and mount it
+	files, err := os.ReadDir(".")
+	if err != nil {
+		fmt.Println("Error reading directory:", err)
+		return
+	}
+	for _, file := range files {
+		// check if directory
+		if file.IsDir() {
+			if !physfs.Mount(file.Name(), "/", 1) {
+				// fmt.Printf("Mounting %v [FAIL]\n", file.Name())
+			} else {
+				// fmt.Printf("Mounting %v [OK]\n", file.Name())
+			}
+		}
+
+		if strings.HasSuffix(file.Name(), ".zip") {
+			// Open the file
+			if !physfs.Mount(file.Name(), "/", 1) {
+				fmt.Printf("Mounting %v [FAIL]\n", file.Name())
+			} else {
+				fmt.Printf("Mounting %v [OK]\n", file.Name())
+			}
+		}
+	}	
+
 	is_mugen_game := false
 	fmt.Printf("Ikemen running on OS=[%v] ARCH=[%v]\n", runtime.GOOS, runtime.GOARCH)
 
@@ -567,16 +600,10 @@ func main() {
 	}
 
 	// Check if the main lua file exists.
-	if ftemp, err1 := os.Open(sys.cfg.Config.System); err1 != nil {
-		ftemp.Close()
-		var err2 = Error(
-			"Main lua file \"" + sys.cfg.Config.System + "\" error." +
-				"\n" + err1.Error(),
-		)
-		ShowErrorDialog(err2.Error())
-		panic(err2)
-	} else {
-		ftemp.Close()
+	fmt.Printf("[src/main.go] main os.Open(%v)\n", sys.cfg.Config.System)
+	if !physfs.Exists(sys.cfg.Config.System) {
+		fmt.Printf("Error: script %v NOT found.\n", sys.cfg.Config.System)
+		os.Exit(-1)
 	}
 
 	// Initialize game and create window
@@ -604,6 +631,27 @@ func main() {
 		}
 		errorLog.Close()
 		no += 1
+	}
+
+	// Find zip files and unmount it
+	files, err = os.ReadDir(".")
+	if err != nil {
+		fmt.Println("Error reading directory:", err)
+		return
+	}
+	for _, file := range files {
+		if file.IsDir() {
+			physfs.Unmount(file.Name())
+		}
+
+		if strings.HasSuffix(file.Name(), ".zip") {
+			// Open the file
+			if !physfs.Unmount(file.Name()) {
+				fmt.Printf("Unmounting %v [FAIL]\n", file.Name())
+			} else {
+				fmt.Printf("Unmounting %v [OK]\n", file.Name())
+			}
+		}
 	}
 }
 
