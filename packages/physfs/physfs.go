@@ -114,11 +114,38 @@ func Close(f *File) {
     C.PHYSFS_close((*C.PHYSFS_File)(f))
 }
 
-// Exists checks if a file exists.
+// Exists checks if a file/directory exists.
 func Exists(filename string) bool {
     cFilename := C.CString(filename)
     defer C.free(unsafe.Pointer(cFilename))
     return C.PHYSFS_exists(cFilename) != 0
+}
+
+// Exists checks if a file exists (and not a directory).
+func FileExist(filename string) bool {
+    var stat C.PHYSFS_Stat
+    cFilename := C.CString(filename)
+    defer C.free(unsafe.Pointer(cFilename))
+
+    if C.PHYSFS_stat(cFilename, &stat) == 0 {
+        return false
+    }
+    if  stat.filetype == C.PHYSFS_FILETYPE_DIRECTORY {
+        return false
+    }
+    return C.PHYSFS_exists(cFilename) != 0
+}
+
+// Exists checks if a directory exists (and not a file).
+func DirExists(filename string) bool {
+    var stat C.PHYSFS_Stat
+    cFilename := C.CString(filename)
+    defer C.free(unsafe.Pointer(cFilename))
+
+    if C.PHYSFS_stat(cFilename, &stat) == 0 {
+        return false
+    }
+    return stat.filetype == C.PHYSFS_FILETYPE_DIRECTORY
 }
 
 // OpenWrite opens a file for writing.
@@ -235,4 +262,17 @@ func Stat(filename string) (*FileInfo, error) {
     }
 
     return fileInfo, nil
+}
+
+// IsDirectory checks if the given path is a directory.
+func IsDirectory(path string) (bool, error) {
+    var stat C.PHYSFS_Stat
+    cPath := C.CString(path)
+    defer C.free(unsafe.Pointer(cPath))
+
+    if C.PHYSFS_stat(cPath, &stat) == 0 {
+        return false, errors.New("failed to stat path")
+    }
+
+    return stat.filetype == C.PHYSFS_FILETYPE_DIRECTORY, nil
 }
