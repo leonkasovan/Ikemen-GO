@@ -72,3 +72,12 @@ The license applies to following assets:
 
 On release builds the engine is packed with more assets that could have different licences.
 If you are using a release build check the "ScreenpackLicence.txt" file for more info.
+
+git config --global user.email "dhani.novan@rpi4"
+git config --global user.name "Novan(RPi4)"
+
+git config --global user.email "dhani.novan@steamdeck"
+git config --global user.name "Novan(Steamdeck)"
+
+git config --global credential.helper
+git config credential.helper store
