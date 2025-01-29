@@ -402,7 +402,7 @@ func LoadSnd(filename string) (*Snd, error) {
 // If max > 0, the function returns immediately when a matching entry is found. It also gives up after "max" non-matching entries.
 func LoadSndFiltered(filename string, keepItem func([2]int32) bool, max uint32) (*Snd, error) {
 	s := newSnd()
-	fmt.Printf("[src/sound.go] LoadSndFiltered physfs.OpenRead(%v)\n", filename)
+	// fmt.Printf("[src/sound.go] LoadSndFiltered physfs.OpenRead(%v)\n", filename)
 	f := physfs.OpenRead(filename)
 	if f == nil {
 		return nil, Error(fmt.Sprintf("File not found: %v", filename))

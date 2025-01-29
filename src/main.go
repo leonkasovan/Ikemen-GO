@@ -15,7 +15,7 @@ import (
 	"strings"
 
 	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
-	lua "github.com/yuin/gopher-lua"
+	lua "github.com/ikemen-engine/Ikemen-GO/packages/gopher-lua"
 )
 
 var Version = "development"
@@ -532,15 +532,6 @@ func main() {
 	os.Mkdir("save", os.ModeSticky|0755)
 	os.Mkdir("save/replays", os.ModeSticky|0755)
 
-	// Try reading stats
-	if _, err := physfs.ReadFile("save/stats.json"); err != nil {
-		// If there was an error reading, write an empty json file
-		f, err := os.Create("save/stats.json")
-		chk(err)
-		f.Write([]byte("{}"))
-		chk(f.Close())
-	}
-
 	// Config file path
 	cfgPath := "save/config.ini"
 	// If a different config file is defined in the command line parameters, use it instead
@@ -598,7 +589,7 @@ func main() {
 	}
 
 	// Check if the main lua file exists.
-	fmt.Printf("[src/main.go] main os.Open(%v)\n", sys.cfg.Config.System)
+	// fmt.Printf("[src/main.go] main os.Open(%v)\n", sys.cfg.Config.System)
 	if !physfs.Exists(sys.cfg.Config.System) {
 		fmt.Printf("Error: script %v NOT found.\n", sys.cfg.Config.System)
 		os.Exit(-1)
@@ -610,7 +601,12 @@ func main() {
 
 	// Begin processing game using its lua scripts
 	no := 1
-	if err := sys.luaLState.DoFile(sys.cfg.Config.System); err != nil {
+	lua_script, err := LoadText(sys.cfg.Config.System)
+	if err != nil {
+		fmt.Printf("[%v]Error: %v\n", err, no)
+		return
+	}
+	if err := sys.luaLState.DoString(lua_script); err != nil {
 		fmt.Printf("[%v]Error: %v\n", err, no)
 		// Display error logs.
 		errorLog := createLog("Ikemen.log")

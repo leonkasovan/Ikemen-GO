@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"gopkg.in/ini.v1"
+	"github.com/ikemen-engine/Ikemen-GO/packages/ini"
 	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
 )
 

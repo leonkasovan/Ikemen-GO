@@ -3263,7 +3263,7 @@ func (c *Char) loadPalette() {
 			var f *physfs.File
 			var err error
 			if LoadFile(&gi.pal[i], []string{gi.def, "", sys.motifDir, "data/"}, func(file string) error {
-				fmt.Printf("[src/char.go] loadPalette[%v] physfs.OpenRead(%v)\n", i, file)
+				// fmt.Printf("[src/char.go] loadPalette[%v] physfs.OpenRead(%v)\n", i, file)
 				f = physfs.OpenRead(file)
 				if f == nil {
 					fmt.Printf("File palette not found: %v\n", file)

@@ -5,7 +5,7 @@ import (
 	"math"
 
 	mgl "github.com/go-gl/mathgl/mgl32"
-	"github.com/leonkasovan/glfont"
+	"github.com/ikemen-engine/Ikemen-GO/packages/glfont"
 )
 
 type Texture interface {

@@ -112,11 +112,13 @@ rg353_wayland: ${srcFiles} src/assets.zip
 
 # Generic Linux Wayland
 wayland: ${srcFiles} src/assets.zip
-	export CGO_ENABLED=1 && go build -tags="wayland,gles2" -trimpath -ldflags="-s -w" -v -o ./bin/ikemen_wayland ./src	
+	export CGO_ENABLED=1 && go build -tags="wayland,gles2" -trimpath -ldflags="-s -w" -v -o ./bin/ikemen_wayland ./src
+#	cp ./bin/ikemen_wayland ./bin2
 
 # Generic Linux KMS DRM
 drm: ${srcFiles} src/assets.zip
-	export CGO_ENABLED=1 && go build -tags="kmsdrm,gles2" -trimpath -ldflags="-s -w" -v -o ./bin/ikemen_drm ./src	
+	export CGO_ENABLED=1 && go build -tags="kmsdrm,gles2" -trimpath -ldflags="-s -w" -v -o ./bin/ikemen_drm ./src
+#	cp ./bin/ikemen_drm /home/deck/Projects/PortMaster/hyperdbz/HyperDBZIndigo/Hyper\ DBZ\ 5.0d
 
 src/assets.zip: data/* external/* font/*
 	zip -r src/assets.zip data external font

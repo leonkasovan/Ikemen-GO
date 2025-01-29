@@ -9,9 +9,9 @@ import (
 	"io"
 	"math"
 	"os"
-	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
 	"runtime"
 	"unsafe"
+	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
 )
 
 type TransType int32

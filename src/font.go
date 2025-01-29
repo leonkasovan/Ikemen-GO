@@ -56,7 +56,7 @@ func loadFnt(filename string, height int32) (*Fnt, error) {
 func loadFntV1(filename string) (*Fnt, error) {
 	f := newFnt()
 	f.images[0] = make(map[rune]*FntCharImage)
-	fmt.Printf("[src/font.go] loadFntV1 physfs.OpenRead(%v)\n", filename)
+	// fmt.Printf("[src/font.go] loadFntV1 physfs.OpenRead(%v)\n", filename)
 	fp := physfs.OpenRead(filename)
 	if fp == nil {
 		return nil, Error(fmt.Sprintf("Font not found: %v", filename))
