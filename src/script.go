@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	lua "github.com/yuin/gopher-lua"
+	lua "github.com/ikemen-engine/Ikemen-GO/packages/gopher-lua"
 	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
 )
 

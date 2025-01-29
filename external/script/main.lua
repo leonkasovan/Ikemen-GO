@@ -17,6 +17,31 @@ json = (loadfile 'external/script/json.lua')()
 --; COMMON FUNCTIONS
 --;===========================================================
 
+--check if file exists
+function main.f_fileExists(file)
+	if file == '' then
+		return false
+	end
+	local f = io.open(file,'r')
+	if f ~= nil then
+		io.close(f)
+		return true
+	end
+	return false
+end
+
+--check if a file or directory exists in this path
+function main.f_exists(file)
+	local ok, err, code = os.rename(file, file)
+	if not ok then
+		if code == 13 or string.match(err, "file exists") then
+			--permission denied, but it exists
+			return true
+		end
+	end
+	return ok, err
+end
+
 --return file content
 function main.f_fileRead(path, mode)
 	local file = io.open(path, mode or 'r')
@@ -44,7 +69,11 @@ function main.f_fileWrite(path, str, mode)
 end
 
 --Data loading from stats.json
-stats = json.decode(main.f_fileRead(main.flags['-stats']))
+if main.f_fileExists(main.flags['-stats']) then
+	stats = json.decode(main.f_fileRead(main.flags['-stats']))
+else
+	stats = json.decode("{}")
+end
 
 --add default commands
 main.t_commands = {
@@ -231,17 +260,6 @@ function main.f_extractKeys(str)
 	return t
 end
 
---check if a file or directory exists in this path
-function main.f_exists(file)
-	local ok, err, code = os.rename(file, file)
-	if not ok then
-		if code == 13 or string.match(err, "file exists") then
-			--permission denied, but it exists
-			return true
-		end
-	end
-	return ok, err
-end
 --check if a directory exists in this path
 function  main.f_isdir(path)
 	-- "/" works on both Unix and Windows
@@ -251,19 +269,6 @@ end
 main.debugLog = false
 if main.f_isdir('debug') then
 	main.debugLog = true
-end
-
---check if file exists
-function main.f_fileExists(file)
-	if file == '' then
-		return false
-	end
-	local f = io.open(file,'r')
-	if f ~= nil then
-		io.close(f)
-		return true
-	end
-	return false
 end
 
 --prints "t" table content into "toFile" file

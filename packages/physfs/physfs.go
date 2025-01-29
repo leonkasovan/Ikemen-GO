@@ -40,7 +40,7 @@ func normalizePath(path string) string {
 
 func (f *File) Read(p []byte) (n int, err error) {
     n = int(C.PHYSFS_readBytes((*C.PHYSFS_File)(f), unsafe.Pointer(&p[0]), C.PHYSFS_uint64(len(p))))
-    if n < 0 {
+    if n <= 0 {
         return 0, io.EOF
     }
     return n, nil
@@ -64,6 +64,29 @@ func (f *File) Seek(offset int64, whence int) (int64, error) {
         return 0, io.EOF
     }
     return int64(C.PHYSFS_tell((*C.PHYSFS_File)(f))), nil
+}
+
+// io.Reader interface
+func (f *File) ReadAt(p []byte, off int64) (n int, err error) {
+    if _, err := f.Seek(off, io.SeekStart); err != nil {
+        return 0, err
+    }
+    return f.Read(p)
+}
+
+func (f *File) Write(p []byte) (n int, err error) {
+    n = int(C.PHYSFS_writeBytes((*C.PHYSFS_File)(f), unsafe.Pointer(&p[0]), C.PHYSFS_uint64(len(p))))
+    if n < 0 {
+        return 0, errors.New("failed to write to file")
+    }
+    return n, nil
+}
+
+func (f *File) WriteAt(p []byte, off int64) (n int, err error) {
+    if _, err := f.Seek(off, io.SeekStart); err != nil {
+        return 0, err
+    }
+    return f.Write(p)
 }
 
 func (f *File) Close() error {
@@ -103,10 +126,26 @@ func Unmount(archive string) bool {
 
 // OpenRead opens a file for reading.
 func OpenRead(filename string) *File {
-    // fmt.Printf("filename=%v [%v]\n", filename, filepath.Clean(filename))
+    fmt.Printf("[physfs] OpenRead(%v) [%v]\n", filename, filepath.Clean(filename))
     cFilename := C.CString(filepath.Clean(filename))
     defer C.free(unsafe.Pointer(cFilename))
     return (*File)(C.PHYSFS_openRead(cFilename))
+}
+
+// OpenWrite opens a file for writing.
+func OpenWrite(filename string) *File {
+    fmt.Printf("[physfs] OpenWrite(%v) [%v]\n", filename, filepath.Clean(filename))
+    cFilename := C.CString(filename)
+    defer C.free(unsafe.Pointer(cFilename))
+    return (*File)(C.PHYSFS_openWrite(cFilename))
+}
+
+// OpenAppend opens a file for appending. 
+func OpenAppend(filename string) *File {
+    fmt.Printf("[physfs] OpenAppend(%v) [%v]\n", filename, filepath.Clean(filename))
+    cFilename := C.CString(filename)
+    defer C.free(unsafe.Pointer(cFilename))
+    return (*File)(C.PHYSFS_openAppend(cFilename))
 }
 
 // Close closes a file.
@@ -146,13 +185,6 @@ func DirExists(filename string) bool {
         return false
     }
     return stat.filetype == C.PHYSFS_FILETYPE_DIRECTORY
-}
-
-// OpenWrite opens a file for writing.
-func OpenWrite(filename string) *File {
-    cFilename := C.CString(filename)
-    defer C.free(unsafe.Pointer(cFilename))
-    return (*File)(C.PHYSFS_openWrite(cFilename))
 }
 
 // SetWriteDir sets the write directory.
@@ -234,6 +266,28 @@ func ReadFile(filename string) ([]byte, error) {
     return buffer[:n], nil
 }
 
+// ReadAll reads the content of the file and returns it as a string.
+func ReadAll(file *File) ([]byte, error) {
+    if file == nil {
+        return nil, errors.New("failed to open file")
+    }
+
+    fileLength := C.PHYSFS_fileLength((*C.PHYSFS_File)(file))
+    if fileLength < 0 {
+        return nil, errors.New("failed to get file length")
+    }
+
+    if fileLength == 0 {
+        return nil, nil
+    }
+
+    buffer := make([]byte, fileLength)
+    n, err := file.Read(buffer)
+    if err != nil && err != io.EOF {
+        return nil, err
+    }
+    return buffer[:n], nil
+}
 // FileInfo represents information about a file.
 type FileInfo struct {
     Name     string
@@ -245,6 +299,8 @@ type FileInfo struct {
 
 // Stat retrieves information about a file.
 func Stat(filename string) (*FileInfo, error) {
+    filename = filepath.Clean(filename)
+    fmt.Printf("[physfs.go] Stat(%v)\n", filename)
     var stat C.PHYSFS_Stat
     cFilename := C.CString(filename)
     defer C.free(unsafe.Pointer(cFilename))

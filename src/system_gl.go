@@ -5,7 +5,7 @@ package main
 import (
 	glfw "github.com/leonkasovan/glfw/v3.5/glfw"
 
-	"github.com/leonkasovan/glfont"
+	"github.com/ikemen-engine/Ikemen-GO/packages/glfont"
 )
 
 func (s *System) loadGfx() {

@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"net"
 	"os"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -1321,6 +1322,7 @@ type FileInput struct {
 
 func OpenFileInput(filename string) *FileInput {
 	fi := &FileInput{}
+	fmt.Printf("[src/input.go] OpenFileInput os.Open(%v)\n", filename)
 	fi.f, _ = os.Open(filename)
 	return fi
 }

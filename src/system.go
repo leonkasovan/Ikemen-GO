@@ -19,7 +19,7 @@ import (
 
 	"github.com/gopxl/beep/v2"
 	"github.com/gopxl/beep/v2/speaker"
-	lua "github.com/yuin/gopher-lua"
+	lua "github.com/ikemen-engine/Ikemen-GO/packages/gopher-lua"
 	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
 )
 
@@ -451,10 +451,9 @@ func (s *System) init(w, h int32) *lua.LState {
 					os.Chdir("../../../")
 				}
 			}
-			fmt.Printf("[src/system.go] System.init os.Open(%v)\n", iconLocation)
-			f[i], err = os.Open(iconLocation)
-			if err != nil {
-				var dErr = "Icon file can not be found.\nPanic: " + err.Error()
+			f[i] = physfs.OpenRead(iconLocation)
+			if f[i] == nil {
+				var dErr = "Icon file can not be found: " + iconLocation
 				ShowErrorDialog(dErr)
 				panic(Error(dErr))
 			}
