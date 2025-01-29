@@ -84,9 +84,11 @@ func (s *ShaderProgram_GL32) RegisterTextures(names ...string) {
 	}
 }
 
+// Steamdeck support GLSL version 150
+// Raspberry pi4 support GLSL version 140
 func (r *Renderer_GL32) compileShader(shaderType uint32, src string) (shader uint32, err error) {
 	shader = gl.CreateShader(shaderType)
-	src = "#version 150\n" + src + "\x00"
+	src = "#version 140\n" + src + "\x00"
 	s, _ := gl.Strs(src)
 	var l int32 = int32(len(src) - 1)
 	gl.ShaderSource(shader, 1, s, &l)

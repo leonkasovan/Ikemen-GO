@@ -17,7 +17,9 @@ func (r *FontRenderer_GL32) LoadFont(file string, scale int32, windowWidth int, 
 	defer fd.Close()
 
 	// Configure the default font vertex and fragment shaders
-	program, err := r.newProgram(150, vertexFontShader, fragmentFontShader)
+	// Steamdeck GLSL support: 150
+	// Raspberry Pi4 support: 140
+	program, err := r.newProgram(140, vertexFontShader, fragmentFontShader)
 	if err != nil {
 		panic(err)
 	}
