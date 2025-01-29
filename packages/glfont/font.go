@@ -3,7 +3,7 @@ package glfont
 
 import (
 	"fmt"
-
+	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
 	"github.com/go-gl/gl/v2.1/gl"
 )
 
