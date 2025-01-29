@@ -3,7 +3,6 @@ package glfont
 
 import (
 	"fmt"
-	"os"
 
 	gl "github.com/go-gl/gl/v3.2-core/gl"
 	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
@@ -11,7 +10,7 @@ import (
 
 // LoadFont loads the specified font at the given scale.
 func (r *FontRenderer_GL32) LoadFont(file string, scale int32, windowWidth int, windowHeight int) (Font, error) {
-	fd := physfs.Open(file)
+	fd := physfs.OpenRead(file)
 	if fd == nil {
 		return nil, fmt.Errorf("Can not open font file %s", file)
 	}

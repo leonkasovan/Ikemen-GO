@@ -141,8 +141,6 @@ func extractEmbed(content []byte) error {
 		if err != nil {
 			return err
 		}
-
-		// fmt.Printf("Successfully extracted: %s\n", file.Name)
 	}
 	return nil
 }
@@ -363,7 +361,6 @@ func updateStageInSelectDef(fname string) error {
 				if strings.Contains(scanner.Text(), "/") {
 					path_sep1 = "/"
 					path_sep2 = "\\"
-					// fmt.Printf("scanner.Text=%v path_sep1=%v path_sep2=%v\n", scanner.Text(), path_sep1, path_sep2)
 				}
 				if strings.Contains(scanner.Text(), "\\") {
 					path_sep1 = "\\"
@@ -610,7 +607,6 @@ func main() {
 		fmt.Printf("[%v]Error: %v\n", err, no)
 		// Display error logs.
 		errorLog := createLog("Ikemen.log")
-		// defer closeLog(errorLog)
 		fmt.Fprintln(errorLog, err)
 		switch err.(type) {
 		case *lua.ApiError:
@@ -682,6 +678,14 @@ Quick VS Options:
 -time <num>             Round time (-1 to disable)
 -rounds <num>           Plays for <num> rounds, and then quits
 -s <stagename>          Loads stage <stagename>
+
+Extra Options (by LeonKasovan):
+-game <gamename>        Change directory to gamename
+-updatechar             Update character def in select.def based on chars directory
+-updatestage            Update stage def in select.def based on stages directory
+-validate               Validate game assets existance
+-fix                    Fix game assets naming (into lowercase)
+-install                Install default screenpack
 
 Debug Options:
 -nojoy                  Disables joysticks

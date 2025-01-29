@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	glfw "github.com/leonkasovan/glfw/v3.5/glfw"
+	glfw "github.com/ikemen-engine/Ikemen-GO/packages/glfw"
 )
 
 type Input struct {

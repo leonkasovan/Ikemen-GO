@@ -24,10 +24,6 @@ github.com/jfreymuth/vorbis v1.0.2 h1:m1xH6+ZI4thH927pgKD8JOH4eaGRm18rEE9/0WKjvN
 github.com/jfreymuth/vorbis v1.0.2/go.mod h1:DoftRo4AznKnShRl1GxiTFCseHr4zR9BN3TWXyuzrqQ=
 github.com/leonkasovan/gl v0.0.0-20250124141628-d79f807815dd h1:CtPnbRx2BCCe4rf0K8MuchDu8CirWWt/vOZEQ1grDPI=
 github.com/leonkasovan/gl v0.0.0-20250124141628-d79f807815dd/go.mod h1:FsbmKnamadwCMU92a/aFYYc4s9NXRx5N0mbSmL3voA8=
-github.com/leonkasovan/glfont v0.0.0-20250124225202-0c5138225ac1 h1:2m1yaXyhN+IMIyql/QVE2eitmqwWI20oENwlpms5KTg=
-github.com/leonkasovan/glfont v0.0.0-20250124225202-0c5138225ac1/go.mod h1:7ZTBw2r0ElexHuYDavHzIbBEH5zPM6ZorOLxoF5T8x4=
-github.com/leonkasovan/glfw/v3.5/glfw v0.0.0-20250125141848-41c70b7f7f9c h1:+Af703S/ICjz3NRWnB3rsBdJLgOBig5lLtQKCuVXnP4=
-github.com/leonkasovan/glfw/v3.5/glfw v0.0.0-20250125141848-41c70b7f7f9c/go.mod h1:GywoQb8yIYl9WN4yVGssUnL8paof5XhY7BOmJs87Gm4=
 github.com/lucasb-eyer/go-colorful v1.2.0 h1:1nnpGOrhyZZuNyfu1QjKiUICQ74+3FNCN69Aj6K7nkY=
 github.com/lucasb-eyer/go-colorful v1.2.0/go.mod h1:R4dSotOR9KMtayYi1e77YzuveK+i7ruzyGqttikkLy0=
 github.com/lukegb/dds v0.0.0-20190402175749-8b7170e64003 h1:6g1XsQmpC332a2qx+qkrEVBHeNucWaiXHIUBKW4W62s=
@@ -41,8 +37,6 @@ github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZb
 github.com/qmuntal/gltf v0.24.2 h1:Cy9gabbcuWl/LJb3EIFXQIiWZ1Jf2V8ZygtiLc7Piyg=
 github.com/qmuntal/gltf v0.24.2/go.mod h1:7FR0CRHoOehIgKTBVq/QVyvPn0i6tzp2AdIghb2bPg4=
 github.com/stretchr/testify v1.9.0 h1:HtqpIVDClZ4nwg75+f6Lvsy/wHu+3BoSGCbBAcpTsTg=
-github.com/yuin/gopher-lua v1.1.0 h1:BojcDhfyDWgU2f2TOzYK/g5p2gxMrku8oupLDqlnSqE=
-github.com/yuin/gopher-lua v1.1.0/go.mod h1:GBR0iDaNXjAgGg9zfCvksxSRnQx76gclCIb7kdAd1Pw=
 golang.org/x/image v0.0.0-20190321063152-3fc05d484e9f/go.mod h1:kZ7UVZpmo3dzQBMxlp+ypCbDeSB+sBbTgSJuh5dn5js=
 golang.org/x/image v0.22.0 h1:UtK5yLUzilVrkjMAZAZ34DXGpASN8i8pj8g+O+yd10g=
 golang.org/x/image v0.22.0/go.mod h1:9hPFhljd4zZ1GNSIZJ49sqbp45GKK9t6w+iXvGqZUz4=

@@ -3,7 +3,7 @@
 package main
 
 import (
-	glfw "github.com/leonkasovan/glfw/v3.5/glfw"
+	glfw "github.com/ikemen-engine/Ikemen-GO/packages/glfw"
 
 	"github.com/ikemen-engine/Ikemen-GO/packages/glfont"
 )
