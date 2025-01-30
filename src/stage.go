@@ -972,6 +972,7 @@ func loadStage(def string, maindef bool) (*Stage, error) {
 			sec[0].ReadF32("botz", &s.stageCamera.botz)
 			sec[0].ReadF32("topscale", &s.stageCamera.ztopscale)
 			sec[0].ReadF32("botscale", &s.stageCamera.zbotscale)
+			sec[0].ReadF32("depthtoscreen", &s.stageCamera.depthtoscreen)
 		}
 	}
 

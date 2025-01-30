@@ -771,8 +771,11 @@ func (l *Layout) DrawFaceSprite(x, y float32, ln int16, s *Sprite, fx *PalFX, fs
 	}
 }
 
-func (l *Layout) DrawAnim(r *[4]int32, x, y, scl float32, ln int16,
-	a *Animation, palfx *PalFX) {
+func (l *Layout) DrawAnim(r *[4]int32, x, y, scl float32, ln int16, a *Animation, palfx *PalFX) {
+	// Skip blank animations
+	if a == nil || a.isBlank() {
+		return
+	}
 	if l.layerno == ln {
 		// TODO: test "phantom pixel"
 		if l.facing < 0 {
@@ -787,6 +790,7 @@ func (l *Layout) DrawAnim(r *[4]int32, x, y, scl float32, ln int16,
 			float32(sys.gameWidth-320)/2, palfx, false, 1, false, [2]float32{1, 1}, 0, 0, 0)
 	}
 }
+
 func (l *Layout) DrawText(x, y, scl float32, ln int16,
 	text string, f *Fnt, b, a int32, palfx *PalFX, frgba [4]float32) {
 	if l.layerno == ln {

@@ -781,7 +781,7 @@ func systemScriptInit(l *lua.LState) {
 		return 0
 	})
 	luaRegister(l, "commandNew", func(l *lua.LState) int {
-		l.Push(newUserData(l, NewCommandList(NewCommandBuffer())))
+		l.Push(newUserData(l, NewCommandList(NewInputBuffer())))
 		return 1
 	})
 	luaRegister(l, "connected", func(*lua.LState) int {
@@ -3409,8 +3409,10 @@ func triggerFunctions(l *lua.LState) {
 			ln = lua.LNumber(c.size.draw.offset[0])
 		case "size.draw.offset.y":
 			ln = lua.LNumber(c.size.draw.offset[1])
-		case "size.depth":
-			ln = lua.LNumber(c.size.depth)
+		case "size.depth.front":
+			ln = lua.LNumber(c.size.depth[0])
+		case "size.depth.back":
+			ln = lua.LNumber(c.size.depth[1])
 		case "size.weight":
 			ln = lua.LNumber(c.size.weight)
 		case "size.pushfactor":
@@ -4695,10 +4697,6 @@ func triggerFunctions(l *lua.LState) {
 		l.Push(lua.LNumber(sys.roundState()))
 		return 1
 	})
-	luaRegister(l, "introstate", func(*lua.LState) int {
-		l.Push(lua.LNumber(sys.introState()))
-		return 1
-	})
 	luaRegister(l, "screenheight", func(*lua.LState) int {
 		l.Push(lua.LNumber(sys.screenHeight()))
 		return 1
@@ -5265,6 +5263,8 @@ func triggerFunctions(l *lua.LState) {
 			l.Push(lua.LNumber(sys.lifebar.ro.slow_time))
 		case "round.start.waittime":
 			l.Push(lua.LNumber(sys.lifebar.ro.start_waittime))
+		case "round.callfight.time":
+			l.Push(lua.LNumber(sys.lifebar.ro.callfight_time))
 		case "time.framespercount":
 			l.Push(lua.LNumber(sys.lifebar.ti.framespercount))
 		default:
@@ -5394,6 +5394,10 @@ func triggerFunctions(l *lua.LState) {
 		default:
 			l.RaiseError("\nInvalid argument: %v\n", strArg(l, 1))
 		}
+		return 1
+	})
+	luaRegister(l, "introstate", func(*lua.LState) int {
+		l.Push(lua.LNumber(sys.introState()))
 		return 1
 	})
 	luaRegister(l, "isasserted", func(*lua.LState) int {
@@ -5606,6 +5610,10 @@ func triggerFunctions(l *lua.LState) {
 	})
 	luaRegister(l, "offsetY", func(*lua.LState) int {
 		l.Push(lua.LNumber(sys.debugWC.offset[1]))
+		return 1
+	})
+	luaRegister(l, "outrostate", func(*lua.LState) int {
+		l.Push(lua.LNumber(sys.outroState()))
 		return 1
 	})
 	luaRegister(l, "pausetime", func(*lua.LState) int {

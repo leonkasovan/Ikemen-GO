@@ -38,14 +38,14 @@ type ShaderProgram_GL32 struct {
 
 func (r *Renderer_GL32) newShaderProgram(vert, frag, geo, id string, crashWhenFail bool) (s *ShaderProgram_GL32, err error) {
 	var vertObj, fragObj, geoObj, prog uint32
-	if vertObj, err = r.compileShader(gl.VERTEX_SHADER, vert); chkEX(err, "Shader compliation error on "+id+"\n", crashWhenFail) {
+	if vertObj, err = r.compileShader(gl.VERTEX_SHADER, vert); chkEX(err, "Shader compilation error on "+id+"\n", crashWhenFail) {
 		return nil, err
 	}
-	if fragObj, err = r.compileShader(gl.FRAGMENT_SHADER, frag); chkEX(err, "Shader compliation error on "+id+"\n", crashWhenFail) {
+	if fragObj, err = r.compileShader(gl.FRAGMENT_SHADER, frag); chkEX(err, "Shader compilation error on "+id+"\n", crashWhenFail) {
 		return nil, err
 	}
 	if len(geo) > 0 {
-		if geoObj, err = r.compileShader(gl.GEOMETRY_SHADER, geo); chkEX(err, "Shader compliation error on "+id+"\n", crashWhenFail) {
+		if geoObj, err = r.compileShader(gl.GEOMETRY_SHADER, geo); chkEX(err, "Shader compilation error on "+id+"\n", crashWhenFail) {
 			return nil, err
 		}
 		if prog, err = r.linkProgram(vertObj, fragObj, geoObj); chkEX(err, "Link program error on "+id+"\n", crashWhenFail) {
@@ -762,6 +762,8 @@ func (r *Renderer_GL32) MapBlendFunction(i BlendFunc) uint32 {
 		BlendZero:             gl.ZERO,
 		BlendSrcAlpha:         gl.SRC_ALPHA,
 		BlendOneMinusSrcAlpha: gl.ONE_MINUS_SRC_ALPHA,
+		BlendOneMinusDstColor: gl.ONE_MINUS_DST_COLOR,
+		BlendDstColor:         gl.DST_COLOR,
 	}
 	return BlendFunctionLUT[i]
 }

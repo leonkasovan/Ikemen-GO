@@ -441,8 +441,8 @@ func (f *Fnt) drawChar(
 		return 0
 	}
 
-	// in case of mismatched color depth between bank palette and
-	// sprite own palette, mugen 1.1 uses the latter, ignoring bank
+	// In case of mismatched color depth between bank palette and the sprite's own palette,
+	// Mugen 1.1 uses the latter, ignoring the bank
 	if len(f.palettes) != 0 && len(f.coldepth) > int(bank) &&
 		f.images[bt][c].img[0].coldepth != 32 &&
 		f.coldepth[bank] != f.images[bt][c].img[0].coldepth {
@@ -478,10 +478,9 @@ func (f *Fnt) Print(txt string, x, y, xscl, yscl float32, bank, align int32,
 }
 
 // DrawText prints on screen a specified text with the current font sprites
-func (f *Fnt) DrawText(txt string, x, y, xscl, yscl float32, bank, align int32,
-	window *[4]int32, palfx *PalFX) {
+func (f *Fnt) DrawText(txt string, x, y, xscl, yscl float32, bank, align int32, window *[4]int32, palfx *PalFX) {
 
-	if len(txt) == 0 {
+	if len(txt) == 0 || xscl == 0 || yscl == 0 {
 		return
 	}
 

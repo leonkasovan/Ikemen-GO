@@ -746,7 +746,8 @@ func (s *SoundChannels) Play(sound *Sound, group, number, volumescale int32, pan
 	return true
 }
 func (s *SoundChannels) IsPlaying(sound *Sound) bool {
-	for _, v := range s.channels {
+	for i := range s.channels {
+		v := &s.channels[i]
 		if v.sound != nil && v.sound == sound {
 			return true
 		}
@@ -754,24 +755,28 @@ func (s *SoundChannels) IsPlaying(sound *Sound) bool {
 	return false
 }
 func (s *SoundChannels) Stop(sound *Sound) {
-	for k, v := range s.channels {
+	for i := range s.channels {
+		v := &s.channels[i]
 		if v.sound != nil && v.sound == sound {
-			s.channels[k].Stop()
+			v.Stop()
 		}
 	}
 }
+
 func (s *SoundChannels) StopAll() {
-	for k, v := range s.channels {
-		if v.sound != nil {
-			s.channels[k].Stop()
+	for i := range s.channels {
+		if s.channels[i].sound != nil {
+			s.channels[i].Stop()
 		}
 	}
 }
+
 func (s *SoundChannels) Tick() {
 	for i := range s.channels {
-		if s.channels[i].IsPlaying() {
-			if s.channels[i].streamer.Position() >= s.channels[i].sound.length && s.channels[i].sfx.loop != -1 {
-				s.channels[i].sound = nil
+		v := &s.channels[i]
+		if v.IsPlaying() {
+			if v.streamer.Position() >= v.sound.length && v.sfx.loop != -1 { // End the sound
+				v.sound = nil
 			}
 		}
 	}

@@ -421,14 +421,14 @@ func (hb *HealthBar) reset() {
 	hb.bg2.Reset()
 	hb.top.Reset()
 	hb.mid.Reset()
-	for _, v := range hb.front {
-		v.Reset()
+	for i := range hb.front {
+		hb.front[i].Reset()
 	}
 	hb.shift.Reset()
 	hb.shift.anim.srcAlpha = 0
 	hb.shift.anim.dstAlpha = 255
-	for _, v := range hb.red {
-		v.Reset()
+	for i := range hb.red {
+		hb.red[i].Reset()
 	}
 	hb.warn.Reset()
 }
@@ -647,15 +647,15 @@ func (pb *PowerBar) step(ref int, pbr *PowerBar, snd *Snd) {
 }
 
 func (pb *PowerBar) reset() {
-	for _, v := range pb.bg0 {
-		v.Reset()
+	for i := range pb.bg0 {
+		pb.bg0[i].Reset()
 	}
 	pb.bg1.Reset()
 	pb.bg2.Reset()
 	pb.top.Reset()
 	pb.mid.Reset()
-	for _, v := range pb.front {
-		v.Reset()
+	for i := range pb.front {
+		pb.front[i].Reset()
 	}
 	pb.shift.Reset()
 	pb.shift.anim.srcAlpha = 0
@@ -1018,8 +1018,8 @@ func (sb *StunBar) reset() {
 	sb.bg2.Reset()
 	sb.top.Reset()
 	sb.mid.Reset()
-	for _, v := range sb.front {
-		v.Reset()
+	for i := range sb.front {
+		sb.front[i].Reset()
 	}
 	sb.shift.Reset()
 	sb.shift.anim.srcAlpha = 255
@@ -1218,60 +1218,85 @@ func (fa *LifeBarFace) bgDraw(layerno int16) {
 
 func (fa *LifeBarFace) draw(layerno int16, ref int, far *LifeBarFace) {
 	if far.face != nil {
-		pfx := newPalFX()
-		if far.palfxshare {
-			pfx = sys.chars[ref][0].getPalfx()
-		}
-		if far.palshare {
-			sys.cgi[ref].palettedata.palList.SwapPalMap(&sys.chars[ref][0].getPalfx().remap)
-		}
+		// Get texture
 		far.face.Pal = nil
 		if far.face.PalTex != nil {
 			far.face.PalTex = far.face.GetPalTex(&sys.cgi[ref].palettedata.palList)
 		} else {
 			far.face.Pal = far.face.GetPal(&sys.cgi[ref].palettedata.palList)
 		}
+
+		// Palette handling
 		if far.palshare {
 			sys.cgi[ref].palettedata.palList.SwapPalMap(&sys.chars[ref][0].getPalfx().remap)
 		}
+
+		// PalFX handling
+		pfx := newPalFX()
+		if far.palfxshare {
+			pfx = sys.chars[ref][0].getPalfx()
+		}
+
+		// TODO: PalFX sharing has a bug in Tag in that it uses the parameter from the char's original placement in the team
+		// For instance if player 3 tags in, they will use p3 palette options instead of p1
+		// https://github.com/ikemen-engine/Ikemen-GO/issues/2269
+
+		// Keep brightness if player initiated SuperPause
 		ob := sys.brightness
 		if ref == sys.superplayer {
 			sys.brightness = 256
 		}
+
+		// Draw the actual face sprite
 		fa.face_lay.DrawFaceSprite((float32(fa.pos[0])+sys.lifebarOffsetX)*sys.lifebarScale, float32(fa.pos[1])*sys.lifebarScale, layerno,
 			far.face, pfx, sys.cgi[ref].portraitscale*sys.lifebarPortraitScale, &fa.face_lay.window)
+
+		// Draw KO layer
 		if !sys.chars[ref][0].alive() {
 			fa.ko.Draw(float32(fa.pos[0])+sys.lifebarOffsetX, float32(fa.pos[1]), layerno, sys.lifebarScale)
 		}
+
+		// Restore system brightness
 		sys.brightness = ob
+
+		// Turns mode teammates
 		i := int32(len(far.teammate_face)) - 1
 		x := float32(fa.teammate_pos[0] + fa.teammate_spacing[0]*(i-1))
 		y := float32(fa.teammate_pos[1] + fa.teammate_spacing[1]*(i-1))
-		if fa.teammate_ko_hide == true {
+
+		if fa.teammate_ko_hide {
 			x -= float32(fa.teammate_spacing[0] * fa.numko)
 			y -= float32(fa.teammate_spacing[1] * fa.numko)
 		}
+
 		for ; i >= 0; i-- {
 			if i != fa.numko {
+				// Skip in case of KO hiding
 				if i < fa.numko && fa.teammate_ko_hide == true {
 					x -= float32(fa.teammate_spacing[0])
 					y -= float32(fa.teammate_spacing[1])
 					continue
 				}
+				// Draw background
 				fa.teammate_bg.Draw((x + sys.lifebarOffsetX), y, layerno, sys.lifebarScale)
 				fa.teammate_bg0.Draw((x + sys.lifebarOffsetX), y, layerno, sys.lifebarScale)
 				fa.teammate_bg1.Draw((x + sys.lifebarOffsetX), y, layerno, sys.lifebarScale)
 				fa.teammate_bg2.Draw((x + sys.lifebarOffsetX), y, layerno, sys.lifebarScale)
-				fa.teammate_face_lay.DrawFaceSprite((x+sys.lifebarOffsetX)*sys.lifebarScale, y*sys.lifebarScale, layerno,
-					far.teammate_face[i], nil, far.teammate_scale[i]*sys.lifebarPortraitScale, &fa.teammate_face_lay.window)
+				// Draw face
+				fa.teammate_face_lay.DrawFaceSprite((x+sys.lifebarOffsetX)*sys.lifebarScale, y*sys.lifebarScale, layerno, far.teammate_face[i], nil,
+					far.teammate_scale[i]*sys.lifebarPortraitScale, &fa.teammate_face_lay.window)
+				// Draw KO layer
 				if i < fa.numko {
 					fa.teammate_ko.Draw((x + sys.lifebarOffsetX), y, layerno, sys.lifebarScale)
 				}
+				// Add spacing
 				x -= float32(fa.teammate_spacing[0])
 				y -= float32(fa.teammate_spacing[1])
 			}
 		}
 	}
+
+	// Draw top layer
 	fa.top.Draw(float32(fa.pos[0])+sys.lifebarOffsetX, float32(fa.pos[1]), layerno, sys.lifebarScale)
 }
 
@@ -1327,6 +1352,7 @@ func (nm *LifeBarName) draw(layerno int16, ref int, f []*Fnt, side int) {
 		nm.name.lay.DrawText((float32(nm.pos[0]) + sys.lifebarOffsetX), float32(nm.pos[1]), sys.lifebarScale, layerno,
 			sys.cgi[ref].lifebarname, f[nm.name.font[0]], nm.name.font[1], nm.name.font[2], nm.name.palfx, nm.name.frgba)
 	}
+	// Get Turns mode partner names from system
 	if sys.tmode[side] == TM_Turns {
 		i := int32(len(sys.sel.selected[side])) - 1
 		x := float32(nm.teammate_pos[0] + nm.teammate_spacing[0]*(i-nm.numko-1))
@@ -4118,10 +4144,9 @@ func (l *Lifebar) step() {
 				side := 1 - c.teamside
 				cb[side] += c.receivedHits
 				cd[side] += c.receivedDmg
-				if c.helperIndex == 0 { // We don't track percentage for helpers since that won't count towards a victory
-					cp[side] += float32(c.receivedDmg) / float32(c.lifeMax) * 100
-					targets[side]++
-				}
+				// Perhaps helper percentages shouldn't be tracked, but ignoring them creates scenarios where the lifebars show 0% damage which looks wrong
+				cp[side] += float32(c.receivedDmg) / float32(c.lifeMax) * 100
+				targets[side]++
 				if c.scf(SCF_dizzy) {
 					dz[side] = true
 				}
@@ -4229,34 +4254,34 @@ func (l *Lifebar) reset() {
 			l.order[ti] = append(l.order[ti], i)
 		}
 	}
-	for _, hb := range l.hb {
-		for i := range hb {
-			hb[i].reset()
+	for i := range l.hb {
+		for j := range l.hb[i] {
+			l.hb[i][j].reset()
 		}
 	}
-	for _, pb := range l.pb {
-		for i := range pb {
-			pb[i].reset()
+	for i := range l.pb {
+		for j := range l.pb[i] {
+			l.pb[i][j].reset()
 		}
 	}
-	for _, gb := range l.gb {
-		for i := range gb {
-			gb[i].reset()
+	for i := range l.gb {
+		for j := range l.gb[i] {
+			l.gb[i][j].reset()
 		}
 	}
-	for _, sb := range l.sb {
-		for i := range sb {
-			sb[i].reset()
+	for i := range l.sb {
+		for j := range l.sb[i] {
+			l.sb[i][j].reset()
 		}
 	}
-	for _, fa := range l.fa {
-		for i := range fa {
-			fa[i].reset()
+	for i := range l.fa {
+		for j := range l.fa[i] {
+			l.fa[i][j].reset()
 		}
 	}
-	for _, nm := range l.nm {
-		for i := range nm {
-			nm[i].reset()
+	for i := range l.nm {
+		for j := range l.nm[i] {
+			l.nm[i][j].reset()
 		}
 	}
 	for i := range l.wi {
@@ -4311,7 +4336,7 @@ func (l *Lifebar) draw(layerno int16) {
 				for i, v := range l.order[ti] {
 					index := i*2 + ti
 					if sys.cfg.Options.Team.PowerShare && (tm == TM_Simul || tm == TM_Tag) { // Draw player 1 or 2 bars
-						if i == 0 && !sys.chars[0][0].asf(ASF_nopowerbardisplay) {
+						if i == 0 && !sys.chars[v][0].asf(ASF_nopowerbardisplay) {
 							l.pb[l.ref[ti]][index].bgDraw(layerno, index)
 							l.pb[l.ref[ti]][index].draw(layerno, index, l.pb[l.ref[ti]][index], l.fnt[:])
 						}
@@ -4367,17 +4392,15 @@ func (l *Lifebar) draw(layerno int16) {
 			l.ti.bgDraw(layerno)
 			l.ti.draw(layerno, l.fnt[:])
 			// LifeBarWinIcon
-			for ti := range l.wi {
-				for _, v := range l.order[ti] {
-					if !sys.chars[v][0].asf(ASF_nowinicondisplay) {
-						l.wi[ti].draw(layerno, l.fnt[:], ti)
-					}
+			for i := range l.wi {
+				if !sys.chars[i][0].asf(ASF_nowinicondisplay) {
+					l.wi[i].draw(layerno, l.fnt[:], i)
 				}
 			}
 			// LifeBarRatio
 			for ti, tm := range sys.tmode {
 				if tm == TM_Turns {
-					if rl := sys.chars[ti][0].ocd().ratioLevel; rl > 0 {
+					if rl := sys.chars[ti][0].ocd().ratioLevel; rl > 0 && !sys.chars[ti][0].asf(ASF_nofacedisplay) {
 						l.ra[ti].bgDraw(layerno)
 						l.ra[ti].draw(layerno, rl-1)
 					}
@@ -4389,8 +4412,6 @@ func (l *Lifebar) draw(layerno int16) {
 			// LifeBarScore
 			for i := range l.sc {
 				l.sc[i].bgDraw(layerno)
-			}
-			for i := range l.sc {
 				l.sc[i].draw(layerno, l.fnt[:], i)
 			}
 			// LifeBarMatch

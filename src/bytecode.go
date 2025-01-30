@@ -292,7 +292,8 @@ const (
 	OC_const_size_shadowoffset
 	OC_const_size_draw_offset_x
 	OC_const_size_draw_offset_y
-	OC_const_size_depth
+	OC_const_size_depth_front
+	OC_const_size_depth_back
 	OC_const_size_weight
 	OC_const_size_pushfactor
 	OC_const_velocity_walk_fwd_x
@@ -699,6 +700,7 @@ const (
 	OC_ex_fightscreenvar_round_over_wintime
 	OC_ex_fightscreenvar_round_slow_time
 	OC_ex_fightscreenvar_round_start_waittime
+	OC_ex_fightscreenvar_round_callfight_time
 	OC_ex_fightscreenvar_time_framespercount
 	OC_ex_groundlevel
 	OC_ex_layerno
@@ -739,6 +741,7 @@ const (
 	OC_ex2_palfxvar_all_invertall
 	OC_ex2_palfxvar_all_invertblend
 	OC_ex2_introstate
+	OC_ex2_outrostate
 	OC_ex2_continuescreen
 	OC_ex2_victoryscreen
 	OC_ex2_winscreen
@@ -2032,8 +2035,10 @@ func (be BytecodeExp) run_const(c *Char, i *int, oc *Char) {
 		sys.bcStack.PushF(c.size.draw.offset[0] * ((320 / c.localcoord) / oc.localscl))
 	case OC_const_size_draw_offset_y:
 		sys.bcStack.PushF(c.size.draw.offset[1] * ((320 / c.localcoord) / oc.localscl))
-	case OC_const_size_depth:
-		sys.bcStack.PushF(c.size.depth * ((320 / c.localcoord) / oc.localscl))
+	case OC_const_size_depth_front:
+		sys.bcStack.PushF(c.size.depth[0] * ((320 / c.localcoord) / oc.localscl))
+	case OC_const_size_depth_back:
+		sys.bcStack.PushF(c.size.depth[1] * ((320 / c.localcoord) / oc.localscl))
 	case OC_const_size_weight:
 		sys.bcStack.PushI(c.size.weight)
 	case OC_const_size_pushfactor:
@@ -2773,6 +2778,8 @@ func (be BytecodeExp) run_ex(c *Char, i *int, oc *Char) {
 		sys.bcStack.PushI(sys.lifebar.ro.slow_time)
 	case OC_ex_fightscreenvar_round_start_waittime:
 		sys.bcStack.PushI(sys.lifebar.ro.start_waittime)
+	case OC_ex_fightscreenvar_round_callfight_time:
+		sys.bcStack.PushI(sys.lifebar.ro.callfight_time)
 	case OC_ex_fightscreenvar_time_framespercount:
 		sys.bcStack.PushI(sys.lifebar.ti.framespercount)
 	case OC_ex_fighttime:
@@ -3179,6 +3186,8 @@ func (be BytecodeExp) run_ex2(c *Char, i *int, oc *Char) {
 		sys.bcStack.PushI(sys.palfxvar(-2, 2))
 	case OC_ex2_introstate:
 		sys.bcStack.PushI(sys.introState())
+	case OC_ex2_outrostate:
+		sys.bcStack.PushI(sys.outroState())
 	case OC_ex2_continuescreen:
 		sys.bcStack.PushB(sys.continueScreenFlg)
 	case OC_ex2_victoryscreen:
@@ -3959,8 +3968,12 @@ func (sc stateDef) Run(c *Char) {
 			c.sprPriority = exp[0].evalI(c)
 			c.layerNo = 0 // Prevent char from being forgotten in a different layer
 		case stateDef_facep2:
-			if exp[0].evalB(c) && c.rdDistX(c.p2(), c).ToF() < 0 {
-				c.setFacing(-c.facing)
+			if exp[0].evalB(c) {
+				e := c.p2()
+				if e != nil && !e.asf(ASF_noturntarget) && c.rdDistX(e, c).ToF() < 0 &&
+					!c.asf(ASF_noautoturn) && sys.stage.autoturn {
+					c.setFacing(-c.facing)
+				}
 			}
 		case stateDef_juggle:
 			c.juggle = exp[0].evalI(c)
@@ -4734,7 +4747,10 @@ func (sc helper) Run(c *Char, _ []int32) bool {
 		case helper_size_shadowoffset:
 			h.size.shadowoffset = exp[0].evalF(c)
 		case helper_size_depth:
-			h.size.depth = exp[0].evalF(c)
+			h.size.depth[0] = exp[0].evalF(c)
+			if len(exp) > 1 {
+				h.size.depth[1] = exp[1].evalF(c)
+			}
 		case helper_size_weight:
 			h.size.weight = exp[0].evalI(c)
 		case helper_size_pushfactor:
@@ -11863,6 +11879,13 @@ const (
 	modifyPlayer_lifebarname
 	modifyPlayer_helperid
 	modifyPlayer_helpername
+	modifyPlayer_movehit
+	modifyPlayer_moveguarded
+	modifyPlayer_movereversed
+	modifyPlayer_movecountered
+	modifyPlayer_hitpausetime
+	modifyPlayer_pausemovetime
+	modifyPlayer_supermovetime
 	modifyPlayer_redirectid
 )
 
@@ -11930,6 +11953,23 @@ func (sc modifyPlayer) Run(c *Char, _ []int32) bool {
 				hn := string(*(*[]byte)(unsafe.Pointer(&exp[0])))
 				crun.name = hn
 			}
+		case modifyPlayer_movehit:
+			crun.mctype = MC_Hit
+			crun.mctime = Max(0, exp[0].evalI(c))
+		case modifyPlayer_moveguarded:
+			crun.mctype = MC_Guarded
+			crun.mctime = Max(0, exp[0].evalI(c))
+		case modifyPlayer_movereversed:
+			crun.mctype = MC_Reversed
+			crun.mctime = Max(0, exp[0].evalI(c))
+		case modifyPlayer_movecountered:
+			crun.counterHit = exp[0].evalB(c)
+		case modifyPlayer_hitpausetime:
+			crun.hitPauseTime = Max(0, exp[0].evalI(c))
+		case modifyPlayer_pausemovetime:
+			crun.pauseMovetime = Max(0, exp[0].evalI(c))
+		case modifyPlayer_supermovetime:
+			crun.superMovetime = Max(0, exp[0].evalI(c))
 		case modifyPlayer_redirectid:
 			if rid := sys.playerID(exp[0].evalI(c)); rid != nil {
 				crun = rid
@@ -12173,43 +12213,6 @@ func (sc transformClsn) Run(c *Char, _ []int32) bool {
 		case transformClsn_angle:
 			crun.clsnAngle += exp[0].evalF(c)
 		case transformClsn_redirectid:
-			if rid := sys.playerID(exp[0].evalI(c)); rid != nil {
-				crun = rid
-			} else {
-				return false
-			}
-		}
-		return true
-	})
-	return false
-}
-
-type moveHitSet StateControllerBase
-
-const (
-	moveHitSet_movehit byte = iota
-	moveHitSet_moveguarded
-	moveHitSet_movereversed
-	moveHitSet_movecountered
-	moveHitSet_redirectid
-)
-
-func (sc moveHitSet) Run(c *Char, _ []int32) bool {
-	crun := c
-	StateControllerBase(sc).run(c, func(id byte, exp []BytecodeExp) bool {
-		switch id {
-		case moveHitSet_movehit:
-			crun.mctype = MC_Hit
-			crun.mctime = Max(0, exp[0].evalI(c))
-		case moveHitSet_moveguarded:
-			crun.mctype = MC_Guarded
-			crun.mctime = Max(0, exp[0].evalI(c))
-		case moveHitSet_movereversed:
-			crun.mctype = MC_Reversed
-			crun.mctime = Max(0, exp[0].evalI(c))
-		case moveHitSet_movecountered:
-			crun.counterHit = exp[0].evalB(c)
-		case moveHitSet_redirectid:
 			if rid := sys.playerID(exp[0].evalI(c)); rid != nil {
 				crun = rid
 			} else {

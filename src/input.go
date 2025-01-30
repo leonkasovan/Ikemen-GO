@@ -369,8 +369,8 @@ const (
 )
 
 // Save local inputs as input bits to send or record
-func (ib *InputBits) KeysToBits(U, D, L, R, a, b, c, x, y, z, s, d, w, m bool) {
-	*ib = InputBits(Btoi(U) |
+func (ibit *InputBits) KeysToBits(U, D, L, R, a, b, c, x, y, z, s, d, w, m bool) {
+	*ibit = InputBits(Btoi(U) |
 		Btoi(D)<<1 |
 		Btoi(L)<<2 |
 		Btoi(R)<<3 |
@@ -387,28 +387,28 @@ func (ib *InputBits) KeysToBits(U, D, L, R, a, b, c, x, y, z, s, d, w, m bool) {
 }
 
 // Convert received input bits back into keys
-func (ib InputBits) BitsToKeys(cb *CommandBuffer, facing int32) {
+func (ibit InputBits) BitsToKeys(cb *InputBuffer, facing int32) {
 	var U, D, L, R, B, F, a, b, c, x, y, z, s, d, w, m bool
 	// Convert bits to logical symbols
-	U = ib&IB_PU != 0
-	D = ib&IB_PD != 0
-	L = ib&IB_PL != 0
-	R = ib&IB_PR != 0
+	U = ibit&IB_PU != 0
+	D = ibit&IB_PD != 0
+	L = ibit&IB_PL != 0
+	R = ibit&IB_PR != 0
 	if facing < 0 {
-		B, F = ib&IB_PR != 0, ib&IB_PL != 0
+		B, F = ibit&IB_PR != 0, ibit&IB_PL != 0
 	} else {
-		B, F = ib&IB_PL != 0, ib&IB_PR != 0
+		B, F = ibit&IB_PL != 0, ibit&IB_PR != 0
 	}
-	a = ib&IB_A != 0
-	b = ib&IB_B != 0
-	c = ib&IB_C != 0
-	x = ib&IB_X != 0
-	y = ib&IB_Y != 0
-	z = ib&IB_Z != 0
-	s = ib&IB_S != 0
-	d = ib&IB_D != 0
-	w = ib&IB_W != 0
-	m = ib&IB_M != 0
+	a = ibit&IB_A != 0
+	b = ibit&IB_B != 0
+	c = ibit&IB_C != 0
+	x = ibit&IB_X != 0
+	y = ibit&IB_Y != 0
+	z = ibit&IB_Z != 0
+	s = ibit&IB_S != 0
+	d = ibit&IB_D != 0
+	w = ibit&IB_W != 0
+	m = ibit&IB_M != 0
 	// Absolute priority SOCD resolution is enforced during netplay
 	// TODO: Port the other options as well
 	if U && D {
@@ -623,7 +623,7 @@ func (ir *InputReader) ButtonAssistCheck(a, b, c, x, y, z, s, d, w bool) (bool, 
 	return a, b, c, x, y, z, s, d, w
 }
 
-type CommandBuffer struct {
+type InputBuffer struct {
 	Bb, Db, Fb, Ub, Lb, Rb                 int32
 	ab, bb, cb, xb, yb, zb, sb, db, wb, mb int32
 	B, D, F, U, L, R                       int8
@@ -631,23 +631,23 @@ type CommandBuffer struct {
 	InputReader                            *InputReader
 }
 
-func NewCommandBuffer() (c *CommandBuffer) {
+func NewInputBuffer() (c *InputBuffer) {
 	ir := NewInputReader()
-	c = &CommandBuffer{InputReader: ir}
+	c = &InputBuffer{InputReader: ir}
 	c.Reset()
 	return c
 }
 
-func (c *CommandBuffer) Reset() {
-	*c = CommandBuffer{
+func (c *InputBuffer) Reset() {
+	*c = InputBuffer{
 		B: -1, D: -1, F: -1, U: -1, L: -1, R: -1, // Set directions to released state
 		a: -1, b: -1, c: -1, x: -1, y: -1, z: -1, s: -1, d: -1, w: -1, m: -1, // Set buttons to released state
 		InputReader: NewInputReader(),
 	}
 }
 
-// Update command buffer according to received inputs
-func (__ *CommandBuffer) Input(U, D, L, R, B, F, a, b, c, x, y, z, s, d, w, m bool) {
+// Update input buffer according to received inputs
+func (__ *InputBuffer) Input(U, D, L, R, B, F, a, b, c, x, y, z, s, d, w, m bool) {
 	// SOCD resolution is now handled beforehand, so that it may be easier to port to netplay later
 	if U != (__.U > 0) { // If button state changed, set buffer to 0 and invert the state
 		__.Ub = 0
@@ -732,7 +732,7 @@ func (__ *CommandBuffer) Input(U, D, L, R, B, F, a, b, c, x, y, z, s, d, w, m bo
 }
 
 // Check buffer state of each key
-func (__ *CommandBuffer) State(ck CommandKey) int32 {
+func (__ *InputBuffer) State(ck CommandKey) int32 {
 	switch ck {
 	case CK_U:
 		return Min(-Max(__.Bb, __.Fb), __.Ub)
@@ -891,7 +891,7 @@ func (__ *CommandBuffer) State(ck CommandKey) int32 {
 }
 
 // Check buffer state of each key
-func (__ *CommandBuffer) State2(ck CommandKey) int32 {
+func (__ *InputBuffer) State2(ck CommandKey) int32 {
 	f := func(a, b, c int32) int32 {
 		switch {
 		case a > 0:
@@ -980,12 +980,12 @@ func (__ *CommandBuffer) State2(ck CommandKey) int32 {
 }
 
 // Time since last directional input was received
-func (__ *CommandBuffer) LastDirectionTime() int32 {
+func (__ *InputBuffer) LastDirectionTime() int32 {
 	return Min(Abs(__.Bb), Abs(__.Db), Abs(__.Fb), Abs(__.Ub), Abs(__.Lb), Abs(__.Rb))
 }
 
 // Time since last input was received. Used for ">" type commands
-func (__ *CommandBuffer) LastChangeTime() int32 {
+func (__ *InputBuffer) LastChangeTime() int32 {
 	return Min(__.LastDirectionTime(), Abs(__.ab), Abs(__.bb), Abs(__.cb),
 		Abs(__.xb), Abs(__.yb), Abs(__.zb), Abs(__.sb), Abs(__.db), Abs(__.wb),
 		Abs(__.mb))
@@ -1011,7 +1011,7 @@ func (nb *NetBuffer) localUpdate(in int) {
 }
 
 // Convert bits to keys
-func (nb *NetBuffer) input(cb *CommandBuffer, facing int32) {
+func (nb *NetBuffer) input(cb *InputBuffer, facing int32) {
 	if nb.curT < nb.inpT {
 		nb.buf[nb.curT&31].BitsToKeys(cb, facing)
 	}
@@ -1115,7 +1115,7 @@ func (ni *NetInput) IsConnected() bool {
 	return ni != nil && ni.conn != nil
 }
 
-func (ni *NetInput) Input(cb *CommandBuffer, i int, facing int32) {
+func (ni *NetInput) Input(cb *InputBuffer, i int, facing int32) {
 	if i >= 0 && i < len(ni.buf) {
 		ni.buf[sys.inputRemap[i]].input(cb, facing)
 	}
@@ -1316,7 +1316,7 @@ func (ni *NetInput) Update() bool {
 
 type FileInput struct {
 	f      *os.File
-	ib     [MaxSimul*2 + MaxAttachedChar]InputBits
+	ibit   [MaxSimul*2 + MaxAttachedChar]InputBits
 	pfTime int32
 }
 
@@ -1335,14 +1335,14 @@ func (fi *FileInput) Close() {
 }
 
 // Convert bits to keys
-func (fi *FileInput) Input(cb *CommandBuffer, i int, facing int32) {
-	if i >= 0 && i < len(fi.ib) {
-		fi.ib[sys.inputRemap[i]].BitsToKeys(cb, facing)
+func (fi *FileInput) Input(cb *InputBuffer, i int, facing int32) {
+	if i >= 0 && i < len(fi.ibit) {
+		fi.ibit[sys.inputRemap[i]].BitsToKeys(cb, facing)
 	}
 }
 
 func (fi *FileInput) AnyButton() bool {
-	for _, b := range fi.ib {
+	for _, b := range fi.ibit {
 		if b&IB_anybutton != 0 {
 			return true
 		}
@@ -1369,7 +1369,7 @@ func (fi *FileInput) Update() bool {
 		sys.esc = true
 	} else {
 		if sys.oldNextAddTime > 0 &&
-			binary.Read(fi.f, binary.LittleEndian, fi.ib[:]) != nil {
+			binary.Read(fi.f, binary.LittleEndian, fi.ibit[:]) != nil {
 			sys.esc = true
 		}
 		if sys.esc {
@@ -1854,7 +1854,7 @@ func (c *Command) Clear(bufreset bool) {
 }
 
 // Check if inputs match the command elements
-func (c *Command) bufTest(cbuf *CommandBuffer, ai bool, holdTemp *[CK_Last + 1]bool) bool {
+func (c *Command) bufTest(ibuf *InputBuffer, ai bool, holdTemp *[CK_Last + 1]bool) bool {
 	anyHeld, notHeld := false, 0
 	if len(c.hold) > 0 && !ai {
 		if holdTemp == nil {
@@ -1867,7 +1867,7 @@ func (c *Command) bufTest(cbuf *CommandBuffer, ai bool, holdTemp *[CK_Last + 1]b
 		for i, h := range c.hold {
 			func() {
 				for _, k := range h {
-					ks := cbuf.State(k)
+					ks := ibuf.State(k)
 					if ks == 1 && (c.cmdidx > 0 || len(c.hold) > 1) && !c.held[i] && (*holdTemp)[int(k)] {
 						c.held[i], (*holdTemp)[int(k)] = true, false
 					}
@@ -1894,14 +1894,14 @@ func (c *Command) bufTest(cbuf *CommandBuffer, ai bool, holdTemp *[CK_Last + 1]b
 					return false
 				}
 				if c.cmd[c.cmdidx-1].key[0].IsButtonPress() {
-					ks := cbuf.State(c.cmd[c.cmdidx-1].key[0])
-					if ks > 0 && ks <= cbuf.LastDirectionTime() {
+					ks := ibuf.State(c.cmd[c.cmdidx-1].key[0])
+					if ks > 0 && ks <= ibuf.LastDirectionTime() {
 						return true
 					}
 				}
 			} else if len(c.cmd[c.cmdidx-1].key) > 1 {
 				for _, k := range c.cmd[c.cmdidx-1].key {
-					if k >= CK_a && k <= CK_m && cbuf.State(k) > 0 {
+					if k >= CK_a && k <= CK_m && ibuf.State(k) > 0 {
 						return false
 					}
 				}
@@ -1919,12 +1919,12 @@ func (c *Command) bufTest(cbuf *CommandBuffer, ai bool, holdTemp *[CK_Last + 1]b
 		// There's a bug here where for instance pressing DF does not invalidate F, F. Mugen does the same thing, however
 		if !ai && c.cmd[c.cmdidx].greater {
 			for _, k := range c.cmd[c.cmdidx-1].key {
-				if Abs(cbuf.State2(k)) == cbuf.LastChangeTime() {
+				if Abs(ibuf.State2(k)) == ibuf.LastChangeTime() {
 					return true
 				}
 			}
 			c.Clear(false)
-			return c.bufTest(cbuf, ai, holdTemp)
+			return c.bufTest(ibuf, ai, holdTemp)
 		}
 		return true
 	}
@@ -1932,7 +1932,7 @@ func (c *Command) bufTest(cbuf *CommandBuffer, ai bool, holdTemp *[CK_Last + 1]b
 		// If current element must be charged
 		if c.cmd[c.cmdidx].chargetime > 1 {
 			for _, k := range c.cmd[c.cmdidx].key {
-				ks := cbuf.State(k)
+				ks := ibuf.State(k)
 				if ks > 0 {
 					return ai
 				}
@@ -1950,7 +1950,7 @@ func (c *Command) bufTest(cbuf *CommandBuffer, ai bool, holdTemp *[CK_Last + 1]b
 		} else if c.cmdidx > 0 && len(c.cmd[c.cmdidx-1].key) == 1 && len(c.cmd[c.cmdidx].key) == 1 && // If elements are single key
 			c.cmd[c.cmdidx-1].key[0] < CK_Us && c.cmd[c.cmdidx].key[0] < CK_rU && // "Not sign" then "not sign not release" (simple direction)
 			(c.cmd[c.cmdidx-1].key[0]%14 == c.cmd[c.cmdidx].key[0]%14) { // Same direction, regardless of symbol. There are 14 directions
-			if cbuf.B < 0 && cbuf.D < 0 && cbuf.F < 0 && cbuf.U < 0 { // If no direction held
+			if ibuf.B < 0 && ibuf.D < 0 && ibuf.F < 0 && ibuf.U < 0 { // If no direction held
 				c.chargeidx = c.cmdidx
 			} else {
 				return fail()
@@ -1959,7 +1959,7 @@ func (c *Command) bufTest(cbuf *CommandBuffer, ai bool, holdTemp *[CK_Last + 1]b
 	}
 	foo := false
 	for _, k := range c.cmd[c.cmdidx].key {
-		n := cbuf.State2(k)
+		n := ibuf.State2(k)
 		// If "/" then buffer can be any positive number
 		if c.cmd[c.cmdidx].slash {
 			foo = foo || n > 0
@@ -1977,13 +1977,13 @@ func (c *Command) bufTest(cbuf *CommandBuffer, ai bool, holdTemp *[CK_Last + 1]b
 	c.cmdidx++
 	// Both elements in a direction to button transition are checked in same the frame
 	if c.cmdidx < len(c.cmd) && c.cmd[c.cmdidx-1].IsDirToButton(c.cmd[c.cmdidx]) {
-		return c.bufTest(cbuf, ai, holdTemp)
+		return c.bufTest(ibuf, ai, holdTemp)
 	}
 	return true
 }
 
 // Update an individual command
-func (c *Command) Step(cbuf *CommandBuffer, ai, hitpause bool, buftime int32) {
+func (c *Command) Step(ibuf *InputBuffer, ai, hitpause bool, buftime int32) {
 	if !hitpause && c.curbuftime > 0 {
 		c.curbuftime--
 	}
@@ -1997,7 +1997,7 @@ func (c *Command) Step(cbuf *CommandBuffer, ai, hitpause bool, buftime int32) {
 		}
 	}()
 	var holdTemp *[CK_Last + 1]bool
-	if cbuf == nil || !c.bufTest(cbuf, ai, holdTemp) {
+	if ibuf == nil || !c.bufTest(ibuf, ai, holdTemp) {
 		foo := c.chargeidx == 0 && c.cmdidx == 0
 		c.Clear(false)
 		if foo {
@@ -2024,14 +2024,14 @@ func (c *Command) Step(cbuf *CommandBuffer, ai, hitpause bool, buftime int32) {
 // Command List refers to the entire set of a character's commands
 // Each player has multiple lists: one with its own commands, and a copy of each other player's lists
 type CommandList struct {
-	Buffer            *CommandBuffer
+	Buffer            *InputBuffer
 	Names             map[string]int
 	Commands          [][]Command
 	DefaultTime       int32
 	DefaultBufferTime int32
 }
 
-func NewCommandList(cb *CommandBuffer) *CommandList {
+func NewCommandList(cb *InputBuffer) *CommandList {
 	return &CommandList{
 		Buffer:            cb,
 		Names:             make(map[string]int),
@@ -2041,7 +2041,7 @@ func NewCommandList(cb *CommandBuffer) *CommandList {
 }
 
 // Read inputs locally
-func (cl *CommandList) Input(controller int, facing int32, aiLevel float32, ib InputBits, script bool) bool {
+func (cl *CommandList) Input(controller int, facing int32, aiLevel float32, ibit InputBits, script bool) bool {
 	if cl.Buffer == nil {
 		return false
 	}
@@ -2073,20 +2073,20 @@ func (cl *CommandList) Input(controller int, facing int32, aiLevel float32, ib I
 		if controller < 0 {
 			controller = ^controller
 			if controller < len(sys.aiInput) {
-				U = sys.aiInput[controller].U() || ib&IB_PU != 0
-				D = sys.aiInput[controller].D() || ib&IB_PD != 0
-				L = sys.aiInput[controller].L() || ib&IB_PL != 0
-				R = sys.aiInput[controller].R() || ib&IB_PR != 0
-				a = sys.aiInput[controller].a() || ib&IB_A != 0
-				b = sys.aiInput[controller].b() || ib&IB_B != 0
-				c = sys.aiInput[controller].c() || ib&IB_C != 0
-				x = sys.aiInput[controller].x() || ib&IB_X != 0
-				y = sys.aiInput[controller].y() || ib&IB_Y != 0
-				z = sys.aiInput[controller].z() || ib&IB_Z != 0
-				s = sys.aiInput[controller].s() || ib&IB_S != 0
-				d = sys.aiInput[controller].d() || ib&IB_D != 0
-				w = sys.aiInput[controller].w() || ib&IB_W != 0
-				m = sys.aiInput[controller].m() || ib&IB_M != 0
+				U = sys.aiInput[controller].U() || ibit&IB_PU != 0
+				D = sys.aiInput[controller].D() || ibit&IB_PD != 0
+				L = sys.aiInput[controller].L() || ibit&IB_PL != 0
+				R = sys.aiInput[controller].R() || ibit&IB_PR != 0
+				a = sys.aiInput[controller].a() || ibit&IB_A != 0
+				b = sys.aiInput[controller].b() || ibit&IB_B != 0
+				c = sys.aiInput[controller].c() || ibit&IB_C != 0
+				x = sys.aiInput[controller].x() || ibit&IB_X != 0
+				y = sys.aiInput[controller].y() || ibit&IB_Y != 0
+				z = sys.aiInput[controller].z() || ibit&IB_Z != 0
+				s = sys.aiInput[controller].s() || ibit&IB_S != 0
+				d = sys.aiInput[controller].d() || ibit&IB_D != 0
+				w = sys.aiInput[controller].w() || ibit&IB_W != 0
+				m = sys.aiInput[controller].m() || ibit&IB_M != 0
 			}
 		} else if controller < len(sys.inputRemap) {
 			U, D, L, R, a, b, c, x, y, z, s, d, w, m = cl.Buffer.InputReader.LocalInput(sys.inputRemap[controller])
@@ -2111,26 +2111,26 @@ func (cl *CommandList) Input(controller int, facing int32, aiLevel float32, ib I
 
 		// AssertInput Flags (no assists, can override SOCD)
 		// Does not currently work over netplay because flags are stored at the character level rather than system level
-		if ib > 0 {
-			U = U || ib&IB_PU != 0 // Does not override actual inputs
-			D = D || ib&IB_PD != 0
+		if ibit > 0 {
+			U = U || ibit&IB_PU != 0 // Does not override actual inputs
+			D = D || ibit&IB_PD != 0
 			if facing > 0 {
-				B = B || ib&IB_PL != 0
-				F = F || ib&IB_PR != 0
+				B = B || ibit&IB_PL != 0
+				F = F || ibit&IB_PR != 0
 			} else {
-				B = B || ib&IB_PR != 0
-				F = F || ib&IB_PL != 0
+				B = B || ibit&IB_PR != 0
+				F = F || ibit&IB_PL != 0
 			}
-			a = a || ib&IB_A != 0
-			b = b || ib&IB_B != 0
-			c = c || ib&IB_C != 0
-			x = x || ib&IB_X != 0
-			y = y || ib&IB_Y != 0
-			z = z || ib&IB_Z != 0
-			s = s || ib&IB_S != 0
-			d = d || ib&IB_D != 0
-			w = w || ib&IB_W != 0
-			m = m || ib&IB_M != 0
+			a = a || ibit&IB_A != 0
+			b = b || ibit&IB_B != 0
+			c = c || ibit&IB_C != 0
+			x = x || ibit&IB_X != 0
+			y = y || ibit&IB_Y != 0
+			z = z || ibit&IB_Z != 0
+			s = s || ibit&IB_S != 0
+			d = d || ibit&IB_D != 0
+			w = w || ibit&IB_W != 0
+			m = m || ibit&IB_M != 0
 		}
 		// Send inputs to buffer
 		cl.Buffer.Input(U, D, L, R, B, F, a, b, c, x, y, z, s, d, w, m)

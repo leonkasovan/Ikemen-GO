@@ -304,7 +304,7 @@ type CharSize struct {
 	draw         struct {
 		offset [2]float32
 	}
-	depth      float32 // Former depth
+	depth      [2]float32 // Called z.width in Mugen 2000.01.01
 	weight     int32
 	pushfactor float32
 }
@@ -332,7 +332,7 @@ func (cs *CharSize) init() {
 	cs.mid.pos = [...]float32{-5, -60}
 	cs.shadowoffset = 0
 	cs.draw.offset = [...]float32{0, 0}
-	cs.depth = 3
+	cs.depth = [...]float32{3, 3}
 	cs.attack.depth.front = 4
 	cs.attack.depth.back = 4
 	cs.weight = 100
@@ -1537,11 +1537,11 @@ func (e *Explod) update(oldVer bool, playerNo int) {
 	drawscale := [2]float32{facing * scale[0] * e.localscl, e.vfacing * scale[1] * e.localscl}
 
 	// Apply Z axis perspective
-	if e.space == Space_stage && sys.zmin != sys.zmax {
+	if e.space == Space_stage && sys.zEnabled() {
 		zscale := sys.updateZScale(e.pos[2], e.localscl)
 		drawpos[0] *= zscale
 		drawpos[1] *= zscale
-		drawpos[1] += e.interPos[2] * e.localscl
+		drawpos[1] += sys.posZtoY(e.interPos[2], e.localscl)
 		drawscale[0] *= zscale
 		drawscale[1] *= zscale
 	}
@@ -1725,6 +1725,7 @@ func (e *Explod) resetInterpolation(pfd *PalFXDef) {
 }
 
 type Projectile struct {
+	playerno        int
 	hitdef          HitDef
 	id              int32
 	anim            int32
@@ -1836,23 +1837,24 @@ func (p *Projectile) paused(playerNo int) bool {
 	return false
 }
 
-func (p *Projectile) update(playerNo int) {
+func (p *Projectile) update() {
 	// Check projectile removal conditions
-	if sys.tickFrame() && !p.paused(playerNo) && p.hitpause == 0 {
+	if sys.tickFrame() && !p.paused(p.playerno) && p.hitpause == 0 {
 		if p.anim >= 0 {
 			if !p.remflag {
 				remove := true
+				root := sys.chars[p.playerno][0]
 				if p.hits < 0 {
 					// Remove behavior
 					if p.hits == -1 && p.remove {
 						if p.hitanim != p.anim || p.hitanim_ffx != p.anim_ffx {
-							p.ani = sys.chars[playerNo][0].getAnim(p.hitanim, p.hitanim_ffx, true)
+							p.ani = root.getAnim(p.hitanim, p.hitanim_ffx, true)
 						}
 					}
 					// Cancel behavior
 					if p.hits == -2 {
 						if p.cancelanim != p.anim || p.cancelanim_ffx != p.anim_ffx {
-							p.ani = sys.chars[playerNo][0].getAnim(p.cancelanim, p.cancelanim_ffx, true)
+							p.ani = root.getAnim(p.cancelanim, p.cancelanim_ffx, true)
 						}
 					}
 				} else if p.removetime == 0 ||
@@ -1866,7 +1868,7 @@ func (p *Projectile) update(playerNo int) {
 					p.pos[2] < (sys.zmin/p.localscl-float32(p.depthbound)) ||
 					p.pos[2] > (sys.zmax/p.localscl+float32(p.depthbound)) {
 					if p.remanim != p.anim || p.remanim_ffx != p.anim_ffx {
-						p.ani = sys.chars[playerNo][0].getAnim(p.remanim, p.remanim_ffx, true)
+						p.ani = root.getAnim(p.remanim, p.remanim_ffx, true)
 					}
 				} else {
 					remove = false
@@ -1885,7 +1887,8 @@ func (p *Projectile) update(playerNo int) {
 					p.accel = [3]float32{0, 0, 0}
 					p.velmul = [3]float32{1, 1, 1}
 					p.anim = -1
-					// In Mugen, projectiles can hit even after their removetime expires - https://github.com/ikemen-engine/Ikemen-GO/issues/1362
+					// In Mugen, projectiles can hit even after their removetime expires
+					// https://github.com/ikemen-engine/Ikemen-GO/issues/1362
 					//if p.hits >= 0 {
 					//	p.hits = -1
 					//}
@@ -1901,7 +1904,7 @@ func (p *Projectile) update(playerNo int) {
 			}
 		}
 	}
-	if p.paused(playerNo) || p.hitpause > 0 || p.freezeflag {
+	if p.paused(p.playerno) || p.hitpause > 0 || p.freezeflag {
 		p.setPos(p.pos)
 		// There's a minor issue here where a projectile will lag behind one frame relative to Mugen if created during a pause
 	} else {
@@ -1930,6 +1933,19 @@ func (p *Projectile) update(playerNo int) {
 	p.zScale = sys.updateZScale(p.pos[2], p.localscl)
 }
 
+// Flag a projectile as cancelled
+func (p *Projectile) flagProjCancel() {
+	p.hits = -2
+	if p.playerno >= 0 && p.playerno < len(sys.cgi) {
+		r := &sys.cgi[p.playerno]
+		if r != nil {
+			r.pctype = PC_Cancel
+			r.pctime = 0
+			r.pcid = p.id
+		}
+	}
+}
+
 // This subtracts projectile hits when two projectiles clash
 func (p *Projectile) cancelHits(opp *Projectile) {
 	// Check priority
@@ -1938,9 +1954,9 @@ func (p *Projectile) cancelHits(opp *Projectile) {
 	} else {
 		p.hits--
 	}
-	// Flag for removal
+	// Flag as cancelled
 	if p.hits <= 0 {
-		p.hits = -2 // -2 hits means the projectile was cancelled
+		p.flagProjCancel()
 	}
 	// Set hitpause
 	if p.hits > 0 {
@@ -2034,7 +2050,7 @@ func (p *Projectile) tradeDetection(playerNo, index int) {
 	}
 }
 
-func (p *Projectile) tick(playerNo int) {
+func (p *Projectile) tick() {
 	if p.contactflag {
 		p.contactflag = false
 		// Projectile hitpause should maybe be set in this place instead of using "(p.hitpause <= 0 || p.contactflag)" for hit checking
@@ -2048,7 +2064,7 @@ func (p *Projectile) tick(playerNo int) {
 		}
 		p.hitdef.air_juggle = 0
 	}
-	if !p.paused(playerNo) {
+	if !p.paused(p.playerno) {
 		if p.hitpause <= 0 {
 			if p.removetime > 0 {
 				p.removetime--
@@ -2070,8 +2086,8 @@ func (p *Projectile) tick(playerNo int) {
 	}
 }
 
-func (p *Projectile) cueDraw(oldVer bool, playerNo int) {
-	notpause := p.hitpause <= 0 && !p.paused(playerNo)
+func (p *Projectile) cueDraw(oldVer bool) {
+	notpause := p.hitpause <= 0 && !p.paused(p.playerno)
 	if sys.tickFrame() && p.ani != nil && notpause {
 		p.ani.UpdateSprite()
 	}
@@ -2094,7 +2110,7 @@ func (p *Projectile) cueDraw(oldVer bool, playerNo int) {
 		}
 	}
 
-	if sys.tickNextFrame() && (notpause || !p.paused(playerNo)) {
+	if sys.tickNextFrame() && (notpause || !p.paused(p.playerno)) {
 		if p.ani != nil && notpause {
 			p.ani.Action()
 		}
@@ -2106,10 +2122,10 @@ func (p *Projectile) cueDraw(oldVer bool, playerNo int) {
 		p.scale[1] * p.localscl * p.zScale}
 
 	// Apply Z axis perspective
-	if sys.zmin != sys.zmax {
+	if sys.zEnabled() {
 		pos[0] *= p.zScale
 		pos[1] *= p.zScale
-		pos[1] += p.interPos[2] * p.localscl
+		pos[1] += sys.posZtoY(p.interPos[2], p.localscl)
 	}
 
 	sprs := &sys.spritesLayer0
@@ -2122,8 +2138,8 @@ func (p *Projectile) cueDraw(oldVer bool, playerNo int) {
 	if p.ani != nil {
 		// Add sprite to draw list
 		sd := &SprData{p.ani, p.palfx, pos, scl, [2]int32{-1},
-			p.sprpriority + int32(p.pos[2]*p.localscl), Rotation{p.facing * p.angle, 0, 0}, [...]float32{1, 1}, false, playerNo == sys.superplayer,
-			sys.cgi[playerNo].mugenver[0] != 1, p.facing, [2]float32{1, 1}, 0, 0, [4]float32{0, 0, 0, 0}}
+			p.sprpriority + int32(p.pos[2]*p.localscl), Rotation{p.facing * p.angle, 0, 0}, [...]float32{1, 1}, false, p.playerno == sys.superplayer,
+			sys.cgi[p.playerno].mugenver[0] != 1, p.facing, [2]float32{1, 1}, 0, 0, [4]float32{0, 0, 0, 0}}
 		p.aimg.recAndCue(sd, sys.tickNextFrame() && notpause, false, p.layerno)
 		sprs.add(sd)
 		// Add a shadow if color is not 0
@@ -2865,7 +2881,8 @@ func (c *Char) load(def string) error {
 		c.size.shadowoffset *= coordRatio
 		c.size.draw.offset[0] *= coordRatio
 		c.size.draw.offset[1] *= coordRatio
-		c.size.depth *= coordRatio
+		c.size.depth[0] *= coordRatio
+		c.size.depth[1] *= coordRatio
 		c.size.attack.depth.front *= coordRatio
 		c.size.attack.depth.back *= coordRatio
 	}
@@ -3005,7 +3022,7 @@ func (c *Char) load(def string) error {
 						is.ReadF32("shadowoffset", &c.size.shadowoffset)
 						is.ReadF32("draw.offset",
 							&c.size.draw.offset[0], &c.size.draw.offset[1])
-						is.ReadF32("depth", &c.size.depth)
+						is.ReadF32("depth", &c.size.depth[0], &c.size.depth[1])
 						is.ReadF32("attack.depth", &c.size.attack.depth.front, &c.size.attack.depth.back)
 						is.ReadI32("weight", &c.size.weight)
 						is.ReadF32("pushfactor", &c.size.pushfactor)
@@ -3996,7 +4013,8 @@ func (c *Char) numExplod(eid BytecodeValue) BytecodeValue {
 		return BytecodeSF()
 	}
 	var id, n int32 = eid.ToI(), 0
-	for _, e := range sys.explods[c.playerNo] {
+	for i := range sys.explods[c.playerNo] {
+		e := &sys.explods[c.playerNo][i]
 		if e.matchId(id, c.id) {
 			n++
 		}
@@ -4322,7 +4340,8 @@ func (c *Char) numProj() int32 {
 		return 0
 	}
 	n := int32(0)
-	for _, p := range sys.projs[c.playerNo] {
+	for i := range sys.projs[c.playerNo] {
+		p := &sys.projs[c.playerNo][i]
 		if p.id >= 0 && !((p.hits < 0 && p.remove) || p.remflag) {
 			n++
 		}
@@ -4339,7 +4358,8 @@ func (c *Char) numProjID(pid BytecodeValue) BytecodeValue {
 		return BytecodeInt(0)
 	}
 	var id, n int32 = Max(0, pid.ToI()), 0
-	for _, p := range sys.projs[c.playerNo] {
+	for i := range sys.projs[c.playerNo] {
+		p := &sys.projs[c.playerNo][i]
 		if p.id == id && !((p.hits < 0 && p.remove) || p.remflag) {
 			n++
 		}
@@ -4441,7 +4461,7 @@ func (c *Char) projContactTime(pid BytecodeValue) BytecodeValue {
 		return BytecodeSF()
 	}
 	id := pid.ToI()
-	if (id > 0 && id != c.gi().pcid) || c.helperIndex > 0 {
+	if (id > 0 && id != c.gi().pcid) || c.gi().pctype == PC_Cancel || c.helperIndex > 0 {
 		return BytecodeInt(-1)
 	}
 	return BytecodeInt(c.gi().pctime)
@@ -5064,9 +5084,10 @@ func (c *Char) newExplod() (*Explod, int) {
 }
 
 func (c *Char) getExplods(id int32) (expls []*Explod) {
-	for i, e := range sys.explods[c.playerNo] {
+	for i := range sys.explods[c.playerNo] {
+		e := &sys.explods[c.playerNo][i]
 		if e.matchId(id, c.id) {
-			expls = append(expls, &sys.explods[c.playerNo][i])
+			expls = append(expls, e)
 		}
 	}
 	return
@@ -5131,7 +5152,8 @@ func (c *Char) insertExplod(i int) {
 }
 
 func (c *Char) explodBindTime(id, time int32) {
-	for i, e := range sys.explods[c.playerNo] {
+	for i := range sys.explods[c.playerNo] {
+		e := &sys.explods[c.playerNo][i]
 		if e.matchId(id, c.id) {
 			sys.explods[c.playerNo][i].bindtime = time
 		}
@@ -5224,12 +5246,20 @@ func (c *Char) setPosX(x float32) {
 	}
 }
 
-func (c *Char) setPosY(y float32) { // These functions mostly exist right now so we don't forget to use setPosX for X
+func (c *Char) setPosY(y float32) { // This function mostly exists right now so we don't forget to use the other two
 	c.pos[1] = y
 }
 
 func (c *Char) setPosZ(z float32) {
 	c.pos[2] = z
+	// Z distance is also factored into enemy near lists
+	if sys.zEnabled() {
+		if c.playerFlag {
+			sys.charList.enemyNearChanged = true
+		} else {
+			c.enemyNearP2Clear()
+		}
+	}
 }
 
 func (c *Char) posReset() {
@@ -5293,6 +5323,9 @@ func (c *Char) shadYOff(yv float32, isReflect bool) {
 }
 
 func (c *Char) hitAdd(h int32) {
+	if h == 0 {
+		return
+	}
 	c.hitCount += h
 	c.uniqHitCount += h
 	if len(c.targets) > 0 {
@@ -5320,11 +5353,11 @@ func (c *Char) hitAdd(h int32) {
 func (c *Char) newProj() *Projectile {
 	var p *Projectile
 
-	// Loop through the player's projectile slots to find an inactive one
-	for i, old := range sys.projs[c.playerNo] {
-		if old.id < 0 {
+	// Reuse inactive projectile slot if available
+	for i := range sys.projs[c.playerNo] {
+		if sys.projs[c.playerNo][i].id < 0 {
 			p = &sys.projs[c.playerNo][i]
-			p.clear()
+			sys.projs[c.playerNo][i].clear()
 			break
 		}
 	}
@@ -5337,15 +5370,16 @@ func (c *Char) newProj() *Projectile {
 
 	// Set up default values
 	if p != nil {
+		p.playerno = c.playerNo
+		p.id = 0
 		if c.minus == -2 || c.minus == -4 {
 			p.localscl = (320 / c.localcoord)
 		} else {
 			p.localscl = c.localscl
 		}
-		p.id = 0
 		p.layerno = c.layerNo
 		p.palfx = c.getPalfx()
-		// Initialize projectile Hitdef. Must be placed after localscl is defined
+		// Initialize projectile Hitdef. Must be placed after its localscl is defined
 		// https://github.com/ikemen-engine/Ikemen-GO/issues/2087
 		p.hitdef.clear(p.localscl)
 		p.hitdef.isprojectile = true
@@ -5402,9 +5436,10 @@ func (c *Char) projInit(p *Projectile, pt PosType, x, y, z float32,
 }
 
 func (c *Char) getProjs(id int32) (projs []*Projectile) {
-	for i, p := range sys.projs[c.playerNo] {
+	for i := range sys.projs[c.playerNo] {
+		p := &sys.projs[c.playerNo][i]
 		if p.id >= 0 && (id < 0 || p.id == id) { // Removed projectiles have negative ID
-			projs = append(projs, &sys.projs[c.playerNo][i])
+			projs = append(projs, p)
 		}
 	}
 	return
@@ -5883,6 +5918,9 @@ func (c *Char) bindToTarget(tar []int32, time int32, x, y, z float32, hmf HMF) {
 }
 
 func (c *Char) targetLifeAdd(tar []int32, add int32, kill, absolute, dizzy, redlife bool) {
+	if add == 0 {
+		return
+	}
 	for _, tid := range tar {
 		if t := sys.playerID(tid); t != nil {
 			// We flip the sign of "add" so that it operates under the same logic as Hitdef damage
@@ -5912,6 +5950,9 @@ func (c *Char) targetLifeAdd(tar []int32, add int32, kill, absolute, dizzy, redl
 }
 
 func (c *Char) targetPowerAdd(tar []int32, power int32) {
+	if power == 0 {
+		return
+	}
 	for _, tid := range tar {
 		if t := sys.playerID(tid); t != nil && t.playerFlag {
 			t.powerAdd(power)
@@ -5920,6 +5961,9 @@ func (c *Char) targetPowerAdd(tar []int32, power int32) {
 }
 
 func (c *Char) targetDizzyPointsAdd(tar []int32, add int32, absolute bool) {
+	if add == 0 {
+		return
+	}
 	for _, tid := range tar {
 		if t := sys.playerID(tid); t != nil && !t.scf(SCF_dizzy) && !t.asf(ASF_nodizzypointsdamage) {
 			t.dizzyPointsAdd(float64(t.computeDamage(float64(add), false, absolute, 1, c, false)), true)
@@ -5928,6 +5972,9 @@ func (c *Char) targetDizzyPointsAdd(tar []int32, add int32, absolute bool) {
 }
 
 func (c *Char) targetGuardPointsAdd(tar []int32, add int32, absolute bool) {
+	if add == 0 {
+		return
+	}
 	for _, tid := range tar {
 		if t := sys.playerID(tid); t != nil && !t.asf(ASF_noguardpointsdamage) {
 			t.guardPointsAdd(float64(t.computeDamage(float64(add), false, absolute, 1, c, false)), true)
@@ -5936,6 +5983,9 @@ func (c *Char) targetGuardPointsAdd(tar []int32, add int32, absolute bool) {
 }
 
 func (c *Char) targetRedLifeAdd(tar []int32, add int32, absolute bool) {
+	if add == 0 {
+		return
+	}
 	for _, tid := range tar {
 		if t := sys.playerID(tid); t != nil && !t.asf(ASF_noredlifedamage) {
 			t.redLifeAdd(float64(t.computeDamage(float64(add), false, absolute, 1, c, true)), true)
@@ -5944,6 +5994,9 @@ func (c *Char) targetRedLifeAdd(tar []int32, add int32, absolute bool) {
 }
 
 func (c *Char) targetScoreAdd(tar []int32, s float32) {
+	if s == 0 {
+		return
+	}
 	for _, tid := range tar {
 		if t := sys.playerID(tid); t != nil && t.playerFlag {
 			t.scoreAdd(s)
@@ -6079,8 +6132,7 @@ func (c *Char) targetDrop(excludeid int32, excludechar int32, keepone bool) {
 
 // Process raw damage into the value that will actually be used
 // Calculations are done in float64 for the sake of precision
-func (c *Char) computeDamage(damage float64, kill, absolute bool,
-	atkmul float32, attacker *Char, bounds bool) int32 {
+func (c *Char) computeDamage(damage float64, kill, absolute bool, atkmul float32, attacker *Char, bounds bool) int32 {
 	// Skip further calculations
 	if damage == 0 || !absolute && atkmul == 0 {
 		return 0
@@ -6198,6 +6250,9 @@ func (c *Char) setPower(pow int32) {
 }
 
 func (c *Char) powerAdd(add int32) {
+	if add == 0 {
+		return
+	}
 	// Safely convert from float64 back to int32 after all calculations are done
 	int := F64toI32(float64(c.getPower()) + math.Round(float64(add)))
 	if sys.cfg.Options.Team.PowerShare && c.teamside != -1 {
@@ -6280,7 +6335,7 @@ func (c *Char) score() float32 {
 }
 
 func (c *Char) scoreAdd(val float32) {
-	if c.teamside == -1 {
+	if val == 0 || c.teamside == -1 {
 		return
 	}
 	sys.lifebar.sc[c.teamside].scorePoints += val
@@ -6376,10 +6431,10 @@ func (c *Char) bodyDistY(opp *Char, oc *Char) float32 {
 }
 
 func (c *Char) bodyDistZ(opp *Char, oc *Char) float32 {
-	ctop := (c.pos[2] - c.size.depth) * c.localscl
-	cbot := (c.pos[2] + c.size.depth) * c.localscl
-	otop := (opp.pos[2] - opp.size.depth) * opp.localscl
-	obot := (opp.pos[2] + opp.size.depth) * opp.localscl
+	cbot := (c.pos[2] + c.size.depth[0]) * c.localscl
+	ctop := (c.pos[2] - c.size.depth[1]) * c.localscl
+	obot := (opp.pos[2] + opp.size.depth[0]) * opp.localscl
+	otop := (opp.pos[2] - opp.size.depth[1]) * opp.localscl
 	if cbot < otop {
 		return (otop - cbot) / oc.localscl
 	} else if ctop > obot {
@@ -7525,7 +7580,7 @@ func (c *Char) hittableByChar(ghd *HitDef, getter *Char, gst StateType, proj boo
 				getter.attrCheck(hd, c, c.ss.stateType) &&
 				c.clsnCheck(getter, 1, c.hitdef.p2clsncheck, true, false) &&
 				sys.zAxisOverlap(c.pos[2], c.hitdef.attack.depth[0], c.hitdef.attack.depth[1], c.localscl,
-					getter.pos[2], getter.size.depth, getter.size.depth, getter.localscl)
+					getter.pos[2], getter.size.depth[0], getter.size.depth[1], getter.localscl)
 		}
 	}
 
@@ -7762,10 +7817,6 @@ func (c *Char) actionRun() {
 			}
 		}
 	}
-	// This variable is necessary because NoStandGuard is reset before the walking instructions are checked
-	// https://github.com/ikemen-engine/Ikemen-GO/issues/1966
-	c.prevNoStandGuard = c.asf(ASF_nostandguard)
-	c.unsetASF(ASF_nostandguard | ASF_nocrouchguard | ASF_noairguard)
 	// Run state +1
 	// Uses minus -4 because its properties are similar
 	c.minus = -4
@@ -7965,6 +8016,10 @@ func (c *Char) actionFinish() {
 		c.ghv.frame = false
 		c.mhv.frame = false
 	}
+	// This variable is necessary because NoStandGuard is reset before the walking instructions are checked
+	// https://github.com/ikemen-engine/Ikemen-GO/issues/1966
+	c.prevNoStandGuard = c.asf(ASF_nostandguard)
+	c.unsetASF(ASF_nostandguard | ASF_nocrouchguard | ASF_noairguard)
 	// Update Z scale
 	// Must be placed after posUpdate()
 	c.zScale = sys.updateZScale(c.pos[2], c.localscl)
@@ -8179,7 +8234,7 @@ func (c *Char) tick() {
 	if c.cmd == nil {
 		if c.keyctrl[0] {
 			c.cmd = make([]CommandList, len(sys.chars))
-			c.cmd[0].Buffer = NewCommandBuffer()
+			c.cmd[0].Buffer = NewInputBuffer()
 			for i := range c.cmd {
 				c.cmd[i].Buffer = c.cmd[0].Buffer
 				c.cmd[i].CopyList(sys.chars[c.playerNo][0].cmd[i])
@@ -8512,12 +8567,12 @@ func (c *Char) cueDraw() {
 			c.size.yscale * c.zScale * (320 / c.localcoord)}
 
 		// Apply Z axis perspective
-		if sys.zmin != sys.zmax {
+		if sys.zEnabled() {
 			pos[0] *= c.zScale
 			pos[1] *= c.zScale
-			pos[1] += c.interPos[2] * c.localscl
+			pos[1] += sys.posZtoY(c.interPos[2], c.localscl)
 		}
-		//if sys.zmin != sys.zmax {
+		//if sys.zEnabled() {
 		//	ratio := float32(1.618) // Possible stage parameter?
 		//	pos[0] *= 1 + (ratio-1)*(c.zScale-1)
 		//	pos[1] *= 1 + (ratio-1)*(c.zScale-1)
@@ -8594,10 +8649,13 @@ func (c *Char) cueDraw() {
 				//if sd.oldVer {
 				//	soy *= 1.5
 				//}
-				charposz := c.interPos[2] * c.localscl
+				// Mugen uses some odd math for the shadow offset here, factoring in the stage's shadow scale
+				// Meaning the character's shadow offset constant is unable to offset it correctly in every stage
+				// Ikemen works differently and as you'd expect it to
+				drawZoff := sys.posZtoY(c.interPos[2], c.localscl)
 				sys.shadows.add(&ShadowSprite{sd, -1, sdwalp,
-					[2]float32{c.shadowOffset[0] * c.localscl, (c.size.shadowoffset+c.shadowOffset[1])*c.localscl + sys.stage.sdw.yscale*charposz + charposz}, // Shadow offset
-					[2]float32{c.reflectOffset[0] * c.localscl, c.reflectOffset[1]*c.localscl + sys.stage.reflection.yscale*charposz + charposz},              // Reflection offset
+					[2]float32{c.shadowOffset[0] * c.localscl, (c.size.shadowoffset+c.shadowOffset[1])*c.localscl + sys.stage.sdw.yscale*drawZoff + drawZoff},          // Shadow offset
+					[2]float32{c.reflectOffset[0] * c.localscl, (c.size.shadowoffset+c.reflectOffset[1])*c.localscl + sys.stage.reflection.yscale*drawZoff + drawZoff}, // Reflection offset
 					c.offsetY()}) // Fade offset
 			}
 		}
@@ -8722,8 +8780,8 @@ func (cl *CharList) commandUpdate() {
 					// Clear input buffers and skip the rest of the loop
 					// This used to apply only to the root, but that caused some issues with helper-based input buffers
 					if c.inputWait() || c.asf(ASF_noinput) {
-						for _, cmd := range c.cmd {
-							cmd.BufReset()
+						for i := range c.cmd {
+							c.cmd[i].BufReset()
 						}
 						continue
 					}
@@ -8748,8 +8806,8 @@ func (cl *CharList) commandUpdate() {
 						}
 					}
 					// Update commands
-					for _, cmd := range c.cmd {
-						cmd.Step(int32(c.facing), c.controller < 0, buffer, Btoi(buffer)+Btoi(winbuf))
+					for i := range c.cmd {
+						c.cmd[i].Step(int32(c.facing), c.controller < 0, buffer, Btoi(buffer)+Btoi(winbuf))
 					}
 					// Enable AI cheated command
 					c.cpucmd = cheat
@@ -9708,7 +9766,7 @@ func (cl *CharList) hitDetection(getter *Char, proj bool) {
 	// Projectile hitting player check
 	// TODO: Disable projectiles if player is disabled?
 	if proj {
-		for i, pr := range sys.projs {
+		for i := range sys.projs {
 			if len(sys.projs[i]) == 0 {
 				continue
 			}
@@ -9716,8 +9774,8 @@ func (cl *CharList) hitDetection(getter *Char, proj bool) {
 			orgatktmp := c.atktmp
 			c.atktmp = -1
 			ap_projhit := false
-			for j := range pr {
-				p := &pr[j]
+			for j := range sys.projs[i] {
+				p := &sys.projs[i][j]
 
 				// Skip if projectile can't hit
 				if p.id < 0 || p.hits <= 0 {
@@ -9819,10 +9877,7 @@ func (cl *CharList) hitDetection(getter *Char, proj bool) {
 					if getter.hitdef.p1stateno >= 0 && getter.stateChange1(getter.hitdef.p1stateno, getter.hitdef.playerNo) {
 						getter.setCtrl(false)
 					}
-					p.hits = -2
-					sys.cgi[i].pctype = PC_Cancel
-					sys.cgi[i].pctime = 0
-					sys.cgi[i].pcid = p.id
+					p.flagProjCancel()
 					getter.hitdefContact = true
 					//getter.mhv.frame = true // Doesn't make sense to flag it when cancelling a projectile
 					continue
@@ -9840,7 +9895,7 @@ func (cl *CharList) hitDetection(getter *Char, proj bool) {
 
 					if getter.projClsnCheck(p, p.hitdef.p2clsncheck, 1) &&
 						sys.zAxisOverlap(p.pos[2], p.hitdef.attack.depth[0], p.hitdef.attack.depth[1], p.localscl,
-							getter.pos[2], getter.size.depth, getter.size.depth, getter.localscl) {
+							getter.pos[2], getter.size.depth[0], getter.size.depth[1], getter.localscl) {
 
 						if ht := hitTypeGet(c, &p.hitdef, [...]float32{p.pos[0] - c.pos[0]*(c.localscl/p.localscl),
 							p.pos[1] - c.pos[1]*(c.localscl/p.localscl), p.pos[2] - c.pos[2]*(c.localscl/p.localscl)},
@@ -9962,7 +10017,7 @@ func (cl *CharList) hitDetection(getter *Char, proj bool) {
 							getter.pos[2], getter.hitdef.attack.depth[0], getter.hitdef.attack.depth[1], getter.localscl)
 					} else {
 						zok = sys.zAxisOverlap(c.pos[2], c.hitdef.attack.depth[0], c.hitdef.attack.depth[1], c.localscl,
-							getter.pos[2], getter.size.depth, getter.size.depth, getter.localscl)
+							getter.pos[2], getter.size.depth[0], getter.size.depth[1], getter.localscl)
 					}
 
 					// If collision OK then get the hit type and act accordingly
@@ -10114,11 +10169,11 @@ func (cl *CharList) pushDetection(getter *Char) {
 				continue
 			}
 
-			czback := c.pos[2]*c.localscl - c.size.depth*c.localscl
-			czfront := c.pos[2]*c.localscl + c.size.depth*c.localscl
+			czfront := c.pos[2]*c.localscl + c.size.depth[0]*c.localscl
+			czback := c.pos[2]*c.localscl - c.size.depth[1]*c.localscl
 
-			gzback := getter.pos[2]*getter.localscl - getter.size.depth*getter.localscl
-			gzfront := getter.pos[2]*getter.localscl + getter.size.depth*getter.localscl
+			gzfront := getter.pos[2]*getter.localscl + getter.size.depth[0]*getter.localscl
+			gzback := getter.pos[2]*getter.localscl - getter.size.depth[1]*getter.localscl
 
 			// Z axis fail
 			if gzback >= czfront || czback >= gzfront {
@@ -10156,9 +10211,9 @@ func (cl *CharList) pushDetection(getter *Char) {
 
 				// Determine in which axes to push the players
 				// This needs to check both if the players have velocity or if their positions have changed
-				pushx := sys.zmin == sys.zmax || c.pos[2] == getter.pos[2] ||
+				pushx := !sys.zEnabled() || c.pos[2] == getter.pos[2] ||
 					getter.vel[0] != 0 || c.vel[0] != 0 || getter.pos[0] != getter.oldPos[0] || c.pos[0] != c.oldPos[0]
-				pushz := sys.zmin != sys.zmax &&
+				pushz := sys.zEnabled() &&
 					(getter.vel[2] != 0 || c.vel[2] != 0 || getter.pos[2] != getter.oldPos[2] || c.pos[2] != c.oldPos[2])
 
 				if pushx {
@@ -10429,17 +10484,39 @@ func (cl *CharList) enemyNear(c *Char, n int32, p2list, log bool) *Char {
 				return
 			}
 			// Otherwise compare the distances between the player and the next and previous enemies
-			distNext := c.distX(e, c) * c.facing
+			distNextX := c.distX(e, c) * c.facing
 			prevEnemy := (*cache)[i]
-			distPrev := c.distX(prevEnemy, c) * c.facing
+			distPrevX := c.distX(prevEnemy, c) * c.facing
+			// If Z axis is disabled we only use the X component
+			distNext := distNextX
+			distPrev := distPrevX
+			// Otherwise factor in the Z distance
+			if sys.zEnabled() {
+				distNextZ := c.distZ(e, c)
+				distPrevZ := c.distZ(prevEnemy, c)
+				// Calculate the hypotenuse
+				distNext = float32(math.Sqrt(float64(distNext*distNext + distNextZ*distNextZ)))
+				distPrev = float32(math.Sqrt(float64(distPrev*distPrev + distPrevZ*distPrevZ)))
+				// Keep the sign of the most significant component
+				if AbsF(distNextX) >= AbsF(distNextZ) {
+					distNext *= SignF(distNextX)
+				} else {
+					distNext *= SignF(distNextZ)
+				}
+				if AbsF(distPrevX) >= AbsF(distPrevZ) {
+					distPrev *= SignF(distPrevX)
+				} else {
+					distPrev *= SignF(distPrevZ)
+				}
+			}
 			// If an enemy is behind the player, an extra distance buffer is added for the "P2" list
 			// This makes the player turn less frequently when surrounded
 			// Mugen uses a hardcoded value of 30 pixels. Maybe it could be a character constant instead in Ikemen
 			if p2list {
-				if distNext < 0 {
+				if distNextX < 0 {
 					distNext -= 30
 				}
-				if distPrev < 0 {
+				if distPrevX < 0 {
 					distPrev -= 30
 				}
 			}

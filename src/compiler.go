@@ -81,7 +81,6 @@ func newCompiler() *Compiler {
 		"makedust":           c.makeDust,
 		"modifyexplod":       c.modifyExplod,
 		"movehitreset":       c.moveHitReset,
-		"movehitset":         c.moveHitSet,
 		"nothitby":           c.notHitBy,
 		"null":               c.null,
 		"offset":             c.offset,
@@ -402,6 +401,7 @@ var triggerMap = map[string]int{
 	"mugenversion":       1,
 	"numplayer":          1,
 	"offset":             1,
+	"outrostate":         1,
 	"p5name":             1,
 	"p6name":             1,
 	"p7name":             1,
@@ -1810,8 +1810,10 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 			out.append(OC_const_size_draw_offset_x)
 		case "size.draw.offset.y":
 			out.append(OC_const_size_draw_offset_y)
-		case "size.depth":
-			out.append(OC_const_size_depth)
+		case "size.depth.front":
+			out.append(OC_const_size_depth_front)
+		case "size.depth.back":
+			out.append(OC_const_size_depth_back)
 		case "size.weight":
 			out.append(OC_const_size_weight)
 		case "size.pushfactor":
@@ -2998,6 +3000,8 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 		out.append(OC_roundstate)
 	case "introstate":
 		out.append(OC_ex2_, OC_ex2_introstate)
+	case "outrostate":
+		out.append(OC_ex2_, OC_ex2_outrostate)
 	case "screenheight":
 		out.append(OC_screenheight)
 	case "screenpos":
@@ -3899,6 +3903,8 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 			opc = OC_ex_fightscreenvar_round_slow_time
 		case "round.start.waittime":
 			opc = OC_ex_fightscreenvar_round_start_waittime
+		case "round.callfight.time":
+			opc = OC_ex_fightscreenvar_round_callfight_time
 		case "time.framespercount":
 			opc = OC_ex_fightscreenvar_time_framespercount
 		default:
@@ -6917,7 +6923,7 @@ func (c *Compiler) Compile(pn int, def string, constants map[string]float32) (ma
 	// Initialize command list data
 	if sys.chars[pn][0].cmd == nil {
 		sys.chars[pn][0].cmd = make([]CommandList, MaxSimul*2+MaxAttachedChar)
-		b := NewCommandBuffer()
+		b := NewInputBuffer()
 		for i := range sys.chars[pn][0].cmd {
 			sys.chars[pn][0].cmd[i] = *NewCommandList(b)
 		}
