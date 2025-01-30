@@ -429,15 +429,6 @@ func main() {
 		return
 	}
 	for _, file := range files {
-		// check if directory
-		if file.IsDir() {
-			if !physfs.Mount(file.Name(), "/", 1) {
-				// fmt.Printf("Mounting %v [FAIL]\n", file.Name())
-			} else {
-				// fmt.Printf("Mounting %v [OK]\n", file.Name())
-			}
-		}
-
 		if strings.HasSuffix(file.Name(), ".zip") {
 			// Open the file
 			if !physfs.Mount(file.Name(), "/", 1) {
@@ -446,7 +437,14 @@ func main() {
 				fmt.Printf("Mounting %v [OK]\n", file.Name())
 			}
 		}
-	}	
+	}
+
+	// Mount the current directory
+	if !physfs.Mount(".", "/", 1) {
+		fmt.Printf("Mounting regular directory [FAIL]\n")
+	} else {
+		fmt.Printf("Mounting regular directory [OK]\n")
+	}
 
 	is_mugen_game := false
 	fmt.Printf("Ikemen running on OS=[%v] ARCH=[%v]\n", runtime.GOOS, runtime.GOARCH)
@@ -622,6 +620,13 @@ func main() {
 		no += 1
 	}
 
+	// Unmount the current directory
+	if !physfs.Unmount(".") {
+		fmt.Printf("Unmounting regular directory [FAIL]\n")
+	} else {
+		fmt.Printf("Unmounting regular directory [OK]\n")
+	}
+
 	// Find zip files and unmount it
 	files, err = os.ReadDir(".")
 	if err != nil {
@@ -629,10 +634,6 @@ func main() {
 		return
 	}
 	for _, file := range files {
-		if file.IsDir() {
-			physfs.Unmount(file.Name())
-		}
-
 		if strings.HasSuffix(file.Name(), ".zip") {
 			// Open the file
 			if !physfs.Unmount(file.Name()) {
