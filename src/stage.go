@@ -11,7 +11,6 @@ import (
 	"image/draw"
 	_ "image/jpeg"
 	"math"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -21,8 +20,8 @@ import (
 	_ "github.com/mdouchement/hdr/codec/rgbe"
 
 	mgl "github.com/go-gl/mathgl/mgl32"
-	"github.com/qmuntal/gltf"
-	"github.com/qmuntal/gltf/modeler"
+	"github.com/ikemen-engine/Ikemen-GO/packages/gltf"
+	"github.com/ikemen-engine/Ikemen-GO/packages/gltf/modeler"
 	"golang.org/x/mobile/exp/f32"
 	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
 )
@@ -2085,10 +2084,9 @@ func loadEnvironment(filepath string) (*Environment, error) {
 	env.GGXSampleCount = 1024
 	env.GGXLUTSampleCount = 512
 	env.environmentIntensity = 1
-	fmt.Printf("[src/stage.go] loadEnvironment os.Open(%v)\n", filepath)
-	file, err := os.Open(filepath)
-	if err != nil {
-		return nil, err
+	file := physfs.OpenRead(filepath)
+	if file == nil {
+		return nil, fmt.Errorf("File not found: %v", filepath)
 	}
 	img, _, err := image.Decode(file)
 	if err != nil {
@@ -2139,6 +2137,7 @@ func loadEnvironment(filepath string) (*Environment, error) {
 	return env, nil
 }
 func loadglTFStage(filepath string) (*Model, error) {
+	fmt.Printf("[src/stage.go] loadglTFStage(%v)\n", filepath)
 	mdl := &Model{offset: [3]float32{0, 0, 0}, rotation: [3]float32{0, 0, 0}, scale: [3]float32{1, 1, 1}}
 	doc, err := gltf.Open(filepath)
 	if err != nil {
@@ -3074,6 +3073,7 @@ func loadglTFStage(filepath string) (*Model, error) {
 		}
 		mdl.scenes = append(mdl.scenes, scene)
 	}
+	fmt.Printf("GLTF model loaded: filepath=%s\n", filepath)
 	return mdl, nil
 }
 func (s *Scene) getSceneLight(n uint32, nodes []*Node) {

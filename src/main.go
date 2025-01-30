@@ -586,7 +586,6 @@ func main() {
 	}
 
 	// Check if the main lua file exists.
-	// fmt.Printf("[src/main.go] main os.Open(%v)\n", sys.cfg.Config.System)
 	if !physfs.Exists(sys.cfg.Config.System) {
 		fmt.Printf("Error: script %v NOT found.\n", sys.cfg.Config.System)
 		os.Exit(-1)

@@ -3400,6 +3400,7 @@ func (l *Loader) loadStage() bool {
 		sys.stageList[0], l.err = loadStage(def, true)
 		sys.stage = sys.stageList[0]
 		tstr = fmt.Sprintf("New stage loaded: %v", def)
+		fmt.Println(tstr)
 	}
 	return l.err == nil
 }
