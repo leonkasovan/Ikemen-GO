@@ -1315,7 +1315,7 @@ func (ni *NetInput) Update() bool {
 
 type FileInput struct {
 	f      *physfs.File
-	ib     [MaxSimul*2 + MaxAttachedChar]InputBits
+	ibit   [MaxSimul*2 + MaxAttachedChar]InputBits
 	pfTime int32
 }
 
