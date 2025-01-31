@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"image"
-	"io"
 	"log"
 	"math"
 	"os"
@@ -438,7 +437,7 @@ func (s *System) init(w, h int32) *lua.LState {
 	if len(s.cfg.Config.WindowIcon) > 0 {
 		// First we initialize arrays.
 		// var f = make([]io.ReadCloser, len(s.cfg.Config.WindowIcon))
-		var f io.ReadCloser
+		var f *physfs.File
 		s.windowMainIcon = make([]image.Image, len(s.cfg.Config.WindowIcon))
 		// And then we load them.
 		for i, iconLocation := range s.cfg.Config.WindowIcon {
