@@ -61,6 +61,7 @@ typedef struct __PHYSFS_FILEHANDLE__
     size_t buffill;  /* Buffer fill size. Don't touch! */
     size_t bufpos;  /* Buffer position. Don't touch! */
     struct __PHYSFS_FILEHANDLE__ *next;  /* linked list stuff. */
+    char fileName[1024];
 } FileHandle;
 
 
@@ -1089,8 +1090,12 @@ static int freeDirHandle(DirHandle *dh, FileHandle *openList)
     if (dh == NULL)
         return 1;
 
-    for (i = openList; i != NULL; i = i->next)
+    for (i = openList; i != NULL; i = i->next){
+        if (i->dirHandle == dh) {
+            printf("Error closing dir=[%s] filename=[%s]\n", dh->dirName, i->fileName);
+        }
         BAIL_IF(i->dirHandle == dh, PHYSFS_ERR_FILES_STILL_OPEN, 0);
+    }
 
     dh->funcs->closeArchive(dh->opaque);
 
@@ -2762,6 +2767,7 @@ PHYSFS_File *PHYSFS_openRead(const char *_fname)
             else
             {
                 memset(fh, '\0', sizeof (FileHandle));
+                strcpy(fh->fileName, fname);
                 fh->io = io;
                 fh->forReading = 1;
                 fh->dirHandle = i;

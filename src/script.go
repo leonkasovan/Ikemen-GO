@@ -2101,7 +2101,7 @@ func systemScriptInit(l *lua.LState) {
 	})
 	luaRegister(l, "replayRecord", func(*lua.LState) int {
 		if sys.netInput != nil {
-			sys.netInput.rep, _ = os.Create(strArg(l, 1))
+			sys.netInput.rep = physfs.OpenWrite(strArg(l, 1))
 		}
 		return 0
 	})

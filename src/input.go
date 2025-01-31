@@ -3,10 +3,9 @@ package main
 import (
 	"encoding/binary"
 	"net"
-	"os"
-	"fmt"
 	"strings"
 	"time"
+	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
 )
 
 var ModAlt = NewModifierKey(false, true, false)
@@ -1029,7 +1028,7 @@ type NetInput struct {
 	time         int32
 	stoppedcnt   int32
 	delay        int32
-	rep          *os.File
+	rep          *physfs.File
 	host         bool
 	preFightTime int32
 }
@@ -1315,15 +1314,14 @@ func (ni *NetInput) Update() bool {
 }
 
 type FileInput struct {
-	f      *os.File
-	ibit   [MaxSimul*2 + MaxAttachedChar]InputBits
+	f      *physfs.File
+	ib     [MaxSimul*2 + MaxAttachedChar]InputBits
 	pfTime int32
 }
 
 func OpenFileInput(filename string) *FileInput {
 	fi := &FileInput{}
-	fmt.Printf("[src/input.go] OpenFileInput os.Open(%v)\n", filename)
-	fi.f, _ = os.Open(filename)
+	fi.f = physfs.OpenRead(filename)
 	return fi
 }
 

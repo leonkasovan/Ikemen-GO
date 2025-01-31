@@ -126,7 +126,7 @@ func Unmount(archive string) bool {
 
 // OpenRead opens a file for reading.
 func OpenRead(filename string) *File {
-    fmt.Printf("[physfs] OpenRead(%v) [%v]\n", filename, filepath.Clean(filename))
+    // fmt.Printf("[physfs] OpenRead(%v) [%v]\n", filename, filepath.Clean(filename))
     cFilename := C.CString(filepath.Clean(filename))
     defer C.free(unsafe.Pointer(cFilename))
     return (*File)(C.PHYSFS_openRead(cFilename))
@@ -134,8 +134,8 @@ func OpenRead(filename string) *File {
 
 // OpenWrite opens a file for writing.
 func OpenWrite(filename string) *File {
-    fmt.Printf("[physfs] OpenWrite(%v) [%v]\n", filename, filepath.Clean(filename))
-    cFilename := C.CString(filename)
+    // fmt.Printf("[physfs] OpenWrite(%v) [%v]\n", filename, filepath.Clean(filename))
+    cFilename := C.CString(filepath.Clean(filename))
     defer C.free(unsafe.Pointer(cFilename))
     return (*File)(C.PHYSFS_openWrite(cFilename))
 }
@@ -331,4 +331,9 @@ func IsDirectory(path string) (bool, error) {
     }
 
     return stat.filetype == C.PHYSFS_FILETYPE_DIRECTORY, nil
+}
+
+// GetError returns the last error message.
+func GetError() string {
+    return C.GoString(C.PHYSFS_getErrorByCode(C.PHYSFS_getLastErrorCode()))
 }

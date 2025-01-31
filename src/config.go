@@ -4,7 +4,6 @@ import (
 	"bufio"
 	_ "embed" // Support for go:embed resources
 	"fmt"
-	"os"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -288,8 +287,8 @@ func loadConfig(def string, is_mugen_game bool) (*Config, error) {
 	//Import Mugen setting
 	if is_mugen_game {
 		fmt.Printf("[config.go] import data/mugen.cfg\n")
-		file, err := os.Open("data/mugen.cfg")
-		if err != nil {
+		file := physfs.OpenRead("data/mugen.cfg")
+		if file == nil {
 			fmt.Printf("[config.go] Error loading data/mugen.cfg\n")
 		}
 		defer file.Close()

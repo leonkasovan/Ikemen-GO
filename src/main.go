@@ -180,16 +180,16 @@ func updateCharInSelectDef(fname string) error {
 	// Open the file
 	filename := fname
 	fmt.Printf("[main.go] fname=%v filename=%v\n", fname, filename)
-	file, err := os.Open(filename)
-	if err != nil {
-		return err
+	file  := physfs.OpenRead(filename)
+	if file == nil {
+		return fmt.Errorf("Error: can't open.read file %v\n", filename)
 	}
 
 	// Open or create the file
-	file2, err := os.Create(filename + ".update")
-	if err != nil {
+	file2 := physfs.OpenWrite(filename + ".update")
+	if file2 == nil {
 		file.Close()
-		return err
+		return fmt.Errorf("Error: can't open.write file %v\n", filename + ".update")
 	}
 
 	// Create a buffered writer
@@ -260,6 +260,7 @@ func updateCharInSelectDef(fname string) error {
 	writer.Flush()
 	file.Close()
 	file2.Close()
+	var err error
 	err = os.Rename(filename, filename+".bak")
 	if err != nil {
 		fmt.Printf("[main.go] '%v' => '%v'\n\terr: %v\n", filename, filename+".bak", err)
@@ -281,16 +282,16 @@ func updateStageInSelectDef(fname string) error {
 
 	// Open the file
 	filename := fname
-	file, err := os.Open(filename)
-	if err != nil {
-		return err
+	file := physfs.OpenRead(filename)
+	if file == nil {
+		return fmt.Errorf("Error: can't open.read file %v\n", filename)
 	}
 
 	// Open or create the file
-	file2, err := os.Create(filename + ".update")
-	if err != nil {
+	file2 := physfs.OpenWrite(filename + ".update")
+	if file2 != nil {
 		file.Close()
-		return err
+		return fmt.Errorf("Error: can't open.write file %v\n", filename)
 	}
 
 	// Create a buffered writer
@@ -404,14 +405,15 @@ func chkEX(err error, txt string, crash bool) bool {
 	return false
 }
 
-func createLog(p string) *os.File {
-	f, err := os.Create(p)
-	if err != nil {
-		panic(err)
+func createLog(p string) *physfs.File {
+	f := physfs.OpenWrite(p)
+	if f == nil {
+		fmt.Println("Error: open log file %v\n", p)
+		os.Exit(-1)
 	}
 	return f
 }
-func closeLog(f *os.File) {
+func closeLog(f *physfs.File) {
 	f.Close()
 }
 
@@ -440,11 +442,15 @@ func main() {
 	}
 
 	// Mount the current directory
-	if !physfs.Mount(".", "/", 1) {
+	currentDir := path.Dir(os.Args[0])
+	if !physfs.Mount(currentDir, "/", 1) {
 		fmt.Printf("Mounting regular directory [FAIL]\n")
 	} else {
 		fmt.Printf("Mounting regular directory [OK]\n")
 	}
+
+	// Set Write Directory
+	physfs.SetWriteDir(".")
 
 	is_mugen_game := false
 	fmt.Printf("Ikemen running on OS=[%v] ARCH=[%v]\n", runtime.GOOS, runtime.GOARCH)
@@ -620,9 +626,10 @@ func main() {
 		no += 1
 	}
 
-	// Unmount the current directory
-	if !physfs.Unmount(".") {
+	// Unmount current directory
+	if !physfs.Unmount(currentDir) {
 		fmt.Printf("Unmounting regular directory [FAIL]\n")
+		fmt.Println(physfs.GetError())
 	} else {
 		fmt.Printf("Unmounting regular directory [OK]\n")
 	}
@@ -638,6 +645,7 @@ func main() {
 			// Open the file
 			if !physfs.Unmount(file.Name()) {
 				fmt.Printf("Unmounting %v [FAIL]\n", file.Name())
+				fmt.Println(physfs.GetError())
 			} else {
 				fmt.Printf("Unmounting %v [OK]\n", file.Name())
 			}

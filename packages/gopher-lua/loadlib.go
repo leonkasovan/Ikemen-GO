@@ -31,9 +31,7 @@ func loGetPath(env string, defpath string) string {
 }
 
 func loFindFile(L *LState, name, pname string) (string, string) {
-	fmt.Printf("[loadlib.go] loFindFile name=%v pname=%v\n", name, pname)
 	name = strings.Replace(name, ".", string(os.PathSeparator), -1)
-	fmt.Printf("[loadlib.go] loFindFile name=%v pname=%v\n", name, pname)
 	lv := L.GetField(L.GetField(L.Get(EnvironIndex), "package"), pname)
 	path, ok := lv.(LString)
 	if !ok {
