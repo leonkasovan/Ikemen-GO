@@ -249,7 +249,7 @@ func loadConfig(def string, is_mugen_game bool) (*Config, error) {
 		iniFile, err = ini.LoadSources(options, defaultConfig)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to read data: %v", err)
+		return nil, fmt.Errorf("failed to read data: %v\n", err)
 	}
 
 	var c Config

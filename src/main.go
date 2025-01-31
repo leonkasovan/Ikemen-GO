@@ -14,8 +14,8 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
 	lua "github.com/ikemen-engine/Ikemen-GO/packages/gopher-lua"
+	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
 )
 
 var Version = "development"
@@ -180,7 +180,7 @@ func updateCharInSelectDef(fname string) error {
 	// Open the file
 	filename := fname
 	fmt.Printf("[main.go] fname=%v filename=%v\n", fname, filename)
-	file  := physfs.OpenRead(filename)
+	file := physfs.OpenRead(filename)
 	if file == nil {
 		return fmt.Errorf("Error: can't open.read file %v\n", filename)
 	}
@@ -189,7 +189,7 @@ func updateCharInSelectDef(fname string) error {
 	file2 := physfs.OpenWrite(filename + ".update")
 	if file2 == nil {
 		file.Close()
-		return fmt.Errorf("Error: can't open.write file %v\n", filename + ".update")
+		return fmt.Errorf("Error: can't open.write file %v\n", filename+".update")
 	}
 
 	// Create a buffered writer
@@ -603,7 +603,8 @@ func main() {
 	no := 1
 	lua_script, err := LoadText(sys.cfg.Config.System)
 	if err != nil {
-		fmt.Printf("[%v]Error: %v\n", err, no)
+		fmt.Printf("[main.go]physfs LastError: %v\n", physfs.GetError())
+		fmt.Printf("[main.go]Error: %v\n", err)
 		return
 	}
 	if err := sys.luaLState.DoString(lua_script); err != nil {
