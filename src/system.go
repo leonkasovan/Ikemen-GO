@@ -437,7 +437,8 @@ func (s *System) init(w, h int32) *lua.LState {
 	// So now that we have a window we add a icon.
 	if len(s.cfg.Config.WindowIcon) > 0 {
 		// First we initialize arrays.
-		var f = make([]io.ReadCloser, len(s.cfg.Config.WindowIcon))
+		// var f = make([]io.ReadCloser, len(s.cfg.Config.WindowIcon))
+		var f io.ReadCloser
 		s.windowMainIcon = make([]image.Image, len(s.cfg.Config.WindowIcon))
 		// And then we load them.
 		for i, iconLocation := range s.cfg.Config.WindowIcon {
@@ -451,13 +452,14 @@ func (s *System) init(w, h int32) *lua.LState {
 					os.Chdir("../../../")
 				}
 			}
-			f[i] = physfs.OpenRead(iconLocation)
-			if f[i] == nil {
+			f = physfs.OpenRead(iconLocation)
+			if f == nil {
 				var dErr = "Icon file can not be found: " + iconLocation
 				ShowErrorDialog(dErr)
 				panic(Error(dErr))
 			}
-			s.windowMainIcon[i], _, err = image.Decode(f[i])
+			s.windowMainIcon[i], _, err = image.Decode(f)
+			f.Close()
 		}
 		s.window.SetIcon(s.windowMainIcon)
 		chk(err)
