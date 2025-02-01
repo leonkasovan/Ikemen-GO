@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
 	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
 )
 
@@ -13,7 +14,7 @@ import (
 var loLoaders = []LGFunction{loLoaderPreload, loLoaderLua}
 
 func loGetPath(env string, defpath string) string {
-	fmt.Printf("[loadlib.go] loGetPath env=%v defpath=%v\n", env, defpath)
+	// fmt.Printf("[loadlib.go] loGetPath env=%v defpath=%v\n", env, defpath)
 	path := os.Getenv(env)
 	if len(path) == 0 {
 		path = defpath
@@ -26,7 +27,7 @@ func loGetPath(env string, defpath string) string {
 		}
 		path = strings.Replace(path, "!", dir, -1)
 	}
-	fmt.Printf("[loadlib.go] loGetPath path=%v\n", path)
+	// fmt.Printf("[loadlib.go] loGetPath path=%v\n", path)
 	return path
 }
 
@@ -50,7 +51,7 @@ func loFindFile(L *LState, name, pname string) (string, string) {
 }
 
 func OpenPackage(L *LState) int {
-	fmt.Printf("[loadlib.go] OpenPackage LoadLibName=%v\n", LoadLibName)
+	// fmt.Printf("[loadlib.go] OpenPackage LoadLibName=%v\n", LoadLibName)
 	packagemod := L.RegisterModule(LoadLibName, loFuncs)
 
 	L.SetField(packagemod, "preload", L.NewTable())

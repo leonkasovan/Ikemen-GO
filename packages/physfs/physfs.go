@@ -7,36 +7,14 @@ package physfs
 import "C"
 import (
 	"errors"
-	"fmt"
 	"io"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"unsafe"
 )
 
 type File C.PHYSFS_File
-
-func normalizePath(path string) string {
-	// Clean the path to remove any redundant elements
-	cleanPath := filepath.Clean(path)
-	fmt.Printf("path=%v cleanPath=%v\n", path, cleanPath)
-
-	// Split the path into components
-	components := strings.Split(cleanPath, string(filepath.Separator))
-
-	// Remove leading ".." or "." components
-	var normalizedComponents []string
-	for _, component := range components {
-		if component != ".." && component != "." {
-			normalizedComponents = append(normalizedComponents, component)
-		}
-	}
-
-	// Join the components back into a single path
-	normalizedPath := filepath.Join(normalizedComponents...)
-
-	return normalizedPath
-}
 
 func (f *File) Read(p []byte) (n int, err error) {
 	n = int(C.PHYSFS_readBytes((*C.PHYSFS_File)(f), unsafe.Pointer(&p[0]), C.PHYSFS_uint64(len(p))))
@@ -126,24 +104,33 @@ func Unmount(archive string) bool {
 
 // OpenRead opens a file for reading.
 func OpenRead(filename string) *File {
-	// fmt.Printf("[physfs] OpenRead(%v) [%v]\n", filename, filepath.Clean(filename))
-	cFilename := C.CString(filepath.Clean(filename))
+	filename = filepath.Clean(filename)
+	if runtime.GOOS == "windows" {
+		filename = strings.Replace(filename, "\\", "/", -1)
+	}
+	cFilename := C.CString(filename)
 	defer C.free(unsafe.Pointer(cFilename))
 	return (*File)(C.PHYSFS_openRead(cFilename))
 }
 
 // OpenWrite opens a file for writing.
 func OpenWrite(filename string) *File {
-	// fmt.Printf("[physfs] OpenWrite(%v) [%v]\n", filename, filepath.Clean(filename))
-	cFilename := C.CString(filepath.Clean(filename))
+	filename = filepath.Clean(filename)
+	if runtime.GOOS == "windows" {
+		filename = strings.Replace(filename, "\\", "/", -1)
+	}
+	cFilename := C.CString(filename)
 	defer C.free(unsafe.Pointer(cFilename))
 	return (*File)(C.PHYSFS_openWrite(cFilename))
 }
 
 // OpenAppend opens a file for appending.
 func OpenAppend(filename string) *File {
-	fmt.Printf("[physfs] OpenAppend(%v) [%v]\n", filename, filepath.Clean(filename))
-	cFilename := C.CString(filepath.Clean(filename))
+	filename = filepath.Clean(filename)
+	if runtime.GOOS == "windows" {
+		filename = strings.Replace(filename, "\\", "/", -1)
+	}
+	cFilename := C.CString(filename)
 	defer C.free(unsafe.Pointer(cFilename))
 	return (*File)(C.PHYSFS_openAppend(cFilename))
 }
@@ -155,6 +142,10 @@ func Close(f *File) {
 
 // Exists checks if a file/directory exists.
 func Exists(filename string) bool {
+	filename = filepath.Clean(filename)
+	if runtime.GOOS == "windows" {
+		filename = strings.Replace(filename, "\\", "/", -1)
+	}
 	cFilename := C.CString(filename)
 	defer C.free(unsafe.Pointer(cFilename))
 	return C.PHYSFS_exists(cFilename) != 0
@@ -162,7 +153,12 @@ func Exists(filename string) bool {
 
 // Exists checks if a file exists (and not a directory).
 func FileExist(filename string) bool {
+	// fmt.Printf("[packages\\physfs\\physfs.go] physfs.FileExist: %v\n", filename)
 	var stat C.PHYSFS_Stat
+	filename = filepath.Clean(filename)
+	if runtime.GOOS == "windows" {
+		filename = strings.Replace(filename, "\\", "/", -1)
+	}
 	cFilename := C.CString(filename)
 	defer C.free(unsafe.Pointer(cFilename))
 
@@ -178,6 +174,10 @@ func FileExist(filename string) bool {
 // Exists checks if a directory exists (and not a file).
 func DirExists(filename string) bool {
 	var stat C.PHYSFS_Stat
+	filename = filepath.Clean(filename)
+	if runtime.GOOS == "windows" {
+		filename = strings.Replace(filename, "\\", "/", -1)
+	}
 	cFilename := C.CString(filename)
 	defer C.free(unsafe.Pointer(cFilename))
 
@@ -189,6 +189,10 @@ func DirExists(filename string) bool {
 
 // SetWriteDir sets the write directory.
 func SetWriteDir(newDir string) bool {
+	newDir = filepath.Clean(newDir)
+	if runtime.GOOS == "windows" {
+		newDir = strings.Replace(newDir, "\\", "/", -1)
+	}
 	cNewDir := C.CString(newDir)
 	defer C.free(unsafe.Pointer(cNewDir))
 	return C.PHYSFS_setWriteDir(cNewDir) != 0
@@ -242,7 +246,6 @@ func GetDirSeparator() string {
 
 // ReadFile reads the content of the file and returns it as a byte slice.
 func ReadFile(filename string) ([]byte, error) {
-	// fmt.Printf("physfs.ReadFile(%v)\n", filepath.Clean(filename))
 	file := OpenRead(filename)
 	if file == nil {
 		return nil, errors.New("failed to open file")
@@ -300,9 +303,11 @@ type FileInfo struct {
 
 // Stat retrieves information about a file.
 func Stat(filename string) (*FileInfo, error) {
-	filename = filepath.Clean(filename)
-	fmt.Printf("[physfs.go] Stat(%v)\n", filename)
 	var stat C.PHYSFS_Stat
+	filename = filepath.Clean(filename)
+	if runtime.GOOS == "windows" {
+		filename = strings.Replace(filename, "\\", "/", -1)
+	}
 	cFilename := C.CString(filename)
 	defer C.free(unsafe.Pointer(cFilename))
 
@@ -337,4 +342,9 @@ func IsDirectory(path string) (bool, error) {
 // GetError returns the last error message.
 func GetError() string {
 	return C.GoString(C.PHYSFS_getErrorByCode(C.PHYSFS_getLastErrorCode()))
+}
+
+// PHYSFS_getBaseDir returns the base directory.
+func GetBaseDir() string {
+	return C.GoString(C.PHYSFS_getBaseDir())
 }

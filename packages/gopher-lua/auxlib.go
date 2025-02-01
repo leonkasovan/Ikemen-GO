@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
 	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
 )
 
@@ -287,7 +288,7 @@ func (ls *LState) FindTable(obj *LTable, n string, size int) LValue {
 /* register operations {{{ */
 
 func (ls *LState) RegisterModule(name string, funcs map[string]LGFunction) LValue {
-	fmt.Printf("[auxlib.go] RegisterModule name=%v\n", name)
+	// fmt.Printf("[auxlib.go] RegisterModule name=%v\n", name)
 	tb := ls.FindTable(ls.Get(RegistryIndex).(*LTable), "_LOADED", 1)
 	mod := ls.GetField(tb, name)
 	if mod.Type() != LTTable {

@@ -11,6 +11,7 @@ import (
 	"os"
 	"runtime"
 	"unsafe"
+
 	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
 )
 

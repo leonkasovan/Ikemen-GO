@@ -34,7 +34,7 @@ type Section struct {
 }
 
 func newSection(f *File, name string) *Section {
-	fmt.Printf("[section.go] newSection name: %s\n", name)
+	// fmt.Printf("[section.go] newSection name: %s\n", name)
 	return &Section{
 		f:        f,
 		name:     name,

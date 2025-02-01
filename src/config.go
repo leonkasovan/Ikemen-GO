@@ -242,7 +242,7 @@ func loadConfig(def string, is_mugen_game bool) (*Config, error) {
 	// Load the INI file
 	var iniFile *ini.File
 	var err error
-	fmt.Printf("[src/config.go] def=%v\n", def)
+	// fmt.Printf("[src/config.go] def=%v\n", def)
 	if physfs.Exists(def) {
 		iniFile, err = ini.LoadSources(options, defaultConfig, def)
 	} else {

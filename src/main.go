@@ -18,8 +18,8 @@ import (
 	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
 )
 
-var Version = "development"
-var BuildTime = ""
+var Version = "eXtra"
+var BuildTime = "20250201"
 
 //go:embed assets.zip
 var assetsZip []byte
@@ -408,18 +408,16 @@ func chkEX(err error, txt string, crash bool) bool {
 func createLog(p string) *physfs.File {
 	f := physfs.OpenWrite(p)
 	if f == nil {
-		fmt.Println("Error: open log file %v\n", p)
+		fmt.Printf("Error: open log file %v\n", p)
 		os.Exit(-1)
 	}
 	return f
 }
-func closeLog(f *physfs.File) {
-	f.Close()
-}
 
 func main() {
+	fmt.Printf("\nIkemen GO! %v %v\n", Version, BuildTime)
 	if !physfs.Init(os.Args[0]) {
-		fmt.Println("Error: initialize file system\n")
+		fmt.Println("Error: initialize file system")
 		return
 	}
 	defer physfs.Deinit()
@@ -442,15 +440,15 @@ func main() {
 	}
 
 	// Mount the current directory
-	currentDir := path.Dir(os.Args[0])
+	currentDir, _ := os.Getwd()
 	if !physfs.Mount(currentDir, "/", 1) {
-		fmt.Printf("Mounting regular directory [FAIL]\n")
+		fmt.Printf("Mounting directory \"%v\" [FAIL]\n", currentDir)
 	} else {
-		fmt.Printf("Mounting regular directory [OK]\n")
+		fmt.Printf("Mounting directory \"%v\" [OK]\n", currentDir)
 	}
 
 	// Set Write Directory
-	physfs.SetWriteDir(".")
+	physfs.SetWriteDir(currentDir)
 
 	is_mugen_game := false
 	fmt.Printf("Ikemen running on OS=[%v] ARCH=[%v]\n", runtime.GOOS, runtime.GOARCH)
@@ -629,10 +627,10 @@ func main() {
 
 	// Unmount current directory
 	if !physfs.Unmount(currentDir) {
-		fmt.Printf("Unmounting regular directory [FAIL]\n")
+		fmt.Printf("Unmounting directory \"%v\" [FAIL]\n", currentDir)
 		fmt.Println(physfs.GetError())
 	} else {
-		fmt.Printf("Unmounting regular directory [OK]\n")
+		fmt.Printf("Unmounting directory \"%v\" [OK]\n", currentDir)
 	}
 
 	// Find zip files and unmount it

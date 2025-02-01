@@ -872,11 +872,8 @@ static int sanitizePlatformIndependentPath(const char* src, char* dst) {
     prev = dst;
     do {
         ch = *(src++);
-#if defined(WIN32) || defined(_WIN32) || defined(__OS2__) || defined(__NT__) || defined(__WIN32__) || defined(__WINDOWS__)
-        if (ch == ':')  /* illegal chars in a physfs path. */
-#else            
+
         if ((ch == ':') || (ch == '\\'))  /* illegal chars in a physfs path. */
-#endif
             BAIL(PHYSFS_ERR_BAD_FILENAME, 0);
 
         if (ch == '/')   /* path separator. */
@@ -939,7 +936,7 @@ static int partOfMountPoint(DirHandle* h, char* fname) {
     if ((len + 1) == mntpntlen)
         return 0;
 
-    rc = strncmp(fname, h->mountPoint, len); /* !!! FIXME: case insensitive? */
+    rc = strnicmp(fname, h->mountPoint, len); /* case insensitive comparison */
     if (rc != 0)
         return 0;  /* not a match. */
 
@@ -1938,7 +1935,7 @@ static int verifyPath(DirHandle* h, char** _fname, int allowMissing) {
         /* not under the mountpoint, so skip this archive. */
         BAIL_IF(len < mntpntlen - 1, PHYSFS_ERR_NOT_FOUND, 0);
         /* !!! FIXME: Case insensitive? */
-        retval = strncmp(h->mountPoint, fname, mntpntlen - 1);
+        retval = strnicmp(h->mountPoint, fname, mntpntlen - 1);
         BAIL_IF(retval != 0, PHYSFS_ERR_NOT_FOUND, 0);
         if (len > mntpntlen - 1)  /* corner case... */
             BAIL_IF(fname[mntpntlen - 1] != '/', PHYSFS_ERR_NOT_FOUND, 0);

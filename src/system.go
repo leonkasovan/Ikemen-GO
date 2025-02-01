@@ -351,7 +351,7 @@ func (s *System) init(w, h int32) *lua.LState {
 	}
 
 	if n_gamepads == 0 {
-		fmt.Println("No gamepads found. Using only keyboard.\n")
+		fmt.Println("No gamepads found. Using only keyboard.")
 	}
 
 	// Correct the joystick mappings (macOS)
@@ -3243,13 +3243,17 @@ func (l *Loader) loadChar(pn int) int {
 		// Mugen compatibility mode indicator
 		if sys.cgi[pn].ikemenver[0] == 0 && sys.cgi[pn].ikemenver[1] == 0 {
 			if sys.cgi[pn].mugenver[0] == 1 && sys.cgi[pn].mugenver[1] == 1 {
-				sys.appendToConsole("Using Mugen 1.1 compatibility mode.")
+				sys.appendToConsole("Using Mugen 1.1 char compatibility mode.")
+				fmt.Println("Using Mugen 1.1 char compatibility mode.")
 			} else if sys.cgi[pn].mugenver[0] == 1 && sys.cgi[pn].mugenver[1] == 0 {
-				sys.appendToConsole("Using Mugen 1.0 compatibility mode.")
+				sys.appendToConsole("Using Mugen 1.0 char compatibility mode.")
+				fmt.Println("Using Mugen 1.0 char compatibility mode.")
 			} else if sys.cgi[pn].mugenver[0] != 1 {
-				sys.appendToConsole("Using WinMugen compatibility mode.")
+				sys.appendToConsole("Using WinMugen char compatibility mode.")
+				fmt.Println("Using WinMugen char compatibility mode.")
 			} else {
 				sys.appendToConsole("Character with unknown engine version.")
+				fmt.Println("Character with unknown engine version.")
 			}
 		}
 	}()
@@ -3307,18 +3311,18 @@ func (l *Loader) loadChar(pn int) int {
 	if sys.cgi[pn].sff == nil {
 		if l.err = p.load(cdef); l.err != nil {
 			sys.chars[pn] = nil
-			tstr = fmt.Sprintf("WARNING: Failed to load new char: %v", cdef)
+			fmt.Printf("WARNING: Failed to load new char: %v\n", cdef)
 			return -1
 		}
 		if sys.cgi[pn].states, l.err =
 			newCompiler().Compile(p.playerNo, cdef, p.gi().constants); l.err != nil {
 			sys.chars[pn] = nil
-			tstr = fmt.Sprintf("WARNING: Failed to compile new char states: %v", cdef)
+			fmt.Printf("WARNING: Failed to compile new char states: %v\n", cdef)
 			return -1
 		}
-		tstr = fmt.Sprintf("New char loaded: %v", cdef)
+		fmt.Printf("New char loaded: %v\n", cdef)
 	} else {
-		tstr = fmt.Sprintf("Cached char loaded: %v", cdef)
+		fmt.Printf("Cached char loaded: %v\n", cdef)
 	}
 
 	// Get palette number from select screen choice
@@ -3381,18 +3385,18 @@ func (l *Loader) loadAttachedChar(pn int) int {
 	if sys.cgi[pn].sff == nil {
 		if l.err = p.load(cdef); l.err != nil {
 			sys.chars[pn] = nil
-			tstr = fmt.Sprintf("WARNING: Failed to load new attached char: %v", cdef)
+			fmt.Printf("WARNING: Failed to load new attached char: %v\n", cdef)
 			return -1
 		}
 		if sys.cgi[pn].states, l.err =
 			newCompiler().Compile(p.playerNo, cdef, p.gi().constants); l.err != nil {
 			sys.chars[pn] = nil
-			tstr = fmt.Sprintf("WARNING: Failed to compile new attached char states: %v", cdef)
+			fmt.Printf("WARNING: Failed to compile new attached char states: %v\n", cdef)
 			return -1
 		}
-		tstr = fmt.Sprintf("New attached char loaded: %v", cdef)
+		fmt.Printf("New attached char loaded: %v\n", cdef)
 	} else {
-		tstr = fmt.Sprintf("Cached attached char loaded: %v", cdef)
+		fmt.Printf("Cached attached char loaded: %v\n", cdef)
 	}
 	sys.cgi[pn].palno = 1
 	return 1
@@ -3408,13 +3412,17 @@ func (l *Loader) loadStage() bool {
 				// Mugen compatibility mode indicator
 				if sys.stage.ikemenver[0] == 0 && sys.stage.ikemenver[1] == 0 {
 					if sys.stage.mugenver[0] == 1 && sys.stage.mugenver[1] == 1 {
-						sys.appendToConsole("Using Mugen 1.1 compatibility mode.")
+						sys.appendToConsole("Using Mugen 1.1 stage compatibility mode.")
+						fmt.Println("Using Mugen 1.1 stage compatibility mode.")
 					} else if sys.stage.mugenver[0] == 1 && sys.stage.mugenver[1] == 0 {
-						sys.appendToConsole("Using Mugen 1.0 compatibility mode.")
+						sys.appendToConsole("Using Mugen 1.0 stage compatibility mode.")
+						fmt.Println("Using Mugen 1.0 stage compatibility mode.")
 					} else if sys.stage.mugenver[0] != 1 {
-						sys.appendToConsole("Using WinMugen compatibility mode.")
+						sys.appendToConsole("Using WinMugen stage compatibility mode.")
+						fmt.Println("Using WinMugen stage compatibility mode.")
 					} else {
 						sys.appendToConsole("Stage with unknown engine version.")
+						fmt.Println("Stage with unknown engine version.")
 					}
 				}
 				// Warn when camera boundaries are smaller than player boundaries
@@ -3434,15 +3442,14 @@ func (l *Loader) loadStage() bool {
 			def = sys.sel.sdefOverwrite
 		}
 		if sys.stage != nil && sys.stage.def == def && sys.stage.mainstage && !sys.stage.reload {
-			tstr = fmt.Sprintf("Cached stage loaded: %v", def)
+			fmt.Printf("\nCached stage loaded: %v\n", def)
 			return true
 		}
 		sys.stageList = make(map[int32]*Stage)
 		sys.stageLoop = false
 		sys.stageList[0], l.err = loadStage(def, true)
 		sys.stage = sys.stageList[0]
-		tstr = fmt.Sprintf("New stage loaded: %v", def)
-		fmt.Println(tstr)
+		fmt.Printf("\nNew stage loaded: %v\n", def)
 	}
 	return l.err == nil
 }
