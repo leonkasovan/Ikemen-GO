@@ -1,15 +1,15 @@
 //go:build gles2
+
 package glfont
 
 import (
 	"fmt"
 	"image"
 	"image/draw"
-	"io"
-	"io/ioutil"
 
 	"github.com/golang/freetype"
 	"github.com/golang/freetype/truetype"
+	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
 	gl "github.com/leonkasovan/gl/v3.1/gles2"
 	"golang.org/x/image/font"
 	"golang.org/x/image/math/fixed"
@@ -121,8 +121,8 @@ func (f *Font_GLES) GenerateGlyphs(low, high rune) error {
 }
 
 // LoadTrueTypeFont builds OpenGL buffers and glyph textures based on a ttf file
-func (r *FontRenderer_GLES) LoadTrueTypeFont(program uint32, reader io.Reader, scale int32, low, high rune, dir Direction) (Font, error) {
-	data, err := ioutil.ReadAll(reader)
+func (r *FontRenderer_GLES) LoadTrueTypeFont(program uint32, reader *physfs.File, scale int32, low, high rune, dir Direction) (Font, error) {
+	data, err := physfs.ReadAll(reader)
 	if err != nil {
 		return nil, err
 	}

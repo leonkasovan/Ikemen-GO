@@ -13,7 +13,7 @@ import (
 func (r *FontRenderer_GLES) LoadFont(file string, scale int32, windowWidth int, windowHeight int) (Font, error) {
 	fd := physfs.OpenRead(file)
 	if fd == nil {
-		return nil, fmt.Errorf("Can not open font file %s", file)
+		return nil, fmt.Errorf("can not open font file %s", file)
 	}
 	defer fd.Close()
 

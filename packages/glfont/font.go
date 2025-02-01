@@ -1,17 +1,19 @@
 //go:build !gles2
+
 package glfont
 
 import (
 	"fmt"
-	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
+
 	"github.com/go-gl/gl/v2.1/gl"
+	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
 )
 
 // LoadFont loads the specified font at the given scale.
 func (r *FontRenderer_GL21) LoadFont(file string, scale int32, windowWidth int, windowHeight int) (Font, error) {
 	fd := physfs.OpenRead(file)
 	if fd == nil {
-		return nil, fmt.Errorf("Can not open font file %s", file)
+		return nil, fmt.Errorf("can not open font file %s", file)
 	}
 	defer fd.Close()
 
