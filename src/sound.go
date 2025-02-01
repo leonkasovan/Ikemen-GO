@@ -183,6 +183,10 @@ func newBgm() *Bgm {
 }
 
 func (bgm *Bgm) Open(filename string, loop, bgmVolume, bgmLoopStart, bgmLoopEnd, startPosition int, freqmul float32, loopcount int) {
+	if bgm.f != nil {
+		bgm.f.Close()
+		bgm.f = nil
+	}
 	bgm.filename = filename
 	bgm.loop = loop
 	bgm.bgmVolume = bgmVolume

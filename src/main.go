@@ -625,6 +625,9 @@ func main() {
 		no += 1
 	}
 
+	// Mute and close BGM
+	sys.bgm.Open("", 1, 100, 0, 0, 0, 1.0, 1)
+
 	// Unmount current directory
 	if !physfs.Unmount(currentDir) {
 		fmt.Printf("Unmounting directory \"%v\" [FAIL]\n", currentDir)
