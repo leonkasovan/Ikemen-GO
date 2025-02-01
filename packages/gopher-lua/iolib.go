@@ -8,21 +8,20 @@ import (
 	"os"
 	"os/exec"
 	"syscall"
-
 	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
 )
 
 var ioFuncs = map[string]LGFunction{
-	"close":  ioClose,
-	"flush":  ioFlush,
-	"lines":  ioLines,
-	"input":  ioInput,
-	"output": ioOutput,
-	"open":   ioOpenFile,
-	"popen":  ioPopen,
-	"read":   ioRead,
-	"type":   ioType,
-	"write":  ioWrite,
+	"close":   ioClose,
+	"flush":   ioFlush,
+	"lines":   ioLines,
+	"input":   ioInput,
+	"output":  ioOutput,
+	"open":    ioOpenFile,
+	"popen":   ioPopen,
+	"read":    ioRead,
+	"type":    ioType,
+	"write":   ioWrite,
 }
 
 const lFileClass = "FILE*"
@@ -64,12 +63,12 @@ func errorIfFileIsClosed(L *LState, file *lFile) {
 }
 
 func newFile(L *LState, file *physfs.File, path string, flag int, perm os.FileMode, writable, readable bool) (*LUserData, error) {
-	// fmt.Printf("[iolib.go] newFile file=%v path=%v flag=%v perm=%v writable=%v readable=%v\n", file, path, flag, perm, writable, readable)
+	fmt.Printf("[iolib.go] newFile file=%v path=%v flag=%v perm=%v writable=%v readable=%v\n", file, path, flag, perm, writable, readable)
 	ud := L.NewUserData()
 	if file == nil {
-		if flag == os.O_RDONLY {
+		if (flag == os.O_RDONLY) {
 			file = physfs.OpenRead(path)
-			// fmt.Printf("[iolib.go] newFile O_RDONLY file=%v mode=%v\n", file, (flag & os.O_RDONLY))
+			fmt.Printf("[iolib.go] newFile O_RDONLY file=%v mode=%v\n", file, (flag & os.O_RDONLY))
 			if file == nil {
 				return nil, errors.New("failed to open file for reading")
 			}
@@ -254,7 +253,7 @@ func fileWriteAux(L *LState, file *lFile, idx int) int {
 	for i := idx; i <= top; i++ {
 		L.CheckTypes(i, LTNumber, LTString)
 		s := LVAsString(L.Get(i))
-		if _, err = out.WriteString(s); err != nil {
+		if _, err = out.Write(([]byte)(s)); err != nil {
 			goto errreturn
 		}
 	}
@@ -642,26 +641,26 @@ func ioOpenFile(L *LState) int {
 	readable := true
 	fmt.Printf("[iolib.go] ioOpenFile path=%v option=%v\n", path, ioOpenOpions[L.CheckOption(2, ioOpenOpions)])
 	switch ioOpenOpions[L.CheckOption(2, ioOpenOpions)] {
-	case "r", "rb":
+	case "r", "rb", "r+", "rb+":
 		mode = os.O_RDONLY
 		writable = false
 		fmt.Printf("[iolib.go] mode=%v os.O_RDONLY=%v\n", mode, os.O_RDONLY)
-	case "w", "wb":
+	case "w", "wb", "w+", "wb+":
 		mode = os.O_WRONLY | os.O_TRUNC | os.O_CREATE
 		readable = false
 		fmt.Printf("[iolib.go] mode=%v os.O_WRONLY=%v os.O_TRUNC=%v os.O_CREATE=%v\n", mode, os.O_WRONLY, os.O_TRUNC, os.O_CREATE)
-	case "a", "ab":
+	case "a", "ab", "a+", "ab+":
 		mode = os.O_WRONLY | os.O_APPEND | os.O_CREATE
 		fmt.Printf("[iolib.go] mode=%v os.O_WRONLY=%v os.O_APPEND=%v os.O_CREATE=%v\n", mode, os.O_WRONLY, os.O_APPEND, os.O_CREATE)
-	case "r+", "rb+":
-		mode = os.O_RDWR
-		fmt.Printf("[iolib.go] mode=%v os.O_RDWR=%v\n", mode, os.O_RDWR)
-	case "w+", "wb+":
-		mode = os.O_RDWR | os.O_TRUNC | os.O_CREATE
-		fmt.Printf("[iolib.go] mode=%v os.O_RDWR=%v os.O_TRUNC=%v os.O_CREATE=%v\n", mode, os.O_RDWR, os.O_TRUNC, os.O_CREATE)
-	case "a+", "ab+":
-		mode = os.O_APPEND | os.O_RDWR | os.O_CREATE
-		fmt.Printf("[iolib.go] mode=%v os.O_APPEND=%v os.O_RDWR=%v os.O_CREATE=%v\n", mode, os.O_APPEND, os.O_RDWR, os.O_CREATE)
+	// case "r+", "rb+":
+	// 	mode = os.O_RDWR
+	// 	fmt.Printf("[iolib.go] mode=%v os.O_RDWR=%v\n", mode, os.O_RDWR)
+	// case "w+", "wb+":
+	// 	mode = os.O_RDWR | os.O_TRUNC | os.O_CREATE
+	// 	fmt.Printf("[iolib.go] mode=%v os.O_RDWR=%v os.O_TRUNC=%v os.O_CREATE=%v\n", mode, os.O_RDWR, os.O_TRUNC, os.O_CREATE)
+	// case "a+", "ab+":
+	// 	mode = os.O_APPEND | os.O_RDWR | os.O_CREATE
+	// 	fmt.Printf("[iolib.go] mode=%v os.O_APPEND=%v os.O_RDWR=%v os.O_CREATE=%v\n", mode, os.O_APPEND, os.O_RDWR, os.O_CREATE)
 	}
 	file, err := newFile(L, nil, path, mode, os.FileMode(perm), writable, readable)
 	if err != nil {

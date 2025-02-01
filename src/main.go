@@ -189,7 +189,7 @@ func updateCharInSelectDef(fname string) error {
 	file2 := physfs.OpenWrite(filename + ".update")
 	if file2 == nil {
 		file.Close()
-		return fmt.Errorf("Error: can't open.write file %v\n", filename+".update")
+		return fmt.Errorf("Error: can't open.write file %v", filename+".update")
 	}
 
 	// Create a buffered writer
@@ -284,14 +284,14 @@ func updateStageInSelectDef(fname string) error {
 	filename := fname
 	file := physfs.OpenRead(filename)
 	if file == nil {
-		return fmt.Errorf("Error: can't open.read file %v\n", filename)
+		return fmt.Errorf("Error: can't open.read file %v", filename)
 	}
 
 	// Open or create the file
 	file2 := physfs.OpenWrite(filename + ".update")
-	if file2 != nil {
+	if file2 == nil {
 		file.Close()
-		return fmt.Errorf("Error: can't open.write file %v\n", filename)
+		return fmt.Errorf("Error: can't open.write file %v", filename)
 	}
 
 	// Create a buffered writer

@@ -165,6 +165,7 @@ func (b *StreamLooper) Seek(p int) error {
 
 type Bgm struct {
 	filename   string
+	f 	 *physfs.File
 	bgmVolume  int
 	volRestore int
 	loop       int
@@ -193,26 +194,30 @@ func (bgm *Bgm) Open(filename string, loop, bgmVolume, bgmLoopStart, bgmLoopEnd,
 		speaker.Unlock()
 	}
 	// Special value "" is used to stop music
-	if filename == "" {
+	if bgm.filename == "" {
+		if bgm.f != nil {
+			bgm.f.Close()
+			bgm.f = nil
+		}
 		return
 	}
 	fmt.Printf("[src/sound.go] bgm.Open physfs.OpenRead(%v)\n", bgm.filename)
-	f := physfs.OpenRead(filename)
-	if f == nil {
-		sys.errLog.Printf("Failed to open bgm: %v", filename)
+	bgm.f = physfs.OpenRead(bgm.filename)
+	if bgm.f == nil {
+		sys.errLog.Printf("Failed to open bgm: %v", bgm.filename)
 		return
 	}
 
 	var format beep.Format
 	var err error
 	if HasExtension(bgm.filename, ".ogg") {
-		bgm.streamer, format, err = vorbis.Decode(f)
+		bgm.streamer, format, err = vorbis.Decode(bgm.f)
 		bgm.format = "ogg"
 	} else if HasExtension(bgm.filename, ".mp3") {
-		bgm.streamer, format, err = mp3.Decode(f)
+		bgm.streamer, format, err = mp3.Decode(bgm.f)
 		bgm.format = "mp3"
 	} else if HasExtension(bgm.filename, ".wav") {
-		bgm.streamer, format, err = wav.Decode(f)
+		bgm.streamer, format, err = wav.Decode(bgm.f)
 		bgm.format = "wav"
 		// TODO: Reactivate FLAC support. Check that seeking/looping works correctly.
 		//} else if HasExtension(bgm.filename, ".flac") {
@@ -222,7 +227,8 @@ func (bgm *Bgm) Open(filename string, loop, bgmVolume, bgmLoopStart, bgmLoopEnd,
 		err = Error(fmt.Sprintf("unsupported file extension: %v", bgm.filename))
 	}
 	if err != nil {
-		f.Close()
+		bgm.f.Close()
+		bgm.f = nil
 		sys.errLog.Printf("Failed to load bgm: %v", err)
 		return
 	}
