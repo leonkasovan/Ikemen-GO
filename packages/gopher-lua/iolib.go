@@ -8,20 +8,21 @@ import (
 	"os"
 	"os/exec"
 	"syscall"
+
 	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
 )
 
 var ioFuncs = map[string]LGFunction{
-	"close":   ioClose,
-	"flush":   ioFlush,
-	"lines":   ioLines,
-	"input":   ioInput,
-	"output":  ioOutput,
-	"open":    ioOpenFile,
-	"popen":   ioPopen,
-	"read":    ioRead,
-	"type":    ioType,
-	"write":   ioWrite,
+	"close":  ioClose,
+	"flush":  ioFlush,
+	"lines":  ioLines,
+	"input":  ioInput,
+	"output": ioOutput,
+	"open":   ioOpenFile,
+	"popen":  ioPopen,
+	"read":   ioRead,
+	"type":   ioType,
+	"write":  ioWrite,
 }
 
 const lFileClass = "FILE*"
@@ -63,12 +64,12 @@ func errorIfFileIsClosed(L *LState, file *lFile) {
 }
 
 func newFile(L *LState, file *physfs.File, path string, flag int, perm os.FileMode, writable, readable bool) (*LUserData, error) {
-	fmt.Printf("[iolib.go] newFile file=%v path=%v flag=%v perm=%v writable=%v readable=%v\n", file, path, flag, perm, writable, readable)
+	// fmt.Printf("[iolib.go] newFile file=%v path=%v flag=%v perm=%v writable=%v readable=%v\n", file, path, flag, perm, writable, readable)
 	ud := L.NewUserData()
 	if file == nil {
-		if (flag == os.O_RDONLY) {
+		if flag == os.O_RDONLY {
 			file = physfs.OpenRead(path)
-			fmt.Printf("[iolib.go] newFile O_RDONLY file=%v mode=%v\n", file, (flag & os.O_RDONLY))
+			// fmt.Printf("[iolib.go] newFile O_RDONLY file=%v mode=%v\n", file, (flag & os.O_RDONLY))
 			if file == nil {
 				return nil, errors.New("failed to open file for reading")
 			}
@@ -248,12 +249,12 @@ func fileWriteAux(L *LState, file *lFile, idx int) int {
 	}
 	errorIfFileIsClosed(L, file)
 	top := L.GetTop()
-	out := file.writer
+	out := file.fp
 	var err error
 	for i := idx; i <= top; i++ {
 		L.CheckTypes(i, LTNumber, LTString)
 		s := LVAsString(L.Get(i))
-		if _, err = out.Write(unsafeFastStringToReadOnlyBytes(s)); err != nil {
+		if _, err = out.WriteString(s); err != nil {
 			goto errreturn
 		}
 	}
