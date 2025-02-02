@@ -81,9 +81,9 @@ function f_strsplit(delimiter, text)
 	return list
 end
 
-function f_checkFile(file, msg, dirs)
+function f_checkFile(file, msg, dirs, list_files)
 	local found_in = ""
-	if #file == 0 then 
+	if #file == 0 then
 		status = "n/a"
 	else
 		if dirs == nil then
@@ -101,10 +101,36 @@ function f_checkFile(file, msg, dirs)
 		end
 	end
 	if #found_in > 0 then
-		print(string.format('%s: %s(%s) [%s]', msg, file, found_in, status))
+		print(string.format('%s = %s(%s) [%s]', msg, file, found_in, status))
 	else
-		print(string.format('%s: %s [%s]', msg, file, status))
+		print(string.format('%s = %s [%s]', msg, file, status))
 	end
+
+	if status == "FAIL" and list_files then
+		print("\tDEBUG", file)
+		local start_index, end_index
+		for k, v in ipairs(list_files) do
+			start_index, end_index = string.find(v:lower(), file:lower())
+			ss, ee = string.find(v, "SHINING")
+			if ss and ee then
+				print("\tDEBUG", v:lower(), file:lower())
+			end
+			if start_index and end_index then
+				return string.sub(v, start_index, end_index)
+			end
+		end
+	end
+	return nil
+end
+
+function f_listFiles(dirs)
+	files = {}
+	for i, dir in ipairs(dirs) do
+		for k, v in ipairs(getDirectoryFiles(dir)) do
+			table.insert(files, v)
+		end
+	end
+	return files
 end
 
 -------------------------------------------------------------------
@@ -201,7 +227,7 @@ for line in content:gmatch('([^\n]*)\n?') do
 				end
 				f_checkFile(motif[param], "[system.def] "..param)
 			end
-			
+
 		end
 	end
 end
@@ -249,7 +275,7 @@ for line in content:gmatch('[^\r\n]+') do
 		if lanChars then
 			row = 0
 			section = 1
-		else 
+		else
 			section = -1
 		end
 	elseif lineCase:match('^%s*%[%s*extrastages%s*%]') then
@@ -261,7 +287,7 @@ for line in content:gmatch('[^\r\n]+') do
 		if lanStages then
 			row = 0
 			section = 2
-		else 
+		else
 			section = -1
 		end
 	elseif lineCase:match('^%s*%[%s*options%s*%]') then
@@ -337,7 +363,7 @@ for line in content:gmatch('[^\r\n]+') do
 				local char_found
 				local c = f_strsplit(',', line)
 				local stripped_ch = c[1]:match("^%s*(.-)%s*$")
-				
+
 				if string.find(stripped_ch, ".def") then
 					char_found = searchFile(stripped_ch, {motifDir, "chars/"})
 				else
@@ -450,15 +476,19 @@ for i, ch in ipairs(chars_selection) do
 		local group
 		local charDir
 		local sep
-		
+
 		if string.find(ch, '\\') then
 			sep = '\\'
 		else
 			sep = '/'
 		end
 
-		for line in content:gmatch('([^\n]*)\n?') do
-			line = line:gsub('%s*;.*$', '')
+		--~ local file, err = io.open(ch..".txt", "w")
+		local file, err = io.open(ch, "w")
+		local modified_line = ""
+		local list_files = f_listFiles({"chars","data","sound"})
+		for src_line in content:gmatch('([^\n]*)\n?') do
+			line = src_line:gsub('%s*;.*$', '')
 			if line:match('^[^%g]*%s*%[.-%s*%]%s*$') then --matched [] group
 				line = line:match('%[(.-)%s*%]%s*$') --match text between []
 				line = line:gsub('[%. ]', '_') --change . and space to _
@@ -478,18 +508,34 @@ for i, ch in ipairs(chars_selection) do
 					value = value:gsub('^(%.[0-9])', '0%1') --add 0 before dot if missing at the beginning of matched string
 					value = value:gsub('([^0-9])(%.[0-9])', '%10%2') --add 0 before dot if missing anywhere else
 					value = value:gsub(',%s*$', '') --remove dummy ','
-					
+
 					if group == 'files' or group == 'arcade'then
+						local filepath
 						charDir = ch:match(".*"..sep)
-						-- print("value", value)
-						-- print("charDir", charDir)
-						-- f_checkFile(searchFile(value, {charDir, "chars/"}), "\t"..param)
-						f_checkFile(value, "\t"..param, {charDir, "chars"..sep, "data"..sep})
+						filepath = f_checkFile(value, "\t"..param, {charDir, "chars"..sep, "data"..sep}, list_files)
+						if filepath ~= nil then
+							modified_line = param .. " = " ..filepath
+						end
 					end
-					
+
 				end
 			end
+			if modified_line == "" then
+				if string.find(src_line, '\\') then
+					src_line = src_line:gsub('\\','/')
+					print("\t[FIXED] "..src_line)
+				end
+				file:write(src_line .. "\n")
+			else
+				if string.find(modified_line, '\\') then
+					modified_line = modified_line:gsub('\\','/')
+				end
+				print("\t"..modified_line.." [FIXED]")
+				file:write(modified_line .. "\n")
+			end
+			modified_line = ""
 		end
+		file:close()
 	end
 end
 
@@ -506,15 +552,19 @@ for index, stage in ipairs(stages_selection) do
 		local group
 		local stageDir
 		local sep
-		
+
 		if string.find(stage, '\\') then
 			sep = '\\'
 		else
 			sep = '/'
 		end
 
-		for line in content:gmatch('([^\n]*)\n?') do
-			line = line:gsub('%s*;.*$', '')
+		--~ local file, err = io.open(stage..".txt", "w")
+		local file, err = io.open(stage, "w")
+		local modified_line = ""
+		local list_files = f_listFiles({"stages","sound","data"})
+		for src_line in content:gmatch('([^\n]*)\n?') do
+			line = src_line:gsub('%s*;.*$', '')
 			if line:match('^[^%g]*%s*%[.-%s*%]%s*$') then --matched [] group
 				line = line:match('%[(.-)%s*%]%s*$') --match text between []
 				line = line:gsub('[%. ]', '_') --change . and space to _
@@ -533,11 +583,29 @@ for index, stage in ipairs(stages_selection) do
 					value = value:gsub('"', '') --remove brackets from value
 					stageDir = stage:match(".*"..sep)
 					if param:lower() == "spr" or param:lower() == "model" or param:lower() == "bgmusic" then
-						f_checkFile(value, "\t"..param, {stageDir, "stages"..sep, "data"..sep, "sound"..sep})
+						filepath = f_checkFile(value, "\t"..param, {stageDir, "stages"..sep, "data"..sep, "sound"..sep}, list_files)
+						if filepath ~= nil then
+							modified_line = param .. " = " ..filepath
+						end
 					end
 				end
 			end
+			if modified_line == "" then
+				if string.find(src_line, '\\') then
+					src_line = src_line:gsub('\\','/')
+					print("\t[FIXED] "..src_line)
+				end
+				file:write(src_line .. "\n")
+			else
+				if string.find(modified_line, '\\') then
+					modified_line = modified_line:gsub('\\','/')
+				end
+				print("\t"..modified_line.." [FIXED]")
+				file:write(modified_line .. "\n")
+			end
+			modified_line = ""
 		end
+		file:close()
 	end
 end
 
@@ -548,43 +616,43 @@ for index, font in ipairs(fonts_selection) do
 	if string.find(font, '.def') then
 		content = f_fileRead(font)
 		if content == nil then
-			print("[ERROR] Can not read chars "..font)
-			return
-		end
-		print("[system.def] "..font)
-
-		local group
-		local fontDir
-		local sep
-		
-		if string.find(font, '\\') then
-			sep = '\\'
+			print("[ERROR] Can not read font "..font)
 		else
-			sep = '/'
-		end
+			print("[system.def] "..font)
 
-		for line in content:gmatch('([^\n]*)\n?') do
-			line = line:gsub('%s*;.*$', '')
-			if line:match('^[^%g]*%s*%[.-%s*%]%s*$') then --matched [] group
-				line = line:match('%[(.-)%s*%]%s*$') --match text between []
-				line = line:gsub('[%. ]', '_') --change . and space to _
-				group = tostring(line:lower())
-			else --matched non [] line
-				local param, value = line:match('^%s*([^=]-)%s*=%s*(.-)%s*$')
-				if param ~= nil then
-					param = param:gsub('[%. ]', '_') --change param . and space to _
-					if value ~= nil then --let's check if it's even a valid param
-						if value == '' then --text should remain empty
-							value = nil
+			local group
+			local fontDir
+			local sep
+
+			if string.find(font, '\\') then
+				sep = '\\'
+			else
+				sep = '/'
+			end
+
+			for line in content:gmatch('([^\n]*)\n?') do
+				line = line:gsub('%s*;.*$', '')
+				if line:match('^[^%g]*%s*%[.-%s*%]%s*$') then --matched [] group
+					line = line:match('%[(.-)%s*%]%s*$') --match text between []
+					line = line:gsub('[%. ]', '_') --change . and space to _
+					group = tostring(line:lower())
+				else --matched non [] line
+					local param, value = line:match('^%s*([^=]-)%s*=%s*(.-)%s*$')
+					if param ~= nil then
+						param = param:gsub('[%. ]', '_') --change param . and space to _
+						if value ~= nil then --let's check if it's even a valid param
+							if value == '' then --text should remain empty
+								value = nil
+							end
 						end
 					end
-				end
-				if param ~= nil and value ~= nil then --param = value pattern matched
-					param = param:lower()
-					value = value:gsub('"', '') --remove brackets from value
-					fontDir = font:match(".*"..sep)
-					if param == "file" then
-						f_checkFile(value, "\t"..param, {fontDir, "fonts"..sep, "data"..sep})
+					if param ~= nil and value ~= nil then --param = value pattern matched
+						param = param:lower()
+						value = value:gsub('"', '') --remove brackets from value
+						fontDir = font:match(".*"..sep)
+						if param == "file" then
+							f_checkFile(value, "\t"..param, {fontDir, "fonts"..sep, "data"..sep})
+						end
 					end
 				end
 			end
