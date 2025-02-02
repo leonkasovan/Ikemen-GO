@@ -696,6 +696,8 @@ Extra Options (by LeonKasovan):
 -validate               Validate game assets existance
 -fix                    Fix game assets naming (into lowercase)
 -install                Install default screenpack
+-allstage               Auto load all stages
+-allchar				Auto load all characters
 
 Debug Options:
 -nojoy                  Disables joysticks

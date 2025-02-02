@@ -2077,7 +2077,7 @@ for line in content:gmatch('[^\r\n]+') do
 		if lanChars then
 			row = 0
 			section = 1
-		else 
+		else
 			section = -1
 		end
 	elseif lineCase:match('^%s*%[%s*extrastages%s*%]') then
@@ -2087,7 +2087,7 @@ for line in content:gmatch('[^\r\n]+') do
 		if lanStages then
 			row = 0
 			section = 2
-		else 
+		else
 			section = -1
 		end
 	elseif lineCase:match('^%s*%[%s*options%s*%]') then
@@ -2113,6 +2113,20 @@ for line in content:gmatch('[^\r\n]+') do
 	elseif lineCase:match('^%s*%[%w+%]$') then
 		section = -1
 	elseif section == 1 then --[Characters]
+
+		-- skip loading characters from select.def if -allchar flag is present
+		if main.flags['-allchar'] ~= nil then
+			for key, char_def_file in ipairs(getDirectoryFiles('chars')) do
+				if char_def_file:lower():match('%.([^%.\\/]-)$') == 'def' then	-- filter only .def files
+					if main.t_charDef[char_def_file:lower()] == nil then
+						main.f_addChar(char_def_file:match('/.-/(.-)....$')..', random', true, true, false)
+					end
+				end
+			end
+			main.flags['-allchar'] = nil
+			section = -1
+		end
+
 		local csCol = (csCell % motif.select_info.columns) + 1
 		local csRow = math.floor(csCell / motif.select_info.columns) + 1
 		while not slot and motif.select_info['cell_' .. csCol .. '_' .. csRow .. '_skip'] == 1 do
@@ -2136,75 +2150,80 @@ for line in content:gmatch('[^\r\n]+') do
 			end
 		end
 	elseif section == 2 then --[ExtraStages]
-		--store 'unlock' param and get rid of everything that follows it
-		local unlock = ''
-		local hidden = 0 --TODO: temporary flag, won't be used once stage selection screen is ready
-		line = line:gsub(',%s*unlock%s*=%s*(.-)s*$', function(m1)
-			unlock = m1
-			hidden = 1
-			return ''
-		end)
-		--parse rest of the line
-		for i, c in ipairs(main.f_strsplit(',', line)) do --split using "," delimiter
-			c = c:gsub('^%s*(.-)%s*$', '%1')
-			if i == 1 then
-				row = main.f_addStage(c, hidden)
-				if row == nil then
-					break
-				end
-				table.insert(main.t_includeStage[1], row)
-				table.insert(main.t_includeStage[2], row)
-			elseif c:match('^music') then --musicX / musiclife / musicvictory
-				local bgmvolume, bgmloopstart, bgmloopend = 100, 0, 0
-				c = c:gsub('%s+([0-9%s]+)$', function(m1)
-					for i, c in ipairs(main.f_strsplit('%s+', m1)) do --split using whitespace delimiter
-						if i == 1 then
-							bgmvolume = tonumber(c)
-						elseif i == 2 then
-							bgmloopstart = tonumber(c)
-						elseif i == 3 then
-							bgmloopend = tonumber(c)
-						else
-							break
+		-- skip loading stages from select.def if -allstage flag is present
+		if main.flags['-allstage'] ~= nil then
+			print('\tskipping', line)
+		else
+			--store 'unlock' param and get rid of everything that follows it
+			local unlock = ''
+			local hidden = 0 --TODO: temporary flag, won't be used once stage selection screen is ready
+			line = line:gsub(',%s*unlock%s*=%s*(.-)s*$', function(m1)
+				unlock = m1
+				hidden = 1
+				return ''
+			end)
+			--parse rest of the line
+			for i, c in ipairs(main.f_strsplit(',', line)) do --split using "," delimiter
+				c = c:gsub('^%s*(.-)%s*$', '%1')
+				if i == 1 then
+					row = main.f_addStage(c, hidden)
+					if row == nil then
+						break
+					end
+					table.insert(main.t_includeStage[1], row)
+					table.insert(main.t_includeStage[2], row)
+				elseif c:match('^music') then --musicX / musiclife / musicvictory
+					local bgmvolume, bgmloopstart, bgmloopend = 100, 0, 0
+					c = c:gsub('%s+([0-9%s]+)$', function(m1)
+						for i, c in ipairs(main.f_strsplit('%s+', m1)) do --split using whitespace delimiter
+							if i == 1 then
+								bgmvolume = tonumber(c)
+							elseif i == 2 then
+								bgmloopstart = tonumber(c)
+							elseif i == 3 then
+								bgmloopend = tonumber(c)
+							else
+								break
+							end
+						end
+						return ''
+					end)
+					c = c:gsub('\\', '/')
+					local bgtype, round, bgmusic = c:match('^(music[a-z]*)([0-9]*)%s*=%s*(.-)%s*$')
+					if main.t_selStages[row][bgtype] == nil then main.t_selStages[row][bgtype] = {} end
+					local t_ref = main.t_selStages[row][bgtype]
+					if bgtype == 'music' or round ~= '' then
+						round = tonumber(round) or 1
+						if main.t_selStages[row][bgtype][round] == nil then main.t_selStages[row][bgtype][round] = {} end
+						t_ref = main.t_selStages[row][bgtype][round]
+					end
+					table.insert(t_ref, {bgmusic = bgmusic, bgmvolume = bgmvolume, bgmloopstart = bgmloopstart, bgmloopend = bgmloopend})
+				else
+					local param, value = c:match('^(.-)%s*=%s*(.-)$')
+					if param ~= nil and value ~= nil and param ~= '' and value ~= '' then
+						main.t_selStages[row][param] = tonumber(value)
+						--order (more than 1 order param can be set at the same time)
+						if param:match('order') then
+							if main.t_orderStages[main.t_selStages[row].order] == nil then
+								main.t_orderStages[main.t_selStages[row].order] = {}
+							end
+							table.insert(main.t_orderStages[main.t_selStages[row].order], row)
 						end
 					end
-					return ''
-				end)
-				c = c:gsub('\\', '/')
-				local bgtype, round, bgmusic = c:match('^(music[a-z]*)([0-9]*)%s*=%s*(.-)%s*$')
-				if main.t_selStages[row][bgtype] == nil then main.t_selStages[row][bgtype] = {} end
-				local t_ref = main.t_selStages[row][bgtype]
-				if bgtype == 'music' or round ~= '' then
-					round = tonumber(round) or 1
-					if main.t_selStages[row][bgtype][round] == nil then main.t_selStages[row][bgtype][round] = {} end
-					t_ref = main.t_selStages[row][bgtype][round]
 				end
-				table.insert(t_ref, {bgmusic = bgmusic, bgmvolume = bgmvolume, bgmloopstart = bgmloopstart, bgmloopend = bgmloopend})
-			else
-				local param, value = c:match('^(.-)%s*=%s*(.-)$')
-				if param ~= nil and value ~= nil and param ~= '' and value ~= '' then
-					main.t_selStages[row][param] = tonumber(value)
-					--order (more than 1 order param can be set at the same time)
-					if param:match('order') then
-						if main.t_orderStages[main.t_selStages[row].order] == nil then
-							main.t_orderStages[main.t_selStages[row].order] = {}
-						end
-						table.insert(main.t_orderStages[main.t_selStages[row].order], row)
+				--default order
+				if main.t_selStages[row].order == nil then
+					main.t_selStages[row].order = 1
+					if main.t_orderStages[main.t_selStages[row].order] == nil then
+						main.t_orderStages[main.t_selStages[row].order] = {}
 					end
+					table.insert(main.t_orderStages[main.t_selStages[row].order], row)
 				end
-			end
-			--default order
-			if main.t_selStages[row].order == nil then
-				main.t_selStages[row].order = 1
-				if main.t_orderStages[main.t_selStages[row].order] == nil then
-					main.t_orderStages[main.t_selStages[row].order] = {}
+				--unlock param
+				if unlock ~= '' then
+					--main.t_selStages[row].unlock = unlock
+					main.t_unlockLua.stages[row] = unlock
 				end
-				table.insert(main.t_orderStages[main.t_selStages[row].order], row)
-			end
-			--unlock param
-			if unlock ~= '' then
-				--main.t_selStages[row].unlock = unlock
-				main.t_unlockLua.stages[row] = unlock
 			end
 		end
 	elseif section == 3 then --[Options]
@@ -2293,6 +2312,21 @@ for i = 1, #main.t_selChars do
 		--generate table with characters allowed to be randomly selected
 		if main.t_selChars[i].playable and (main.t_selChars[i].hidden == nil or main.t_selChars[i].hidden <= 1) and (main.t_selChars[i].exclude == nil or main.t_selChars[i].exclude == 0) then
 			table.insert(main.t_randomChars, i - 1)
+		end
+	end
+end
+
+-- auto load all stages
+if main.flags['-allstage'] ~= nil then
+	-- find all file in stages folder
+	for key, stage_def_file in ipairs(getDirectoryFiles('stages')) do
+		if stage_def_file:lower():match('%.([^%.\\/]-)$') == 'def' then	-- filter only .def files
+			if main.t_stageDef[stage_def_file:lower()] == nil then
+				print('Adding stage', stage_def_file)
+				local row = main.f_addStage(stage_def_file)
+				table.insert(main.t_includeStage[1], row)
+				table.insert(main.t_includeStage[2], row)
+			end
 		end
 	end
 end
