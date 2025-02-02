@@ -222,14 +222,56 @@ for src_line in content:gmatch('([^\n]*)\n?') do
 				else
 					motif[param] = searchFile(value, {motifDir, "data/"})
 				end
-				local filepath = f_checkFile(motif[param], "[system.def] "..param, nil, list_files)
+				local filepath = f_checkFile(motif[param], "[system.def]["..group.."] "..param, nil, list_files)
 				if filepath ~= nil then
-					modified_line = motif[param] .. " = " ..filepath
+					modified_line = param .. " = " ..filepath
 				end
 			elseif group == 'music' then
 				if param:match('%_bgm$') then
 					param = param:gsub('_','.')
-					local filepath = f_checkFile(value, "[system.def] "..param, nil, list_files)
+					local filepath = f_checkFile(value, "[system.def]["..group.."] "..param, {"font/","data/","sound/",motifDir}, list_files)
+					if filepath ~= nil then
+						modified_line = param.. " = " ..filepath
+					end
+				end
+			elseif group == 'titlebgdef' then
+				if param == "spr" then
+					local filepath = f_checkFile(value, "[system.def]["..group.."] "..param, {"font/","data/","sound/",motifDir}, list_files)
+					if filepath ~= nil then
+						modified_line = param.. " = " ..filepath
+					end
+				end
+			elseif group == 'selectbgdef' then
+				if param == "spr" then
+					local filepath = f_checkFile(value, "[system.def]["..group.."] "..param, {"font/","data/","sound/",motifDir}, list_files)
+					if filepath ~= nil then
+						modified_line = param.. " = " ..filepath
+					end
+				end
+			elseif group == 'continue_screen' then
+				if param == "bgm" then
+					local filepath = f_checkFile(value, "[system.def]["..group.."] "..param, {"font/","data/","sound/",motifDir}, list_files)
+					if filepath ~= nil then
+						modified_line = param.. " = " ..filepath
+					end
+				end
+			elseif group == 'game_over_screen' then
+				if param == "storyboard" then
+					local filepath = f_checkFile(value, "[system.def]["..group.."] "..param, {"font/","data/","sound/",motifDir}, list_files)
+					if filepath ~= nil then
+						modified_line = param.. " = " ..filepath
+					end
+				end
+			elseif group == 'default_ending' then
+				if param == "storyboard" then
+					local filepath = f_checkFile(value, "[system.def]["..group.."] "..param, {"font/","data/","sound/",motifDir}, list_files)
+					if filepath ~= nil then
+						modified_line = param.. " = " ..filepath
+					end
+				end
+			elseif group == 'end_credits' then
+				if param == "storyboard" then
+					local filepath = f_checkFile(value, "[system.def]["..group.."] "..param, {"font/","data/","sound/",motifDir}, list_files)
 					if filepath ~= nil then
 						modified_line = param.. " = " ..filepath
 					end
@@ -240,14 +282,82 @@ for src_line in content:gmatch('([^\n]*)\n?') do
 	if modified_line == "" then
 		if string.find(src_line, '\\') then
 			src_line = src_line:gsub('\\','/')
-			print("[system.def] [FIXED] "..src_line)
+			print("[system.def]["..group.."] [FIXED] "..src_line)
 		end
 		file:write(src_line .. "\n")
 	else
 		if string.find(modified_line, '\\') then
 			modified_line = modified_line:gsub('\\','/')
 		end
-		print("[system.def] "..modified_line.." [FIXED]")
+		print("[system.def]["..group.."] "..modified_line.." [FIXED]")
+		file:write(modified_line .. "\n")
+	end
+	modified_line = ""
+end
+file:close()
+
+-------------------------------------------------------------------
+-- CHECK motif.fight: fight.def
+-------------------------------------------------------------------
+content = f_fileRead(motif.fight)
+if content == nil then
+	print("[ERROR] Can not read "..motif.fight)
+	return
+end
+
+local group
+local file, err = io.open(motif.fight, "w")
+local modified_line = ""
+local list_files = f_listFiles({"font","data","sound",motifDir})
+for src_line in content:gmatch('([^\n]*)\n?') do
+	line = src_line:gsub('%s*;.*$', '')
+	if line:match('^[^%g]*%s*%[.-%s*%]%s*$') then --matched [] group
+		line = line:match('%[(.-)%s*%]%s*$') --match text between []
+		line = line:gsub('[%. ]', '_') --change . and space to _
+		group = tostring(line:lower())
+	else --matched non [] line
+		local param, value = line:match('^%s*([^=]-)%s*=%s*(.-)%s*$')
+		if param ~= nil then
+			param = param:gsub('[%. ]', '_') --change param . and space to _
+			if group ~= 'glyphs' then
+				param = param:lower() --lowercase param
+			end
+			if value ~= nil then --let's check if it's even a valid param
+				if value == '' then --text should remain empty
+					value = nil
+				end
+			end
+		end
+		if param ~= nil and value ~= nil then --param = value pattern matched
+			value = value:gsub('"', '') --remove brackets from value
+			value = value:gsub('^(%.[0-9])', '0%1') --add 0 before dot if missing at the beginning of matched string
+			value = value:gsub('([^0-9])(%.[0-9])', '%10%2') --add 0 before dot if missing anywhere else
+			value = value:gsub(',%s*$', '') --remove dummy ','
+			if group == 'files' then
+				if param:match('^font[0-9]+') then --font declaration param matched
+					motif[param] = searchFile(value, {"font/", motifDir})
+					table.insert(fonts_selection, motif[param])
+				else
+					motif[param] = searchFile(value, {motifDir, "data/"})
+				end
+				local filepath = f_checkFile(motif[param], "[fight.def] "..param, nil, list_files)
+				if filepath ~= nil then
+					modified_line = param:gsub('_','.') .. " = " ..filepath
+				end
+			end
+		end
+	end
+	if modified_line == "" then
+		if string.find(src_line, '\\') then
+			src_line = src_line:gsub('\\','/')
+			print("[fight.def] [FIXED] "..src_line)
+		end
+		file:write(src_line .. "\n")
+	else
+		if string.find(modified_line, '\\') then
+			modified_line = modified_line:gsub('\\','/')
+		end
+		print("[fight.def] "..modified_line.." [FIXED]")
 		file:write(modified_line .. "\n")
 	end
 	modified_line = ""
@@ -262,15 +372,13 @@ if content == nil then
 	print("[ERROR] Can not read "..motif.select)
 	return
 end
-content = content:gsub('([^\r\n;]*)%s*;[^\r\n]*', '%1')
-content = content:gsub('\n%s*\n', '\n')
 
 local lanChars = false
 local lanStages = false
 local lanOptions = false
 local lanStory = false
-for line in content:gmatch('[^\r\n]+') do
-	local lineCase = line:lower()
+for src_line in content:gmatch('[^\r\n]+') do
+	local lineCase = src_line:lower()
 	if lineCase:match('^%s*%[%s*' .. config.Language .. '.characters' .. '%s*%]') then
 		lanChars = true
 	elseif lineCase:match('^%s*%[%s*' .. config.Language .. '.extrastages' .. '%s*%]') then
@@ -285,10 +393,16 @@ end
 local group
 local chars_selection = {}
 local stages_selection= {}
-
-for line in content:gmatch('[^\r\n]+') do
+local file, err = io.open(motif.select, "w")
+local modified_line = ""
+local list_files = f_listFiles({"chars","stages"})
+for src_line in content:gmatch('[^\r\n]+') do
+	--~ line = src_line:gsub('([^\r\n;]*)%s*;[^\r\n]*', '%1'):gsub('\n%s*\n', '\n')
+	line = src_line:gsub('%s*;.*$', '')
 	local lineCase = line:lower()
-	if lineCase:match('^%s*%[%s*characters%s*%]') then
+	if lineCase == "" then
+		-- do nothing
+	elseif lineCase:match('^%s*%[%s*characters%s*%]') then
 		print("[select.def]"..line)
 		row = 0
 		section = 1
@@ -314,31 +428,11 @@ for line in content:gmatch('[^\r\n]+') do
 		end
 	elseif lineCase:match('^%s*%[%s*options%s*%]') then
 		print("[select.def]"..line)
-		-- main.t_selOptions = {
-			-- arcadestart = {wins = 0, offset = 0},
-			-- arcadeend = {wins = 0, offset = 0},
-			-- teamstart = {wins = 0, offset = 0},
-			-- teamend = {wins = 0, offset = 0},
-			-- survivalstart = {wins = 0, offset = 0},
-			-- survivalend = {wins = 0, offset = 0},
-			-- ratiostart = {wins = 0, offset = 0},
-			-- ratioend = {wins = 0, offset = 0},
-		-- }
 		row = 0
 		section = 3
 	elseif lineCase:match('^%s*%[%s*' .. config.Language .. '.options' .. '%s*%]') then
 		print("[select.def]"..line)
 		if lanOptions then
-			-- main.t_selOptions = {
-				-- arcadestart = {wins = 0, offset = 0},
-				-- arcadeend = {wins = 0, offset = 0},
-				-- teamstart = {wins = 0, offset = 0},
-				-- teamend = {wins = 0, offset = 0},
-				-- survivalstart = {wins = 0, offset = 0},
-				-- survivalend = {wins = 0, offset = 0},
-				-- ratiostart = {wins = 0, offset = 0},
-				-- ratioend = {wins = 0, offset = 0},
-			-- }
 			row = 0
 			section = 3
 		else
@@ -360,43 +454,33 @@ for line in content:gmatch('[^\r\n]+') do
 		print("[select.def]"..line)
 		section = -1
 	elseif section == 1 then --[Characters]
-		-- local csCol = (csCell % motif.select_info.columns) + 1
-		-- local csRow = math.floor(csCell / motif.select_info.columns) + 1
-		-- while not slot and motif.select_info['cell_' .. csCol .. '_' .. csRow .. '_skip'] == 1 do
-			-- main.f_addChar('skipslot', true, true, false)
-			-- csCell = csCell + 1
-			-- csCol = (csCell % motif.select_info.columns) + 1
-			-- csRow = math.floor(csCell / motif.select_info.columns) + 1
-		-- end
-		-- if lineCase:match(',%s*exclude%s*=%s*1') then --character should be added after all slots are filled
-			-- print("302", lineCase, line)
-			-- table.insert(t_addExluded, line)
 		if lineCase:match('^%s*slot%s*=%s*{%s*$') then --start of the 'multiple chars in one slot' assignment
-			-- print("305", lineCase)
-			-- table.insert(main.t_selGrid, {['chars'] = {}, ['slot'] = 1})
-			-- slot = true
 		elseif slot and lineCase:match('^%s*}%s*$') then --end of 'multiple chars in one slot' assignment
-			-- print("309", lineCase)
-			-- slot = false
-			-- csCell = csCell + 1
 		else
-			-- print("313", line)
-			if line:lower() ~= "randomselect" and line:lower() ~= "blank" and line ~= "}" and line:lower() ~= "empty" then
-				local char_found
+			if line:lower() ~= "randomselect" and line:lower() ~= "blank" and line ~= "}" and line:lower() ~= "empty" and line:lower() ~= "" then
+				local char_def
 				local c = f_strsplit(',', line)
 				local stripped_ch = c[1]:match("^%s*(.-)%s*$")
 
 				if string.find(stripped_ch, ".def") then
-					char_found = searchFile(stripped_ch, {motifDir, "chars/"})
+					--~ char_found = searchFile(stripped_ch, {motifDir, "chars/"})
+					char_def = stripped_ch
 				else
-					char_found = searchFile(stripped_ch.."/"..stripped_ch..".def", {motifDir, "chars/"})
+					--~ char_found = searchFile(stripped_ch.."/"..stripped_ch..".def", {motifDir, "chars/"})
+					char_def = stripped_ch.."/"..stripped_ch..".def"
 				end
-				f_checkFile(char_found, "\t"..stripped_ch)
-				table.insert(chars_selection, char_found)
-				-- f_addChar(line, true, true, slot)
-				-- if not slot then
-					-- csCell = csCell + 1
-				-- end
+				local filepath = f_checkFile(char_def, "\t"..stripped_ch, {"chars/", motifDir}, list_files)
+				--~ print("DEBUG", "stripped_ch", stripped_ch)
+				if filepath ~= nil then
+					table.insert(chars_selection, searchFile(filepath, {"chars/", motifDir}))
+					modified_line = src_line:gsub(stripped_ch, filepath:match("^(.-)%/"))
+					--~ print("FIXED", "filepath", filepath, filepath:match("^(.-)%/"))
+					--~ print("FIXED", "src_line", src_line)
+				else
+					table.insert(chars_selection, searchFile(char_def, {"chars/", motifDir}))
+					
+					--~ print("DEBUG", "char_def", char_def)
+				end
 			end
 		end
 	elseif section == 2 then --[ExtraStages]
@@ -412,78 +496,43 @@ for line in content:gmatch('[^\r\n]+') do
 		for i, c in ipairs(f_strsplit(',', line)) do --split using "," delimiter
 			c = c:gsub('^%s*(.-)%s*$', '%1')
 			if i == 1 then
-				-- print("extrastages1", c)
-				-- local stage_found = searchFile(c, {"./", motifDir, "stages/"})
-				f_checkFile(c, "\t")
-				table.insert(stages_selection, c)
-				-- row = main.f_addStage(c, hidden)
-				-- if row == nil then
-					-- break
-				-- end
-				-- table.insert(main.t_includeStage[1], row)
-				-- table.insert(main.t_includeStage[2], row)
+				local filepath = f_checkFile(c, "\t", {"stages/", motifDir}, list_files)
+				if filepath ~= nil then
+					table.insert(stages_selection, filepath)
+					modified_line = src_line:gsub(c, filepath)
+				else
+					table.insert(stages_selection, c)
+				end
 			elseif c:match('^music') then --musicX / musiclife / musicvictory
--- 				print("extrastages2", c)
-				-- local bgmvolume, bgmloopstart, bgmloopend = 100, 0, 0
-				-- c = c:gsub('%s+([0-9%s]+)$', function(m1)
-					-- for i, c in ipairs(main.f_strsplit('%s+', m1)) do --split using whitespace delimiter
-						-- if i == 1 then
-							-- bgmvolume = tonumber(c)
-						-- elseif i == 2 then
-							-- bgmloopstart = tonumber(c)
-						-- elseif i == 3 then
-							-- bgmloopend = tonumber(c)
-						-- else
-							-- break
-						-- end
-					-- end
-					-- return ''
-				-- end)
-				-- c = c:gsub('\\', '/')
-				-- local bgtype, round, bgmusic = c:match('^(music[a-z]*)([0-9]*)%s*=%s*(.-)%s*$')
-				-- if main.t_selStages[row][bgtype] == nil then main.t_selStages[row][bgtype] = {} end
-				-- local t_ref = main.t_selStages[row][bgtype]
-				-- if bgtype == 'music' or round ~= '' then
-					-- round = tonumber(round) or 1
-					-- if main.t_selStages[row][bgtype][round] == nil then main.t_selStages[row][bgtype][round] = {} end
-					-- t_ref = main.t_selStages[row][bgtype][round]
-				-- end
-				-- table.insert(t_ref, {bgmusic = bgmusic, bgmvolume = bgmvolume, bgmloopstart = bgmloopstart, bgmloopend = bgmloopend})
 			else
--- 				print("extrastages3", c)
 				local param, value = c:match('^(.-)%s*=%s*(.-)$')
 				if param ~= nil and value ~= nil and param ~= '' and value ~= '' then
-					-- main.t_selStages[row][param] = tonumber(value)
-					-- order (more than 1 order param can be set at the same time)
-					-- if param:match('order') then
-						-- if main.t_orderStages[main.t_selStages[row].order] == nil then
-							-- main.t_orderStages[main.t_selStages[row].order] = {}
-						-- end
-						-- table.insert(main.t_orderStages[main.t_selStages[row].order], row)
-					-- end
--- 					print("extrastages3 param, value", param, value)
 				end
 			end
-			--default order
-			-- if main.t_selStages[row].order == nil then
-				-- main.t_selStages[row].order = 1
-				-- if main.t_orderStages[main.t_selStages[row].order] == nil then
-					-- main.t_orderStages[main.t_selStages[row].order] = {}
-				-- end
-				-- table.insert(main.t_orderStages[main.t_selStages[row].order], row)
-			-- end
-			--unlock param
-			-- if unlock ~= '' then
-				--main.t_selStages[row].unlock = unlock
-				-- main.t_unlockLua.stages[row] = unlock
-			-- end
 		end
 	elseif section == 3 then --[Options]
 		-- skip
 	elseif section == 4 then --[StoryMode]
 		-- skip
 	end
+
+	if modified_line == "" then
+		if string.find(src_line, '\\') then
+			src_line = src_line:gsub('\\','/')
+			print("[select.def] [FIXED] "..src_line)
+		end
+		file:write(src_line .. "\n")
+		--~ print("src_line", src_line)
+	else
+		if string.find(modified_line, '\\') then
+			modified_line = modified_line:gsub('\\','/')
+		end
+		print("\t"..modified_line.." [FIXED]")
+		file:write(modified_line .. "\n")
+	end
+	modified_line = ""
 end
+file:close()
 
 -------------------------------------------------------------------
 -- CHECK Characters: chars/*/*.def
@@ -530,6 +579,7 @@ for i, ch in ipairs(chars_selection) do
 					value = value:gsub('^(%.[0-9])', '0%1') --add 0 before dot if missing at the beginning of matched string
 					value = value:gsub('([^0-9])(%.[0-9])', '%10%2') --add 0 before dot if missing anywhere else
 					value = value:gsub(',%s*$', '') --remove dummy ','
+					value = value:gsub('%.%./', '')	--remove two sub folder (not needed in chars)
 
 					if group == 'files' or group == 'arcade'then
 						local filepath
