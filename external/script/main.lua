@@ -399,7 +399,7 @@ local fileDir = main.motifDef:match('^(.-)[^/\\]+$')
 if main.flags['-lifebar'] ~= nil then
 	main.lifebarDef = main.flags['-lifebar']
 else
-	main.lifebarDef = main.motifData:match('\n%s*fight%s*=%s*(.-%.def)%s*')
+	main.lifebarDef = main.motifData:match('\n%s*fight%s*=%s*(.-%.[Dd][Ee][Ff])%s*')
 end
 if main.f_fileExists(main.lifebarDef) then
 	--do nothing
