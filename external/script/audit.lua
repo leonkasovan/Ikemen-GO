@@ -107,14 +107,9 @@ function f_checkFile(file, msg, dirs, list_files)
 	end
 
 	if status == "FAIL" and list_files then
-		print("\tDEBUG", file)
 		local start_index, end_index
 		for k, v in ipairs(list_files) do
 			start_index, end_index = string.find(v:lower(), file:lower())
-			ss, ee = string.find(v, "SHINING")
-			if ss and ee then
-				print("\tDEBUG", v:lower(), file:lower())
-			end
 			if start_index and end_index then
 				return string.sub(v, start_index, end_index)
 			end
@@ -193,9 +188,11 @@ end
 
 local group
 local motif = {}
-
-for line in content:gmatch('([^\n]*)\n?') do
-	line = line:gsub('%s*;.*$', '')
+local file, err = io.open(config.Motif, "w")
+local modified_line = ""
+local list_files = f_listFiles({"font","data","sound",motifDir})
+for src_line in content:gmatch('([^\n]*)\n?') do
+	line = src_line:gsub('%s*;.*$', '')
 	if line:match('^[^%g]*%s*%[.-%s*%]%s*$') then --matched [] group
 		line = line:match('%[(.-)%s*%]%s*$') --match text between []
 		line = line:gsub('[%. ]', '_') --change . and space to _
@@ -225,12 +222,37 @@ for line in content:gmatch('([^\n]*)\n?') do
 				else
 					motif[param] = searchFile(value, {motifDir, "data/"})
 				end
-				f_checkFile(motif[param], "[system.def] "..param)
+				local filepath = f_checkFile(motif[param], "[system.def] "..param, nil, list_files)
+				if filepath ~= nil then
+					modified_line = motif[param] .. " = " ..filepath
+				end
+			elseif group == 'music' then
+				if param:match('%_bgm$') then
+					param = param:gsub('_','.')
+					local filepath = f_checkFile(value, "[system.def] "..param, nil, list_files)
+					if filepath ~= nil then
+						modified_line = param.. " = " ..filepath
+					end
+				end
 			end
-
 		end
 	end
+	if modified_line == "" then
+		if string.find(src_line, '\\') then
+			src_line = src_line:gsub('\\','/')
+			print("[system.def] [FIXED] "..src_line)
+		end
+		file:write(src_line .. "\n")
+	else
+		if string.find(modified_line, '\\') then
+			modified_line = modified_line:gsub('\\','/')
+		end
+		print("[system.def] "..modified_line.." [FIXED]")
+		file:write(modified_line .. "\n")
+	end
+	modified_line = ""
 end
+file:close()
 
 -------------------------------------------------------------------
 -- CHECK motif.select: select.def

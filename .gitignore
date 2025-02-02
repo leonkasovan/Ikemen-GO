@@ -47,6 +47,7 @@ debug/*
 
 # Temp
 src/lua_triggers.go
+src/assets.zip
 external/script/wip/*
 
 # IDE Files
