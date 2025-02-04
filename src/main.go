@@ -41,7 +41,10 @@ func renameFilesToLowerCase(root string) error {
 
 		// Get the directory and the lowercase file name
 		dir := filepath.Dir(path)
-		lowercaseName := strings.ToLower(info.Name())
+		fileName := info.Name()
+		ext := filepath.Ext(fileName)
+		fileNameWithoutExt := strings.TrimSuffix(fileName, ext)
+		lowercaseName := fileNameWithoutExt + strings.ToLower(ext)
 
 		// Check if renaming is needed
 		if info.Name() != lowercaseName {
@@ -559,6 +562,11 @@ func main() {
 				os.Exit(0)
 			}
 		}
+		renameFilesToLowerCase("chars")
+		renameFilesToLowerCase("stages")
+		renameFilesToLowerCase("font")
+		renameFilesToLowerCase("data")
+		renameFilesToLowerCase("sound")
 		l := lua.NewState()
 		l.Options.IncludeGoStackTrace = true
 		l.OpenLibs()
