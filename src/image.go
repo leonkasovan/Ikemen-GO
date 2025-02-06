@@ -509,20 +509,21 @@ func (sh *SffHeader) Read(r io.Reader, lofs *uint32, tofs *uint32) error {
 }
 
 type Sprite struct {
-	Pal           []uint32
-	Tex           Texture
-	Group, Number int16
-	Size          [2]uint16
-	Offset        [2]int16
-	palidx        int
-	rle           int
-	coldepth      byte
-	paltemp       []uint32
-	PalTex        Texture
+	Pal      []uint32
+	Tex      Texture
+	Group    int16 // References above 32767 will be read as negative. This is true to SFF format however
+	Number   int16
+	Size     [2]uint16
+	Offset   [2]int16
+	palidx   int
+	rle      int
+	coldepth byte
+	paltemp  []uint32
+	PalTex   Texture
 }
 
 func (s *Sprite) isBlank() bool {
-	return s.Tex == nil || s.Group < 0 || s.Number < 0 || s.Size[0] == 0 || s.Size[1] == 0
+	return s.Tex == nil || s.Size[0] == 0 || s.Size[1] == 0
 }
 
 func newSprite() *Sprite {
@@ -574,8 +575,7 @@ func (s *Sprite) SetRaw(data []byte, sprWidth int32, sprHeight int32, sprDepth i
 	}
 }
 
-func (s *Sprite) readHeader(r io.Reader, ofs, size *uint32,
-	link *uint16) error {
+func (s *Sprite) readHeader(r io.Reader, ofs, size *uint32, link *uint16) error {
 	read := func(x interface{}) error {
 		return binary.Read(r, binary.LittleEndian, x)
 	}
@@ -599,6 +599,7 @@ func (s *Sprite) readHeader(r io.Reader, ofs, size *uint32,
 	}
 	return nil
 }
+
 func (s *Sprite) readPcxHeader(f *os.File, offset int64) error {
 	f.Seek(offset, 0)
 	read := func(x interface{}) error {

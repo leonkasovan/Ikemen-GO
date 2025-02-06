@@ -5191,10 +5191,6 @@ func triggerFunctions(l *lua.LState) {
 		l.Push(lua.LNumber(sys.consecutiveWins[sys.debugWC.teamside]))
 		return 1
 	})
-	luaRegister(l, "continuescreen", func(*lua.LState) int {
-		l.Push(lua.LBool(sys.continueScreenFlg))
-		return 1
-	})
 	luaRegister(l, "debug", func(*lua.LState) int {
 		switch strings.ToLower(strArg(l, 1)) {
 		case "accel":
@@ -5237,6 +5233,21 @@ func triggerFunctions(l *lua.LState) {
 	})
 	luaRegister(l, "dizzypointsmax", func(*lua.LState) int {
 		l.Push(lua.LNumber(sys.debugWC.dizzyPointsMax))
+		return 1
+	})
+	luaRegister(l, "fightscreenstate", func(*lua.LState) int {
+		switch strings.ToLower(strArg(l, 1)) {
+		case "fightdisplay":
+			l.Push(lua.LBool(sys.lifebar.ro.triggerFightDisplay))
+		case "kodisplay":
+			l.Push(lua.LBool(sys.lifebar.ro.triggerKODisplay))
+		case "rounddisplay":
+			l.Push(lua.LBool(sys.lifebar.ro.triggerFightDisplay))
+		case "windisplay":
+			l.Push(lua.LBool(sys.lifebar.ro.triggerWinDisplay))
+		default:
+			l.RaiseError("\nInvalid argument: %v\n", strArg(l, 1))
+		}
 		return 1
 	})
 	luaRegister(l, "fightscreenvar", func(*lua.LState) int {
@@ -5592,6 +5603,19 @@ func triggerFunctions(l *lua.LState) {
 		l.Push(lua.LNumber(sys.debugWC.memberNo + 1))
 		return 1
 	})
+	luaRegister(l, "motifstate", func(*lua.LState) int {
+		switch strings.ToLower(strArg(l, 1)) {
+		case "continuescreen":
+			l.Push(lua.LBool(sys.continueScreenFlg))
+		case "victoryscreen":
+			l.Push(lua.LBool(sys.victoryScreenFlg))
+		case "winscreen":
+			l.Push(lua.LBool(sys.winScreenFlg))
+		default:
+			l.RaiseError("\nInvalid argument: %v\n", strArg(l, 1))
+		}
+		return 1
+	})
 	luaRegister(l, "movecountered", func(*lua.LState) int {
 		l.Push(lua.LNumber(sys.debugWC.moveCountered()))
 		return 1
@@ -5617,7 +5641,7 @@ func triggerFunctions(l *lua.LState) {
 		return 1
 	})
 	luaRegister(l, "pausetime", func(*lua.LState) int {
-		l.Push(lua.LNumber(sys.debugWC.pauseTime()))
+		l.Push(lua.LNumber(sys.debugWC.pauseTimeTrigger()))
 		return 1
 	})
 	luaRegister(l, "physics", func(*lua.LState) int {
@@ -5745,6 +5769,31 @@ func triggerFunctions(l *lua.LState) {
 		l.Push(lua.LBool(sys.debugWC.scf(SCF_standby)))
 		return 1
 	})
+	luaRegister(l, "systemvar", func(*lua.LState) int {
+		switch strings.ToLower(strArg(l, 1)) {
+		case "introtime":
+			if sys.intro > 0 {
+				l.Push(lua.LNumber(sys.intro))
+			} else {
+				l.Push(lua.LNumber(0))
+			}
+		case "outrotime":
+			if sys.intro < 0 {
+				l.Push(lua.LNumber(-sys.intro))
+			} else {
+				l.Push(lua.LNumber(0))
+			}
+		case "pausetime":
+			l.Push(lua.LNumber(sys.pausetime))
+		case "slowtime":
+			l.Push(lua.LNumber(sys.slowtimeTrigger))
+		case "superpausetime":
+			l.Push(lua.LNumber(sys.supertime))
+		default:
+			l.RaiseError("\nInvalid argument: %v\n", strArg(l, 1))
+		}
+		return 1
+	})
 	luaRegister(l, "teamleader", func(*lua.LState) int {
 		l.Push(lua.LNumber(sys.debugWC.teamLeader()))
 		return 1
@@ -5765,15 +5814,6 @@ func triggerFunctions(l *lua.LState) {
 		l.Push(lua.LNumber(timeTotal()))
 		return 1
 	})
-	luaRegister(l, "victoryscreen", func(*lua.LState) int {
-		l.Push(lua.LBool(sys.victoryScreenFlg))
-		return 1
-	})
-	luaRegister(l, "winscreen", func(*lua.LState) int {
-		l.Push(lua.LBool(sys.winScreenFlg))
-		return 1
-	})
-
 	// lua/debug only triggers
 	luaRegister(l, "animelemcount", func(*lua.LState) int {
 		l.Push(lua.LNumber(len(sys.debugWC.anim.frames)))

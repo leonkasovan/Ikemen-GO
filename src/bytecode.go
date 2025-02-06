@@ -742,9 +742,6 @@ const (
 	OC_ex2_palfxvar_all_invertblend
 	OC_ex2_introstate
 	OC_ex2_outrostate
-	OC_ex2_continuescreen
-	OC_ex2_victoryscreen
-	OC_ex2_winscreen
 	OC_ex2_bgmvar_filename
 	OC_ex2_bgmvar_freqmul
 	OC_ex2_bgmvar_length
@@ -864,7 +861,20 @@ const (
 	OC_ex2_soundvar_priority
 	OC_ex2_soundvar_startposition
 	OC_ex2_soundvar_volumescale
+	OC_ex2_fightscreenstate_fightdisplay
+	OC_ex2_fightscreenstate_kodisplay
+	OC_ex2_fightscreenstate_rounddisplay
+	OC_ex2_fightscreenstate_windisplay
+	OC_ex2_motifstate_continuescreen
+	OC_ex2_motifstate_victoryscreen
+	OC_ex2_motifstate_winscreen
+	OC_ex2_systemvar_introtime
+	OC_ex2_systemvar_outrotime
+	OC_ex2_systemvar_pausetime
+	OC_ex2_systemvar_slowtime
+	OC_ex2_systemvar_superpausetime
 )
+
 const (
 	NumVar     = 60
 	NumSysVar  = 5
@@ -2989,7 +2999,7 @@ func (be BytecodeExp) run_ex(c *Char, i *int, oc *Char) {
 	case OC_ex_mugenversion:
 		sys.bcStack.PushF(c.mugenVersionF())
 	case OC_ex_pausetime:
-		sys.bcStack.PushI(c.pauseTime())
+		sys.bcStack.PushI(c.pauseTimeTrigger())
 	case OC_ex_physics:
 		sys.bcStack.PushB(c.ss.physics == StateType(be[*i]))
 		*i++
@@ -3188,12 +3198,6 @@ func (be BytecodeExp) run_ex2(c *Char, i *int, oc *Char) {
 		sys.bcStack.PushI(sys.introState())
 	case OC_ex2_outrostate:
 		sys.bcStack.PushI(sys.outroState())
-	case OC_ex2_continuescreen:
-		sys.bcStack.PushB(sys.continueScreenFlg)
-	case OC_ex2_victoryscreen:
-		sys.bcStack.PushB(sys.victoryScreenFlg)
-	case OC_ex2_winscreen:
-		sys.bcStack.PushB(sys.winScreenFlg)
 	case OC_ex2_bgmvar_filename:
 		sys.bcStack.PushB(sys.bgm.filename ==
 			sys.stringPool[sys.workingState.playerNo].List[*(*int32)(
@@ -3515,6 +3519,42 @@ func (be BytecodeExp) run_ex2(c *Char, i *int, oc *Char) {
 		v := c.projVar(id, idx, flg, opc, oc)
 		sys.bcStack.Push(v)
 	// END FALLTHROUGH (projvar)
+	// FightScreenState
+	case OC_ex2_fightscreenstate_fightdisplay:
+		sys.bcStack.PushB(sys.lifebar.ro.triggerFightDisplay)
+	case OC_ex2_fightscreenstate_kodisplay:
+		sys.bcStack.PushB(sys.lifebar.ro.triggerKODisplay)
+	case OC_ex2_fightscreenstate_rounddisplay:
+		sys.bcStack.PushB(sys.lifebar.ro.triggerRoundDisplay)
+	case OC_ex2_fightscreenstate_windisplay:
+		sys.bcStack.PushB(sys.lifebar.ro.triggerWinDisplay)
+	// MotifState
+	case OC_ex2_motifstate_continuescreen:
+		sys.bcStack.PushB(sys.continueScreenFlg)
+	case OC_ex2_motifstate_victoryscreen:
+		sys.bcStack.PushB(sys.victoryScreenFlg)
+	case OC_ex2_motifstate_winscreen:
+		sys.bcStack.PushB(sys.winScreenFlg)
+	// SystemVar
+	case OC_ex2_systemvar_introtime:
+		if sys.intro > 0 {
+			sys.bcStack.PushI(sys.intro)
+		} else {
+			sys.bcStack.PushI(0)
+		}
+	case OC_ex2_systemvar_outrotime:
+		if sys.intro < 0 {
+			sys.bcStack.PushI(-sys.intro)
+		} else {
+			sys.bcStack.PushI(0)
+		}
+	case OC_ex2_systemvar_pausetime:
+		sys.bcStack.PushI(sys.pausetime)
+	case OC_ex2_systemvar_slowtime:
+		sys.bcStack.PushI(sys.slowtimeTrigger)
+	case OC_ex2_systemvar_superpausetime:
+		sys.bcStack.PushI(sys.supertime)
+	// HitDefVar
 	case OC_ex2_hitdefvar_guardflag:
 		attr := (*(*int32)(unsafe.Pointer(&be[*i])))
 		sys.bcStack.PushB(
@@ -6389,6 +6429,8 @@ const (
 	hitDef_down_recover
 	hitDef_down_recovertime
 	hitDef_attack_depth
+	hitDef_sparkscale
+	hitDef_guard_sparkscale
 	hitDef_last = iota + afterImage_last + 1 - 1
 	hitDef_redirectid
 )
@@ -6723,6 +6765,16 @@ func (sc hitDef) runSub(c *Char, hd *HitDef, id byte, exp []BytecodeExp) bool {
 			hd.attack.depth[1] = exp[1].evalF(c)
 		} else {
 			hd.attack.depth[1] = hd.attack.depth[0]
+		}
+	case hitDef_sparkscale:
+		hd.sparkscale[0] = exp[0].evalF(c)
+		if len(exp) > 1 {
+			hd.sparkscale[1] = exp[1].evalF(c)
+		}
+	case hitDef_guard_sparkscale:
+		hd.guard_sparkscale[0] = exp[0].evalF(c)
+		if len(exp) > 1 {
+			hd.guard_sparkscale[1] = exp[1].evalF(c)
 		}
 	default:
 		if !palFX(sc).runSub(c, &hd.palfx, id, exp) {
@@ -11855,6 +11907,52 @@ func (sc height) Run(c *Char, _ []int32) bool {
 				crun.setBHeight(exp[1].evalF(c) * redirscale)
 			}
 		case height_redirectid:
+			if rid := sys.playerID(exp[0].evalI(c)); rid != nil {
+				crun = rid
+				redirscale = (320 / c.localcoord) / (320 / crun.localcoord)
+			} else {
+				return false
+			}
+		}
+		return true
+	})
+	return false
+}
+
+type depth StateControllerBase
+
+const (
+	depth_edge byte = iota
+	depth_player
+	depth_value
+	depth_redirectid
+)
+
+func (sc depth) Run(c *Char, _ []int32) bool {
+	crun := c
+	var redirscale float32 = 1.0
+	StateControllerBase(sc).run(c, func(id byte, exp []BytecodeExp) bool {
+		switch id {
+		case depth_edge:
+			crun.setFDepthEdge(exp[0].evalF(c) * redirscale)
+			if len(exp) > 1 {
+				crun.setBDepthEdge(exp[1].evalF(c) * redirscale)
+			}
+		case depth_player:
+			crun.setFDepth(exp[0].evalF(c) * redirscale)
+			if len(exp) > 1 {
+				crun.setBDepth(exp[1].evalF(c) * redirscale)
+			}
+		case depth_value:
+			v1 := exp[0].evalF(c) * redirscale
+			crun.setFDepthEdge(v1)
+			crun.setFDepth(v1)
+			if len(exp) > 1 {
+				v2 := exp[1].evalF(c) * redirscale
+				crun.setBDepthEdge(v2)
+				crun.setBDepth(v2)
+			}
+		case depth_redirectid:
 			if rid := sys.playerID(exp[0].evalI(c)); rid != nil {
 				crun = rid
 				redirscale = (320 / c.localcoord) / (320 / crun.localcoord)

@@ -144,13 +144,13 @@ type System struct {
 	workingState            *StateBytecode
 	specialFlag             GlobalSpecialFlag
 	envShake                EnvShake
-	pause                   int32
 	pausetime               int32
+	pausetimebuffer         int32
 	pausebg                 bool
 	pauseendcmdbuftime      int32
 	pauseplayer             int
-	super                   int32
 	supertime               int32
+	supertimebuffer         int32
 	superpausebg            bool
 	superendcmdbuftime      int32
 	superplayer             int
@@ -205,6 +205,7 @@ type System struct {
 	finishType              FinishType
 	waitdown                int32
 	slowtime                int32
+	slowtimeTrigger         int32
 	shuttertime             int32
 	fadeintime              int32
 	fadeouttime             int32
@@ -997,8 +998,8 @@ func (s *System) resetGblEffect() {
 	s.allPalFX.clear()
 	s.bgPalFX.clear()
 	s.envShake.clear()
-	s.pause, s.pausetime = 0, 0
-	s.super, s.supertime = 0, 0
+	s.pausetime, s.pausetimebuffer = 0, 0
+	s.supertime, s.supertimebuffer = 0, 0
 	s.superanim = nil
 	s.envcol_time = 0
 	s.specialFlag = 0
@@ -1340,7 +1341,7 @@ func (s *System) action() {
 			}
 		}
 		if s.intro == 0 && s.time > 0 && !s.gsf(GSF_timerfreeze) &&
-			(s.super <= 0 || !s.superpausebg) && (s.pause <= 0 || !s.pausebg) {
+			(s.supertime <= 0 || !s.superpausebg) && (s.pausetime <= 0 || !s.pausebg) {
 			s.time--
 		}
 
@@ -1599,21 +1600,21 @@ func (s *System) action() {
 			s.zoomCameraBound = true
 			s.zoomStageBound = true
 		}
-		if s.super > 0 {
-			s.super--
-		} else if s.pause > 0 {
-			s.pause--
+		if s.supertime > 0 {
+			s.supertime--
+		} else if s.pausetime > 0 {
+			s.pausetime--
 		}
-		if s.supertime < 0 {
-			s.supertime = ^s.supertime
-			s.super = s.supertime
+		if s.supertimebuffer < 0 {
+			s.supertimebuffer = ^s.supertimebuffer
+			s.supertime = s.supertimebuffer
 		}
-		if s.pausetime < 0 {
-			s.pausetime = ^s.pausetime
-			s.pause = s.pausetime
+		if s.pausetimebuffer < 0 {
+			s.pausetimebuffer = ^s.pausetimebuffer
+			s.pausetime = s.pausetimebuffer
 		}
 		// In Mugen 1.1, few global AssertSpecial flags persist during pauses. Seemingly only TimerFreeze
-		if s.super <= 0 && s.pause <= 0 {
+		if s.supertime <= 0 && s.pausetime <= 0 {
 			s.specialFlag = 0
 		} else {
 			// These flags persist even during pauses
@@ -1642,7 +1643,7 @@ func (s *System) action() {
 	}
 
 	// Run camera
-	x, y, scl = s.cam.action(x, y, scl, s.super > 0 || s.pause > 0)
+	x, y, scl = s.cam.action(x, y, scl, s.supertime > 0 || s.pausetime > 0)
 
 	// Skip character intros on button press and play the shutter effect
 	if s.tickNextFrame() {
@@ -1733,15 +1734,19 @@ func (s *System) action() {
 	explUpdate(&s.explodsLayer0, true)
 	explUpdate(&s.explodsLayer1, false)
 	if s.tickNextFrame() {
+		// KO slowdown
 		spd := (60 + s.cfg.Options.GameSpeed*5) / float32(s.cfg.Config.Framerate) * s.accel
-		if s.postMatchFlg || s.step {
-			spd = 1
-		} else if !s.gsf(GSF_nokoslow) && s.time != 0 && s.intro < 0 && s.slowtime > 0 {
+		s.slowtimeTrigger = 0
+		if !s.gsf(GSF_nokoslow) && s.time != 0 && s.intro < 0 && s.slowtime > 0 {
 			spd *= s.lifebar.ro.slow_speed
 			if s.slowtime < s.lifebar.ro.slow_fadetime {
 				spd += (float32(1) - s.lifebar.ro.slow_speed) * float32(s.lifebar.ro.slow_fadetime-s.slowtime) / float32(s.lifebar.ro.slow_fadetime)
 			}
+			s.slowtimeTrigger = s.slowtime
 			s.slowtime--
+		}
+		if s.postMatchFlg || s.step {
+			spd = 1
 		}
 		s.turbo = spd
 	}
@@ -1753,7 +1758,7 @@ func (s *System) draw(x, y, scl float32) {
 	ecol := uint32(s.envcol[2]&0xff | s.envcol[1]&0xff<<8 |
 		s.envcol[0]&0xff<<16)
 	s.brightnessOld = s.brightness
-	s.brightness = 0x100 >> uint(Btoi(s.super > 0 && s.superdarken))
+	s.brightness = 0x100 >> uint(Btoi(s.supertime > 0 && s.superdarken))
 	bgx, bgy := x/s.stage.localscl, y/s.stage.localscl
 	//fade := func(rect [4]int32, color uint32, alpha int32) {
 	//	FillRect(rect, color, alpha>>uint(Btoi(s.clsnDraw))+Btoi(s.clsnDraw)*128)

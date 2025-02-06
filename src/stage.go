@@ -466,6 +466,8 @@ func (bg backGround) draw(pos [2]float32, drawscl, bgscl, stglscl float32,
 
 type bgCtrl struct {
 	bg           []*backGround
+	node         []*Node
+	anim         []*GLTFAnimation
 	currenttime  int32
 	starttime    int32
 	endtime      int32
@@ -1315,6 +1317,27 @@ func loadStage(def string, maindef bool) (*Stage, error) {
 			}
 			bgc.read(is, len(s.bgc))
 			s.bgc = append(s.bgc, *bgc)
+		case "bgctrl3d":
+			bgc := newBgCtrl()
+			*bgc = bgcdef
+			bgc.bg = nil
+			bgc.node = []*Node{}
+			bgc.anim = []*GLTFAnimation{}
+			bgc.read(is, len(s.bgc))
+			if ids := is.readI32CsvForStage("ctrlid"); len(ids) > 0 {
+				if len(ids) > 1 || ids[0] != -1 {
+					uniqueIDs := make(map[int32]bool)
+					for _, id := range ids {
+						if uniqueIDs[id] {
+							continue
+						}
+						bgc.node = append(bgc.node, s.get3DBg(uint32(id))...)
+						bgc.anim = append(bgc.anim, s.get3DAnim(uint32(id))...)
+						uniqueIDs[id] = true
+					}
+				}
+			}
+			s.bgc = append(s.bgc, *bgc)
 		}
 	}
 	link, zlink := 0, -1
@@ -1384,6 +1407,26 @@ func (s *Stage) getBg(id int32) (bg []*backGround) {
 	}
 	return
 }
+func (s *Stage) get3DBg(id uint32) (nodes []*Node) {
+	if id >= 0 {
+		for _, n := range s.model.nodes {
+			if n.id == id {
+				nodes = append(nodes, n)
+			}
+		}
+	}
+	return
+}
+func (s *Stage) get3DAnim(id uint32) (anims []*GLTFAnimation) {
+	if id >= 0 {
+		for _, a := range s.model.animations {
+			if a.id == id {
+				anims = append(anims, a)
+			}
+		}
+	}
+	return
+}
 func (s *Stage) runBgCtrl(bgc *bgCtrl) {
 	bgc.currenttime++
 	switch bgc._type {
@@ -1403,9 +1446,16 @@ func (s *Stage) runBgCtrl(bgc *bgCtrl) {
 				bgc.bg[i].anim.mask = masktemp
 			}
 		}
+
+		for i := range bgc.anim {
+			bgc.anim[i].toggle(bgc.v[0] != 0)
+		}
 	case BT_Visible:
 		for i := range bgc.bg {
 			bgc.bg[i].visible = bgc.v[0] != 0
+		}
+		for i := range bgc.node {
+			bgc.node[i].visible = bgc.v[0] != 0
 		}
 	case BT_Enable:
 		for i := range bgc.bg {
@@ -1546,8 +1596,8 @@ func (s *Stage) runBgCtrl(bgc *bgCtrl) {
 }
 func (s *Stage) action() {
 	link, zlink, paused := 0, -1, true
-	if sys.tickFrame() && (sys.super <= 0 || !sys.superpausebg) &&
-		(sys.pause <= 0 || !sys.pausebg) {
+	if sys.tickFrame() && (sys.supertime <= 0 || !sys.superpausebg) &&
+		(sys.pausetime <= 0 || !sys.pausebg) {
 		paused = false
 		s.stageTime++
 		s.bgct.step(s)
@@ -1873,10 +1923,16 @@ const (
 )
 
 type GLTFAnimation struct {
-	duration float32
-	time     float32
-	channels []*GLTFAnimationChannel
-	samplers []*GLTFAnimationSampler
+	id             uint32
+	name           string
+	enabled        bool
+	defaultEnabled bool
+	duration       float32
+	time           float32
+	loopCount      int32
+	loop           int32
+	channels       []*GLTFAnimationChannel
+	samplers       []*GLTFAnimationSampler
 }
 type GLTFAnimationChannel struct {
 	//path         GLTFAnimationType
@@ -1973,6 +2029,8 @@ const (
 )
 
 type Node struct {
+	id                 uint32
+	visible            bool
 	meshIndex          *uint32
 	transition         GLTFAnimatableProperty // [3]float32
 	rotation           GLTFAnimatableProperty // [4]float32
@@ -2858,6 +2916,7 @@ func loadglTFStage(filepath string) (*Model, error) {
 	for idx, n := range doc.Nodes {
 		var node = &Node{}
 		mdl.nodes = append(mdl.nodes, node)
+		node.visible = true
 		node.rotation.restAt(n.Rotation)
 		node.transition.restAt(n.Translation)
 		node.scale.restAt(n.Scale)
@@ -2938,6 +2997,9 @@ func loadglTFStage(filepath string) (*Model, error) {
 				if v["shadowMapBias"] != nil {
 					node.shadowMapBias.restAt((float32)(v["shadowMapBias"].(float64)))
 				}
+				if v["id"] != nil {
+					node.id = uint32(v["id"].(float64))
+				}
 			}
 		}
 		node.transformChanged = true
@@ -2947,6 +3009,11 @@ func loadglTFStage(filepath string) (*Model, error) {
 		anim := &GLTFAnimation{}
 		mdl.animations = append(mdl.animations, anim)
 		anim.duration = 0
+		anim.name = a.Name
+		anim.enabled = true
+		anim.defaultEnabled = true
+		anim.loopCount = -1
+		anim.loop = 0
 		for _, c := range a.Channels {
 			channel := &GLTFAnimationChannel{}
 			channel.nodeIndex = c.Target.Node
@@ -3034,6 +3101,21 @@ func loadglTFStage(filepath string) (*Model, error) {
 				sampler.output = make([]float32, 0, len(vecs.([][4]float32))*4)
 				for _, vec := range vecs.([][4]float32) {
 					sampler.output = append(sampler.output, vec[0], vec[1], vec[2], vec[3])
+				}
+			}
+		}
+		if a.Extras != nil {
+			v, ok := a.Extras.(map[string]interface{})
+			if ok {
+				if v["id"] != nil {
+					anim.id = uint32(v["id"].(float64))
+				}
+				if v["loopCount"] != nil {
+					anim.loopCount = int32(v["loopCount"].(float64))
+				}
+				if v["enabled"] != nil {
+					anim.enabled = v["enabled"] != "0" && v["enabled"] != "false"
+					anim.defaultEnabled = anim.enabled
 				}
 			}
 		}
@@ -3279,7 +3361,7 @@ func drawNode(mdl *Model, scene *Scene, n *Node, camOffset [3]float32, drawBlend
 	for _, index := range n.childrenIndex {
 		drawNode(mdl, scene, mdl.nodes[index], camOffset, drawBlended, unlit)
 	}
-	if n.meshIndex == nil {
+	if n.meshIndex == nil || !n.visible {
 		return
 	}
 	neg, grayscale, padd, pmul, invblend, hue := mdl.pfx.getFcPalFx(false, -int(n.trans))
@@ -3421,7 +3503,7 @@ func drawNodeShadow(mdl *Model, scene *Scene, n *Node, camOffset [3]float32, dra
 	for _, index := range n.childrenIndex {
 		drawNodeShadow(mdl, scene, mdl.nodes[index], camOffset, drawBlended, lightIndex, numLights)
 	}
-	if n.meshIndex == nil {
+	if n.meshIndex == nil || !n.visible {
 		return
 	}
 
@@ -4057,12 +4139,26 @@ func (model *Model) calculateAnimQuatInterpolation(interpolation GLTFAnimationIn
 		return newVals
 	}
 }
-
+func (anim *GLTFAnimation) toggle(enabled bool) {
+	if enabled {
+		anim.enabled = enabled
+		anim.time = 0
+	} else if anim.enabled != enabled {
+		anim.enabled = enabled
+		for _, channel := range anim.channels {
+			channel.target.rest()
+		}
+	}
+}
 func (model *Model) step() {
 	for _, anim := range model.animations {
+		if anim.enabled == false {
+			continue
+		}
 		anim.time += sys.turbo / 60
-		for anim.time >= anim.duration && anim.duration > 0 {
+		for anim.time >= anim.duration && anim.duration > 0 && (anim.loopCount < 0 || anim.loop < anim.loopCount) {
 			anim.time -= anim.duration
+			anim.loop += 1
 		}
 		time := 60 * float64(anim.time)
 		if math.Abs(time-math.Floor(time)) < 0.001 {
@@ -4077,7 +4173,7 @@ func (model *Model) step() {
 			sampler := anim.samplers[channel.samplerIndex]
 			prevIndex := 0
 			for i, t := range model.animationTimeStamps[sampler.inputIndex] {
-				if anim.time < t {
+				if anim.time > 0 && anim.time <= t {
 					prevIndex = i - 1
 					break
 				}
@@ -4150,5 +4246,10 @@ func (skin *Skin) calculateSkinMatrices(inverseGlobalTransform mgl.Mat4, nodes [
 func (model *Model) reset() {
 	for _, anim := range model.animations {
 		anim.time = 0
+		anim.enabled = anim.defaultEnabled
+		anim.loop = 0
+	}
+	for _, node := range model.nodes {
+		node.visible = true
 	}
 }
