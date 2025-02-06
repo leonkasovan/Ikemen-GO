@@ -743,15 +743,28 @@ for index, sb in ipairs(storyboards_selection) do
 					sbDir = sb:match(".*"..sep)
 					if param == "spr" or param == "snd" or param == "bgm" then
 						local filepath = f_checkFile(value, "\t"..param, {sbDir, motifDir, "font"..sep, "sound"..sep}, list_files)
+						-- print("\tfilepath", filepath)
+						-- print("\tparam", param)
+						-- print("\tvalue", value)
+						-- print("\tgroup", group)
+						-- print("\tsbDir", sbDir)
+						-- print("\tmotifDir", motifDir)
 						if filepath ~= nil then
 							modified_line = param .. " = " ..filepath
 						end
 					elseif param:find("font[0-9]+") then
-						local font_file = searchFile(value, {"font/", motifDir})
+						-- print("\tparam", param)
+						-- print("\tvalue", value)
+						-- print("\tgroup", group)
+						-- print("\tsbDir", sbDir)
+						-- print("\tmotifDir", motifDir)
+						local font_file = searchFile(value, {sbDir, "font/", motifDir})
+						-- print("\tfont_file", font_file)
 						if string.find(font_file, '%.[Dd][eE][fF]') then
 							table.insert(fonts_selection, font_file)
 						end
-						local filepath = f_checkFile(font_file, "\t"..param, {"font/", motifDir}, list_files)
+						local filepath = f_checkFile(font_file, "\t"..param, {sbDir, "font/", motifDir}, list_files)
+						-- print("\tfilepath", filepath)
 						if filepath ~= nil then
 							modified_line = param .. " = " ..filepath
 						end

@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"path/filepath"
+	"os"
 
 	"github.com/ikemen-engine/Ikemen-GO/packages/ini"
 	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
@@ -307,14 +309,38 @@ func loadConfig(def string, is_mugen_game bool) (*Config, error) {
 			result = regexp.MustCompile(`[Mm]otif\s*=\s*(\S+)`).FindStringSubmatch(line)
 			if result != nil {
 				c.Config.Motif = strings.ReplaceAll(result[1], "\\", "/")
-				c.SetValueUpdate("Config.Motif", c.Config.Motif)
+				if physfs.FileExist(c.Config.Motif) {
+					c.SetValueUpdate("Config.Motif", c.Config.Motif)
+				} else {
+					filepath.Walk("data/", func(path string, info os.FileInfo, err error) error {
+						// compare case insensitive path with c.Config.Motif
+						if strings.ToLower(path) == strings.ToLower(c.Config.Motif) {
+							fmt.Printf("[config.go] Fix Motif %v => %v\n", c.Config.Motif, path)
+							c.Config.Motif = path
+							c.SetValueUpdate("Config.Motif", c.Config.Motif)
+						}
+						return nil
+					})
+				}
 				fmt.Printf("[config.go] Import Motif=%v\n", c.Config.Motif)
 				continue
 			}
 			result = regexp.MustCompile(`[Ss]tart[Ss]tage\s*=\s*(\S+)`).FindStringSubmatch(line)
 			if result != nil {
 				c.Debug.StartStage = strings.ReplaceAll(result[1], "\\", "/")
-				c.SetValueUpdate("Debug.StartStage", c.Debug.StartStage)
+				if physfs.FileExist(c.Debug.StartStage) {
+					c.SetValueUpdate("Debug.StartStage", c.Debug.StartStage)
+				} else {
+					filepath.Walk("data/", func(path string, info os.FileInfo, err error) error {
+						// compare case insensitive path with c.Debug.StartStage
+						if strings.ToLower(path) == strings.ToLower(c.Debug.StartStage) {
+							fmt.Printf("[config.go] Fix StartStage %v => %v\n", c.Debug.StartStage, path)
+							c.Debug.StartStage = path
+							c.SetValueUpdate("Debug.StartStage", c.Debug.StartStage)
+						}
+						return nil
+					})
+				}
 				fmt.Printf("[config.go] Import StartStage=%v\n", c.Debug.StartStage)
 				continue
 			}
