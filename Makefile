@@ -86,7 +86,7 @@ clean_appbundle:
 #	Mac OS: darwin
 #	Windows: <default>
 
-windows:
+windows: ${srcFiles} src/assets.zip
 	go build -trimpath -ldflags="-s -w -H=windowsgui" -v -o ./bin/ikemen_win.exe ./src
 
 # Steamdeck (SteamOS X11)
@@ -113,7 +113,9 @@ rg353_wayland: ${srcFiles} src/assets.zip
 # Generic Linux Wayland
 wayland: ${srcFiles} src/assets.zip
 	export CGO_ENABLED=1 && go build -tags="wayland,gles2" -trimpath -ldflags="-s -w" -v -o ./bin/ikemen_wayland ./src
-#	cp ./bin/ikemen_wayland ./bin2
+#	cp ./bin/ikemen_wayland /home/deck/Downloads/Famicom\ Fighters\ \(MUGEN\)
+#	cp ./bin/ikemen_wayland /home/deck/Downloads/MK1
+#	cp ./bin/ikemen_wayland /home/deck/Downloads/MK2\ Remix\ MUGEN
 
 # Generic Linux KMS DRM
 drm: ${srcFiles} src/assets.zip

@@ -225,9 +225,9 @@ for src_line in content:gmatch('([^\n]*)\n?') do
 						table.insert(fonts_selection, motif[param])
 					end
 				else
-					motif[param] = searchFile(value, {motifDir, "data/"})
+					motif[param] = searchFile(value, {"font/","data/","sound/",motifDir})
 				end
-				local filepath = f_checkFile(motif[param], "[system.def]["..group.."] "..param, nil, list_files)
+				local filepath = f_checkFile(motif[param], "[system.def]["..group.."] "..param, {"font/","data/","sound/",motifDir}, list_files)
 				if filepath ~= nil then
 					modified_line = param .. " = " ..filepath
 				end
@@ -699,6 +699,85 @@ for index, stage in ipairs(stages_selection) do
 end
 
 -------------------------------------------------------------------
+-- CHECK storyboards: MOTIF_DIR/*.def
+-------------------------------------------------------------------
+for index, sb in ipairs(storyboards_selection) do
+	content = f_fileRead(sb)
+	if content == nil then
+		print("[ERROR] Can not read storyboard "..sb)
+	else
+		print("[system.def] Storyboard: "..sb)
+
+		local group
+		local sbDir
+		local sep
+
+		if string.find(sb, '\\') then
+			sep = '\\'
+		else
+			sep = '/'
+		end
+
+		local file, err = io.open(sb, "w")
+		local modified_line = ""
+		local list_files = f_listFiles({"font","sound","data"})
+		for src_line in content:gmatch('([^\n]*)\n?') do
+			local line = src_line:gsub('%s*;.*$', '')
+			if line:match('^[^%g]*%s*%[.-%s*%]%s*$') then --matched [] group
+				line = line:match('%[(.-)%s*%]%s*$') --match text between []
+				line = line:gsub('[%. ]', '_') --change . and space to _
+				group = tostring(line:lower())
+			else --matched non [] line
+				local param, value = line:match('^%s*([^=]-)%s*=%s*(.-)%s*$')
+				if param ~= nil then
+					param = param:gsub('[%. ]', '_') --change param . and space to _
+					if value ~= nil then --let's check if it's even a valid param
+						if value == '' then --text should remain empty
+							value = nil
+						end
+					end
+				end
+				if param ~= nil and value ~= nil then --param = value pattern matched
+					param = param:lower()
+					value = value:gsub('"', '') --remove brackets from value
+					sbDir = sb:match(".*"..sep)
+					if param == "spr" or param == "snd" or param == "bgm" then
+						local filepath = f_checkFile(value, "\t"..param, {sbDir, motifDir, "font"..sep, "sound"..sep}, list_files)
+						if filepath ~= nil then
+							modified_line = param .. " = " ..filepath
+						end
+					elseif param:find("font[0-9]+") then
+						local font_file = searchFile(value, {"font/", motifDir})
+						if string.find(font_file, '%.[Dd][eE][fF]') then
+							table.insert(fonts_selection, font_file)
+						end
+						local filepath = f_checkFile(font_file, "\t"..param, {"font/", motifDir}, list_files)
+						if filepath ~= nil then
+							modified_line = param .. " = " ..filepath
+						end
+					end
+				end
+			end
+			if modified_line == "" then
+				if string.find(src_line, '\\') and not string.find(src_line, 'text') then
+					src_line = src_line:gsub('\\','/')
+					print("\t[FIXED] "..src_line)
+				end
+				file:write(src_line .. "\n")
+			else
+				if string.find(modified_line, '\\') then
+					modified_line = modified_line:gsub('\\','/')
+				end
+				print("\t"..modified_line.." [FIXED]")
+				file:write(modified_line .. "\n")
+			end
+			modified_line = ""
+		end
+		file:close()
+	end
+end
+
+-------------------------------------------------------------------
 -- CHECK Fonts: fonts/*.def
 -------------------------------------------------------------------
 for index, font in ipairs(fonts_selection) do
@@ -744,81 +823,5 @@ for index, font in ipairs(fonts_selection) do
 				end
 			end
 		end
-	end
-end
-
--------------------------------------------------------------------
--- CHECK storyboards: MOTIF_DIR/*.def
--------------------------------------------------------------------
-for index, sb in ipairs(storyboards_selection) do
-	content = f_fileRead(sb)
-	if content == nil then
-		print("[ERROR] Can not read storyboard "..sb)
-	else
-		print("[system.def] Storyboard: "..sb)
-
-		local group
-		local sbDir
-		local sep
-
-		if string.find(sb, '\\') then
-			sep = '\\'
-		else
-			sep = '/'
-		end
-
-		local file, err = io.open(sb, "w")
-		local modified_line = ""
-		local list_files = f_listFiles({"font","sound","data"})
-		for src_line in content:gmatch('([^\n]*)\n?') do
-			local line = src_line:gsub('%s*;.*$', '')
-			if line:match('^[^%g]*%s*%[.-%s*%]%s*$') then --matched [] group
-				line = line:match('%[(.-)%s*%]%s*$') --match text between []
-				line = line:gsub('[%. ]', '_') --change . and space to _
-				group = tostring(line:lower())
-			else --matched non [] line
-				local param, value = line:match('^%s*([^=]-)%s*=%s*(.-)%s*$')
-				if param ~= nil then
-					param = param:gsub('[%. ]', '_') --change param . and space to _
-					if value ~= nil then --let's check if it's even a valid param
-						if value == '' then --text should remain empty
-							value = nil
-						end
-					end
-				end
-				if param ~= nil and value ~= nil then --param = value pattern matched
-					param = param:lower()
-					value = value:gsub('"', '') --remove brackets from value
-					sbDir = sb:match(".*"..sep)
-					if param == "spr" or param == "snd" or param == "bgm" then
-						local filepath = f_checkFile(value, "\t"..param, {sbDir, motifDir, "font"..sep, "sound"..sep}, list_files)
-						-- print("\tfilepath", filepath)
-						-- print("\tparam", param)
-						-- print("\tvalue", value)
-						-- print("\tgroup", group)
-						-- print("\tsbDir", sbDir)
-						-- print("\tmotifDir", motifDir)
-						if filepath ~= nil then
-							modified_line = param .. " = " ..filepath
-						end						
-					end
-				end
-			end
-			if modified_line == "" then
-				if string.find(src_line, '\\') and not string.find(src_line, 'text') then
-					src_line = src_line:gsub('\\','/')
-					print("\t[FIXED] "..src_line)
-				end
-				file:write(src_line .. "\n")
-			else
-				if string.find(modified_line, '\\') then
-					modified_line = modified_line:gsub('\\','/')
-				end
-				print("\t"..modified_line.." [FIXED]")
-				file:write(modified_line .. "\n")
-			end
-			modified_line = ""
-		end
-		file:close()
 	end
 end
