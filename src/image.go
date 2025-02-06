@@ -599,7 +599,7 @@ func (s *Sprite) readHeader(r io.Reader, ofs, size *uint32,
 	}
 	return nil
 }
-func (s *Sprite) readPcxHeader(f *physfs.File, offset int64) error {
+func (s *Sprite) readPcxHeader(f *os.File, offset int64) error {
 	f.Seek(offset, 0)
 	read := func(x interface{}) error {
 		return binary.Read(f, binary.LittleEndian, x)
@@ -669,7 +669,7 @@ func (s *Sprite) RlePcxDecode(rle []byte) (p []byte) {
 	s.rle = 0
 	return
 }
-func (s *Sprite) read(f *physfs.File, sh *SffHeader, offset int64, datasize uint32,
+func (s *Sprite) read(f *os.File, sh *SffHeader, offset int64, datasize uint32,
 	nextSubheader uint32, prev *Sprite, pl *PaletteList, c00 bool) error {
 	if int64(nextSubheader) > offset {
 		// Ignore datasize except last
@@ -923,7 +923,7 @@ func (s *Sprite) Lz5Decode(rle []byte) (p []byte) {
 	}
 	return
 }
-func (s *Sprite) readV2(f *physfs.File, offset int64, datasize uint32) error {
+func (s *Sprite) readV2(f *os.File, offset int64, datasize uint32) error {
 	var px []byte
 	var isRaw bool = false
 
