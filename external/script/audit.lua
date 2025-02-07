@@ -109,7 +109,7 @@ function f_checkFile(file, msg, dirs, list_files)
 	if status == "FAIL" and list_files then
 		local start_index, end_index
 		for k, v in ipairs(list_files) do
-			start_index, end_index = string.find(v:lower(), file:lower())
+			start_index, end_index = string.find(v:lower(), file:lower(), 1, true)
 			if start_index and end_index then
 				return string.sub(v, start_index, end_index)
 			end
@@ -260,27 +260,6 @@ for src_line in content:gmatch('([^\n]*)\n?') do
 						modified_line = param.. " = " ..filepath
 					end
 				end
-			-- elseif group == 'game_over_screen' then
-			-- 	if param == "storyboard" then
-			-- 		local filepath = f_checkFile(value, "[system.def]["..group.."] "..param, {"font/","data/","sound/",motifDir}, list_files)
-			-- 		if filepath ~= nil then
-			-- 			modified_line = param.. " = " ..filepath
-			-- 		end
-			-- 	end
-			-- elseif group == 'default_ending' then
-			-- 	if param == "storyboard" then
-			-- 		local filepath = f_checkFile(value, "[system.def]["..group.."] "..param, {"font/","data/","sound/",motifDir}, list_files)
-			-- 		if filepath ~= nil then
-			-- 			modified_line = param.. " = " ..filepath
-			-- 		end
-			-- 	end
-			-- elseif group == 'end_credits' then
-			-- 	if param == "storyboard" then
-			-- 		local filepath = f_checkFile(value, "[system.def]["..group.."] "..param, {"font/","data/","sound/",motifDir}, list_files)
-			-- 		if filepath ~= nil then
-			-- 			modified_line = param.. " = " ..filepath
-			-- 		end
-			-- 	end
 			end
 
 			if param:match("^.-storyboard") then
@@ -480,23 +459,16 @@ for src_line in content:gmatch('[^\r\n]+') do
 				local stripped_ch = c[1]:match("^%s*(.-)%s*$")
 
 				if string.find(stripped_ch, ".def") then
-					--~ char_found = searchFile(stripped_ch, {motifDir, "chars/"})
 					char_def = stripped_ch
 				else
-					--~ char_found = searchFile(stripped_ch.."/"..stripped_ch..".def", {motifDir, "chars/"})
 					char_def = stripped_ch.."/"..stripped_ch..".def"
 				end
 				local filepath = f_checkFile(char_def, "\t"..stripped_ch, {"chars/", motifDir}, list_files)
-				--~ print("DEBUG", "stripped_ch", stripped_ch)
 				if filepath ~= nil then
 					table.insert(chars_selection, searchFile(filepath, {"chars/", motifDir}))
-					modified_line = src_line:gsub(stripped_ch, filepath:match("^(.-)%/"))
-					--~ print("FIXED", "filepath", filepath, filepath:match("^(.-)%/"))
-					--~ print("FIXED", "src_line", src_line)
+					modified_line = src_line:gsub(stripped_ch, filepath:match("^(.-)%/"), 1)
 				else
 					table.insert(chars_selection, searchFile(char_def, {"chars/", motifDir}))
-					
-					--~ print("DEBUG", "char_def", char_def)
 				end
 			end
 		end
