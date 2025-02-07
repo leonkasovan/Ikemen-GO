@@ -274,7 +274,7 @@ for src_line in content:gmatch('([^\n]*)\n?') do
 		end
 	end
 	if modified_line == "" then
-		if string.find(src_line, '\\') then
+		if string.find(src_line, '\\') and not string.find(src_line, 'text') then
 			src_line = src_line:gsub('\\','/')
 			print("[system.def]["..group.."] [FIXED] "..src_line)
 		end

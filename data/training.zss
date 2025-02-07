@@ -54,7 +54,7 @@ ignoreHitPause if gameMode = "training" && teamSide = 2 && !isHelper {
 	}
 	if roundState < 2 {
 		# Skip round and fight calls
-		assertSpecial{flag: noRoundDisplay; flag2: noFightDisplay}
+		assertSpecial{flag: skipRoundDisplay; flag2: skipFightDisplay}
 	}
 	if roundState = 2 {
 		assertSpecial{

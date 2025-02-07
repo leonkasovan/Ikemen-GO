@@ -211,12 +211,10 @@ function randomtest.updateWinCounts()
 		buffer = buffer .. '\r\n'
 	end)
 	local outputFile = io.open(autoLevelFile, 'wb')
-	if outputFile then
-		outputFile:write(buffer)
-		io.close(outputFile)
-		-- Debug print to console
-		print("Updated win counts written to " .. autoLevelFile)
-	end
+	outputFile:write(buffer)
+	io.close(outputFile)
+	-- Debug print to console
+	print("Updated win counts written to " .. autoLevelFile)
 end
 
 -- Randomly selects a character for a player, considering rank and winner
