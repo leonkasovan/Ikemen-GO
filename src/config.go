@@ -325,7 +325,7 @@ func loadConfig(def string, is_mugen_game bool) (*Config, error) {
 				fmt.Printf("[config.go] Import Motif=%v\n", c.Config.Motif)
 				continue
 			}
-			result = regexp.MustCompile(`[Ss]tart[Ss]tage\s*=\s*(\S+)`).FindStringSubmatch(line)
+			result = regexp.MustCompile(`[Ss]tart[Ss]tage\s*=\s*(.+)$`).FindStringSubmatch(line)
 			if result != nil {
 				c.Debug.StartStage = strings.ReplaceAll(result[1], "\\", "/")
 				if physfs.FileExist(c.Debug.StartStage) {

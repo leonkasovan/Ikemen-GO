@@ -128,6 +128,10 @@ function f_listFiles(dirs)
 	return files
 end
 
+function f_extractDir(path)
+	return path:match('^(.-)[^/\\]+$')
+end
+
 -------------------------------------------------------------------
 -- CHECK config.ini
 -------------------------------------------------------------------
@@ -171,7 +175,7 @@ if string.find(config.DebugFont, '.def') then
 	table.insert(fonts_selection, config.DebugFont)
 end
 f_checkFile(config.Motif, "[config.ini] Motif")
-local motifDir = config.Motif:match('^(.-)[^/\\]+$')
+local motifDir = f_extractDir(config.Motif)
 print(string.format('[config.ini] Motif Directory: %s', motifDir))
 f_checkFile(config.StartStage, "[config.ini] StartStage")
 f_checkFile(config.System, "[config.ini] System")
@@ -302,7 +306,8 @@ end
 local group
 local file, err = io.open(motif.fight, "w")
 local modified_line = ""
-local list_files = f_listFiles({"font","data","sound",motifDir})
+local fight_dir = f_extractDir(motif.fight)
+local list_files = f_listFiles({fight_dir, "font", "data", "sound", motifDir})
 for src_line in content:gmatch('([^\n]*)\n?') do
 	line = src_line:gsub('%s*;.*$', '')
 	if line:match('^[^%g]*%s*%[.-%s*%]%s*$') then --matched [] group
@@ -329,12 +334,12 @@ for src_line in content:gmatch('([^\n]*)\n?') do
 			value = value:gsub(',%s*$', '') --remove dummy ','
 			if group == 'files' then
 				if param:match('^font[0-9]+') then --font declaration param matched
-					motif[param] = searchFile(value, {"font/", motifDir})
+					motif[param] = searchFile(value, {fight_dir, "font/", motifDir})
 					if string.find(motif[param], '.def') then
 						table.insert(fonts_selection, motif[param])
 					end
 				else
-					motif[param] = searchFile(value, {motifDir, "data/"})
+					motif[param] = searchFile(value, {fight_dir, motifDir, "data/"})
 				end
 				local filepath = f_checkFile(motif[param], "[fight.def] "..param, nil, list_files)
 				if filepath ~= nil then
@@ -773,7 +778,6 @@ for index, font in ipairs(fonts_selection) do
 		print("[system.def] Font: "..font)
 
 		local group
-		local fontDir
 		local sep
 
 		if string.find(font, '\\') then
@@ -782,8 +786,11 @@ for index, font in ipairs(fonts_selection) do
 			sep = '/'
 		end
 
-		for line in content:gmatch('([^\n]*)\n?') do
-			line = line:gsub('%s*;.*$', '')
+		local file, err = io.open(font, "w")
+		local fontDir = f_extractDir(font)
+		local list_files = f_listFiles({fontDir, "fonts"..sep, "data"..sep})
+		for src_line in content:gmatch('([^\n]*)\n?') do
+			line = src_line:gsub('%s*;.*$', '')
 			if line:match('^[^%g]*%s*%[.-%s*%]%s*$') then --matched [] group
 				line = line:match('%[(.-)%s*%]%s*$') --match text between []
 				line = line:gsub('[%. ]', '_') --change . and space to _
@@ -801,12 +808,29 @@ for index, font in ipairs(fonts_selection) do
 				if param ~= nil and value ~= nil then --param = value pattern matched
 					param = param:lower()
 					value = value:gsub('"', '') --remove brackets from value
-					fontDir = font:match(".*"..sep)
 					if param == "file" then
-						f_checkFile(value, "\t"..param, {fontDir, "fonts"..sep, "data"..sep})
+						local filepath = f_checkFile(value, "\t"..param, {fontDir, "fonts"..sep, "data"..sep}, list_files)
+						if filepath ~= nil then
+							modified_line = param .. " = " ..filepath
+						end
 					end
 				end
 			end
+			if modified_line == "" then
+				if string.find(src_line, '\\') then
+					src_line = src_line:gsub('\\','/')
+					print("\t[FIXED] "..src_line)
+				end
+				file:write(src_line .. "\n")
+			else
+				if string.find(modified_line, '\\') then
+					modified_line = modified_line:gsub('\\','/')
+				end
+				print("\t"..modified_line.." [FIXED]")
+				file:write(modified_line .. "\n")
+			end
+			modified_line = ""
 		end
+		file:close()
 	end
 end
