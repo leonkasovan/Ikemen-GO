@@ -67,46 +67,46 @@ const (
 	ASF_nowalk
 	ASF_unguardable
 	// Ikemen flags
+	ASF_animatehitpause
+	ASF_animfreeze
+	ASF_autoguard
+	ASF_drawunder
+	ASF_noailevel
+	ASF_noairjump
 	ASF_nobrake
 	ASF_nocrouch
-	ASF_nostand
-	ASF_nojump
-	ASF_noairjump
-	ASF_nohardcodedkeys
-	ASF_nogetupfromliedown
-	ASF_nofastrecoverfromliedown
+	ASF_nodizzypointsdamage
+	ASF_nofacedisplay
 	ASF_nofallcount
 	ASF_nofalldefenceup
-	ASF_noturntarget
-	ASF_noinput
-	ASF_nolifebardisplay
-	ASF_nopowerbardisplay
+	ASF_nofallhitflag
+	ASF_nofastrecoverfromliedown
+	ASF_nogetupfromliedown
 	ASF_noguardbardisplay
-	ASF_nostunbardisplay
-	ASF_nofacedisplay
-	ASF_nonamedisplay
-	ASF_nowinicondisplay
-	ASF_autoguard
-	ASF_animfreeze
-	ASF_postroundinput
-	ASF_nohitdamage
 	ASF_noguarddamage
-	ASF_nodizzypointsdamage
-	ASF_noguardpointsdamage
-	ASF_noredlifedamage
-	ASF_nomakedust
 	ASF_noguardko
-	ASF_nokovelocity
-	ASF_noailevel
+	ASF_noguardpointsdamage
+	ASF_nohardcodedkeys
+	ASF_nohitdamage
+	ASF_noinput
 	ASF_nointroreset
-	ASF_sizepushonly
-	ASF_animatehitpause
-	ASF_drawunder
+	ASF_nojump
+	ASF_nokofall // In Mugen this seems hardcoded into Training mode
+	ASF_nokovelocity
+	ASF_nolifebardisplay
+	ASF_nomakedust
+	ASF_nonamedisplay
+	ASF_nopowerbardisplay
+	ASF_noredlifedamage
+	ASF_nostand
+	ASF_nostunbardisplay
+	ASF_noturntarget
+	ASF_nowinicondisplay
+	ASF_postroundinput
+	ASF_projtypecollision // TODO: Make this a parameter for normal projectiles as well?
 	ASF_runfirst
 	ASF_runlast
-	ASF_projtypecollision // TODO: Make this a parameter for normal projectiles as well?
-	ASF_nofallhitflag
-	ASF_nokofall // In Mugen this seems hardcoded into Training mode
+	ASF_sizepushonly
 )
 
 type GlobalSpecialFlag uint32
@@ -125,12 +125,12 @@ const (
 	GSF_roundnotover
 	GSF_timerfreeze
 	// Ikemen flags
-	GSF_nofightdisplay
-	GSF_nokodisplay
-	GSF_norounddisplay
-	GSF_nowindisplay
 	GSF_roundfreeze
 	GSF_roundnotskip
+	GSF_skipfightdisplay
+	GSF_skipkodisplay
+	GSF_skiprounddisplay
+	GSF_skipwindisplay
 )
 
 type PosType int32

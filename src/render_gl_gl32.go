@@ -288,7 +288,7 @@ func (t *Texture_GL32) SetRGBPixelData(data []float32) {
 
 // Return whether texture has a valid handle
 func (t *Texture_GL32) IsValid() bool {
-	return t.handle != 0
+	return t.width != 0 && t.height != 0 && t.handle != 0
 }
 
 func (t *Texture_GL32) GetWidth() int32 {

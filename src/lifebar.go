@@ -1218,6 +1218,17 @@ func (fa *LifeBarFace) bgDraw(layerno int16) {
 
 func (fa *LifeBarFace) draw(layerno int16, ref int, far *LifeBarFace) {
 	if far.face != nil {
+		// Get player current PalFX if applicable
+		pfx := newPalFX()
+		if far.palfxshare {
+			pfx = sys.chars[ref][0].getPalfx()
+		}
+
+		// Swap palette maps to get the player's current palette
+		if far.palshare {
+			sys.cgi[ref].palettedata.palList.SwapPalMap(&sys.chars[ref][0].getPalfx().remap)
+		}
+
 		// Get texture
 		far.face.Pal = nil
 		if far.face.PalTex != nil {
@@ -1226,22 +1237,16 @@ func (fa *LifeBarFace) draw(layerno int16, ref int, far *LifeBarFace) {
 			far.face.Pal = far.face.GetPal(&sys.cgi[ref].palettedata.palList)
 		}
 
-		// Palette handling
+		// Revert palette maps to initial state
 		if far.palshare {
 			sys.cgi[ref].palettedata.palList.SwapPalMap(&sys.chars[ref][0].getPalfx().remap)
-		}
-
-		// PalFX handling
-		pfx := newPalFX()
-		if far.palfxshare {
-			pfx = sys.chars[ref][0].getPalfx()
 		}
 
 		// TODO: PalFX sharing has a bug in Tag in that it uses the parameter from the char's original placement in the team
 		// For instance if player 3 tags in, they will use p3 palette options instead of p1
 		// https://github.com/ikemen-engine/Ikemen-GO/issues/2269
 
-		// Keep brightness if player initiated SuperPause
+		// Reset system brightness if player initiated SuperPause (cancel "darken" parameter)
 		ob := sys.brightness
 		if ref == sys.superplayer {
 			sys.brightness = 256
@@ -1256,7 +1261,7 @@ func (fa *LifeBarFace) draw(layerno int16, ref int, far *LifeBarFace) {
 			fa.ko.Draw(float32(fa.pos[0])+sys.lifebarOffsetX, float32(fa.pos[1]), layerno, sys.lifebarScale)
 		}
 
-		// Restore system brightness
+		// Restore original system brightness
 		sys.brightness = ob
 
 		// Turns mode teammates
@@ -2375,7 +2380,7 @@ func (ro *LifeBarRound) act() bool {
 			//	sys.introSkipped = false
 			//}
 			// Round call
-			if sys.gsf(GSF_norounddisplay) && canSkip(0) { // Skip
+			if sys.gsf(GSF_skiprounddisplay) && canSkip(0) { // Skip
 				ro.roundCallOver = true
 				ro.waitTimer[1] = 0
 			}
@@ -2465,7 +2470,7 @@ func (ro *LifeBarRound) act() bool {
 			}
 			// Skip fight call
 			// Cannot be skipped unless round call is finished or also skipped
-			if ro.roundCallOver && sys.gsf(GSF_nofightdisplay) && canSkip(1) {
+			if ro.roundCallOver && sys.gsf(GSF_skipfightdisplay) && canSkip(1) {
 				endFightCall()
 				if sys.intro > 1 {
 					sys.intro = 1 // Skip ctrl waiting time
@@ -2542,7 +2547,7 @@ func (ro *LifeBarRound) act() bool {
 				ro.waitTimer[t]--
 			}
 			// KO screen
-			if !(sys.gsf(GSF_nokodisplay) && canSkip(2)) {
+			if !(sys.gsf(GSF_skipkodisplay) && canSkip(2)) {
 				switch sys.finishType {
 				case FT_KO:
 					ro.ko_top.Action()
@@ -2565,7 +2570,7 @@ func (ro *LifeBarRound) act() bool {
 				}
 			}
 			// Winner announcement
-			if sys.intro < -(ro.over_waittime) && !(sys.gsf(GSF_nowindisplay) && canSkip(3)) {
+			if sys.intro < -(ro.over_waittime) && !(sys.gsf(GSF_skipwindisplay) && canSkip(3)) {
 				wt := sys.winTeam
 				if wt < 0 {
 					wt = 0

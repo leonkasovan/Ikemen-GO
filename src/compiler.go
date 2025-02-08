@@ -4149,18 +4149,18 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 		// Ikemen global flags
 		case "globalnoko":
 			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_globalnoko))
-		case "nofightdisplay":
-			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_nofightdisplay))
-		case "nokodisplay":
-			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_nokodisplay))
-		case "norounddisplay":
-			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_norounddisplay))
-		case "nowindisplay":
-			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_nowindisplay))
 		case "roundnotskip":
 			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_roundnotskip))
 		case "roundfreeze":
 			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_roundfreeze))
+		case "skipfightdisplay":
+			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_skipfightdisplay))
+		case "skipkodisplay":
+			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_skipkodisplay))
+		case "skiprounddisplay":
+			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_skiprounddisplay))
+		case "skipwindisplay":
+			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_skipwindisplay))
 		default:
 			return bvNone(), Error("Invalid data: " + c.token)
 		}

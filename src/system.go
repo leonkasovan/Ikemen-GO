@@ -1654,8 +1654,8 @@ func (s *System) action() {
 				s.shuttertime++
 				// Do the actual skipping in the frame when the "shutter" effect is closed
 				if s.shuttertime == s.lifebar.ro.shutter_time {
-					// NoRoundDisplay and NoFightDisplay flags must be preserved during intro skip frame
-					skipround := (s.specialFlag&GSF_norounddisplay | s.specialFlag&GSF_nofightdisplay)
+					// SkipRoundDisplay and SkipFightDisplay flags must be preserved during intro skip frame
+					skipround := (s.specialFlag&GSF_skiprounddisplay | s.specialFlag&GSF_skipfightdisplay)
 					s.resetGblEffect()
 					s.specialFlag = skipround
 					s.fadeintime = 0
@@ -1733,18 +1733,22 @@ func (s *System) action() {
 	explUpdate(&s.explodsLayerN1, true)
 	explUpdate(&s.explodsLayer0, true)
 	explUpdate(&s.explodsLayer1, false)
+	// Adjust game speed
 	if s.tickNextFrame() {
-		// KO slowdown
 		spd := (60 + s.cfg.Options.GameSpeed*5) / float32(s.cfg.Config.Framerate) * s.accel
+		// KO slowdown
 		s.slowtimeTrigger = 0
-		if !s.gsf(GSF_nokoslow) && s.time != 0 && s.intro < 0 && s.slowtime > 0 {
-			spd *= s.lifebar.ro.slow_speed
-			if s.slowtime < s.lifebar.ro.slow_fadetime {
-				spd += (float32(1) - s.lifebar.ro.slow_speed) * float32(s.lifebar.ro.slow_fadetime-s.slowtime) / float32(s.lifebar.ro.slow_fadetime)
+		if s.intro < 0 && s.time != 0 && s.slowtime > 0 {
+			if !s.gsf(GSF_nokoslow) {
+				spd *= s.lifebar.ro.slow_speed
+				if s.slowtime < s.lifebar.ro.slow_fadetime {
+					spd += (float32(1) - s.lifebar.ro.slow_speed) * float32(s.lifebar.ro.slow_fadetime-s.slowtime) / float32(s.lifebar.ro.slow_fadetime)
+				}
 			}
 			s.slowtimeTrigger = s.slowtime
 			s.slowtime--
 		}
+		// Outside match or while frame stepping
 		if s.postMatchFlg || s.step {
 			spd = 1
 		}

@@ -423,8 +423,16 @@ func (pl *PaletteList) SwapPalMap(palMap *[]int) bool {
 
 func PaletteToTexture(pal []uint32) Texture {
 	tx := gfx.newTexture(256, 1, 32, false)
-	tx.SetData(unsafe.Slice((*byte)(unsafe.Pointer(&pal[0])), len(pal)*4))
-	return tx
+
+	// Safely handle invalid palettes
+	if len(pal) == 0 {
+		sys.errLog.Printf("Invalid palette texture. Defaulting to none")
+		tx.SetData(nil)
+		return tx
+	} else {
+		tx.SetData(unsafe.Slice((*byte)(unsafe.Pointer(&pal[0])), len(pal)*4))
+		return tx
+	}
 }
 
 type SffHeader struct {
@@ -1026,7 +1034,7 @@ func (s *Sprite) CachePalette(pal []uint32) Texture {
 	// If cached texture is invalid, generate a new one and cache it
 	if !hasPalette {
 		s.PalTex = PaletteToTexture(pal)
-		s.paltemp = pal
+		s.paltemp = append([]uint32{}, pal...)
 	}
 	return s.PalTex
 }

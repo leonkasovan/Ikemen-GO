@@ -2238,6 +2238,7 @@ func (be BytecodeExp) run_const(c *Char, i *int, oc *Char) {
 		sys.bcStack.PushB(p8 != nil &&
 			p8.gi().nameLow == sys.stringPool[sys.workingState.playerNo].List[*(*int32)(unsafe.Pointer(&be[*i]))])
 		*i += 4
+	// StageVar
 	case OC_const_stagevar_info_name:
 		sys.bcStack.PushB(sys.stage.nameLow ==
 			sys.stringPool[sys.workingState.playerNo].List[*(*int32)(
@@ -11727,38 +11728,38 @@ const (
 
 func (sc modifyStageVar) Run(c *Char, _ []int32) bool {
 	//crun := c RedirectID is pointless when modifying a stage
-	s := *&sys.stage
+	s := sys.stage
 	StateControllerBase(sc).run(c, func(id byte, exp []BytecodeExp) bool {
 		switch id {
 		// Camera group
 		case modifyStageVar_camera_autocenter:
 			s.stageCamera.autocenter = exp[0].evalB(c)
 		case modifyStageVar_camera_boundleft:
-			s.stageCamera.boundleft = int32(exp[0].evalF(c) * c.localscl / sys.stage.localscl)
+			s.stageCamera.boundleft = int32(exp[0].evalF(c) * c.localscl / s.localscl)
 		case modifyStageVar_camera_boundright:
-			s.stageCamera.boundright = int32(exp[0].evalF(c) * c.localscl / sys.stage.localscl)
+			s.stageCamera.boundright = int32(exp[0].evalF(c) * c.localscl / s.localscl)
 		case modifyStageVar_camera_boundhigh:
-			s.stageCamera.boundhigh = int32(exp[0].evalF(c) * c.localscl / sys.stage.localscl)
+			s.stageCamera.boundhigh = int32(exp[0].evalF(c) * c.localscl / s.localscl)
 		case modifyStageVar_camera_boundlow:
-			s.stageCamera.boundlow = int32(exp[0].evalF(c) * c.localscl / sys.stage.localscl)
+			s.stageCamera.boundlow = int32(exp[0].evalF(c) * c.localscl / s.localscl)
 		case modifyStageVar_camera_verticalfollow:
 			s.stageCamera.verticalfollow = exp[0].evalF(c)
 		case modifyStageVar_camera_floortension:
-			s.stageCamera.floortension = int32(exp[0].evalF(c) * c.localscl / sys.stage.localscl)
+			s.stageCamera.floortension = int32(exp[0].evalF(c) * c.localscl / s.localscl)
 		case modifyStageVar_camera_lowestcap:
 			s.stageCamera.lowestcap = exp[0].evalB(c)
 		case modifyStageVar_camera_tensionhigh:
-			s.stageCamera.tensionhigh = int32(exp[0].evalF(c) * c.localscl / sys.stage.localscl)
+			s.stageCamera.tensionhigh = int32(exp[0].evalF(c) * c.localscl / s.localscl)
 		case modifyStageVar_camera_tensionlow:
-			s.stageCamera.tensionlow = int32(exp[0].evalF(c) * c.localscl / sys.stage.localscl)
+			s.stageCamera.tensionlow = int32(exp[0].evalF(c) * c.localscl / s.localscl)
 		case modifyStageVar_camera_tension:
-			s.stageCamera.tension = int32(exp[0].evalF(c) * c.localscl / sys.stage.localscl)
+			s.stageCamera.tension = int32(exp[0].evalF(c) * c.localscl / s.localscl)
 		case modifyStageVar_camera_tensionvel:
 			s.stageCamera.tensionvel = exp[0].evalF(c)
 		case modifyStageVar_camera_cuthigh:
-			s.stageCamera.cuthigh = int32(exp[0].evalF(c) * c.localscl / sys.stage.localscl)
+			s.stageCamera.cuthigh = int32(exp[0].evalF(c) * c.localscl / s.localscl)
 		case modifyStageVar_camera_cutlow:
-			s.stageCamera.cutlow = int32(exp[0].evalF(c) * c.localscl / sys.stage.localscl)
+			s.stageCamera.cutlow = int32(exp[0].evalF(c) * c.localscl / s.localscl)
 		case modifyStageVar_camera_startzoom:
 			s.stageCamera.startzoom = exp[0].evalF(c)
 		case modifyStageVar_camera_zoomout:
@@ -11777,13 +11778,13 @@ func (sc modifyStageVar) Run(c *Char, _ []int32) bool {
 			s.stageCamera.yscrollspeed = exp[0].evalF(c)
 		// PlayerInfo group
 		case modifyStageVar_playerinfo_leftbound:
-			s.leftbound = exp[0].evalF(c) * c.localscl / sys.stage.localscl
+			s.leftbound = exp[0].evalF(c) * c.localscl / s.localscl
 		case modifyStageVar_playerinfo_rightbound:
-			s.rightbound = exp[0].evalF(c) * c.localscl / sys.stage.localscl
+			s.rightbound = exp[0].evalF(c) * c.localscl / s.localscl
 		case modifyStageVar_playerinfo_topbound:
-			s.topbound = exp[0].evalF(c) * c.localscl / sys.stage.localscl
+			s.topbound = exp[0].evalF(c) * c.localscl / s.localscl
 		case modifyStageVar_playerinfo_botbound:
-			s.botbound = exp[0].evalF(c) * c.localscl / sys.stage.localscl
+			s.botbound = exp[0].evalF(c) * c.localscl / s.localscl
 		// Scaling group
 		case modifyStageVar_scaling_topz:
 			if s.mugenver[0] != 1 { // mugen 1.0+ removed support for topz
@@ -11851,7 +11852,7 @@ func (sc modifyStageVar) Run(c *Char, _ []int32) bool {
 		}
 		return true
 	})
-	sys.stage.reload = true // Stage will have to be reloaded if it's re-selected
+	s.reload = true // Stage will have to be reloaded if it's re-selected
 	sys.cam.stageCamera = s.stageCamera
 	sys.cam.Reset() // TODO: Resetting the camera makes the zoom jitter
 	return false

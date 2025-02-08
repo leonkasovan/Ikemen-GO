@@ -5539,18 +5539,18 @@ func triggerFunctions(l *lua.LState) {
 		case "timerfreeze":
 			l.Push(lua.LBool(sys.gsf(GSF_timerfreeze)))
 		// GlobalSpecialFlag (Ikemen)
-		case "nofightdisplay":
-			l.Push(lua.LBool(sys.gsf(GSF_nofightdisplay)))
-		case "nokodisplay":
-			l.Push(lua.LBool(sys.gsf(GSF_nokodisplay)))
-		case "norounddisplay":
-			l.Push(lua.LBool(sys.gsf(GSF_norounddisplay)))
-		case "nowindisplay":
-			l.Push(lua.LBool(sys.gsf(GSF_nowindisplay)))
 		case "roundfreeze":
 			l.Push(lua.LBool(sys.gsf(GSF_roundfreeze)))
 		case "roundnotskip":
 			l.Push(lua.LBool(sys.gsf(GSF_roundnotskip)))
+		case "skipfightdisplay":
+			l.Push(lua.LBool(sys.gsf(GSF_skipfightdisplay)))
+		case "skipkodisplay":
+			l.Push(lua.LBool(sys.gsf(GSF_skipkodisplay)))
+		case "skiprounddisplay":
+			l.Push(lua.LBool(sys.gsf(GSF_skiprounddisplay)))
+		case "skipwindisplay":
+			l.Push(lua.LBool(sys.gsf(GSF_skipwindisplay)))
 		// SystemCharFlag
 		case "disabled":
 			l.Push(lua.LBool(sys.debugWC.scf(SCF_disabled)))

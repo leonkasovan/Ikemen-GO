@@ -154,30 +154,24 @@ var notiling = Tiling{}
 
 // RenderParams holds the common data for all sprite rendering functions
 type RenderParams struct {
-	// Sprite texture and palette texture
-	tex    Texture
-	paltex Texture
-	// Size, position, tiling, scaling and rotation
-	size     [2]uint16
-	x, y     float32
-	tile     Tiling
-	xts, xbs float32
-	ys, vs   float32
-	rxadd    float32
-	xas, yas float32
-	rot      Rotation
-	// Transparency, masking and palette effects
-	tint  uint32 // Sprite tint for shadows
-	trans int32  // Mugen transparency blending
-	mask  int32  // Mask for transparency
-	pfx   *PalFX
-	// Clipping
-	window *[4]int32
-	// Rotation center
-	rcx, rcy float32
-	// Perspective projection
-	projectionMode int32
-	fLength        float32
+	tex            Texture // Sprite
+	paltex         Texture // Palette
+	size           [2]uint16
+	x, y           float32 // Position
+	tile           Tiling
+	xts, xbs       float32 // Top and bottom X scale (as in parallax)
+	ys, vs         float32 // Y scale
+	rxadd          float32
+	xas, yas       float32
+	rot            Rotation
+	tint           uint32 // Sprite tint for shadows
+	trans          int32  // Transparency blending
+	mask           int32  // Mask for transparency
+	pfx            *PalFX
+	window         *[4]int32
+	rcx, rcy       float32 // Rotation center
+	projectionMode int32   // Perspective projection
+	fLength        float32 // Focal length
 	xOffset        float32
 	yOffset        float32
 }
@@ -410,6 +404,7 @@ func rmInitSub(rp *RenderParams) {
 func BlendReset() {
 	gfx.BlendReset()
 }
+
 func RenderSprite(rp RenderParams) {
 	if !rp.IsValid() {
 		return
