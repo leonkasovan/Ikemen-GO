@@ -3,7 +3,8 @@ package lua
 import (
 	"context"
 	"fmt"
-	"os"
+	// "os"
+	// "github.com/ikemen-engine/Ikemen-GO/packages/physfs"
 )
 
 type LValueType int
@@ -172,7 +173,7 @@ type Global struct {
 	Global        *LTable
 
 	builtinMts map[int]LValue
-	tempFiles  []*os.File
+	// tempFiles  []*physfs.File
 	gccount    int32
 }
 
