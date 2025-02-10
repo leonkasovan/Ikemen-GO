@@ -29,36 +29,30 @@ var screenpackZip []byte
 
 func renameFilesToLowerCase(root string) error {
 	// Walk through the directory recursively
-	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
+	physfs.Walk(root, func(path string, isDir bool) error {
 		// Skip directories
-		if info.IsDir() {
+		if isDir {
 			return nil
 		}
 
 		// Get the directory and the lowercase file name
-		dir := filepath.Dir(path)
-		fileName := info.Name()
+		fileName := path
 		ext := filepath.Ext(fileName)
 		fileNameWithoutExt := strings.TrimSuffix(fileName, ext)
 		lowercaseName := fileNameWithoutExt + strings.ToLower(ext)
 
 		// Check if renaming is needed
-		if info.Name() != lowercaseName {
-			newPath := filepath.Join(dir, lowercaseName)
-
+		if path != lowercaseName {
 			// Rename the file
-			err := os.Rename(path, newPath)
+			err := os.Rename(path, lowercaseName)
 			if err != nil {
-				return fmt.Errorf("failed to rename %s to %s: %w", path, newPath, err)
+				return fmt.Errorf("failed to rename %s to %s: %w", path, lowercaseName, err)
 			}
-			fmt.Printf("Renamed: %s -> %s\n", path, newPath)
+			fmt.Printf("Renamed: %s -> %s\n", path, lowercaseName)
 		}
 		return nil
 	})
+	return nil
 }
 
 // extractFileFromEmbed extracts a specific file from the embedded ZIP content by its name  into current dir.
@@ -133,9 +127,9 @@ func extractEmbed(content []byte) error {
 		}
 
 		// Create the destination file on disk
-		outFile, err := os.Create(file.Name)
-		if err != nil {
-			return err
+		outFile := physfs.OpenWrite(file.Name)
+		if outFile == nil {
+			return fmt.Errorf("can not write %f", file.Name)
 		}
 		defer outFile.Close()
 
@@ -158,9 +152,9 @@ func extractFile(f *zip.File, filePath string) error {
 	defer srcFile.Close()
 
 	// Create the destination file
-	destFile, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
-	if err != nil {
-		return err
+	destFile := physfs.OpenWrite(filePath)
+	if destFile == nil {
+		return fmt.Errorf("can not write %s", filePath)
 	}
 	defer destFile.Close()
 
@@ -425,14 +419,20 @@ func main() {
 	}
 	defer physfs.Deinit()
 
-	// Find zip files and mount it
+	// Load Order:
+	// 1. *.z0
+	// 2. current directory "."
+	// 3. *.zip
+	
 	files, err := os.ReadDir(".")
 	if err != nil {
 		fmt.Println("Error reading directory:", err)
 		return
 	}
+
+	// Find z0 files and mount it
 	for _, file := range files {
-		if strings.HasSuffix(file.Name(), ".zip") {
+		if strings.HasSuffix(file.Name(), ".z0") {
 			// Open the file
 			if !physfs.Mount(file.Name(), "/", 1) {
 				fmt.Printf("Mounting %v [FAIL]\n", file.Name())
@@ -448,6 +448,18 @@ func main() {
 		fmt.Printf("Mounting directory \"%v\" [FAIL]\n", currentDir)
 	} else {
 		fmt.Printf("Mounting directory \"%v\" [OK]\n", currentDir)
+	}
+
+	// Find zip files and mount it
+	for _, file := range files {
+		if strings.HasSuffix(file.Name(), ".zip") {
+			// Open the file
+			if !physfs.Mount(file.Name(), "/", 1) {
+				fmt.Printf("Mounting %v [FAIL]\n", file.Name())
+			} else {
+				fmt.Printf("Mounting %v [OK]\n", file.Name())
+			}
+		}
 	}
 
 	// Set Write Directory

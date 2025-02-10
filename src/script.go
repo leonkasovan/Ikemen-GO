@@ -1,16 +1,21 @@
 package main
-
+/*
+#include <stdlib.h>
+#include "../packages/physfs/physfs.h"
+*/
+import "C"
 import (
 	"fmt"
 	"math"
 	"math/rand"
-	"os"
-	"path/filepath"
+	// "os"
+	// "path/filepath"
 	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
 	"time"
+	"unsafe"
 
 	lua "github.com/ikemen-engine/Ikemen-GO/packages/gopher-lua"
 	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
@@ -1633,10 +1638,21 @@ func systemScriptInit(l *lua.LState) {
 	})
 	luaRegister(l, "getDirectoryFiles", func(*lua.LState) int {
 		dir := l.NewTable()
-		filepath.Walk(strArg(l, 1), func(path string, info os.FileInfo, err error) error {
-			dir.Append(lua.LString(path))
-			return nil
-		})
+		cDir := C.CString(strArg(l, 1))
+		defer C.free(unsafe.Pointer(cDir))
+		files := C.PHYSFS_enumerateFiles(cDir)
+		pfiles := files
+		defer C.PHYSFS_freeList(unsafe.Pointer(files))
+		if pfiles != nil {
+			for {
+				if *pfiles == nil {
+					break
+				}
+				dir.Append(lua.LString(C.GoString(*pfiles)))
+				pfiles = (**C.char)(unsafe.Pointer(uintptr(unsafe.Pointer(pfiles)) + unsafe.Sizeof(*pfiles)))
+			}
+		}
+		
 		l.Push(dir)
 		return 1
 	})
@@ -2174,6 +2190,16 @@ func systemScriptInit(l *lua.LState) {
 		})
 		l.Push(lua.LString(SearchFile(strArg(l, 1), dirs)))
 		return 1
+	})
+	luaRegister(l, "findFile", func(l *lua.LState) int {
+		var dirs []string
+		tableArg(l, 2).ForEach(func(key, value lua.LValue) {
+			dirs = append(dirs, lua.LVAsString(value))
+		})
+		res, rc := physfs.FindFileExt(dirs, strArg(l, 1))
+		l.Push(lua.LString(res))
+		l.Push(lua.LNumber(rc))
+		return 2
 	})
 	luaRegister(l, "selectChar", func(*lua.LState) int {
 		cn := int(numArg(l, 2))

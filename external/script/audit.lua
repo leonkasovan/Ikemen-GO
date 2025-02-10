@@ -122,7 +122,7 @@ function f_listFiles(dirs)
 	files = {}
 	for i, dir in ipairs(dirs) do
 		for k, v in ipairs(getDirectoryFiles(dir)) do
-			table.insert(files, v)
+			table.insert(files, dir.."/"..v)
 		end
 	end
 	return files
@@ -197,7 +197,7 @@ local group
 local motif = {}
 local file, err = io.open(config.Motif, "w")
 local modified_line = ""
-local list_files = f_listFiles({"font","data","sound",motifDir})
+-- local list_files = f_listFiles({"font","data","sound",motifDir})
 for src_line in content:gmatch('([^\n]*)\n?') do
 	line = src_line:gsub('%s*;.*$', '')
 	if line:match('^[^%g]*%s*%[.-%s*%]%s*$') then --matched [] group
@@ -218,62 +218,49 @@ for src_line in content:gmatch('([^\n]*)\n?') do
 			end
 		end
 		if param ~= nil and value ~= nil then --param = value pattern matched
+			local valid_path
+			local rc = 99
 			value = value:gsub('"', '') --remove brackets from value
 			value = value:gsub('^(%.[0-9])', '0%1') --add 0 before dot if missing at the beginning of matched string
 			value = value:gsub('([^0-9])(%.[0-9])', '%10%2') --add 0 before dot if missing anywhere else
 			value = value:gsub(',%s*$', '') --remove dummy ','
 			if group == 'files' then
 				if param:match('^font[0-9]+') then --font declaration param matched
-					motif[param] = searchFile(value, {"font/", motifDir})
-					if string.find(motif[param], '.def') then
-						table.insert(fonts_selection, motif[param])
+					valid_path, rc = findFile(value, {"", "font", motifDir})
+					if string.find(valid_path, '.def') then
+						table.insert(fonts_selection, valid_path)
 					end
 				else
-					motif[param] = searchFile(value, {"font/","data/","sound/",motifDir})
+					valid_path, rc = findFile(value, {"","data","sound",motifDir,"font"})
 				end
-				local filepath = f_checkFile(motif[param], "[system.def]["..group.."] "..param, {"font/","data/","sound/",motifDir}, list_files)
-				if filepath ~= nil then
-					modified_line = param .. " = " ..filepath
-				end
+				motif[param] = valid_path
 			elseif group == 'music' then
 				if param:match('%_bgm$') then
 					param = param:gsub('_','.')
-					local filepath = f_checkFile(value, "[system.def]["..group.."] "..param, {"font/","data/","sound/",motifDir}, list_files)
-					if filepath ~= nil then
-						modified_line = param.. " = " ..filepath
-					end
+					valid_path, rc = findFile(value, {"", "data","sound",motifDir})
 				end
-			elseif group == 'titlebgdef' then
+			else
 				if param == "spr" then
-					local filepath = f_checkFile(value, "[system.def]["..group.."] "..param, {"font/","data/","sound/",motifDir}, list_files)
-					if filepath ~= nil then
-						modified_line = param.. " = " ..filepath
-					end
+					valid_path, rc = findFile(value, {"","data",motifDir})
 				end
-			elseif group == 'selectbgdef' then
-				if param == "spr" then
-					local filepath = f_checkFile(value, "[system.def]["..group.."] "..param, {"font/","data/","sound/",motifDir}, list_files)
-					if filepath ~= nil then
-						modified_line = param.. " = " ..filepath
-					end
-				end
-			elseif group == 'continue_screen' then
 				if param == "bgm" then
-					local filepath = f_checkFile(value, "[system.def]["..group.."] "..param, {"font/","data/","sound/",motifDir}, list_files)
-					if filepath ~= nil then
-						modified_line = param.. " = " ..filepath
-					end
+					valid_path, rc = findFile(value, {"","sound",motifDir})
+				end
+				if param:match("^.-storyboard") then
+					valid_path, rc = findFile(value, {"font/","data/","sound/",motifDir})
+					table.insert(storyboards_selection, valid_path)
 				end
 			end
 
-			if param:match("^.-storyboard") then
-				local filepath = f_checkFile(value, "[system.def]["..group.."] "..param, {"font/","data/","sound/",motifDir}, list_files)
-				if filepath ~= nil then
-					modified_line = param.. " = " ..filepath
-					table.insert(storyboards_selection, searchFile(filepath, {"font/","data/","sound/",motifDir}))
-				else
-					table.insert(storyboards_selection, searchFile(value, {"font/","data/","sound/",motifDir}))
-				end
+			if rc == 0 then
+				print(string.format("[system.def][%s] %s = %s [OK]", group, param, value))
+			elseif rc == 1 then
+				print(string.format("[system.def][%s] %s = %s(%s) [FIXED]", group, param, value, valid_path))
+				modified_line = param.. " = " ..valid_path
+			elseif rc == -1 then
+				print(string.format("[system.def][%s] %s = %s [NOT FOUND]", group, param, value))
+			elseif rc == -2 then
+				print(string.format("[system.def][%s] %s = %s [ERROR]", group, param, value))
 			end
 		end
 	end

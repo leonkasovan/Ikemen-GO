@@ -246,7 +246,6 @@ func loadConfig(def string, is_mugen_game bool) (*Config, error) {
 	// Load the INI file
 	var iniFile *ini.File
 	var err error
-	// fmt.Printf("[src/config.go] def=%v\n", def)
 	if physfs.Exists(def) {
 		iniFile, err = ini.LoadSources(options, defaultConfig, def)
 	} else {
@@ -300,6 +299,7 @@ func loadConfig(def string, is_mugen_game bool) (*Config, error) {
 		scanner := bufio.NewScanner(file)
 		var result []string
 		var line string
+		var rc int
 		for scanner.Scan() {
 			line = scanner.Text()
 			if len(line) < 1 {
@@ -310,8 +310,8 @@ func loadConfig(def string, is_mugen_game bool) (*Config, error) {
 			}
 			result = regexp.MustCompile(`[Mm]otif\s*=\s*(\S+)`).FindStringSubmatch(line)
 			if result != nil {
-				c.Config.Motif = physfs.CheckFile(result[1])
-				if c.Config.Motif == "" {
+				c.Config.Motif, rc = physfs.CheckFile(result[1])
+				if rc == 0 {
 					c.Config.Motif = "data/system.def"
 				}
 				c.SetValueUpdate("Config.Motif", c.Config.Motif)
@@ -320,7 +320,7 @@ func loadConfig(def string, is_mugen_game bool) (*Config, error) {
 			}
 			result = regexp.MustCompile(`[Ss]tart[Ss]tage\s*=\s*(.+)$`).FindStringSubmatch(line)
 			if result != nil {
-				c.Debug.StartStage = physfs.CheckFile(result[1])
+				c.Debug.StartStage, rc = physfs.CheckFile(result[1])
 				c.SetValueUpdate("Debug.StartStage", c.Debug.StartStage)
 				fmt.Printf("[config.go] Import StartStage=%v\n", c.Debug.StartStage)
 				continue
@@ -349,7 +349,6 @@ func loadConfig(def string, is_mugen_game bool) (*Config, error) {
 // Initialize struct
 func (c *Config) initStruct() {
 	initMaps(reflect.ValueOf(c).Elem())
-	//applyDefaultsToValue(reflect.ValueOf(c).Elem())
 }
 
 // Normalize values
