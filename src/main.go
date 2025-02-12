@@ -432,7 +432,7 @@ func main() {
 
 	// Find z0 files and mount it
 	for _, file := range files {
-		if strings.HasSuffix(file.Name(), ".z0") {
+		if strings.HasSuffix(file.Name(), ".zp0") {
 			// Open the file
 			if !physfs.Mount(file.Name(), "/", 1) {
 				fmt.Printf("Mounting %v [FAIL]\n", file.Name())
@@ -603,6 +603,17 @@ func main() {
 		fmt.Printf("\n\n==================================\nFixing game assets...\n")
 		if err := l.DoFile("external/script/fix.lua"); err != nil {
 			fmt.Printf("[main.go] Error running fix script: %v\n", err)
+		}
+		os.Exit(0)
+	}
+
+	if _, ok := sys.cmdFlags["-pack"]; ok {
+		fmt.Println("Generating packed assets base.zp0")
+		err := MakeZip([]string{"chars", "stages", "sound", "data", "font", "external"}, "base.zp0")
+		if err != nil {
+			fmt.Printf("Error creating zip: %v\n", err)
+		} else {
+			fmt.Println("Zip file created successfully!")
 		}
 		os.Exit(0)
 	}
