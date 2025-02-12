@@ -79,7 +79,7 @@ function f_strsplit(delimiter, text)
 end
 
 function f_checkFile(file, msg)
-	valid_path, rc = checkFile(file)
+	valid_path, rc = findFile(file, {""})
 	if rc == 0 then
 		print(string.format("%s = %s [OK]", msg, valid_path))
 	elseif rc == 1 then
@@ -210,7 +210,7 @@ for src_line in content:gmatch('([^\n]*)\n?') do
 					valid_path, rc = findFile(value, {"","sound",motifDir})
 				end
 				if param:match("^.-storyboard") then
-					valid_path, rc = findFile(value, {"font/","data/","sound/",motifDir})
+					valid_path, rc = findFile(value, {"", motifDir, "data/", "font/","sound/"})
 					table.insert(storyboards_selection, valid_path)
 				end
 			end
@@ -582,7 +582,21 @@ for i, ch in ipairs(chars_selection) do
 						elseif rc == 1 then
 							modified_line = param.. " = " ..valid_path
 						elseif rc == -1 then
-							print(string.format("\t[%s] %s = %s [NOT FOUND]", group, param, value))
+							-- if NOT FOUND try check value dir's name
+							local vdir = f_extractDir(value)
+							if vdir ~= nil and vdir ~= "" then
+								vdir = vdir:gsub("/$", "")	-- remove trailing sep
+								local dirs = getDirectoryFiles(charDir)
+								for k, dir in ipairs(dirs) do
+									print("\tDEBUG","dir",dir, vdir)
+									if dir:lower() == vdir:lower() then
+										modified_line = param.. " = " ..value:gsub(vdir, dir)
+									end
+								end
+							end
+							if modified_line == "" then
+								print(string.format("\t[%s] %s = %s [NOT FOUND]", group, param, value))
+							end
 						elseif rc == -2 then
 							print(string.format("\t[%s] %s = %s [ERROR]", group, param, value))
 						end
