@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -614,6 +615,12 @@ func main() {
 			fmt.Printf("Error creating zip: %v\n", err)
 		} else {
 			fmt.Println("Zip file created successfully!")
+			cmd := exec.Command("rm","-r chars stages sound data font external")
+			output, err := cmd.CombinedOutput()
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+			}
+			fmt.Println(output)
 		}
 		os.Exit(0)
 	}
