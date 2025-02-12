@@ -265,11 +265,9 @@ func FindFile(dir string, filename string) (string, int) {
 
 	// Check if filename consist path separator, then update dir
 	if strings.Contains(filename, GetDirSeparator()) {
-		// fmt.Printf("Before %v - %v\n", dir, filename)
 		dir = filepath.Join(dir, filepath.Dir(filename))
 		dir += GetDirSeparator()
 		filename = filepath.Base(filename)
-		// fmt.Printf("After %v - %v\n", dir, filename)
 	}
 
 	// First, check file existance

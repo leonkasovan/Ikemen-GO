@@ -430,9 +430,9 @@ func main() {
 		return
 	}
 
-	// Find z0 files and mount it
+	// Find zp0 files and mount it
 	for _, file := range files {
-		if strings.HasSuffix(file.Name(), ".z0") {
+		if strings.HasSuffix(file.Name(), ".zp0") {
 			// Open the file
 			if !physfs.Mount(file.Name(), "/", 1) {
 				fmt.Printf("Mounting %v [FAIL]\n", file.Name())

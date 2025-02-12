@@ -8,6 +8,21 @@ path_sep = '/'
 --;===========================================================
 --; COMMON FUNCTIONS
 --;===========================================================
+-- insert UNIQUE item into a tt table
+function f_table_insert(tt, item)
+	local found = false
+	for k, v in ipairs(tt) do
+		if v == item then
+			found = true
+			break
+		end
+	end
+
+	if not found then
+		table.insert(tt, item)
+	end
+	return found
+end
 
 --return file content
 function f_fileRead(path, mode)
@@ -19,24 +34,6 @@ function f_fileRead(path, mode)
 	local str = file:read("*all")
 	file:close()
 	return str
-end
-
---check if file exists
-function f_fileExists(file)
-	if file == '' then
-		return false
-	end
-	local f = io.open(file,'r')
-	if f ~= nil then
-		io.close(f)
-		return true
-	end
-	f = io.open(file:gsub('\\', path_sep) ,'r')
-	if f ~= nil then
-		io.close(f)
-		return true
-	end
-	return false
 end
 
 --ensure that correct data type is set
@@ -81,51 +78,18 @@ function f_strsplit(delimiter, text)
 	return list
 end
 
-function f_checkFile(file, msg, dirs, list_files)
-	local found_in = ""
-	if #file == 0 then
-		status = "n/a"
-	else
-		if dirs == nil then
-			if f_fileExists(file) then status = "OK" else status = "FAIL" end
-		else
-			if f_fileExists(file) then status = "OK" else status = "FAIL" end
-			for index, value in ipairs(dirs) do
-				if status == "FAIL" then
-					if f_fileExists(value..file) then
-						status = "OK"
-						found_in = value..file
-					end
-				end
-			end
-		end
-	end
-	if #found_in > 0 then
-		print(string.format('%s = %s(%s) [%s]', msg, file, found_in, status))
-	else
-		print(string.format('%s = %s [%s]', msg, file, status))
-	end
-
-	if status == "FAIL" and list_files then
-		local start_index, end_index
-		for k, v in ipairs(list_files) do
-			start_index, end_index = string.find(v:lower(), file:lower(), 1, true)
-			if start_index and end_index then
-				return string.sub(v, start_index, end_index)
-			end
-		end
+function f_checkFile(file, msg)
+	valid_path, rc = checkFile(file)
+	if rc == 0 then
+		print(string.format("%s = %s [OK]", msg, valid_path))
+	elseif rc == 1 then
+		print(string.format("%s = %s [NOT OK]", msg, valid_path))
+	elseif rc == -1 then
+		print(string.format("%s = %s [NOT FOUND]", msg, valid_path))
+	elseif rc == -2 then
+		print(string.format("%s = %s [ERROR]", msg, valid_path))
 	end
 	return nil
-end
-
-function f_listFiles(dirs)
-	files = {}
-	for i, dir in ipairs(dirs) do
-		for k, v in ipairs(getDirectoryFiles(dir)) do
-			table.insert(files, dir.."/"..v)
-		end
-	end
-	return files
 end
 
 function f_extractDir(path)
@@ -197,7 +161,6 @@ local group
 local motif = {}
 local file, err = io.open(config.Motif, "w")
 local modified_line = ""
--- local list_files = f_listFiles({"font","data","sound",motifDir})
 for src_line in content:gmatch('([^\n]*)\n?') do
 	line = src_line:gsub('%s*;.*$', '')
 	if line:match('^[^%g]*%s*%[.-%s*%]%s*$') then --matched [] group
@@ -294,7 +257,6 @@ local group
 local file, err = io.open(motif.fight, "w")
 local modified_line = ""
 local fight_dir = f_extractDir(motif.fight)
-local list_files = f_listFiles({fight_dir, "font", "data", "sound", motifDir})
 for src_line in content:gmatch('([^\n]*)\n?') do
 	line = src_line:gsub('%s*;.*$', '')
 	if line:match('^[^%g]*%s*%[.-%s*%]%s*$') then --matched [] group
@@ -315,23 +277,32 @@ for src_line in content:gmatch('([^\n]*)\n?') do
 			end
 		end
 		if param ~= nil and value ~= nil then --param = value pattern matched
+			local valid_path
+			local rc = 99
 			value = value:gsub('"', '') --remove brackets from value
 			value = value:gsub('^(%.[0-9])', '0%1') --add 0 before dot if missing at the beginning of matched string
 			value = value:gsub('([^0-9])(%.[0-9])', '%10%2') --add 0 before dot if missing anywhere else
 			value = value:gsub(',%s*$', '') --remove dummy ','
 			if group == 'files' then
 				if param:match('^font[0-9]+') then --font declaration param matched
-					motif[param] = searchFile(value, {fight_dir, "font/", motifDir})
-					if string.find(motif[param], '.def') then
-						table.insert(fonts_selection, motif[param])
+					valid_path, rc = findFile(value, {"", "font", motifDir})
+					if string.find(valid_path, '.def') then
+						table.insert(fonts_selection, valid_path)
 					end
 				else
-					motif[param] = searchFile(value, {fight_dir, motifDir, "data/"})
+					valid_path, rc = findFile(value, {"","data","sound",motifDir,"font"})
 				end
-				local filepath = f_checkFile(motif[param], "[fight.def] "..param, nil, list_files)
-				if filepath ~= nil then
-					modified_line = param:gsub('_','.') .. " = " ..filepath
-				end
+			end
+
+			if rc == 0 then
+				print(string.format("[fight.def][%s] %s = %s [OK]", group, param, value))
+			elseif rc == 1 then
+				print(string.format("[fight.def][%s] %s = %s(%s) [FIXED]", group, param, value, valid_path))
+				modified_line = param.. " = " ..valid_path
+			elseif rc == -1 then
+				print(string.format("[fight.def][%s] %s = %s [NOT FOUND]", group, param, value))
+			elseif rc == -2 then
+				print(string.format("[fight.def][%s] %s = %s [ERROR]", group, param, value))
 			end
 		end
 	end
@@ -383,9 +354,7 @@ local chars_selection = {}
 local stages_selection= {}
 local file, err = io.open(motif.select, "w")
 local modified_line = ""
-local list_files = f_listFiles({"chars","stages"})
 for src_line in content:gmatch('[^\r\n]+') do
-	--~ line = src_line:gsub('([^\r\n;]*)%s*;[^\r\n]*', '%1'):gsub('\n%s*\n', '\n')
 	line = src_line:gsub('%s*;.*$', '')
 	local lineCase = line:lower()
 	if lineCase == "" then
@@ -427,11 +396,9 @@ for src_line in content:gmatch('[^\r\n]+') do
 			section = -1
 		end
 	elseif lineCase:match('^%s*%[%s*storymode%s*%]') then
-		print("[select.def]"..line)
 		row = 0
 		section = 4
 	elseif lineCase:match('^%s*%[%s*' .. config.Language .. '.storymode' .. '%s*%]') then
-		print("[select.def]"..line)
 		if lanStory then
 			row = 0
 			section = 4
@@ -439,7 +406,6 @@ for src_line in content:gmatch('[^\r\n]+') do
 			section = -1
 		end
 	elseif lineCase:match('^%s*%[%w+%]$') then
-		print("[select.def]"..line)
 		section = -1
 	elseif section == 1 then --[Characters]
 		if lineCase:match('^%s*slot%s*=%s*{%s*$') then --start of the 'multiple chars in one slot' assignment
@@ -449,18 +415,61 @@ for src_line in content:gmatch('[^\r\n]+') do
 				local char_def
 				local c = f_strsplit(',', line)
 				local stripped_ch = c[1]:match("^%s*(.-)%s*$")
+				local stripped_stage = ""
+				local rc = 99
+
+				if c[2] ~= nil then	-- 2nd column is stage definition
+					stripped_stage = c[2]:match("^%s*(.-)%s*$")
+					if stripped_stage ~= "" then
+						valid_path, rc = findFile(stripped_stage, {"", "stages"})
+						if rc == 0 then -- if found or fixed then add into stages_selection
+							print(string.format("\tdefault stage = %s [OK]", stripped_stage))
+							f_table_insert(stages_selection, valid_path)
+						elseif rc == 1 then
+							f_table_insert(stages_selection, valid_path)
+							modified_line = src_line:gsub(stripped_stage, valid_path)
+						elseif rc == -1 then
+							print(string.format("\twith stage %s [NOT FOUND]", stripped_stage))
+						elseif rc == -2 then
+							print(string.format("\twith stage %s [ERROR]", stripped_stage))
+						end
+					end
+				end
 
 				if string.find(stripped_ch, ".def") then
 					char_def = stripped_ch
 				else
 					char_def = stripped_ch.."/"..stripped_ch..".def"
 				end
-				local filepath = f_checkFile(char_def, "\t"..stripped_ch, {"chars/", motifDir}, list_files)
-				if filepath ~= nil then
-					table.insert(chars_selection, searchFile(filepath, {"chars/", motifDir}))
-					modified_line = src_line:gsub(stripped_ch, filepath:match("^(.-)%/"), 1)
-				else
-					table.insert(chars_selection, searchFile(char_def, {"chars/", motifDir}))
+				
+				valid_path, rc = findFile(char_def, {"", "chars"})
+				if string.find(valid_path, '.def') then
+					table.insert(chars_selection, valid_path)
+				end
+
+				if rc == 0 then	-- found
+					print(string.format("\t%s = %s [OK]", stripped_ch, valid_path))
+				elseif rc == 1 then	-- found in diff case, fixed
+					print(string.format("\t%s = %s [FIXED]", stripped_ch, valid_path))
+					if modified_line == "" then
+						modified_line = src_line:gsub(stripped_ch, valid_path, 1)
+					else
+						modified_line = modified_line:gsub(stripped_ch, valid_path, 1)
+					end
+				elseif rc == -1 then -- not found
+					local status
+					for k, v in ipairs(getDirectoryFiles("chars")) do
+						if v:lower() == stripped_ch:lower() then
+							if modified_line == "" then
+								modified_line = src_line:gsub(stripped_ch, v, 1)
+							else
+								modified_line = modified_line:gsub(stripped_ch, v, 1)
+							end
+							table.insert(chars_selection, "chars/"..v.."/"..v..".def")
+						end
+					end
+				elseif rc == -2 then -- error happen
+					print(string.format("\t%s [ERROR]", stripped_ch))
 				end
 			end
 		end
@@ -477,12 +486,17 @@ for src_line in content:gmatch('[^\r\n]+') do
 		for i, c in ipairs(f_strsplit(',', line)) do --split using "," delimiter
 			c = c:gsub('^%s*(.-)%s*$', '%1')
 			if i == 1 then
-				local filepath = f_checkFile(c, "\t", {"stages/", motifDir}, list_files)
-				if filepath ~= nil then
-					table.insert(stages_selection, filepath)
-					modified_line = src_line:gsub(c, filepath)
-				else
-					table.insert(stages_selection, c)
+				valid_path, rc = findFile(c, {"", "stages"})
+				if rc == 0 then -- if found or fixed then add into stages_selection
+					f_table_insert(stages_selection, valid_path)
+					print("\t"..c.." [OK]")
+				elseif rc == 1 then
+					f_table_insert(stages_selection, valid_path)
+					modified_line = src_line:gsub(c, valid_path)
+				elseif rc == -1 then
+					print("\t"..c.." [NOT FOUND]")
+				elseif rc == -2 then
+					print("\t"..c.." [ERROR]")
 				end
 			elseif c:match('^music') then --musicX / musiclife / musicvictory
 			else
@@ -503,7 +517,6 @@ for src_line in content:gmatch('[^\r\n]+') do
 			print("[select.def] [FIXED] "..src_line)
 		end
 		file:write(src_line .. "\n")
-		--~ print("src_line", src_line)
 	else
 		if string.find(modified_line, '\\') then
 			modified_line = modified_line:gsub('\\','/')
@@ -538,7 +551,6 @@ for i, ch in ipairs(chars_selection) do
 		--~ local file, err = io.open(ch..".txt", "w")
 		local file, err = io.open(ch, "w")
 		local modified_line = ""
-		local list_files = f_listFiles({"chars","data","sound"})
 		for src_line in content:gmatch('([^\n]*)\n?') do
 			line = src_line:gsub('%s*;.*$', '')
 			if line:match('^[^%g]*%s*%[.-%s*%]%s*$') then --matched [] group
@@ -561,16 +573,20 @@ for i, ch in ipairs(chars_selection) do
 					value = value:gsub('([^0-9])(%.[0-9])', '%10%2') --add 0 before dot if missing anywhere else
 					value = value:gsub(',%s*$', '') --remove dummy ','
 					value = value:gsub('%.%./', '')	--remove two sub folder (not needed in chars)
-
 					if group == 'files' or group == 'arcade'then
-						local filepath
-						charDir = ch:match(".*"..sep)
-						filepath = f_checkFile(value, "\t"..param, {charDir, motifDir, "chars"..sep, "data"..sep}, list_files)
-						if filepath ~= nil then
-							modified_line = param .. " = " ..filepath
+						local rc = 99
+						local charDir = ch:match(".*"..sep)
+						valid_path, rc = findFile(value, {charDir, "", "chars", "sound", motifDir, "data"})
+						if rc == 0 then
+							print(string.format("\t[%s] %s = %s [OK]", group, param, value))
+						elseif rc == 1 then
+							modified_line = param.. " = " ..valid_path
+						elseif rc == -1 then
+							print(string.format("\t[%s] %s = %s [NOT FOUND]", group, param, value))
+						elseif rc == -2 then
+							print(string.format("\t[%s] %s = %s [ERROR]", group, param, value))
 						end
 					end
-
 				end
 			end
 			if modified_line == "" then
@@ -615,7 +631,6 @@ for index, stage in ipairs(stages_selection) do
 		--~ local file, err = io.open(stage..".txt", "w")
 		local file, err = io.open(stage, "w")
 		local modified_line = ""
-		local list_files = f_listFiles({"stages","sound","data"})
 		for src_line in content:gmatch('([^\n]*)\n?') do
 			line = src_line:gsub('%s*;.*$', '')
 			if line:match('^[^%g]*%s*%[.-%s*%]%s*$') then --matched [] group
@@ -636,9 +651,16 @@ for index, stage in ipairs(stages_selection) do
 					value = value:gsub('"', '') --remove brackets from value
 					stageDir = stage:match(".*"..sep)
 					if param:lower() == "spr" or param:lower() == "model" or param:lower() == "bgmusic" then
-						local filepath = f_checkFile(value, "\t"..param, {stageDir, "stages"..sep, "data"..sep, "sound"..sep}, list_files)
-						if filepath ~= nil then
-							modified_line = param .. " = " ..filepath
+						local rc = 99
+						valid_path, rc = findFile(value, {"", stageDir, "stages", motifDir, "data", "sound"})
+						if rc == 0 then
+							print(string.format("\t[%s] %s = %s [OK]", group, param, value))
+						elseif rc == 1 then
+							modified_line = param.. " = " ..valid_path
+						elseif rc == -1 then
+							print(string.format("\t[%s] %s = %s [NOT FOUND]", group, param, value))
+						elseif rc == -2 then
+							print(string.format("\t[%s] %s = %s [ERROR]", group, param, value))
 						end
 					end
 				end
@@ -684,7 +706,6 @@ for index, sb in ipairs(storyboards_selection) do
 
 		local file, err = io.open(sb, "w")
 		local modified_line = ""
-		local list_files = f_listFiles({"font","sound","data"})
 		for src_line in content:gmatch('([^\n]*)\n?') do
 			local line = src_line:gsub('%s*;.*$', '')
 			if line:match('^[^%g]*%s*%[.-%s*%]%s*$') then --matched [] group
@@ -702,35 +723,34 @@ for index, sb in ipairs(storyboards_selection) do
 					end
 				end
 				if param ~= nil and value ~= nil then --param = value pattern matched
+					local rc = 99
 					param = param:lower()
 					value = value:gsub('"', '') --remove brackets from value
 					sbDir = sb:match(".*"..sep)
 					if param == "spr" or param == "snd" or param == "bgm" then
-						local filepath = f_checkFile(value, "\t"..param, {sbDir, motifDir, "font"..sep, "sound"..sep}, list_files)
-						-- print("\tfilepath", filepath)
-						-- print("\tparam", param)
-						-- print("\tvalue", value)
-						-- print("\tgroup", group)
-						-- print("\tsbDir", sbDir)
-						-- print("\tmotifDir", motifDir)
-						if filepath ~= nil then
-							modified_line = param .. " = " ..filepath
+						valid_path, rc = findFile(value, {"", sbDir, motifDir, "font", "sound"})
+						if rc == 0 then
+							print(string.format("\t[%s] %s = %s [OK]", group, param, value))
+						elseif rc == 1 then
+							modified_line = param.. " = " ..valid_path
+						elseif rc == -1 then
+							print(string.format("\t[%s] %s = %s [NOT FOUND]", group, param, value))
+						elseif rc == -2 then
+							print(string.format("\t[%s] %s = %s [ERROR]", group, param, value))
 						end
 					elseif param:find("font[0-9]+") then
-						-- print("\tparam", param)
-						-- print("\tvalue", value)
-						-- print("\tgroup", group)
-						-- print("\tsbDir", sbDir)
-						-- print("\tmotifDir", motifDir)
-						local font_file = searchFile(value, {sbDir, "font/", motifDir})
-						-- print("\tfont_file", font_file)
-						if string.find(font_file, '%.[Dd][eE][fF]') then
-							table.insert(fonts_selection, font_file)
+						valid_path, rc = findFile(value, {"", sbDir, "font/", motifDir})
+						if rc == 0 then
+							print(string.format("\t[%s] %s = %s [OK]", group, param, value))
+						elseif rc == 1 then
+							modified_line = param.. " = " ..valid_path
+						elseif rc == -1 then
+							print(string.format("\t[%s] %s = %s [NOT FOUND]", group, param, value))
+						elseif rc == -2 then
+							print(string.format("\t[%s] %s = %s [ERROR]", group, param, value))
 						end
-						local filepath = f_checkFile(font_file, "\t"..param, {sbDir, "font/", motifDir}, list_files)
-						-- print("\tfilepath", filepath)
-						if filepath ~= nil then
-							modified_line = param .. " = " ..filepath
+						if string.find(valid_path, '%.[Dd][eE][fF]') then
+							table.insert(fonts_selection, valid_path)
 						end
 					end
 				end
@@ -775,7 +795,6 @@ for index, font in ipairs(fonts_selection) do
 
 		local file, err = io.open(font, "w")
 		local fontDir = f_extractDir(font)
-		local list_files = f_listFiles({fontDir, "fonts"..sep, "data"..sep})
 		for src_line in content:gmatch('([^\n]*)\n?') do
 			line = src_line:gsub('%s*;.*$', '')
 			if line:match('^[^%g]*%s*%[.-%s*%]%s*$') then --matched [] group
@@ -793,12 +812,19 @@ for index, font in ipairs(fonts_selection) do
 					end
 				end
 				if param ~= nil and value ~= nil then --param = value pattern matched
+					local rc = 99
 					param = param:lower()
 					value = value:gsub('"', '') --remove brackets from value
 					if param == "file" then
-						local filepath = f_checkFile(value, "\t"..param, {fontDir, "fonts"..sep, "data"..sep}, list_files)
-						if filepath ~= nil then
-							modified_line = param .. " = " ..filepath
+						valid_path, rc = findFile(value, {"", fontDir, "fonts", "data"})
+						if rc == 0 then
+							print(string.format("\t[%s] %s = %s [OK]", group, param, value))
+						elseif rc == 1 then
+							modified_line = param.. " = " ..valid_path
+						elseif rc == -1 then
+							print(string.format("\t[%s] %s = %s [NOT FOUND]", group, param, value))
+						elseif rc == -2 then
+							print(string.format("\t[%s] %s = %s [ERROR]", group, param, value))
 						end
 					end
 				end
