@@ -873,7 +873,11 @@ static int sanitizePlatformIndependentPath(const char* src, char* dst) {
     do {
         ch = *(src++);
 
+#ifdef _WIN32
+        if (ch == ':')  /* illegal chars in a physfs path. */
+#else
         if ((ch == ':') || (ch == '\\'))  /* illegal chars in a physfs path. */
+#endif        
             BAIL(PHYSFS_ERR_BAD_FILENAME, 0);
 
         if (ch == '/')   /* path separator. */
