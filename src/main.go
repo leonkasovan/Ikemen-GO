@@ -607,6 +607,17 @@ func main() {
 		os.Exit(0)
 	}
 
+	if _, ok := sys.cmdFlags["-pack"]; ok {
+		fmt.Println("Generating packed assets base.zp0")
+		err := MakeZip([]string{"chars", "stages", "sound", "data", "font", "external"}, "base.zp0")
+		if err != nil {
+			fmt.Printf("Error creating zip: %v\n", err)
+		} else {
+			fmt.Println("Zip file created successfully!")
+		}
+		os.Exit(0)
+	}
+
 	// Check if the main lua file exists.
 	if !physfs.Exists(sys.cfg.Config.System) {
 		fmt.Printf("Error: script %v NOT found.\n", sys.cfg.Config.System)

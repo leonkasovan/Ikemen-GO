@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+	"archive/zip"
+	"io"
 
 	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
 )
@@ -1019,4 +1021,105 @@ func SortedKeys[V any](m map[string]V) []string {
 	})
 
 	return keys
+}
+
+// MakeZip compresses the given directories into a ZIP file.
+func MakeZip(dirs []string, outputZip string) error {
+	// Create the output ZIP file
+	zipFile := physfs.OpenWrite(outputZip)
+	if zipFile == nil {
+		return fmt.Errorf("failed to create zip file: %v", zipFile)
+	}
+	defer zipFile.Close()
+
+	// Create a new ZIP writer
+	zipWriter := zip.NewWriter(zipFile)
+	defer zipWriter.Close()
+
+	// Iterate over the directories
+	for _, dir := range dirs {
+		fmt.Printf("dir=%v\n",dir)
+		// Recursively add the directory to the ZIP
+		err := addDirToZip(zipWriter, dir, filepath.Base(dir))
+		if err != nil {
+			return fmt.Errorf("error adding directory %s to zip: %w", dir, err)
+		}
+	}
+
+	return nil
+}
+
+// addDirToZip recursively adds a directory to the ZIP archive.
+func addDirToZip(zipWriter *zip.Writer, dirPath string, zipBasePath string) error {
+	fmt.Printf("\taddDirToZip dirPath=%v zipBasePath=%v\n", dirPath, zipBasePath)
+	// Read the directory contents
+	dirPath = filepath.Clean(dirPath)
+	zipBasePath = filepath.Clean(zipBasePath)
+	entries, err := physfs.EnumerateFiles(dirPath)
+	if err != nil {
+		return fmt.Errorf("failed to read directory %s: %w", dirPath, err)
+	}
+
+	// Iterate over the directory entries
+	for _, entry := range entries {
+		fullPath := filepath.Clean(filepath.Join(dirPath, entry))
+		zipPath := filepath.Clean(filepath.Join(zipBasePath, entry))
+
+		isDir, err := physfs.IsDirectory(fullPath)
+		if err != nil {
+			fmt.Println(physfs.GetError())
+			return err
+		}
+		if isDir {
+			fmt.Printf("\tadding %v\n", fullPath)
+			// If it's a directory, create a directory entry in the ZIP
+			_, err := zipWriter.Create(zipPath + "/") // Add trailing slash for directories
+			if err != nil {
+				return fmt.Errorf("failed to create directory entry in zip: %w", err)
+			}
+
+			// Recursively add the directory's contents
+			err = addDirToZip(zipWriter, fullPath, zipPath)
+			if err != nil {
+				return err
+			}
+		} else {
+			fmt.Printf("\tadding %v\n", fullPath)
+			// If it's a file, add it to the ZIP
+			err := addFileToZip(zipWriter, fullPath, zipPath)
+			if err != nil {
+				return fmt.Errorf("failed to add file %s to zip: %w", fullPath, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// addFileToZip adds a single file to the ZIP archive using zipWriter.Create.
+func addFileToZip(zipWriter *zip.Writer, filePath string, zipPath string) error {
+	fmt.Printf("\taddFileToZip filePath=%v zipPath=%v\n", filePath, zipPath)
+	filePath = filepath.Clean(filePath)
+	zipPath = filepath.Clean(zipPath)
+	
+	// Open the file
+	file := physfs.OpenRead(filePath)
+	if file == nil {
+		return fmt.Errorf("failed to open file %v", filePath)
+	}
+	defer file.Close()
+
+	// Create a new file in the ZIP archive
+	writer, err := zipWriter.Create(zipPath)
+	if err != nil {
+		return fmt.Errorf("failed to create file in zip for %s: %w", filePath, err)
+	}
+
+	// Copy the file content to the ZIP file
+	_, err = io.Copy(writer, file)
+	if err != nil {
+		return fmt.Errorf("failed to copy file content for %s: %w", filePath, err)
+	}
+
+	return nil
 }
