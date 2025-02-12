@@ -311,7 +311,8 @@ func loadConfig(def string, is_mugen_game bool) (*Config, error) {
 			result = regexp.MustCompile(`[Mm]otif\s*=\s*(\S+)`).FindStringSubmatch(line)
 			if result != nil {
 				c.Config.Motif, rc = physfs.CheckFile(result[1])
-				if rc == 0 {
+				fmt.Printf("[config.go] c.Config.Motif=%v rc=%v result[1]=%v\n", c.Config.Motif,rc,result[1])
+				if rc < 0  {
 					c.Config.Motif = "data/system.def"
 				}
 				c.SetValueUpdate("Config.Motif", c.Config.Motif)
