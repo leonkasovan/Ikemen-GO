@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -609,18 +608,19 @@ func main() {
 	}
 
 	if _, ok := sys.cmdFlags["-pack"]; ok {
+		dirs := []string{"chars", "stages", "sound", "data", "font", "external"}
 		fmt.Println("Generating packed assets base.zp0")
-		err := MakeZip([]string{"chars", "stages", "sound", "data", "font", "external"}, "base.zp0")
+		err := MakeZip(dirs, "base.zp0")
 		if err != nil {
-			fmt.Printf("Error creating zip: %v\n", err)
+			fmt.Printf("Error creating base.zp0: %v\n", err)
 		} else {
-			fmt.Println("Zip file created successfully!")
-			cmd := exec.Command("rm","-r chars stages sound data font external")
-			output, err := cmd.CombinedOutput()
-			if err != nil {
-				fmt.Printf("Error: %v\n", err)
+			fmt.Println("File base.zp0 created successfully!")
+			for _, dir := range dirs {
+				err := os.RemoveAll(dir)
+				if err != nil {
+					fmt.Println("Error:", err)
+				}
 			}
-			fmt.Println(output)
 		}
 		os.Exit(0)
 	}
@@ -681,7 +681,7 @@ func main() {
 		return
 	}
 	for _, file := range files {
-		if strings.HasSuffix(file.Name(), ".zip") {
+		if strings.HasSuffix(file.Name(), ".zip") || strings.HasSuffix(file.Name(), ".zp0") {
 			// Open the file
 			if !physfs.Unmount(file.Name()) {
 				fmt.Printf("Unmounting %v [FAIL]\n", file.Name())
