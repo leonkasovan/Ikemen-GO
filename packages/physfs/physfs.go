@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -123,7 +124,18 @@ func OpenWrite(filename string) *File {
 	}
 	cFilename := C.CString(filename)
 	defer C.free(unsafe.Pointer(cFilename))
-	return (*File)(C.PHYSFS_openWrite(cFilename))
+	file := (*File)(C.PHYSFS_openWrite(cFilename))
+	if file == nil {
+		_, err := os.Stat(filepath.Dir(filename))
+		if os.IsNotExist(err) {
+			if err := os.MkdirAll(filepath.Dir(filename), os.ModePerm); err != nil {
+				fmt.Println(err)
+				return nil
+			}
+		}
+		file = (*File)(C.PHYSFS_openWrite(cFilename))
+	}
+	return file
 }
 
 // OpenAppend opens a file for appending.
@@ -225,7 +237,7 @@ func EnumerateFiles(dir string) ([]string, error) {
 
 	files := C.PHYSFS_enumerateFiles(cDir)
 	if files == nil {
-		return nil,fmt.Errorf("failed to enumerate files in %v", dir)
+		return nil, fmt.Errorf("failed to enumerate files in %v", dir)
 	}
 	defer C.PHYSFS_freeList(unsafe.Pointer(files))
 
@@ -241,76 +253,110 @@ func EnumerateFiles(dir string) ([]string, error) {
 	return fileList, nil
 }
 
-/* FindFile returns full path of file in the specified directory. filename is incasesentive. return empty string if file not found
+/*
+	FindFile returns full path of file in the specified directory. filename is incasesentive. return empty string if file not found
+
 Usage:
-	validFilePath := physfs.FindFile("data", "system.def")
-	validFilePath := physfs.FindFile("data/", "system.def")
-	validFilePath := physfs.FindFile("data", "basics/system.def")
-    if validFilePath == "" {
-        fmt.Printf("FAIL")
-    } else {
-        fmt.Printf("Found in %v", validFilePath)
-    }
+
+		validFilePath := physfs.FindFile("data", "system.def")
+		validFilePath := physfs.FindFile("data/", "system.def")
+		validFilePath := physfs.FindFile("data", "basics/system.def")
+	    if validFilePath == "" {
+	        fmt.Printf("FAIL")
+	    } else {
+	        fmt.Printf("Found in %v", validFilePath)
+	    }
 */
 func FindFile(dir string, filename string) (string, int) {
 	// Ensure the directory ends with a '/' if needed
-	sep := GetDirSeparator()
+	sep := "/"
 	dir = filepath.Clean(dir)
 	if len(dir) > 0 && dir[len(dir)-1] != sep[0] {
-        dir += GetDirSeparator()
-    }
+		dir += sep
+	}
 
 	// Sanitize and clean
-	filename = filepath.Clean(filename)
+	filename = strings.Replace(filepath.Clean(filename), "\\", sep, -1)
 
 	// Check if filename consist path separator, then update dir
-	if strings.Contains(filename, GetDirSeparator()) {
+	if strings.Contains(filename, sep) {
 		dir = filepath.Join(dir, filepath.Dir(filename))
 		dir += GetDirSeparator()
 		filename = filepath.Base(filename)
 	}
 
-	// First, check file existance
-	fullpath := dir+filename
-	fullpath = filepath.Clean(fullpath)
-	if FileExist(fullpath) {
-		return fullpath, 0
-	}
+	if runtime.GOOS == "windows" { // In Windows, we want case sensitive too. So handle it manually.
+		cDir := C.CString(dir)
+		defer C.free(unsafe.Pointer(cDir))
 
-	// if not found, may be filename is in different case. So enumarate in that directory and compare filename incasesensitive
-	cDir := C.CString(dir)
-	defer C.free(unsafe.Pointer(cDir))
-
-	files := C.PHYSFS_enumerateFiles(cDir)
-	if files == nil {
-		fmt.Printf("PHYSFS_enumerateFiles fail in %v\n", dir)
-		return "", -2
-	}
-	defer C.PHYSFS_freeList(unsafe.Pointer(files))
-
-	pfile := files
-	for {
-		if *pfile == nil {
-			break
+		files := C.PHYSFS_enumerateFiles(cDir)
+		if files == nil {
+			fmt.Printf("PHYSFS_enumerateFiles fail in %v\n", dir)
+			return "", -2
 		}
-		if strings.EqualFold(C.GoString(*pfile), filename) {
-            return dir + C.GoString(*pfile), 1
-        }
-		pfile = (**C.char)(unsafe.Pointer(uintptr(unsafe.Pointer(pfile)) + unsafe.Sizeof(*pfile)))
+		defer C.PHYSFS_freeList(unsafe.Pointer(files))
+
+		pfile := files
+		for {
+			if *pfile == nil {
+				break
+			}
+			if strings.EqualFold(C.GoString(*pfile), filename) {
+				if C.GoString(*pfile) == filename {
+					return dir + C.GoString(*pfile), 0
+				} else {
+					return dir + C.GoString(*pfile), 1
+				}
+			}
+			pfile = (**C.char)(unsafe.Pointer(uintptr(unsafe.Pointer(pfile)) + unsafe.Sizeof(*pfile)))
+		}
+		return "", -1
+	} else { // In linux, we can use FileExist to check File case sensitive
+		// First, check file existance
+		fullpath := dir + filename
+		fullpath = filepath.Clean(fullpath)
+		if FileExist(fullpath) {
+			return fullpath, 0
+		}
+
+		// if not found, may be filename is in different case. So enumarate in that directory and compare filename incasesensitive
+		cDir := C.CString(dir)
+		defer C.free(unsafe.Pointer(cDir))
+
+		files := C.PHYSFS_enumerateFiles(cDir)
+		if files == nil {
+			fmt.Printf("PHYSFS_enumerateFiles fail in %v\n", dir)
+			return "", -2
+		}
+		defer C.PHYSFS_freeList(unsafe.Pointer(files))
+
+		pfile := files
+		for {
+			if *pfile == nil {
+				break
+			}
+			if strings.EqualFold(C.GoString(*pfile), filename) {
+				return dir + C.GoString(*pfile), 1
+			}
+			pfile = (**C.char)(unsafe.Pointer(uintptr(unsafe.Pointer(pfile)) + unsafe.Sizeof(*pfile)))
+		}
+		return "", -1
 	}
-	return "", -1
 }
 
-/* FindFileExt returns full path of file in directories. filename is incasesentive. return empty string if file not found
+/*
+	FindFileExt returns full path of file in directories. filename is incasesentive. return empty string if file not found
+
 Usage:
-	validFilePath := physfs.FindFileExt({"data", "font/", "sound"}, "system.def")
-	validFilePath := physfs.FindFileExt({"data", "font"}, "basics/system.def")
-	validFilePath := physfs.FindFileExt({"data/mrr", "font/abc/"}, "basics/system.def")
-    if validFilePath == "" {
-        fmt.Printf("FAIL")
-    } else {
-        fmt.Printf("Found in %v", validFilePath)
-    }
+
+		validFilePath := physfs.FindFileExt({"data", "font/", "sound"}, "system.def")
+		validFilePath := physfs.FindFileExt({"data", "font"}, "basics/system.def")
+		validFilePath := physfs.FindFileExt({"data/mrr", "font/abc/"}, "basics/system.def")
+	    if validFilePath == "" {
+	        fmt.Printf("FAIL")
+	    } else {
+	        fmt.Printf("Found in %v", validFilePath)
+	    }
 */
 func FindFileExt(dirs []string, filename string) (string, int) {
 	for _, dir := range dirs {
@@ -322,24 +368,27 @@ func FindFileExt(dirs []string, filename string) (string, int) {
 	return "", -1
 }
 
-/* FindFileMatch returns full path of files that match with pattern in the specified directory. return empty string if file not found
+/*
+	FindFileMatch returns full path of files that match with pattern in the specified directory. return empty string if file not found
+
 Usage:
-	validFilesPath := physfs.FindFileMatch("data", "*.def")
-	if len(validFilesPath) == 0 {
-		fmt.Printf("FAIL")
-    } else {
-		for _, v := range validFilesPath {
-			fmt.Printf("Found in %v\n", v)
+
+		validFilesPath := physfs.FindFileMatch("data", "*.def")
+		if len(validFilesPath) == 0 {
+			fmt.Printf("FAIL")
+	    } else {
+			for _, v := range validFilesPath {
+				fmt.Printf("Found in %v\n", v)
+			}
 		}
-	}
 */
-func FindFileMatch(dir string, filename_pattern string) ([]string) {
+func FindFileMatch(dir string, filename_pattern string) []string {
 	// Ensure the directory ends with a '/' if needed
 	sep := GetDirSeparator()
 	dir = filepath.Clean(dir)
 	if len(dir) > 0 && dir[len(dir)-1] != sep[0] {
-        dir += sep
-    }
+		dir += sep
+	}
 
 	cDir := C.CString(dir)
 	defer C.free(unsafe.Pointer(cDir))
@@ -363,8 +412,8 @@ func FindFileMatch(dir string, filename_pattern string) ([]string) {
 			return fileMatchedList
 		}
 		if matched {
-            fileMatchedList = append(fileMatchedList, dir+filename)
-        }
+			fileMatchedList = append(fileMatchedList, dir+filename)
+		}
 		pfile = (**C.char)(unsafe.Pointer(uintptr(unsafe.Pointer(pfile)) + unsafe.Sizeof(*pfile)))
 	}
 	return fileMatchedList

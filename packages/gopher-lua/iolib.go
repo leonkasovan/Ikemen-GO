@@ -71,16 +71,19 @@ func newFile(L *LState, file *physfs.File, path string, flag int, perm os.FileMo
 			file = physfs.OpenRead(path)
 			// fmt.Printf("[iolib.go] newFile O_RDONLY file=%v mode=%v\n", file, (flag & os.O_RDONLY))
 			if file == nil {
+				fmt.Println("iolib.go OpenRead", path, physfs.GetError())
 				return nil, errors.New("failed to open file for reading")
 			}
 		} else if (flag & os.O_WRONLY) != 0 {
 			file = physfs.OpenWrite(path)
 			if file == nil {
-				return nil, errors.New("failed to open file for reading")
+				fmt.Println("iolib.go OpenWrite", path, physfs.GetError())
+				return nil, errors.New("failed to open file for writing")
 			}
 		} else if (flag & os.O_APPEND) != 0 {
 			file = physfs.OpenAppend(path)
 			if file == nil {
+				fmt.Println("iolib.go OpenAppend", path, physfs.GetError())
 				return nil, errors.New("failed to open file for appending")
 			}
 		}
@@ -217,7 +220,7 @@ func OpenIo(L *LState) int {
 var fileMethods = map[string]LGFunction{
 	"__tostring": fileToString,
 	"write":      fileWrite,
-	"writeln":      fileWriteLn,
+	"writeln":    fileWriteLn,
 	"close":      fileClose,
 	"flush":      fileFlush,
 	"lines":      fileLines,
