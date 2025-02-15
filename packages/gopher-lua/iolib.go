@@ -217,6 +217,7 @@ func OpenIo(L *LState) int {
 var fileMethods = map[string]LGFunction{
 	"__tostring": fileToString,
 	"write":      fileWrite,
+	"writeln":      fileWriteLn,
 	"close":      fileClose,
 	"flush":      fileFlush,
 	"lines":      fileLines,
@@ -243,7 +244,7 @@ func fileToString(L *LState) int {
 	return 1
 }
 
-func fileWriteAux(L *LState, file *lFile, idx int) int {
+func fileWriteAux(L *LState, file *lFile, idx int, withNewLine bool) int {
 	if n := fileIsWritable(L, file); n != 0 {
 		return n
 	}
@@ -254,6 +255,9 @@ func fileWriteAux(L *LState, file *lFile, idx int) int {
 	for i := idx; i <= top; i++ {
 		L.CheckTypes(i, LTNumber, LTString)
 		s := LVAsString(L.Get(i))
+		if withNewLine {
+			s += "\n"
+		}
 		if _, err = out.Write(([]byte)(s)); err != nil {
 			goto errreturn
 		}
@@ -467,7 +471,11 @@ errreturn:
 }
 
 func fileWrite(L *LState) int {
-	return fileWriteAux(L, checkFile(L), 2)
+	return fileWriteAux(L, checkFile(L), 2, false)
+}
+
+func fileWriteLn(L *LState) int {
+	return fileWriteAux(L, checkFile(L), 2, true)
 }
 
 func fileClose(L *LState) int {
@@ -753,7 +761,7 @@ func ioOutput(L *LState) int {
 }
 
 func ioWrite(L *LState) int {
-	return fileWriteAux(L, fileDefOut(L).Value.(*lFile), 1)
+	return fileWriteAux(L, fileDefOut(L).Value.(*lFile), 1, false)
 }
 
 //
