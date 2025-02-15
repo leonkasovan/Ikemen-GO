@@ -484,6 +484,7 @@ func main() {
 		err := extractEmbed(assetsZip)
 		if err != nil {
 			fmt.Printf("[main.go] Error extracting asset: %v\n", err)
+			os.Exit(-1)
 		}
 		fmt.Println("[main.go] Mugen Game detected. Assets extraction completed successfully.")
 		is_mugen_game = true
@@ -583,27 +584,11 @@ func main() {
 		l.Options.IncludeGoStackTrace = true
 		l.OpenLibs()
 		systemScriptInit(l)
-		fmt.Printf("\n\n==================================\nValidating included the game assets...\n")
+		fmt.Printf("\nValidating game assets...\n")
 		if err := l.DoFile("external/script/audit.lua"); err != nil {
 			fmt.Printf("[main.go] Error running validation script: %v\n", err)
 		}
-		os.Exit(0)
-	}
-
-	if _, ok := sys.cmdFlags["-fix"]; ok {
-		renameFilesToLowerCase("chars")
-		renameFilesToLowerCase("stages")
-		renameFilesToLowerCase("font")
-		renameFilesToLowerCase("data")
-		renameFilesToLowerCase("sound")
-		l := lua.NewState()
-		l.Options.IncludeGoStackTrace = true
-		l.OpenLibs()
-		systemScriptInit(l)
-		fmt.Printf("\n\n==================================\nFixing game assets...\n")
-		if err := l.DoFile("external/script/fix.lua"); err != nil {
-			fmt.Printf("[main.go] Error running fix script: %v\n", err)
-		}
+		fmt.Println("Check result in file validation*.txt")
 		os.Exit(0)
 	}
 
