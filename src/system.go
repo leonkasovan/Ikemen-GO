@@ -3024,7 +3024,7 @@ func (s *Select) AddStage(def string) error {
 		sys.loadTime(tnow, tstr, false, false)
 	}()
 	var lines []string
-	if err := LoadFile(&def, []string{"", "data/"}, func(file string) error {
+	if err := LoadFile(&def, []string{"", "stages/", "data/"}, func(file string) error {
 		str, err := LoadText(file)
 		if err != nil {
 			return err
