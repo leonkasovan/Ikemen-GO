@@ -423,7 +423,7 @@ func main() {
 	// 1. *.z0
 	// 2. current directory "."
 	// 3. *.zip
-	
+
 	files, err := os.ReadDir(".")
 	if err != nil {
 		fmt.Println("Error reading directory:", err)
@@ -558,6 +558,19 @@ func main() {
 		chk(err)
 	} else {
 		sys.cfg = *cfg
+	}
+
+	if _, ok := sys.cmdFlags["-test"]; ok {
+		l := lua.NewState()
+		l.Options.IncludeGoStackTrace = true
+		l.OpenLibs()
+		systemScriptInit(l)
+		fmt.Printf("\nRunning script [test.lua]...\n")
+		if err := l.DoFile("external/script/test.lua"); err != nil {
+			fmt.Printf("[main.go] Error running script: %v\n", err)
+		}
+		fmt.Println("[DONE]")
+		os.Exit(0)
 	}
 
 	if _, ok := sys.cmdFlags["-validate"]; ok {
