@@ -113,9 +113,15 @@ rg353_wayland: ${srcFiles} src/assets.zip
 # Generic Linux Wayland
 wayland: ${srcFiles} src/assets.zip
 	export CGO_ENABLED=1 && go build -tags="wayland,gles2" -trimpath -ldflags="-s -w" -v -o ./bin/ikemen_wayland ./src
+	sudo cp ./bin/ikemen_wayland /usr/bin
 #	cp ./bin/ikemen_wayland /home/deck/Downloads/Famicom\ Fighters\ \(MUGEN\)
 #	cp ./bin/ikemen_wayland /home/deck/Downloads/MK1
 #	cp ./bin/ikemen_wayland /home/deck/Downloads/MK2\ Remix\ MUGEN
+#	cp ./bin/ikemen_wayland /home/deck/Downloads/MugenDreamVer2
+#	cp ./bin/ikemen_wayland /home/deck/Downloads/Disney\ Mugen
+#	cp ./bin/ikemen_wayland /home/deck/Downloads/mugen_original/MK1
+#	cp ./bin/ikemen_wayland /home/deck/Downloads/mugen_original/rmm-3-21
+#	cp ./bin/ikemen_wayland /home/deck/Downloads/mugen_original/The\ Queen\ Of\ Fighters
 
 # Generic Linux KMS DRM
 drm: ${srcFiles} src/assets.zip

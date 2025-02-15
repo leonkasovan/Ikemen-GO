@@ -2,9 +2,12 @@
 -- Dhani.Novan@gmail.com
 -- 20.10 Selasa, 01 Oktober 2024
 
---One-time load of the json routines
-json = (loadfile 'external/script/json.lua')()
 path_sep = '/'
+local f_validation = io.open("validation"..os.date("%Y%m%d_%H%M%S")..".txt", "w")
+if f_validation == nil then
+	print("Error: Can not create validation.txt")
+	return
+end
 --;===========================================================
 --; COMMON FUNCTIONS
 --;===========================================================
@@ -81,13 +84,13 @@ end
 function f_checkFile(file, msg)
 	valid_path, rc = findFile(file, {""})
 	if rc == 0 then
-		print(string.format("%s = %s [OK]", msg, valid_path))
+		f_validation:writeln(string.format("%s = %s [OK]", msg, valid_path))
 	elseif rc == 1 then
-		print(string.format("%s = %s [NOT OK]", msg, valid_path))
+		f_validation:writeln(string.format("%s = %s [NOT OK]", msg, valid_path))
 	elseif rc == -1 then
-		print(string.format("%s = %s [NOT FOUND]", msg, valid_path))
+		f_validation:writeln(string.format("%s = %s [NOT FOUND]", msg, valid_path))
 	elseif rc == -2 then
-		print(string.format("%s = %s [ERROR]", msg, valid_path))
+		f_validation:writeln(string.format("%s = %s [ERROR]", msg, valid_path))
 	end
 	return nil
 end
@@ -140,7 +143,7 @@ if string.find(config.DebugFont, '.def') then
 end
 f_checkFile(config.Motif, "[config.ini] Motif")
 local motifDir = f_extractDir(config.Motif)
-print(string.format('[config.ini] Motif Directory: %s', motifDir))
+f_validation:writeln(string.format('[config.ini] Motif Directory: %s', motifDir))
 f_checkFile(config.StartStage, "[config.ini] StartStage")
 f_checkFile(config.System, "[config.ini] System")
 
@@ -153,7 +156,7 @@ end
 -------------------------------------------------------------------
 content = f_fileRead(config.Motif)
 if content == nil then
-	print("[ERROR] Can not read "..config.Motif)
+	f_validation:writeln("[ERROR] Can not read "..config.Motif)
 	return
 end
 
@@ -216,28 +219,28 @@ for src_line in content:gmatch('([^\n]*)\n?') do
 			end
 
 			if rc == 0 then
-				print(string.format("[system.def][%s] %s = %s [OK]", group, param, value))
+				f_validation:writeln(string.format("[%s][%s] %s = %s [OK]", config.Motif, group, param, value))
 			elseif rc == 1 then
-				print(string.format("[system.def][%s] %s = %s(%s) [FIXED]", group, param, value, valid_path))
+				f_validation:writeln(string.format("[%s][%s] %s = %s(%s) [FIXED]", config.Motif, group, param, value, valid_path))
 				modified_line = param.. " = " ..valid_path
 			elseif rc == -1 then
-				print(string.format("[system.def][%s] %s = %s [NOT FOUND]", group, param, value))
+				f_validation:writeln(string.format("[%s][%s] %s = %s [NOT FOUND]", config.Motif, group, param, value))
 			elseif rc == -2 then
-				print(string.format("[system.def][%s] %s = %s [ERROR]", group, param, value))
+				f_validation:writeln(string.format("[%s][%s] %s = %s [ERROR]", config.Motif, group, param, value))
 			end
 		end
 	end
 	if modified_line == "" then
 		if string.find(src_line, '\\') and not string.find(src_line, 'text') then
 			src_line = src_line:gsub('\\','/')
-			print("[system.def]["..group.."] [FIXED] "..src_line)
+			f_validation:writeln("[system.def]["..group.."] [FIXED] "..src_line)
 		end
 		file:write(src_line .. "\n")
 	else
 		if string.find(modified_line, '\\') then
 			modified_line = modified_line:gsub('\\','/')
 		end
-		print("[system.def]["..group.."] "..modified_line.." [FIXED]")
+		f_validation:writeln("[system.def]["..group.."] "..modified_line.." [FIXED]")
 		file:write(modified_line .. "\n")
 	end
 	modified_line = ""
@@ -249,7 +252,7 @@ file:close()
 -------------------------------------------------------------------
 content = f_fileRead(motif.fight)
 if content == nil then
-	print("[ERROR] Can not read "..motif.fight)
+	f_validation:writeln("[ERROR] Can not read "..motif.fight)
 	return
 end
 
@@ -279,44 +282,45 @@ for src_line in content:gmatch('([^\n]*)\n?') do
 		if param ~= nil and value ~= nil then --param = value pattern matched
 			local valid_path
 			local rc = 99
+			local fightDir = f_extractDir(motif.fight)
 			value = value:gsub('"', '') --remove brackets from value
 			value = value:gsub('^(%.[0-9])', '0%1') --add 0 before dot if missing at the beginning of matched string
 			value = value:gsub('([^0-9])(%.[0-9])', '%10%2') --add 0 before dot if missing anywhere else
 			value = value:gsub(',%s*$', '') --remove dummy ','
 			if group == 'files' then
 				if param:match('^font[0-9]+') then --font declaration param matched
-					valid_path, rc = findFile(value, {"", "font", motifDir})
+					valid_path, rc = findFile(value, {"", fightDir, "font", motifDir})
 					if string.find(valid_path, '.def') then
 						table.insert(fonts_selection, valid_path)
 					end
 				else
-					valid_path, rc = findFile(value, {"","data","sound",motifDir,"font"})
+					valid_path, rc = findFile(value, {"",fightDir,"data","sound",motifDir,"font"})
 				end
 			end
 
 			if rc == 0 then
-				print(string.format("[fight.def][%s] %s = %s [OK]", group, param, value))
+				f_validation:writeln(string.format("[%s][%s] %s = %s [OK]", motif.fight, group, param, value))
 			elseif rc == 1 then
-				print(string.format("[fight.def][%s] %s = %s(%s) [FIXED]", group, param, value, valid_path))
+				f_validation:writeln(string.format("[%s][%s] %s = %s(%s) [FIXED]", motif.fight, group, param, value, valid_path))
 				modified_line = param.. " = " ..valid_path
 			elseif rc == -1 then
-				print(string.format("[fight.def][%s] %s = %s [NOT FOUND]", group, param, value))
+				f_validation:writeln(string.format("[%s][%s] %s = %s [NOT FOUND]", motif.fight, group, param, value))
 			elseif rc == -2 then
-				print(string.format("[fight.def][%s] %s = %s [ERROR]", group, param, value))
+				f_validation:writeln(string.format("[%s][%s] %s = %s [ERROR]", motif.fight, group, param, value))
 			end
 		end
 	end
 	if modified_line == "" then
 		if string.find(src_line, '\\') then
 			src_line = src_line:gsub('\\','/')
-			print("[fight.def] [FIXED] "..src_line)
+			f_validation:writeln("[fight.def] [FIXED] "..src_line)
 		end
 		file:write(src_line .. "\n")
 	else
 		if string.find(modified_line, '\\') then
 			modified_line = modified_line:gsub('\\','/')
 		end
-		print("[fight.def] "..modified_line.." [FIXED]")
+		f_validation:writeln("[fight.def] "..modified_line.." [FIXED]")
 		file:write(modified_line .. "\n")
 	end
 	modified_line = ""
@@ -328,7 +332,7 @@ file:close()
 -------------------------------------------------------------------
 content = f_fileRead(motif.select)
 if content == nil then
-	print("[ERROR] Can not read "..motif.select)
+	f_validation:writeln("[ERROR] Can not read "..motif.select)
 	return
 end
 
@@ -360,11 +364,11 @@ for src_line in content:gmatch('[^\r\n]+') do
 	if lineCase == "" then
 		-- do nothing
 	elseif lineCase:match('^%s*%[%s*characters%s*%]') then
-		print("[select.def]"..line)
+		f_validation:writeln("[select.def]"..line)
 		row = 0
 		section = 1
 	elseif lineCase:match('^%s*%[%s*' .. config.Language .. '.characters' .. '%s*%]') then
-		print("[select.def]"..line)
+		f_validation:writeln("[select.def]"..line)
 		if lanChars then
 			row = 0
 			section = 1
@@ -372,11 +376,11 @@ for src_line in content:gmatch('[^\r\n]+') do
 			section = -1
 		end
 	elseif lineCase:match('^%s*%[%s*extrastages%s*%]') then
-		print("[select.def]"..line)
+		f_validation:writeln("[select.def]"..line)
 		row = 0
 		section = 2
 	elseif lineCase:match('^%s*%[%s*' .. config.Language .. '.extrastages' .. '%s*%]') then
-		print("[select.def]"..line)
+		f_validation:writeln("[select.def]"..line)
 		if lanStages then
 			row = 0
 			section = 2
@@ -384,11 +388,11 @@ for src_line in content:gmatch('[^\r\n]+') do
 			section = -1
 		end
 	elseif lineCase:match('^%s*%[%s*options%s*%]') then
-		print("[select.def]"..line)
+		f_validation:writeln("[select.def]"..line)
 		row = 0
 		section = 3
 	elseif lineCase:match('^%s*%[%s*' .. config.Language .. '.options' .. '%s*%]') then
-		print("[select.def]"..line)
+		f_validation:writeln("[select.def]"..line)
 		if lanOptions then
 			row = 0
 			section = 3
@@ -423,15 +427,15 @@ for src_line in content:gmatch('[^\r\n]+') do
 					if stripped_stage ~= "" then
 						valid_path, rc = findFile(stripped_stage, {"", "stages"})
 						if rc == 0 then -- if found or fixed then add into stages_selection
-							print(string.format("\tdefault stage = %s [OK]", stripped_stage))
+							f_validation:writeln(string.format("\tdefault stage = %s [OK]", stripped_stage))
 							f_table_insert(stages_selection, valid_path)
 						elseif rc == 1 then
 							f_table_insert(stages_selection, valid_path)
 							modified_line = src_line:gsub(stripped_stage, valid_path)
 						elseif rc == -1 then
-							print(string.format("\twith stage %s [NOT FOUND]", stripped_stage))
+							f_validation:writeln(string.format("\twith stage %s [NOT FOUND]", stripped_stage))
 						elseif rc == -2 then
-							print(string.format("\twith stage %s [ERROR]", stripped_stage))
+							f_validation:writeln(string.format("\twith stage %s [ERROR]", stripped_stage))
 						end
 					end
 				end
@@ -448,9 +452,9 @@ for src_line in content:gmatch('[^\r\n]+') do
 				end
 
 				if rc == 0 then	-- found
-					print(string.format("\t%s = %s [OK]", stripped_ch, valid_path))
+					f_validation:writeln(string.format("\t%s = %s [OK]", stripped_ch, valid_path))
 				elseif rc == 1 then	-- found in diff case, fixed
-					print(string.format("\t%s = %s [FIXED]", stripped_ch, valid_path))
+					f_validation:writeln(string.format("\t%s = %s [FIXED]", stripped_ch, valid_path))
 					if modified_line == "" then
 						modified_line = src_line:gsub(stripped_ch, valid_path, 1)
 					else
@@ -469,7 +473,7 @@ for src_line in content:gmatch('[^\r\n]+') do
 						end
 					end
 				elseif rc == -2 then -- error happen
-					print(string.format("\t%s [ERROR]", stripped_ch))
+					f_validation:writeln(string.format("\t%s [ERROR]", stripped_ch))
 				end
 			end
 		end
@@ -489,14 +493,14 @@ for src_line in content:gmatch('[^\r\n]+') do
 				valid_path, rc = findFile(c, {"", "stages"})
 				if rc == 0 then -- if found or fixed then add into stages_selection
 					f_table_insert(stages_selection, valid_path)
-					print("\t"..c.." [OK]")
+					f_validation:writeln("\t"..c.." [OK]")
 				elseif rc == 1 then
 					f_table_insert(stages_selection, valid_path)
 					modified_line = src_line:gsub(c, valid_path)
 				elseif rc == -1 then
-					print("\t"..c.." [NOT FOUND]")
+					f_validation:writeln("\t"..c.." [NOT FOUND]")
 				elseif rc == -2 then
-					print("\t"..c.." [ERROR]")
+					f_validation:writeln("\t"..c.." [ERROR]")
 				end
 			elseif c:match('^music') then --musicX / musiclife / musicvictory
 			else
@@ -514,14 +518,14 @@ for src_line in content:gmatch('[^\r\n]+') do
 	if modified_line == "" then
 		if string.find(src_line, '\\') then
 			src_line = src_line:gsub('\\','/')
-			print("[select.def] [FIXED] "..src_line)
+			f_validation:writeln("[select.def] [FIXED] "..src_line)
 		end
 		file:write(src_line .. "\n")
 	else
 		if string.find(modified_line, '\\') then
 			modified_line = modified_line:gsub('\\','/')
 		end
-		print("\t"..modified_line.." [FIXED]")
+		f_validation:writeln("\t"..modified_line.." [FIXED]")
 		file:write(modified_line .. "\n")
 	end
 	modified_line = ""
@@ -534,9 +538,9 @@ file:close()
 for i, ch in ipairs(chars_selection) do
 	content = f_fileRead(ch)
 	if content == nil then
-		print("[ERROR] Can not read chars "..ch)
+		f_validation:writeln("[ERROR] Can not read chars "..ch)
 	else
-		print("[select.def] "..ch)
+		f_validation:writeln("[select.def] "..ch)
 
 		local group
 		local charDir
@@ -578,7 +582,7 @@ for i, ch in ipairs(chars_selection) do
 						local charDir = ch:match(".*"..sep)
 						valid_path, rc = findFile(value, {charDir, "", "chars", "sound", motifDir, "data"})
 						if rc == 0 then
-							print(string.format("\t[%s] %s = %s [OK]", group, param, value))
+							f_validation:writeln(string.format("\t[%s] %s = %s [OK]", group, param, value))
 						elseif rc == 1 then
 							modified_line = param.. " = " ..valid_path
 						elseif rc == -1 then
@@ -588,17 +592,16 @@ for i, ch in ipairs(chars_selection) do
 								vdir = vdir:gsub("/$", "")	-- remove trailing sep
 								local dirs = getDirectoryFiles(charDir)
 								for k, dir in ipairs(dirs) do
-									print("\tDEBUG","dir",dir, vdir)
 									if dir:lower() == vdir:lower() then
 										modified_line = param.. " = " ..value:gsub(vdir, dir)
 									end
 								end
 							end
 							if modified_line == "" then
-								print(string.format("\t[%s] %s = %s [NOT FOUND]", group, param, value))
+								f_validation:writeln(string.format("\t[%s] %s = %s [NOT FOUND]", group, param, value))
 							end
 						elseif rc == -2 then
-							print(string.format("\t[%s] %s = %s [ERROR]", group, param, value))
+							f_validation:writeln(string.format("\t[%s] %s = %s [ERROR]", group, param, value))
 						end
 					end
 				end
@@ -606,14 +609,14 @@ for i, ch in ipairs(chars_selection) do
 			if modified_line == "" then
 				if string.find(src_line, '\\') then
 					src_line = src_line:gsub('\\','/')
-					print("\t[FIXED] "..src_line)
+					f_validation:writeln("\t[FIXED] "..src_line)
 				end
 				file:write(src_line .. "\n")
 			else
 				if string.find(modified_line, '\\') then
 					modified_line = modified_line:gsub('\\','/')
 				end
-				print("\t"..modified_line.." [FIXED]")
+				f_validation:writeln("\t"..modified_line.." [FIXED]")
 				file:write(modified_line .. "\n")
 			end
 			modified_line = ""
@@ -628,9 +631,9 @@ end
 for index, stage in ipairs(stages_selection) do
 	content = f_fileRead(stage)
 	if content == nil then
-		print("[ERROR] Can not read stage "..stage)
+		f_validation:writeln("[ERROR] Can not read stage "..stage)
 	else
-		print("[select.def] "..stage)
+		f_validation:writeln("[select.def] "..stage)
 
 		local group
 		local stageDir
@@ -668,13 +671,13 @@ for index, stage in ipairs(stages_selection) do
 						local rc = 99
 						valid_path, rc = findFile(value, {"", stageDir, "stages", motifDir, "data", "sound"})
 						if rc == 0 then
-							print(string.format("\t[%s] %s = %s [OK]", group, param, value))
+							f_validation:writeln(string.format("\t[%s] %s = %s [OK]", group, param, value))
 						elseif rc == 1 then
 							modified_line = param.. " = " ..valid_path
 						elseif rc == -1 then
-							print(string.format("\t[%s] %s = %s [NOT FOUND]", group, param, value))
+							f_validation:writeln(string.format("\t[%s] %s = %s [NOT FOUND]", group, param, value))
 						elseif rc == -2 then
-							print(string.format("\t[%s] %s = %s [ERROR]", group, param, value))
+							f_validation:writeln(string.format("\t[%s] %s = %s [ERROR]", group, param, value))
 						end
 					end
 				end
@@ -682,14 +685,14 @@ for index, stage in ipairs(stages_selection) do
 			if modified_line == "" then
 				if string.find(src_line, '\\') then
 					src_line = src_line:gsub('\\','/')
-					print("\t[FIXED] "..src_line)
+					f_validation:writeln("\t[FIXED] "..src_line)
 				end
 				file:write(src_line .. "\n")
 			else
 				if string.find(modified_line, '\\') then
 					modified_line = modified_line:gsub('\\','/')
 				end
-				print("\t"..modified_line.." [FIXED]")
+				f_validation:writeln("\t"..modified_line.." [FIXED]")
 				file:write(modified_line .. "\n")
 			end
 			modified_line = ""
@@ -704,9 +707,9 @@ end
 for index, sb in ipairs(storyboards_selection) do
 	content = f_fileRead(sb)
 	if content == nil then
-		print("[ERROR] Can not read storyboard "..sb)
+		f_validation:writeln("[ERROR] Can not read storyboard "..sb)
 	else
-		print("[system.def] Storyboard: "..sb)
+		f_validation:writeln("[system.def] Storyboard: "..sb)
 
 		local group
 		local sbDir
@@ -744,24 +747,24 @@ for index, sb in ipairs(storyboards_selection) do
 					if param == "spr" or param == "snd" or param == "bgm" then
 						valid_path, rc = findFile(value, {"", sbDir, motifDir, "font", "sound"})
 						if rc == 0 then
-							print(string.format("\t[%s] %s = %s [OK]", group, param, value))
+							f_validation:writeln(string.format("\t[%s] %s = %s [OK]", group, param, value))
 						elseif rc == 1 then
 							modified_line = param.. " = " ..valid_path
 						elseif rc == -1 then
-							print(string.format("\t[%s] %s = %s [NOT FOUND]", group, param, value))
+							f_validation:writeln(string.format("\t[%s] %s = %s [NOT FOUND]", group, param, value))
 						elseif rc == -2 then
-							print(string.format("\t[%s] %s = %s [ERROR]", group, param, value))
+							f_validation:writeln(string.format("\t[%s] %s = %s [ERROR]", group, param, value))
 						end
 					elseif param:find("font[0-9]+") then
 						valid_path, rc = findFile(value, {"", sbDir, "font/", motifDir})
 						if rc == 0 then
-							print(string.format("\t[%s] %s = %s [OK]", group, param, value))
+							f_validation:writeln(string.format("\t[%s] %s = %s [OK]", group, param, value))
 						elseif rc == 1 then
 							modified_line = param.. " = " ..valid_path
 						elseif rc == -1 then
-							print(string.format("\t[%s] %s = %s [NOT FOUND]", group, param, value))
+							f_validation:writeln(string.format("\t[%s] %s = %s [NOT FOUND]", group, param, value))
 						elseif rc == -2 then
-							print(string.format("\t[%s] %s = %s [ERROR]", group, param, value))
+							f_validation:writeln(string.format("\t[%s] %s = %s [ERROR]", group, param, value))
 						end
 						if string.find(valid_path, '%.[Dd][eE][fF]') then
 							table.insert(fonts_selection, valid_path)
@@ -772,14 +775,14 @@ for index, sb in ipairs(storyboards_selection) do
 			if modified_line == "" then
 				if string.find(src_line, '\\') and not string.find(src_line, 'text') then
 					src_line = src_line:gsub('\\','/')
-					print("\t[FIXED] "..src_line)
+					f_validation:writeln("\t[FIXED] "..src_line)
 				end
 				file:write(src_line .. "\n")
 			else
 				if string.find(modified_line, '\\') then
 					modified_line = modified_line:gsub('\\','/')
 				end
-				print("\t"..modified_line.." [FIXED]")
+				f_validation:writeln("\t"..modified_line.." [FIXED]")
 				file:write(modified_line .. "\n")
 			end
 			modified_line = ""
@@ -794,9 +797,9 @@ end
 for index, font in ipairs(fonts_selection) do
 	content = f_fileRead(font)
 	if content == nil then
-		print("[ERROR] Can not read font "..font)
+		f_validation:writeln("[ERROR] Can not read font "..font)
 	else
-		print("[system.def] Font: "..font)
+		f_validation:writeln("[system.def] Font: "..font)
 
 		local group
 		local sep
@@ -832,13 +835,13 @@ for index, font in ipairs(fonts_selection) do
 					if param == "file" then
 						valid_path, rc = findFile(value, {"", fontDir, "fonts", "data"})
 						if rc == 0 then
-							print(string.format("\t[%s] %s = %s [OK]", group, param, value))
+							f_validation:writeln(string.format("\t[%s] %s = %s [OK]", group, param, value))
 						elseif rc == 1 then
 							modified_line = param.. " = " ..valid_path
 						elseif rc == -1 then
-							print(string.format("\t[%s] %s = %s [NOT FOUND]", group, param, value))
+							f_validation:writeln(string.format("\t[%s] %s = %s [NOT FOUND]", group, param, value))
 						elseif rc == -2 then
-							print(string.format("\t[%s] %s = %s [ERROR]", group, param, value))
+							f_validation:writeln(string.format("\t[%s] %s = %s [ERROR]", group, param, value))
 						end
 					end
 				end
@@ -846,14 +849,14 @@ for index, font in ipairs(fonts_selection) do
 			if modified_line == "" then
 				if string.find(src_line, '\\') then
 					src_line = src_line:gsub('\\','/')
-					print("\t[FIXED] "..src_line)
+					f_validation:writeln("\t[FIXED] "..src_line)
 				end
 				file:write(src_line .. "\n")
 			else
 				if string.find(modified_line, '\\') then
 					modified_line = modified_line:gsub('\\','/')
 				end
-				print("\t"..modified_line.." [FIXED]")
+				f_validation:writeln("\t"..modified_line.." [FIXED]")
 				file:write(modified_line .. "\n")
 			end
 			modified_line = ""
@@ -861,3 +864,4 @@ for index, font in ipairs(fonts_selection) do
 		file:close()
 	end
 end
+f_validation:close()
