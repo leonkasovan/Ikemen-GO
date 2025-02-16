@@ -19,7 +19,7 @@ import (
 )
 
 var Version = "eXtra"
-var BuildTime = "20250201"
+var BuildTime = "20250216"
 
 //go:embed assets.zip
 var assetsZip []byte
@@ -412,7 +412,7 @@ func createLog(p string) *physfs.File {
 }
 
 func main() {
-	fmt.Printf("\nIkemen GO! %v %v\n", Version, BuildTime)
+	fmt.Printf("Ikemen GO! %v %v\n", Version, BuildTime)
 	if !physfs.Init(os.Args[0]) {
 		fmt.Println("Error: initialize file system")
 		return
@@ -437,7 +437,7 @@ func main() {
 			if !physfs.Mount(file.Name(), "/", 1) {
 				fmt.Printf("Mounting %v [FAIL]\n", file.Name())
 			} else {
-				fmt.Printf("Mounting %v [OK]\n", file.Name())
+				// fmt.Printf("Mounting %v [OK]\n", file.Name())
 			}
 		}
 	}
@@ -447,7 +447,7 @@ func main() {
 	if !physfs.Mount(currentDir, "/", 1) {
 		fmt.Printf("Mounting directory \"%v\" [FAIL]\n", currentDir)
 	} else {
-		fmt.Printf("Mounting directory \"%v\" [OK]\n", currentDir)
+		// fmt.Printf("Mounting directory \"%v\" [OK]\n", currentDir)
 	}
 
 	// Find zip files and mount it
@@ -457,7 +457,7 @@ func main() {
 			if !physfs.Mount(file.Name(), "/", 1) {
 				fmt.Printf("Mounting %v [FAIL]\n", file.Name())
 			} else {
-				fmt.Printf("Mounting %v [OK]\n", file.Name())
+				// fmt.Printf("Mounting %v [OK]\n", file.Name())
 			}
 		}
 	}
@@ -606,7 +606,7 @@ func main() {
 	}
 
 	if _, ok := sys.cmdFlags["-pack"]; ok {
-		dirs := []string{"chars", "stages", "sound", "data", "font", "external"}
+		dirs := []string{"chars", "stages", "sound", "data", "font", "external", "save"}
 		fmt.Println("Generating packed assets base.zp0")
 		err := MakeZip(dirs, "base.zp0")
 		if err != nil {
@@ -635,13 +635,7 @@ func main() {
 
 	// Begin processing game using its lua scripts
 	no := 1
-	lua_script, err := LoadText(sys.cfg.Config.System)
-	if err != nil {
-		fmt.Printf("[main.go]physfs LastError: %v\n", physfs.GetError())
-		fmt.Printf("[main.go]Error: %v\n", err)
-		return
-	}
-	if err := sys.luaLState.DoString(lua_script); err != nil {
+	if err := sys.luaLState.DoFile(sys.cfg.Config.System); err != nil {
 		fmt.Printf("[%v]Error: %v\n", err, no)
 		// Display error logs.
 		errorLog := createLog("Ikemen.log")
@@ -669,7 +663,7 @@ func main() {
 		fmt.Printf("Unmounting directory \"%v\" [FAIL]\n", currentDir)
 		fmt.Println(physfs.GetError())
 	} else {
-		fmt.Printf("Unmounting directory \"%v\" [OK]\n", currentDir)
+		// fmt.Printf("Unmounting directory \"%v\" [OK]\n", currentDir)
 	}
 
 	// Find zip files and unmount it
@@ -685,7 +679,7 @@ func main() {
 				fmt.Printf("Unmounting %v [FAIL]\n", file.Name())
 				fmt.Println(physfs.GetError())
 			} else {
-				fmt.Printf("Unmounting %v [OK]\n", file.Name())
+				// fmt.Printf("Unmounting %v [OK]\n", file.Name())
 			}
 		}
 	}

@@ -32,17 +32,17 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 	// Initialize Windowing system
 	glfw.InitHint(0x00053001, 0x00038002) // disable libdecor for wayland
 	chk(glfw.Init())
-	fmt.Printf("Platform: %v\n", glfw.GetVersionString())
+	fmt.Printf("GLFW Platform: %v\n", glfw.GetVersionString())
 
 	// Check if we are running in KMS DRM mode
 	if !strings.Contains(glfw.GetVersionString(), "KMSDRM") {
-		monitor = glfw.GetPrimaryMonitor();
+		monitor = glfw.GetPrimaryMonitor()
 		// "-windowed" overrides the configuration setting but does not change it
 		_, forceWindowed := sys.cmdFlags["-windowed"]
 		fullscreen = s.cfg.Video.Fullscreen && !forceWindowed
 		// Calculate window size & offset it
 		mode = monitor.GetVideoMode()
-		fmt.Printf("Monitor size: %dx%d\n", mode.Width, mode.Height)
+		// fmt.Printf("Monitor size: %dx%d\n", mode.Width, mode.Height)
 		w2, h2 = w, h
 		if !fullscreen && (sys.cfg.Video.WindowWidth > 0 || sys.cfg.Video.WindowHeight > 0) {
 			w2, h2 = sys.cfg.Video.WindowWidth, sys.cfg.Video.WindowHeight
@@ -50,8 +50,8 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 		x, y = (mode.Width-w2)/2, (mode.Height-h2)/2
 		glfw.WindowHint(glfw.Resizable, glfw.True)
 	}
-	fmt.Printf("Window size: %dx%d\n", w2, h2)
-	fmt.Printf("Window position: %d,%d\n", x, y)
+	// fmt.Printf("Window size: %dx%d\n", w2, h2)
+	// fmt.Printf("Window position: %d,%d\n", x, y)
 
 	// Initialize Gfx with OpenGL (ES)
 	s.initGfx()
@@ -186,7 +186,7 @@ func (w *Window) toggleFullscreen() {
 		w.SetInputMode(glfw.CursorMode, glfw.CursorNormal)
 	} else {
 		w.SetAttrib(glfw.Decorated, 0)
-		if sys.cfg.Video.Borderless || strings.Contains(glfw.GetVersionString(), "Wayland"){
+		if sys.cfg.Video.Borderless || strings.Contains(glfw.GetVersionString(), "Wayland") {
 			w.SetSize(mode.Width, mode.Height)
 			w.SetMonitor(&glfw.Monitor{}, 0, 0, mode.Width, mode.Height, mode.RefreshRate)
 		} else {

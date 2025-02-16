@@ -1,7 +1,9 @@
 package main
 
 import (
+	"archive/zip"
 	"fmt"
+	"io"
 	"math"
 	"path/filepath"
 	"regexp"
@@ -9,8 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
-	"archive/zip"
-	"io"
 
 	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
 )
@@ -1038,7 +1038,6 @@ func MakeZip(dirs []string, outputZip string) error {
 
 	// Iterate over the directories
 	for _, dir := range dirs {
-		fmt.Printf("dir=%v\n",dir)
 		// Recursively add the directory to the ZIP
 		err := addDirToZip(zipWriter, dir, filepath.Base(dir))
 		if err != nil {
@@ -1051,7 +1050,7 @@ func MakeZip(dirs []string, outputZip string) error {
 
 // addDirToZip recursively adds a directory to the ZIP archive.
 func addDirToZip(zipWriter *zip.Writer, dirPath string, zipBasePath string) error {
-	fmt.Printf("\taddDirToZip dirPath=%v zipBasePath=%v\n", dirPath, zipBasePath)
+	fmt.Printf("adding %v\n", dirPath)
 	// Read the directory contents
 	dirPath = filepath.Clean(dirPath)
 	zipBasePath = filepath.Clean(zipBasePath)
@@ -1071,7 +1070,6 @@ func addDirToZip(zipWriter *zip.Writer, dirPath string, zipBasePath string) erro
 			return err
 		}
 		if isDir {
-			fmt.Printf("\tadding %v\n", fullPath)
 			// If it's a directory, create a directory entry in the ZIP
 			_, err := zipWriter.Create(zipPath + "/") // Add trailing slash for directories
 			if err != nil {
@@ -1084,7 +1082,6 @@ func addDirToZip(zipWriter *zip.Writer, dirPath string, zipBasePath string) erro
 				return err
 			}
 		} else {
-			fmt.Printf("\tadding %v\n", fullPath)
 			// If it's a file, add it to the ZIP
 			err := addFileToZip(zipWriter, fullPath, zipPath)
 			if err != nil {
@@ -1098,10 +1095,10 @@ func addDirToZip(zipWriter *zip.Writer, dirPath string, zipBasePath string) erro
 
 // addFileToZip adds a single file to the ZIP archive using zipWriter.Create.
 func addFileToZip(zipWriter *zip.Writer, filePath string, zipPath string) error {
-	fmt.Printf("\taddFileToZip filePath=%v zipPath=%v\n", filePath, zipPath)
+	fmt.Printf("adding %v\n", filePath)
 	filePath = filepath.Clean(filePath)
 	zipPath = filepath.Clean(zipPath)
-	
+
 	// Open the file
 	file := physfs.OpenRead(filePath)
 	if file == nil {
