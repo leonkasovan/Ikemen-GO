@@ -241,14 +241,13 @@ for src_line in content:gmatch('([^\n]*)\n?') do
 	if modified_line == "" then
 		if string.find(src_line, '\\') and not string.find(src_line, 'text') then
 			src_line = src_line:gsub('\\', '/')
-			f_validation:writeln("[system.def][" .. group .. "] [FIXED] " .. src_line)
+			f_validation:writeln(string.format("[%s][%s] %s [FIXED]", config.Motif, group, src_line))
 		end
 		file:write(src_line .. "\n")
 	else
 		if string.find(modified_line, '\\') then
 			modified_line = modified_line:gsub('\\', '/')
 		end
-		f_validation:writeln("[system.def][" .. group .. "] " .. modified_line .. " [FIXED]")
 		file:write(modified_line .. "\n")
 	end
 	modified_line = ""
@@ -433,7 +432,7 @@ for src_line in content:gmatch('[^\r\n]+') do
 
 				if c[2] ~= nil then -- 2nd column is stage definition
 					stripped_stage = c[2]:match("^%s*(.-)%s*$")
-					if stripped_stage ~= "" then
+					if stripped_stage ~= "" and stripped_stage:lower() ~= "random" then
 						valid_path, rc = findFile(stripped_stage, { "", "stages" })
 						if rc == 0 then -- if found or fixed then add into stages_selection
 							f_validation:writeln(string.format("\tdefault stage = %s [OK]", stripped_stage))
