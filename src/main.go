@@ -574,20 +574,20 @@ func main() {
 	}
 
 	if _, ok := sys.cmdFlags["-validate"]; ok {
-		if !physfs.FileExist("external/script/audit.lua") {
-			err := extractFileFromEmbed(assetsZip, "external/script/audit.lua")
+		if !physfs.FileExist("external/script/validate.lua") {
+			err := extractFileFromEmbed(assetsZip, "external/script/validate.lua")
 			if err != nil {
-				fmt.Printf("[main.go] Error extracting audit.lua: %v\n", err)
+				fmt.Printf("[main.go] Error extracting validate.lua: %v\n", err)
 				os.Exit(0)
 			}
 		}
-		if !physfs.FileExist("external/script/json.lua") {
-			err := extractFileFromEmbed(assetsZip, "external/script/json.lua")
-			if err != nil {
-				fmt.Printf("[main.go] Error extracting json.lua: %v\n", err)
-				os.Exit(0)
-			}
-		}
+		// if !physfs.FileExist("external/script/json.lua") {
+		// 	err := extractFileFromEmbed(assetsZip, "external/script/json.lua")
+		// 	if err != nil {
+		// 		fmt.Printf("[main.go] Error extracting json.lua: %v\n", err)
+		// 		os.Exit(0)
+		// 	}
+		// }
 		renameFilesToLowerCase("chars")
 		renameFilesToLowerCase("stages")
 		renameFilesToLowerCase("font")
@@ -598,7 +598,7 @@ func main() {
 		l.OpenLibs()
 		systemScriptInit(l)
 		fmt.Printf("\nValidating game assets...\n")
-		if err := l.DoFile("external/script/audit.lua"); err != nil {
+		if err := l.DoFile("external/script/validate.lua"); err != nil {
 			fmt.Printf("[main.go] Error running validation script: %v\n", err)
 		}
 		fmt.Println("Check result in file validation*.txt")
