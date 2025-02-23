@@ -1,4 +1,5 @@
 package main
+
 /*
 #include <stdlib.h>
 #include "../packages/physfs/physfs.h"
@@ -7,6 +8,7 @@ import "C"
 import (
 	"bufio"
 	_ "embed" // Support for go:embed resources
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"regexp"
@@ -311,7 +313,7 @@ func loadConfig(def string, is_mugen_game bool) (*Config, error) {
 			result = regexp.MustCompile(`[Mm]otif\s*=\s*(\S+)`).FindStringSubmatch(line)
 			if result != nil {
 				c.Config.Motif, rc = physfs.CheckFile(result[1])
-				if rc < 0  {
+				if rc < 0 {
 					c.Config.Motif = "data/system.def"
 				}
 				c.SetValueUpdate("Config.Motif", c.Config.Motif)
@@ -339,6 +341,14 @@ func loadConfig(def string, is_mugen_game bool) (*Config, error) {
 				fmt.Printf("[config.go] Import GameHeight=%v\n", c.Video.GameHeight)
 				continue
 			}
+		}
+	}
+
+	// Import config.json if it exists
+	if physfs.Exists("save") && physfs.Exists("save/config.json") {
+		err := importIkemenConfig("save/config.json", &c)
+		if err != nil {
+			fmt.Printf("[config.go] Error importing config.json: %v\n", err)
 		}
 	}
 	c.sysSet()
@@ -476,4 +486,132 @@ func (c *Config) SetValueUpdate(query string, value interface{}) error {
 // Save writes the current IniFile to disk, preserving comments and syntax.
 func (c *Config) Save(file string) error {
 	return SaveINI(c.IniFile, file)
+}
+
+func importIkemenConfig(jsonPath string, c *Config) error {
+	// Open the JSON file
+	jsonFile := physfs.OpenRead(jsonPath)
+	if jsonFile == nil {
+		return fmt.Errorf("can not open %s", jsonPath)
+	}
+	defer jsonFile.Close()
+
+	// Decode the JSON data into a map
+	var result map[string]interface{}
+	var err error
+	// var rc int
+	decoder := json.NewDecoder(jsonFile)
+	err = decoder.Decode(&result)
+	if err != nil {
+		return fmt.Errorf("error decoding JSON: %v", err)
+	}
+
+	// Access the "Motif" field and import it as string
+	vstring, ok := result["Motif"].(string)
+	if ok {
+		c.Config.Motif, _ = physfs.CheckFile(vstring)
+	}
+	if c.Config.Motif == "" {
+		c.Config.Motif = "data/system.def"
+	}
+	c.SetValueUpdate("Config.Motif", c.Config.Motif)
+	fmt.Printf("[config.go] Import Motif=%v\n", c.Config.Motif)
+
+	// Access the "CommonAir" field and import it as string
+	vstring, ok = result["CommonAir"].(string)
+	if ok {
+		c.Common.Air["air"] = []string{vstring}
+		c.SetValueUpdate("Common.Air", c.Common.Air["air"])
+		fmt.Printf("[config.go] Import Common.Air=%v\n", c.Common.Air["air"])
+	}
+
+	// Access the "CommonCmd" field and import it as string
+	vstring, ok = result["CommonCmd"].(string)
+	if ok {
+		c.Common.Cmd["cmd"] = []string{vstring}
+		c.SetValueUpdate("Common.Cmd", c.Common.Cmd["cmd"])
+		fmt.Printf("[config.go] Import Common.Cmd=%v\n", c.Common.Cmd["cmd"])
+	}
+
+	// Access the "CommonConst field and import it as string
+	vstring, ok = result["CommonConst"].(string)
+	if ok {
+		c.Common.Const["const"] = []string{vstring}
+		c.SetValueUpdate("Common.Const", c.Common.Const["const"])
+		fmt.Printf("[config.go] Import Common.Const=%v\n", c.Common.Const["const"])
+	}
+
+	// Access the "CommonStates" field and import it as array of string
+	vlist, ok := result["CommonStates"].([]interface{})
+	if ok {
+		c.Common.States["states"] = []string{}
+		for _, item := range vlist {
+			c.Common.States["states"] = append(c.Common.States["states"], item.(string))
+		}
+	}
+	c.SetValueUpdate("Common.States", c.Common.States["states"])
+	fmt.Printf("[config.go] Import Common.States=%v\n", c.Common.States["states"])
+
+	// Access the "GameWidth" field and convert to int
+	vfloat, ok := result["GameWidth"].(float64)
+	if ok {
+		c.Video.GameWidth = int32(vfloat)
+	} else {
+		c.Video.GameWidth = 640
+	}
+	c.SetValueUpdate("Video.GameWidth", c.Video.GameWidth)
+	fmt.Printf("[config.go] Import GameWidth=%v\n", c.Video.GameWidth)
+
+	// Access the "GameHeight" field and convert to int
+	vfloat, ok = result["GameHeight"].(float64)
+	if ok {
+		c.Video.GameHeight = int32(vfloat)
+	} else {
+		c.Video.GameHeight = 480
+	}
+	c.SetValueUpdate("Video.GameHeight", c.Video.GameHeight)
+	fmt.Printf("[config.go] Import GameHeight=%v\n", c.Video.GameHeight)
+
+	// DebugFont
+	vstring, ok = result["DebugFont"].(string)
+	if ok {
+		c.Debug.Font, _ = physfs.CheckFile(vstring)
+	}
+	if c.Debug.Font == "" {
+		c.Debug.Font = "f-6x9.fnt"
+	}
+	c.SetValueUpdate("Debug.Font", c.Debug.Font)
+	fmt.Printf("[config.go] Import Debug.Font=%v\n", c.Debug.Font)
+
+	// StartStage
+	vstring, ok = result["StartStage"].(string)
+	if ok {
+		c.Debug.StartStage, _ = physfs.CheckFile(vstring)
+	}
+	c.SetValueUpdate("Debug.StartStage", c.Debug.StartStage)
+	fmt.Printf("[config.go] Import StartStage=%v\n", c.Debug.StartStage)
+
+	// System
+	vstring, ok = result["System"].(string)
+	if ok {
+		c.Config.System, _ = physfs.CheckFile(vstring)
+	}
+	if c.Config.System == "" {
+		c.Config.System = "external/script/main.lua"
+	}
+	c.SetValueUpdate("Config.System", c.Config.System)
+	fmt.Printf("[config.go] Import Config.System=%v\n", c.Config.System)
+
+	// WindowIcon
+	vlist, ok = result["WindowIcon"].([]interface{})
+	if ok {
+		for _, item := range vlist {
+			c.Config.WindowIcon = []string{}
+			c.Config.WindowIcon = append(c.Config.WindowIcon, item.(string))
+		}
+	}
+	c.SetValueUpdate("Config.WindowIcon", c.Config.WindowIcon)
+	fmt.Printf("[config.go] Import Config.WindowIcon=%v\n", c.Config.WindowIcon)
+
+	return nil
 }
