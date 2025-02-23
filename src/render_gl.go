@@ -406,7 +406,10 @@ func (r *Renderer_GL21) Init() {
 	r.enableModel = sys.cfg.Video.EnableModel
 	r.enableShadow = sys.cfg.Video.EnableModelShadow
 	chk(gl.Init())
-	sys.errLog.Printf("Using OpenGL %v (%v)", gl.GetString(gl.VERSION), gl.GetString(gl.RENDERER))
+	fmt.Printf("Using %v (%v)\n", gl.GoStr(gl.GetString(gl.VERSION)), gl.GoStr(gl.GetString(gl.RENDERER)))
+	fmt.Printf("scrrect: %v,%v - %v,%v\n", sys.scrrect[0], sys.scrrect[1], sys.scrrect[2], sys.scrrect[3])
+	fmt.Printf("gameWidth x gameHeight: %v,%v\n", sys.gameWidth, sys.gameHeight)
+	fmt.Printf("widthScale x heightScale: %v,%v\n", sys.widthScale, sys.heightScale)
 
 	var maxSamples int32
 	gl.GetIntegerv(gl.MAX_SAMPLES, &maxSamples)
