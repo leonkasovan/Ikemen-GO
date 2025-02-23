@@ -3,9 +3,9 @@ package main
 import (
 	"encoding/binary"
 	"encoding/gob"
+	"fmt"
 	"math"
 	"os"
-	"fmt"
 	"path/filepath"
 	"strings"
 	"unsafe"
@@ -873,6 +873,10 @@ const (
 	OC_ex2_systemvar_pausetime
 	OC_ex2_systemvar_slowtime
 	OC_ex2_systemvar_superpausetime
+	OC_ex_getplayerid
+	OC_ex_majorversion
+	OC_ex_drawpalno
+	OC_ex_rand
 )
 
 const (
@@ -3625,6 +3629,16 @@ func (be BytecodeExp) run_ex2(c *Char, i *int, oc *Char) {
 		// get the channel
 		ch := sys.bcStack.Pop()
 		sys.bcStack.Push(c.soundVar(ch, opc))
+	case OC_ex_getplayerid:
+		sys.bcStack.Top().SetI(c.getPlayerID(int(sys.bcStack.Top().ToI())))
+	case OC_ex_majorversion:
+		sys.bcStack.PushB(c.gi().mugenver[0] == 1)
+	case OC_ex_drawpalno:
+		// sys.bcStack.PushI(c.gi().drawpalno)
+		sys.bcStack.PushI(0)
+	case OC_ex_rand:
+		v2 := sys.bcStack.Pop()
+		be.random(sys.bcStack.Top(), v2)
 	default:
 		sys.errLog.Printf("%v\n", be[*i-1])
 		c.panic()
@@ -10449,7 +10463,7 @@ func (sc loadFile) Run(c *Char, _ []int32) bool {
 		return true
 	})
 	if path != "" {
-		fmt.Printf("[src/bytecode.go] loadFile.Run physfs.OpenRead(%v)\n", filepath.Dir(c.gi().def) + "/" + path)
+		fmt.Printf("[src/bytecode.go] loadFile.Run physfs.OpenRead(%v)\n", filepath.Dir(c.gi().def)+"/"+path)
 		decodeFile := physfs.OpenRead(filepath.Dir(c.gi().def) + "/" + path)
 		if decodeFile == nil {
 			return false

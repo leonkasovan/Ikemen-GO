@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
 	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
 )
 
@@ -362,6 +363,7 @@ var triggerMap = map[string]int{
 	"dizzy":              1,
 	"dizzypoints":        1,
 	"dizzypointsmax":     1,
+	"drawpalno":          1,
 	"envshakevar":        1,
 	"explodvar":          1,
 	"fightscreenstate":   1,
@@ -371,6 +373,7 @@ var triggerMap = map[string]int{
 	"float":              1,
 	"gamemode":           1,
 	"gameoption":         1,
+	"getplayerid":        1,
 	"groundangle":        1,
 	"guardbreak":         1,
 	"guardcount":         1,
@@ -393,6 +396,7 @@ var triggerMap = map[string]int{
 	"layerno":            1,
 	"lerp":               1,
 	"localcoord":         1,
+	"majorversion":       1,
 	"map":                1,
 	"max":                1,
 	"memberno":           1,
@@ -421,6 +425,7 @@ var triggerMap = map[string]int{
 	"projvar":            1,
 	"rad":                1,
 	"randomrange":        1,
+	"rand":               1,
 	"ratiolevel":         1,
 	"receiveddamage":     1,
 	"receivedhits":       1,
@@ -2371,6 +2376,11 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 			out.append(OC_ex_, opc)
 		}
 		// no-op (for y/xveladd and fall.envshake.dir)
+	case "getplayerid":
+		if _, err := c.oneArg(out, in, rd, true); err != nil {
+			return bvNone(), err
+		}
+		out.append(OC_ex_, OC_ex_getplayerid)
 	case "groundlevel":
 		out.append(OC_ex_, OC_ex_groundlevel)
 	case "guardcount":
@@ -3581,6 +3591,7 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 			bv = bv1
 		}
 	case "randomrange":
+	case "rand":
 		if err := c.checkOpeningBracket(in); err != nil {
 			return bvNone(), err
 		}
@@ -3848,6 +3859,8 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 		out.append(OC_ex_, OC_ex_dizzypoints)
 	case "dizzypointsmax":
 		out.append(OC_ex_, OC_ex_dizzypointsmax)
+	case "drawpalno":
+		out.append(OC_ex_, OC_ex_drawpalno)
 	case "envshakevar":
 		if err := c.checkOpeningBracket(in); err != nil {
 			return bvNone(), err
@@ -4187,6 +4200,8 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 		default:
 			return bvNone(), Error("Invalid data: " + c.token)
 		}
+	case "majorversion":
+		out.append(OC_ex_, OC_ex_majorversion)
 	case "map":
 		if err := c.checkOpeningBracket(in); err != nil {
 			return bvNone(), err
