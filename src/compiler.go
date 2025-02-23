@@ -3591,6 +3591,30 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 			bv = bv1
 		}
 	case "randomrange":
+		if err := c.checkOpeningBracket(in); err != nil {
+			return bvNone(), err
+		}
+		if bv1, err = c.expBoolOr(&be1, in); err != nil {
+			return bvNone(), err
+		}
+		if c.token != "," {
+			return bvNone(), Error("Missing ','")
+		}
+		c.token = c.tokenizer(in)
+		if bv2, err = c.expBoolOr(&be2, in); err != nil {
+			return bvNone(), err
+		}
+		if err := c.checkClosingBracket(); err != nil {
+			return bvNone(), err
+		}
+		if rd {
+			out.append(OC_rdreset)
+		}
+		out.append(be1...)
+		out.appendValue(bv1)
+		out.append(be2...)
+		out.appendValue(bv2)
+		out.append(OC_ex_, OC_ex_randomrange)
 	case "rand":
 		if err := c.checkOpeningBracket(in); err != nil {
 			return bvNone(), err
