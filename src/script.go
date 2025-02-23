@@ -5129,6 +5129,14 @@ func triggerFunctions(l *lua.LState) {
 		}
 		return 1
 	})
+	luaRegister(l, "animelemlength", func(*lua.LState) int {
+		if f := sys.debugWC.anim.CurrentFrame(); f != nil {
+			l.Push(lua.LNumber(f.Time))
+		} else {
+			l.Push(lua.LNumber(0))
+		}
+		return 1
+	})
 	luaRegister(l, "animframe", func(*lua.LState) int {
 		// Because the char's animation steps at the end of each frame, before the scripts run,
 		// AnimFrame Lua version uses curFrame instead of anim.CurrentFrame()

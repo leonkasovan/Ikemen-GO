@@ -877,6 +877,7 @@ const (
 	OC_ex_majorversion
 	OC_ex_drawpalno
 	OC_ex_rand
+	OC_ex_animelemlength
 )
 
 const (
@@ -3639,6 +3640,12 @@ func (be BytecodeExp) run_ex2(c *Char, i *int, oc *Char) {
 	case OC_ex_rand:
 		v2 := sys.bcStack.Pop()
 		be.random(sys.bcStack.Top(), v2)
+	case OC_ex_animelemlength:
+		if f := c.anim.CurrentFrame(); f != nil {
+			sys.bcStack.PushI(f.Time)
+		} else {
+			sys.bcStack.PushI(0)
+		}
 	default:
 		sys.errLog.Printf("%v\n", be[*i-1])
 		c.panic()

@@ -344,6 +344,7 @@ var triggerMap = map[string]int{
 	"airjumpcount":       1,
 	"alpha":              1,
 	"angle":              1,
+	"animelemlength":     1,
 	"animframe":          1,
 	"animlength":         1,
 	"animplayerno":       1,
@@ -2380,7 +2381,7 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 		if _, err := c.oneArg(out, in, rd, true); err != nil {
 			return bvNone(), err
 		}
-		out.append(OC_ex_, OC_ex_getplayerid)
+		out.append(OC_ex2_, OC_ex_getplayerid)
 	case "groundlevel":
 		out.append(OC_ex_, OC_ex_groundlevel)
 	case "guardcount":
@@ -3639,7 +3640,7 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 		out.appendValue(bv1)
 		out.append(be2...)
 		out.appendValue(bv2)
-		out.append(OC_ex_, OC_ex_randomrange)
+		out.append(OC_ex2_, OC_ex_randomrange)
 	case "round":
 		if err := c.checkOpeningBracket(in); err != nil {
 			return bvNone(), err
@@ -3797,6 +3798,8 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 		out.append(OC_ex_, OC_ex_ailevelf)
 	case "airjumpcount":
 		out.append(OC_ex_, OC_ex_airjumpcount)
+	case "animelemlength":
+		out.append(OC_ex2_, OC_ex_animelemlength)
 	case "animframe":
 		if err := c.checkOpeningBracket(in); err != nil {
 			return bvNone(), err
@@ -3884,7 +3887,7 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 	case "dizzypointsmax":
 		out.append(OC_ex_, OC_ex_dizzypointsmax)
 	case "drawpalno":
-		out.append(OC_ex_, OC_ex_drawpalno)
+		out.append(OC_ex2_, OC_ex_drawpalno)
 	case "envshakevar":
 		if err := c.checkOpeningBracket(in); err != nil {
 			return bvNone(), err
@@ -4225,7 +4228,7 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 			return bvNone(), Error("Invalid data: " + c.token)
 		}
 	case "majorversion":
-		out.append(OC_ex_, OC_ex_majorversion)
+		out.append(OC_ex2_, OC_ex_majorversion)
 	case "map":
 		if err := c.checkOpeningBracket(in); err != nil {
 			return bvNone(), err
