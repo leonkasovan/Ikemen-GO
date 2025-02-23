@@ -345,7 +345,7 @@ func loadConfig(def string, is_mugen_game bool) (*Config, error) {
 	}
 
 	// Import config.json if it exists
-	if physfs.Exists("save") && physfs.Exists("save/config.json") {
+	if physfs.Exists("save") && physfs.Exists("save/config.json") && !physfs.Exists("save/config.ini") {
 		err := importIkemenConfig("save/config.json", &c)
 		if err != nil {
 			fmt.Printf("[config.go] Error importing config.json: %v\n", err)
