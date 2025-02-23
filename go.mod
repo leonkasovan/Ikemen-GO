@@ -16,7 +16,10 @@ require (
 
 require github.com/leonkasovan/gl v0.0.0-20250124141628-d79f807815dd
 
-require github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0
+require (
+	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0
+	github.com/klauspost/compress v1.15.15
+)
 
 require (
 	github.com/ebitengine/oto/v3 v3.2.0 // indirect
