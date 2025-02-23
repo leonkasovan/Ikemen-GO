@@ -490,6 +490,17 @@ func main() {
 		is_mugen_game = true
 	}
 
+	if physfs.Exists("save") && !physfs.Exists("save/stats.json") {
+		// Create empty json
+		fo := physfs.OpenWrite("save/stats.json")
+		if fo == nil {
+			fmt.Println("Error creating save/stats.json")
+			os.Exit(-1)
+		}
+		fo.Write([]byte("{}"))
+		fo.Close()
+	}
+
 	processCommandLine()
 	if _, ok := sys.cmdFlags["-game"]; ok {
 		dir := filepath.Dir(sys.cmdFlags["-game"])
