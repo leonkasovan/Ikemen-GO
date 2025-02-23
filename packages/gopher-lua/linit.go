@@ -21,6 +21,8 @@ const (
 	ChannelLibName = "channel"
 	// CoroutineLibName is the name of the coroutine Library.
 	CoroutineLibName = "coroutine"
+	// HttpLibName is the name of the http Library.
+	HttpLibName = "http"
 )
 
 type luaLib struct {
@@ -39,6 +41,7 @@ var luaLibs = []luaLib{
 	luaLib{DebugLibName, OpenDebug},
 	luaLib{ChannelLibName, OpenChannel},
 	luaLib{CoroutineLibName, OpenCoroutine},
+	luaLib{HttpLibName, OpenHttp},
 }
 
 // OpenLibs loads the built-in libraries. It is equivalent to running OpenLoad,
