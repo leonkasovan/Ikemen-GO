@@ -1,4 +1,5 @@
 package main
+
 /*
 #include <stdlib.h>
 #include "../packages/physfs/physfs.h"
@@ -8,6 +9,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+
 	// "os"
 	// "path/filepath"
 	"reflect"
@@ -323,6 +325,28 @@ func systemScriptInit(l *lua.LState) {
 		}
 		return 0
 	})
+	luaRegister(l, "animGetPreloadedData", func(l *lua.LState) int {
+		var anim *Animation
+		if strArg(l, 1) == "char" {
+			anim = sys.sel.GetChar(int(numArg(l, 2))).anims.get(int16(numArg(l, 3)), int16(numArg(l, 4)))
+		} else if strArg(l, 1) == "stage" {
+			anim = sys.sel.GetStage(int(numArg(l, 2))).anims.get(int16(numArg(l, 3)), int16(numArg(l, 4)))
+		}
+		if anim != nil {
+			pfx := newPalFX()
+			pfx.clear()
+			pfx.time = -1
+			// TODO: palette changing depending on palette currently loaded on character
+			a := &Anim{anim: anim, window: sys.scrrect, xscl: 1, yscl: 1, palfx: pfx}
+			if l.GetTop() >= 5 && !boolArg(l, 5) && a.anim.totaltime == a.anim.looptime {
+				a.anim.totaltime = -1
+				a.anim.looptime = 0
+			}
+			l.Push(newUserData(l, a))
+			return 1
+		}
+		return 0
+	})
 	luaRegister(l, "animGetSpriteInfo", func(*lua.LState) int {
 		a, ok := toUserData(l, 1).(*Anim)
 		if !ok {
@@ -580,20 +604,29 @@ func systemScriptInit(l *lua.LState) {
 		}
 		layer := int32(0)
 		var x, y, scl float32 = 0, 0, 1
-		if !nilArg(l, 2) {
-			if numArg(l, 2) == 1 {
-				layer = 1
+		if l.GetTop() >= 2 {
+			num, ok := l.Get(2).(lua.LNumber)
+			if ok {
+				if float64(num) == 1 {
+					layer = 1
+				} else {
+					layer = 0
+				}
 			} else {
-				layer = 0
+				if l.ToBool(2) {
+					layer = 1
+				} else {
+					layer = 0
+				}
 			}
 		}
-		if !nilArg(l, 3) {
+		if l.GetTop() >= 3 {
 			x = float32(numArg(l, 3))
 		}
-		if !nilArg(l, 4) {
+		if l.GetTop() >= 4 {
 			y = float32(numArg(l, 4))
 		}
-		if !nilArg(l, 5) {
+		if l.GetTop() >= 5 {
 			scl = float32(numArg(l, 5))
 		}
 		bg.draw(layer, x, y, scl)
@@ -1097,6 +1130,10 @@ func systemScriptInit(l *lua.LState) {
 		}
 
 		return 0
+	})
+	luaRegister(l, "framespercount", func(l *lua.LState) int {
+		l.Push(lua.LNumber(sys.lifebar.ti.framespercount))
+		return 1
 	})
 	luaRegister(l, "fontGetDef", func(l *lua.LState) int {
 		fnt, ok := toUserData(l, 1).(*Fnt)
@@ -1652,7 +1689,7 @@ func systemScriptInit(l *lua.LState) {
 				pfiles = (**C.char)(unsafe.Pointer(uintptr(unsafe.Pointer(pfiles)) + unsafe.Sizeof(*pfiles)))
 			}
 		}
-		
+
 		l.Push(dir)
 		return 1
 	})
@@ -2290,6 +2327,15 @@ func systemScriptInit(l *lua.LState) {
 	})
 	luaRegister(l, "setAutoLevel", func(*lua.LState) int {
 		sys.autolevel = boolArg(l, 1)
+		return 0
+	})
+	luaRegister(l, "setAutoguard", func(l *lua.LState) int {
+		// Compating with mugen, this function is not implemented
+		// pn := int(numArg(l, 1))
+		// if pn < 1 || pn > MaxSimul*2+MaxAttachedChar {
+		// 	l.RaiseError("\nInvalid player number: %v\n", pn)
+		// }
+		// sys.autoguard[pn-1] = boolArg(l, 2)
 		return 0
 	})
 	luaRegister(l, "setCom", func(*lua.LState) int {
