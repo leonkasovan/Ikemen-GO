@@ -432,7 +432,7 @@ Usage:
     }
 */
 func CheckFile(fullpath string) (string, int) {
-	fullpath = filepath.Clean(fullpath)
+	// fullpath = filepath.Clean(fullpath)
 
 	// First, check file existance
 	if FileExist(fullpath) {
