@@ -86,11 +86,11 @@ function f_checkFile(file, msg)
 	if rc == 0 then
 		f_validation:writeln(string.format("%s = %s [OK]", msg, valid_path))
 	elseif rc == 1 then
-		f_validation:writeln(string.format("%s = %s [NOT OK]", msg, valid_path))
+		f_validation:writeln(string.format("%s = %s [NOT OK]", msg, file))
 	elseif rc == -1 then
-		f_validation:writeln(string.format("%s = %s [NOT FOUND]", msg, valid_path))
+		f_validation:writeln(string.format("%s = %s [NOT FOUND]", msg, file))
 	elseif rc == -2 then
-		f_validation:writeln(string.format("%s = %s [ERROR]", msg, valid_path))
+		f_validation:writeln(string.format("%s = %s [ERROR]", msg, file))
 	end
 	return nil
 end
@@ -241,7 +241,7 @@ for src_line in content:gmatch('([^\n]*)\n?') do
 	if modified_line == "" then
 		if string.find(src_line, '\\') and not string.find(src_line, 'text') then
 			src_line = src_line:gsub('\\', '/')
-			f_validation:writeln(string.format("[%s][%s] %s [FIXED]", config.Motif, group, src_line))
+			-- f_validation:writeln(string.format("[%s][%s] %s [FIXED]", config.Motif, group, src_line))
 		end
 		file:write(src_line .. "\n")
 	else
@@ -432,14 +432,14 @@ for src_line in content:gmatch('[^\r\n]+') do
 
 				if c[2] ~= nil then -- 2nd column is stage definition
 					stripped_stage = c[2]:match("^%s*(.-)%s*$")
-					if stripped_stage ~= "" and stripped_stage:lower() ~= "random" then
+					if stripped_stage ~= "" and stripped_stage:lower() ~= "random" and string.find(stripped_stage, "%.[Dd][eE][fF]") then
 						valid_path, rc = findFile(stripped_stage, { "", "stages" })
 						if rc == 0 then -- if found or fixed then add into stages_selection
 							f_validation:writeln(string.format("\tdefault stage = %s [OK]", stripped_stage))
 							f_table_insert(stages_selection, valid_path)
 						elseif rc == 1 then
 							f_table_insert(stages_selection, valid_path)
-							modified_line = src_line:gsub(stripped_stage, valid_path)
+							modified_line = src_line:gsub(stripped_stage:gsub("-","%%-"), valid_path)
 						elseif rc == -1 then
 							f_validation:writeln(string.format("\twith stage %s [NOT FOUND]", stripped_stage))
 						elseif rc == -2 then
@@ -464,9 +464,9 @@ for src_line in content:gmatch('[^\r\n]+') do
 				elseif rc == 1 then -- found in diff case, fixed
 					f_validation:writeln(string.format("\t%s = %s [FIXED]", stripped_ch, valid_path))
 					if modified_line == "" then
-						modified_line = src_line:gsub(stripped_ch, valid_path, 1)
+						modified_line = src_line:gsub(stripped_ch:gsub("-","%%-"), valid_path, 1)
 					else
-						modified_line = modified_line:gsub(stripped_ch, valid_path, 1)
+						modified_line = modified_line:gsub(stripped_ch:gsub("-","%%-"), valid_path, 1)
 					end
 				elseif rc == -1 then -- not found
 					local status
@@ -504,7 +504,7 @@ for src_line in content:gmatch('[^\r\n]+') do
 					f_validation:writeln("\t" .. c .. " [OK]")
 				elseif rc == 1 then
 					f_table_insert(stages_selection, valid_path)
-					modified_line = src_line:gsub(c, valid_path)
+					modified_line = src_line:gsub(c:gsub("-","%%-"), valid_path)
 				elseif rc == -1 then
 					f_validation:writeln("\t" .. c .. " [NOT FOUND]")
 				elseif rc == -2 then
