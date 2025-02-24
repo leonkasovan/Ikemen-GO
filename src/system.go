@@ -153,12 +153,12 @@ type System struct {
 	supertimebuffer         int32
 	superpausebg            bool
 	superendcmdbuftime      int32
-	superplayer             int
+	superplayerno           int
 	superdarken             bool
 	superanim               *Animation
 	superpmap               PalFX
 	superpos                [2]float32
-	superfacing             float32
+	superscale              [2]float32
 	superp2defmul           float32
 	envcol                  [3]int32
 	envcol_time             int32
@@ -887,9 +887,18 @@ func (s *System) zEnabled() bool {
 	return s.zmin != s.zmax
 }
 
-// Convert Z logic position to Y drawing position
-func (s *System) posZtoY(z, localscl float32) float32 {
-	return z * localscl * sys.stage.stageCamera.depthtoscreen
+// Convert X and Y drawing position to Z perspective
+func (s *System) drawposXYfromZ(inpos [2]float32, localscl, zpos, zscale float32) (outpos [2]float32) {
+	outpos[0] = (inpos[0]-s.cam.Pos[0])*zscale + s.cam.Pos[0]
+	outpos[1] = inpos[1] * zscale
+	outpos[1] += s.posZtoYoffset(zpos, localscl) // "Z" position
+	return
+}
+
+// Convert Z logic position to Y drawing offset
+// This is separate from the above because shadows only need this part
+func (s *System) posZtoYoffset(zpos, localscl float32) float32 {
+	return zpos * localscl * s.stage.stageCamera.depthtoscreen
 }
 
 // Z axis check
@@ -1516,7 +1525,7 @@ func (s *System) action() {
 									s.lifebar.wi[i].add(s.winType[i])
 									if s.matchOver() {
 										// In a draw game both players go back to 0 wins
-										if winner[0] && winner[1] { // sys.winTeam < 0
+										if winner[0] == winner[1] { // sys.winTeam < 0
 											s.lifebar.wc[0].wins = 0
 											s.lifebar.wc[1].wins = 0
 										} else {
@@ -1696,13 +1705,28 @@ func (s *System) action() {
 		s.xmin = s.cam.minLeft
 	}
 	s.charList.xScreenBound()
-
+	// Superpause effect
 	if s.superanim != nil {
-		s.spritesLayer1.add(&SprData{s.superanim, &s.superpmap, s.superpos,
-			[...]float32{s.superfacing, 1}, [2]int32{-1}, 5, Rotation{}, [2]float32{},
-			false, true, s.cgi[s.superplayer].mugenver[0] != 1, 1, [2]float32{1, 1}, 0, 0, [4]float32{0, 0, 0, 0}})
+		s.spritesLayer1.add(&SprData{
+			anim:         s.superanim,
+			fx:           &s.superpmap,
+			pos:          s.superpos,
+			scl:          s.superscale,
+			alpha:        [2]int32{-1},
+			priority:     5,
+			rot:          Rotation{},
+			ascl:         [2]float32{},
+			screen:       false,
+			undarken:     true,
+			oldVer:       s.cgi[s.superplayerno].mugenver[0] != 1,
+			facing:       1,
+			airOffsetFix: [2]float32{1, 1},
+			projection:   0,
+			fLength:      0,
+			window:       [4]float32{0, 0, 0, 0},
+		})
 		if s.superanim.loopend {
-			s.superanim = nil
+			s.superanim = nil // Not allowed to loop
 		}
 	}
 	for i := range s.projs {

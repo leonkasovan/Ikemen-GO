@@ -1248,7 +1248,7 @@ func (fa *LifeBarFace) draw(layerno int16, ref int, far *LifeBarFace) {
 
 		// Reset system brightness if player initiated SuperPause (cancel "darken" parameter)
 		ob := sys.brightness
-		if ref == sys.superplayer {
+		if ref == sys.superplayerno {
 			sys.brightness = 256
 		}
 
