@@ -3054,6 +3054,7 @@ func systemScriptInit(l *lua.LState) {
 		sys.soundChannels.Play(s, g, n, 100, 0.0, 0, 0, 0)
 		return 0
 	})
+	systemScriptInitCompatibility(l)
 }
 
 // Trigger Functions
