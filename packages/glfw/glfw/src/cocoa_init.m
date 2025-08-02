@@ -175,7 +175,7 @@ static void createMenuBar(void)
 
 // Create key code translation tables
 //
-static void createKeyTables(void)
+static void cocoa_createKeyTables(void)
 {
     memset(_glfw.ns.keycodes, -1, sizeof(_glfw.ns.keycodes));
     memset(_glfw.ns.scancodes, -1, sizeof(_glfw.ns.scancodes));
@@ -618,7 +618,7 @@ int _glfwInitCocoa(void)
                name:NSTextInputContextKeyboardSelectionDidChangeNotification
              object:nil];
 
-    createKeyTables();
+    cocoa_createKeyTables();
 
     _glfw.ns.eventSource = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
     if (!_glfw.ns.eventSource)

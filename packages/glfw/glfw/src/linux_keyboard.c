@@ -62,7 +62,7 @@ glfwPollEvents
 
 #define isBitSet(bit, arr) (arr[(bit) / 8] & (1 << ((bit) % 8)))
 
-static int translateKey(uint32_t scancode) {
+static int linux_translateKey(uint32_t scancode) {
     if (scancode < sizeof(_glfw.kmsdrm.keycodes) / sizeof(_glfw.kmsdrm.keycodes[0]))
         return _glfw.kmsdrm.keycodes[scancode];
 
@@ -71,7 +71,7 @@ static int translateKey(uint32_t scancode) {
 
 // Return true if the specified device is a keyboard, store its name and open a file descriptor to it
 // Return falsae if the device is not a keyboard
-int isKeyboardDevice(/*in*/ const char* devicePath, /*out*/ char* deviceName, /*in */size_t nameSize, int *fd) {
+int isKeyboardDevice(/*in*/ const char* devicePath, /*out*/ char* deviceName, /*in */size_t nameSize, int* fd) {
     *fd = -1;
     *fd = open(devicePath, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
     if (*fd < 0) {
@@ -108,7 +108,7 @@ int isKeyboardDevice(/*in*/ const char* devicePath, /*out*/ char* deviceName, /*
 
     // Check if the device supports EV_KEY events and has keys typically found on keyboards
     return (evbit[EV_KEY / (8 * sizeof(unsigned long))] & (1 << (EV_KEY % (8 * sizeof(unsigned long))))) &&
-           (keybit[KEY_A / (8 * sizeof(unsigned long))] & (1 << (KEY_A % (8 * sizeof(unsigned long)))));
+        (keybit[KEY_A / (8 * sizeof(unsigned long))] & (1 << (KEY_A % (8 * sizeof(unsigned long)))));
 }
 
 // Attempt to open the specified keyboard device
@@ -127,8 +127,7 @@ static GLFWbool openKeyboardDevice(const char* path) {
     if (ioctl(_glfw.kmsdrm.keyboard_fd, EVIOCGBIT(0, sizeof(evBits)), evBits) < 0 ||
         ioctl(_glfw.kmsdrm.keyboard_fd, EVIOCGBIT(EV_KEY, sizeof(keyBits)), keyBits) < 0 ||
         ioctl(_glfw.kmsdrm.keyboard_fd, EVIOCGBIT(EV_ABS, sizeof(absBits)), absBits) < 0 ||
-        ioctl(_glfw.kmsdrm.keyboard_fd, EVIOCGID, &id) < 0)
-    {
+        ioctl(_glfw.kmsdrm.keyboard_fd, EVIOCGID, &id) < 0) {
         _glfwInputError(GLFW_PLATFORM_ERROR,
             "Linux: Failed to query input device: %s",
             strerror(errno));
@@ -210,7 +209,7 @@ GLFWbool _glfwInitKeyboardsLinux(void) {
 
             char path[PATH_MAX];
             snprintf(path, sizeof(path), "%s/%s", dirname, entry->d_name);
-            if (openKeyboardDevice(path)){
+            if (openKeyboardDevice(path)) {
                 count++;
                 break;
             }
@@ -219,7 +218,7 @@ GLFWbool _glfwInitKeyboardsLinux(void) {
     }
     if (count == 0) {
         debug_puts("There is NO input devices");
-    }else{
+    } else {
         debug_printf("Found %d input devices\n", count);
     }
 
@@ -229,8 +228,7 @@ GLFWbool _glfwInitKeyboardsLinux(void) {
 void _glfwTerminateKeyboardsLinux(void) {
     closeKeyboard();
 
-    if (_glfw.linjs.inotify > 0)
-    {
+    if (_glfw.linjs.inotify > 0) {
         if (_glfw.linjs.watch > 0)
             inotify_rm_watch(_glfw.linjs.inotify, _glfw.linjs.watch);
 
@@ -247,10 +245,9 @@ GLFWbool _glfwPollKeyboardLinux() {
     for (;;) {
         struct input_event e;
         errno = 0;
-        if (read(_glfw.kmsdrm.keyboard_fd, &e, sizeof(e)) < 0)
-        {
+        if (read(_glfw.kmsdrm.keyboard_fd, &e, sizeof(e)) < 0) {
             // Reset the keyboard slot if the device was disconnected
-            if (errno == ENODEV){
+            if (errno == ENODEV) {
                 ret = GLFW_FALSE;
                 closeKeyboard();
             }
@@ -258,7 +255,7 @@ GLFWbool _glfwPollKeyboardLinux() {
         }
         if (e.type == EV_KEY) {
             // Handle keyboard event
-            _glfwInputKey(_glfw.kmsdrm.window, translateKey(e.code), e.code, e.value ? GLFW_PRESS : GLFW_RELEASE, 0);
+            _glfwInputKey(_glfw.kmsdrm.window, linux_translateKey(e.code), e.code, e.value ? GLFW_PRESS : GLFW_RELEASE, 0);
         }
     }
     return ret;

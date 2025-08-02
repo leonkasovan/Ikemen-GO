@@ -44,164 +44,160 @@
 // NOTE: This is only used as a fallback, in case the XKB method fails
 //       It is layout-dependent and will fail partially on most non-US layouts
 //
-static int translateKeySyms(const KeySym* keysyms, int width)
-{
-    if (width > 1)
-    {
-        switch (keysyms[1])
-        {
-            case XK_KP_0:           return GLFW_KEY_KP_0;
-            case XK_KP_1:           return GLFW_KEY_KP_1;
-            case XK_KP_2:           return GLFW_KEY_KP_2;
-            case XK_KP_3:           return GLFW_KEY_KP_3;
-            case XK_KP_4:           return GLFW_KEY_KP_4;
-            case XK_KP_5:           return GLFW_KEY_KP_5;
-            case XK_KP_6:           return GLFW_KEY_KP_6;
-            case XK_KP_7:           return GLFW_KEY_KP_7;
-            case XK_KP_8:           return GLFW_KEY_KP_8;
-            case XK_KP_9:           return GLFW_KEY_KP_9;
-            case XK_KP_Separator:
-            case XK_KP_Decimal:     return GLFW_KEY_KP_DECIMAL;
-            case XK_KP_Equal:       return GLFW_KEY_KP_EQUAL;
-            case XK_KP_Enter:       return GLFW_KEY_KP_ENTER;
-            default:                break;
+static int translateKeySyms(const KeySym* keysyms, int width) {
+    if (width > 1) {
+        switch (keysyms[1]) {
+        case XK_KP_0:           return GLFW_KEY_KP_0;
+        case XK_KP_1:           return GLFW_KEY_KP_1;
+        case XK_KP_2:           return GLFW_KEY_KP_2;
+        case XK_KP_3:           return GLFW_KEY_KP_3;
+        case XK_KP_4:           return GLFW_KEY_KP_4;
+        case XK_KP_5:           return GLFW_KEY_KP_5;
+        case XK_KP_6:           return GLFW_KEY_KP_6;
+        case XK_KP_7:           return GLFW_KEY_KP_7;
+        case XK_KP_8:           return GLFW_KEY_KP_8;
+        case XK_KP_9:           return GLFW_KEY_KP_9;
+        case XK_KP_Separator:
+        case XK_KP_Decimal:     return GLFW_KEY_KP_DECIMAL;
+        case XK_KP_Equal:       return GLFW_KEY_KP_EQUAL;
+        case XK_KP_Enter:       return GLFW_KEY_KP_ENTER;
+        default:                break;
         }
     }
 
-    switch (keysyms[0])
-    {
-        case XK_Escape:         return GLFW_KEY_ESCAPE;
-        case XK_Tab:            return GLFW_KEY_TAB;
-        case XK_Shift_L:        return GLFW_KEY_LEFT_SHIFT;
-        case XK_Shift_R:        return GLFW_KEY_RIGHT_SHIFT;
-        case XK_Control_L:      return GLFW_KEY_LEFT_CONTROL;
-        case XK_Control_R:      return GLFW_KEY_RIGHT_CONTROL;
-        case XK_Meta_L:
-        case XK_Alt_L:          return GLFW_KEY_LEFT_ALT;
-        case XK_Mode_switch: // Mapped to Alt_R on many keyboards
-        case XK_ISO_Level3_Shift: // AltGr on at least some machines
-        case XK_Meta_R:
-        case XK_Alt_R:          return GLFW_KEY_RIGHT_ALT;
-        case XK_Super_L:        return GLFW_KEY_LEFT_SUPER;
-        case XK_Super_R:        return GLFW_KEY_RIGHT_SUPER;
-        case XK_Menu:           return GLFW_KEY_MENU;
-        case XK_Num_Lock:       return GLFW_KEY_NUM_LOCK;
-        case XK_Caps_Lock:      return GLFW_KEY_CAPS_LOCK;
-        case XK_Print:          return GLFW_KEY_PRINT_SCREEN;
-        case XK_Scroll_Lock:    return GLFW_KEY_SCROLL_LOCK;
-        case XK_Pause:          return GLFW_KEY_PAUSE;
-        case XK_Delete:         return GLFW_KEY_DELETE;
-        case XK_BackSpace:      return GLFW_KEY_BACKSPACE;
-        case XK_Return:         return GLFW_KEY_ENTER;
-        case XK_Home:           return GLFW_KEY_HOME;
-        case XK_End:            return GLFW_KEY_END;
-        case XK_Page_Up:        return GLFW_KEY_PAGE_UP;
-        case XK_Page_Down:      return GLFW_KEY_PAGE_DOWN;
-        case XK_Insert:         return GLFW_KEY_INSERT;
-        case XK_Left:           return GLFW_KEY_LEFT;
-        case XK_Right:          return GLFW_KEY_RIGHT;
-        case XK_Down:           return GLFW_KEY_DOWN;
-        case XK_Up:             return GLFW_KEY_UP;
-        case XK_F1:             return GLFW_KEY_F1;
-        case XK_F2:             return GLFW_KEY_F2;
-        case XK_F3:             return GLFW_KEY_F3;
-        case XK_F4:             return GLFW_KEY_F4;
-        case XK_F5:             return GLFW_KEY_F5;
-        case XK_F6:             return GLFW_KEY_F6;
-        case XK_F7:             return GLFW_KEY_F7;
-        case XK_F8:             return GLFW_KEY_F8;
-        case XK_F9:             return GLFW_KEY_F9;
-        case XK_F10:            return GLFW_KEY_F10;
-        case XK_F11:            return GLFW_KEY_F11;
-        case XK_F12:            return GLFW_KEY_F12;
-        case XK_F13:            return GLFW_KEY_F13;
-        case XK_F14:            return GLFW_KEY_F14;
-        case XK_F15:            return GLFW_KEY_F15;
-        case XK_F16:            return GLFW_KEY_F16;
-        case XK_F17:            return GLFW_KEY_F17;
-        case XK_F18:            return GLFW_KEY_F18;
-        case XK_F19:            return GLFW_KEY_F19;
-        case XK_F20:            return GLFW_KEY_F20;
-        case XK_F21:            return GLFW_KEY_F21;
-        case XK_F22:            return GLFW_KEY_F22;
-        case XK_F23:            return GLFW_KEY_F23;
-        case XK_F24:            return GLFW_KEY_F24;
-        case XK_F25:            return GLFW_KEY_F25;
+    switch (keysyms[0]) {
+    case XK_Escape:         return GLFW_KEY_ESCAPE;
+    case XK_Tab:            return GLFW_KEY_TAB;
+    case XK_Shift_L:        return GLFW_KEY_LEFT_SHIFT;
+    case XK_Shift_R:        return GLFW_KEY_RIGHT_SHIFT;
+    case XK_Control_L:      return GLFW_KEY_LEFT_CONTROL;
+    case XK_Control_R:      return GLFW_KEY_RIGHT_CONTROL;
+    case XK_Meta_L:
+    case XK_Alt_L:          return GLFW_KEY_LEFT_ALT;
+    case XK_Mode_switch: // Mapped to Alt_R on many keyboards
+    case XK_ISO_Level3_Shift: // AltGr on at least some machines
+    case XK_Meta_R:
+    case XK_Alt_R:          return GLFW_KEY_RIGHT_ALT;
+    case XK_Super_L:        return GLFW_KEY_LEFT_SUPER;
+    case XK_Super_R:        return GLFW_KEY_RIGHT_SUPER;
+    case XK_Menu:           return GLFW_KEY_MENU;
+    case XK_Num_Lock:       return GLFW_KEY_NUM_LOCK;
+    case XK_Caps_Lock:      return GLFW_KEY_CAPS_LOCK;
+    case XK_Print:          return GLFW_KEY_PRINT_SCREEN;
+    case XK_Scroll_Lock:    return GLFW_KEY_SCROLL_LOCK;
+    case XK_Pause:          return GLFW_KEY_PAUSE;
+    case XK_Delete:         return GLFW_KEY_DELETE;
+    case XK_BackSpace:      return GLFW_KEY_BACKSPACE;
+    case XK_Return:         return GLFW_KEY_ENTER;
+    case XK_Home:           return GLFW_KEY_HOME;
+    case XK_End:            return GLFW_KEY_END;
+    case XK_Page_Up:        return GLFW_KEY_PAGE_UP;
+    case XK_Page_Down:      return GLFW_KEY_PAGE_DOWN;
+    case XK_Insert:         return GLFW_KEY_INSERT;
+    case XK_Left:           return GLFW_KEY_LEFT;
+    case XK_Right:          return GLFW_KEY_RIGHT;
+    case XK_Down:           return GLFW_KEY_DOWN;
+    case XK_Up:             return GLFW_KEY_UP;
+    case XK_F1:             return GLFW_KEY_F1;
+    case XK_F2:             return GLFW_KEY_F2;
+    case XK_F3:             return GLFW_KEY_F3;
+    case XK_F4:             return GLFW_KEY_F4;
+    case XK_F5:             return GLFW_KEY_F5;
+    case XK_F6:             return GLFW_KEY_F6;
+    case XK_F7:             return GLFW_KEY_F7;
+    case XK_F8:             return GLFW_KEY_F8;
+    case XK_F9:             return GLFW_KEY_F9;
+    case XK_F10:            return GLFW_KEY_F10;
+    case XK_F11:            return GLFW_KEY_F11;
+    case XK_F12:            return GLFW_KEY_F12;
+    case XK_F13:            return GLFW_KEY_F13;
+    case XK_F14:            return GLFW_KEY_F14;
+    case XK_F15:            return GLFW_KEY_F15;
+    case XK_F16:            return GLFW_KEY_F16;
+    case XK_F17:            return GLFW_KEY_F17;
+    case XK_F18:            return GLFW_KEY_F18;
+    case XK_F19:            return GLFW_KEY_F19;
+    case XK_F20:            return GLFW_KEY_F20;
+    case XK_F21:            return GLFW_KEY_F21;
+    case XK_F22:            return GLFW_KEY_F22;
+    case XK_F23:            return GLFW_KEY_F23;
+    case XK_F24:            return GLFW_KEY_F24;
+    case XK_F25:            return GLFW_KEY_F25;
 
         // Numeric keypad
-        case XK_KP_Divide:      return GLFW_KEY_KP_DIVIDE;
-        case XK_KP_Multiply:    return GLFW_KEY_KP_MULTIPLY;
-        case XK_KP_Subtract:    return GLFW_KEY_KP_SUBTRACT;
-        case XK_KP_Add:         return GLFW_KEY_KP_ADD;
+    case XK_KP_Divide:      return GLFW_KEY_KP_DIVIDE;
+    case XK_KP_Multiply:    return GLFW_KEY_KP_MULTIPLY;
+    case XK_KP_Subtract:    return GLFW_KEY_KP_SUBTRACT;
+    case XK_KP_Add:         return GLFW_KEY_KP_ADD;
 
         // These should have been detected in secondary keysym test above!
-        case XK_KP_Insert:      return GLFW_KEY_KP_0;
-        case XK_KP_End:         return GLFW_KEY_KP_1;
-        case XK_KP_Down:        return GLFW_KEY_KP_2;
-        case XK_KP_Page_Down:   return GLFW_KEY_KP_3;
-        case XK_KP_Left:        return GLFW_KEY_KP_4;
-        case XK_KP_Right:       return GLFW_KEY_KP_6;
-        case XK_KP_Home:        return GLFW_KEY_KP_7;
-        case XK_KP_Up:          return GLFW_KEY_KP_8;
-        case XK_KP_Page_Up:     return GLFW_KEY_KP_9;
-        case XK_KP_Delete:      return GLFW_KEY_KP_DECIMAL;
-        case XK_KP_Equal:       return GLFW_KEY_KP_EQUAL;
-        case XK_KP_Enter:       return GLFW_KEY_KP_ENTER;
+    case XK_KP_Insert:      return GLFW_KEY_KP_0;
+    case XK_KP_End:         return GLFW_KEY_KP_1;
+    case XK_KP_Down:        return GLFW_KEY_KP_2;
+    case XK_KP_Page_Down:   return GLFW_KEY_KP_3;
+    case XK_KP_Left:        return GLFW_KEY_KP_4;
+    case XK_KP_Right:       return GLFW_KEY_KP_6;
+    case XK_KP_Home:        return GLFW_KEY_KP_7;
+    case XK_KP_Up:          return GLFW_KEY_KP_8;
+    case XK_KP_Page_Up:     return GLFW_KEY_KP_9;
+    case XK_KP_Delete:      return GLFW_KEY_KP_DECIMAL;
+    case XK_KP_Equal:       return GLFW_KEY_KP_EQUAL;
+    case XK_KP_Enter:       return GLFW_KEY_KP_ENTER;
 
         // Last resort: Check for printable keys (should not happen if the XKB
         // extension is available). This will give a layout dependent mapping
         // (which is wrong, and we may miss some keys, especially on non-US
         // keyboards), but it's better than nothing...
-        case XK_a:              return GLFW_KEY_A;
-        case XK_b:              return GLFW_KEY_B;
-        case XK_c:              return GLFW_KEY_C;
-        case XK_d:              return GLFW_KEY_D;
-        case XK_e:              return GLFW_KEY_E;
-        case XK_f:              return GLFW_KEY_F;
-        case XK_g:              return GLFW_KEY_G;
-        case XK_h:              return GLFW_KEY_H;
-        case XK_i:              return GLFW_KEY_I;
-        case XK_j:              return GLFW_KEY_J;
-        case XK_k:              return GLFW_KEY_K;
-        case XK_l:              return GLFW_KEY_L;
-        case XK_m:              return GLFW_KEY_M;
-        case XK_n:              return GLFW_KEY_N;
-        case XK_o:              return GLFW_KEY_O;
-        case XK_p:              return GLFW_KEY_P;
-        case XK_q:              return GLFW_KEY_Q;
-        case XK_r:              return GLFW_KEY_R;
-        case XK_s:              return GLFW_KEY_S;
-        case XK_t:              return GLFW_KEY_T;
-        case XK_u:              return GLFW_KEY_U;
-        case XK_v:              return GLFW_KEY_V;
-        case XK_w:              return GLFW_KEY_W;
-        case XK_x:              return GLFW_KEY_X;
-        case XK_y:              return GLFW_KEY_Y;
-        case XK_z:              return GLFW_KEY_Z;
-        case XK_1:              return GLFW_KEY_1;
-        case XK_2:              return GLFW_KEY_2;
-        case XK_3:              return GLFW_KEY_3;
-        case XK_4:              return GLFW_KEY_4;
-        case XK_5:              return GLFW_KEY_5;
-        case XK_6:              return GLFW_KEY_6;
-        case XK_7:              return GLFW_KEY_7;
-        case XK_8:              return GLFW_KEY_8;
-        case XK_9:              return GLFW_KEY_9;
-        case XK_0:              return GLFW_KEY_0;
-        case XK_space:          return GLFW_KEY_SPACE;
-        case XK_minus:          return GLFW_KEY_MINUS;
-        case XK_equal:          return GLFW_KEY_EQUAL;
-        case XK_bracketleft:    return GLFW_KEY_LEFT_BRACKET;
-        case XK_bracketright:   return GLFW_KEY_RIGHT_BRACKET;
-        case XK_backslash:      return GLFW_KEY_BACKSLASH;
-        case XK_semicolon:      return GLFW_KEY_SEMICOLON;
-        case XK_apostrophe:     return GLFW_KEY_APOSTROPHE;
-        case XK_grave:          return GLFW_KEY_GRAVE_ACCENT;
-        case XK_comma:          return GLFW_KEY_COMMA;
-        case XK_period:         return GLFW_KEY_PERIOD;
-        case XK_slash:          return GLFW_KEY_SLASH;
-        case XK_less:           return GLFW_KEY_WORLD_1; // At least in some layouts...
-        default:                break;
+    case XK_a:              return GLFW_KEY_A;
+    case XK_b:              return GLFW_KEY_B;
+    case XK_c:              return GLFW_KEY_C;
+    case XK_d:              return GLFW_KEY_D;
+    case XK_e:              return GLFW_KEY_E;
+    case XK_f:              return GLFW_KEY_F;
+    case XK_g:              return GLFW_KEY_G;
+    case XK_h:              return GLFW_KEY_H;
+    case XK_i:              return GLFW_KEY_I;
+    case XK_j:              return GLFW_KEY_J;
+    case XK_k:              return GLFW_KEY_K;
+    case XK_l:              return GLFW_KEY_L;
+    case XK_m:              return GLFW_KEY_M;
+    case XK_n:              return GLFW_KEY_N;
+    case XK_o:              return GLFW_KEY_O;
+    case XK_p:              return GLFW_KEY_P;
+    case XK_q:              return GLFW_KEY_Q;
+    case XK_r:              return GLFW_KEY_R;
+    case XK_s:              return GLFW_KEY_S;
+    case XK_t:              return GLFW_KEY_T;
+    case XK_u:              return GLFW_KEY_U;
+    case XK_v:              return GLFW_KEY_V;
+    case XK_w:              return GLFW_KEY_W;
+    case XK_x:              return GLFW_KEY_X;
+    case XK_y:              return GLFW_KEY_Y;
+    case XK_z:              return GLFW_KEY_Z;
+    case XK_1:              return GLFW_KEY_1;
+    case XK_2:              return GLFW_KEY_2;
+    case XK_3:              return GLFW_KEY_3;
+    case XK_4:              return GLFW_KEY_4;
+    case XK_5:              return GLFW_KEY_5;
+    case XK_6:              return GLFW_KEY_6;
+    case XK_7:              return GLFW_KEY_7;
+    case XK_8:              return GLFW_KEY_8;
+    case XK_9:              return GLFW_KEY_9;
+    case XK_0:              return GLFW_KEY_0;
+    case XK_space:          return GLFW_KEY_SPACE;
+    case XK_minus:          return GLFW_KEY_MINUS;
+    case XK_equal:          return GLFW_KEY_EQUAL;
+    case XK_bracketleft:    return GLFW_KEY_LEFT_BRACKET;
+    case XK_bracketright:   return GLFW_KEY_RIGHT_BRACKET;
+    case XK_backslash:      return GLFW_KEY_BACKSLASH;
+    case XK_semicolon:      return GLFW_KEY_SEMICOLON;
+    case XK_apostrophe:     return GLFW_KEY_APOSTROPHE;
+    case XK_grave:          return GLFW_KEY_GRAVE_ACCENT;
+    case XK_comma:          return GLFW_KEY_COMMA;
+    case XK_period:         return GLFW_KEY_PERIOD;
+    case XK_slash:          return GLFW_KEY_SLASH;
+    case XK_less:           return GLFW_KEY_WORLD_1; // At least in some layouts...
+    default:                break;
     }
 
     // No matching translation was found
@@ -210,15 +206,13 @@ static int translateKeySyms(const KeySym* keysyms, int width)
 
 // Create key code translation tables
 //
-static void createKeyTables(void)
-{
+static void x11_createKeyTables(void) {
     int scancodeMin, scancodeMax;
 
     memset(_glfw.x11.keycodes, -1, sizeof(_glfw.x11.keycodes));
     memset(_glfw.x11.scancodes, -1, sizeof(_glfw.x11.scancodes));
 
-    if (_glfw.x11.xkb.available)
-    {
+    if (_glfw.x11.xkb.available) {
         // Use XKB to determine physical key locations independently of the
         // current keyboard layout
 
@@ -228,8 +222,7 @@ static void createKeyTables(void)
         scancodeMin = desc->min_key_code;
         scancodeMax = desc->max_key_code;
 
-        const struct
-        {
+        const struct {
             int key;
             char* name;
         } keymap[] =
@@ -358,44 +351,37 @@ static void createKeyTables(void)
         };
 
         // Find the X11 key code -> GLFW key code mapping
-        for (int scancode = scancodeMin;  scancode <= scancodeMax;  scancode++)
-        {
+        for (int scancode = scancodeMin; scancode <= scancodeMax; scancode++) {
             int key = GLFW_KEY_UNKNOWN;
 
             // Map the key name to a GLFW key code. Note: We use the US
             // keyboard layout. Because function keys aren't mapped correctly
             // when using traditional KeySym translations, they are mapped
             // here instead.
-            for (int i = 0;  i < sizeof(keymap) / sizeof(keymap[0]);  i++)
-            {
+            for (int i = 0; i < sizeof(keymap) / sizeof(keymap[0]); i++) {
                 if (strncmp(desc->names->keys[scancode].name,
-                            keymap[i].name,
-                            XkbKeyNameLength) == 0)
-                {
+                    keymap[i].name,
+                    XkbKeyNameLength) == 0) {
                     key = keymap[i].key;
                     break;
                 }
             }
 
             // Fall back to key aliases in case the key name did not match
-            for (int i = 0;  i < desc->names->num_key_aliases;  i++)
-            {
+            for (int i = 0; i < desc->names->num_key_aliases; i++) {
                 if (key != GLFW_KEY_UNKNOWN)
                     break;
 
                 if (strncmp(desc->names->key_aliases[i].real,
-                            desc->names->keys[scancode].name,
-                            XkbKeyNameLength) != 0)
-                {
+                    desc->names->keys[scancode].name,
+                    XkbKeyNameLength) != 0) {
                     continue;
                 }
 
-                for (int j = 0;  j < sizeof(keymap) / sizeof(keymap[0]);  j++)
-                {
+                for (int j = 0; j < sizeof(keymap) / sizeof(keymap[0]); j++) {
                     if (strncmp(desc->names->key_aliases[i].alias,
-                                keymap[j].name,
-                                XkbKeyNameLength) == 0)
-                    {
+                        keymap[j].name,
+                        XkbKeyNameLength) == 0) {
                         key = keymap[j].key;
                         break;
                     }
@@ -407,22 +393,19 @@ static void createKeyTables(void)
 
         XkbFreeNames(desc, XkbKeyNamesMask, True);
         XkbFreeKeyboard(desc, 0, True);
-    }
-    else
+    } else
         XDisplayKeycodes(_glfw.x11.display, &scancodeMin, &scancodeMax);
 
     int width;
     KeySym* keysyms = XGetKeyboardMapping(_glfw.x11.display,
-                                          scancodeMin,
-                                          scancodeMax - scancodeMin + 1,
-                                          &width);
+        scancodeMin,
+        scancodeMax - scancodeMin + 1,
+        &width);
 
-    for (int scancode = scancodeMin;  scancode <= scancodeMax;  scancode++)
-    {
+    for (int scancode = scancodeMin; scancode <= scancodeMax; scancode++) {
         // Translate the un-translated key codes using traditional X11 KeySym
         // lookups
-        if (_glfw.x11.keycodes[scancode] < 0)
-        {
+        if (_glfw.x11.keycodes[scancode] < 0) {
             const size_t base = (scancode - scancodeMin) * width;
             _glfw.x11.keycodes[scancode] = translateKeySyms(&keysyms[base], width);
         }
@@ -437,18 +420,15 @@ static void createKeyTables(void)
 
 // Check whether the IM has a usable style
 //
-static GLFWbool hasUsableInputMethodStyle(void)
-{
+static GLFWbool hasUsableInputMethodStyle(void) {
     GLFWbool found = GLFW_FALSE;
     XIMStyles* styles = NULL;
 
     if (XGetIMValues(_glfw.x11.im, XNQueryInputStyle, &styles, NULL) != NULL)
         return GLFW_FALSE;
 
-    for (unsigned int i = 0;  i < styles->count_styles;  i++)
-    {
-        if (styles->supported_styles[i] == (XIMPreeditNothing | XIMStatusNothing))
-        {
+    for (unsigned int i = 0; i < styles->count_styles; i++) {
+        if (styles->supported_styles[i] == (XIMPreeditNothing | XIMStatusNothing)) {
             found = GLFW_TRUE;
             break;
         }
@@ -458,36 +438,31 @@ static GLFWbool hasUsableInputMethodStyle(void)
     return found;
 }
 
-static void inputMethodDestroyCallback(XIM im, XPointer clientData, XPointer callData)
-{
+static void inputMethodDestroyCallback(XIM im, XPointer clientData, XPointer callData) {
     _glfw.x11.im = NULL;
 }
 
 static void inputMethodInstantiateCallback(Display* display,
-                                           XPointer clientData,
-                                           XPointer callData)
-{
+    XPointer clientData,
+    XPointer callData) {
     if (_glfw.x11.im)
         return;
 
     _glfw.x11.im = XOpenIM(_glfw.x11.display, 0, NULL, NULL);
-    if (_glfw.x11.im)
-    {
-        if (!hasUsableInputMethodStyle())
-        {
+    if (_glfw.x11.im) {
+        if (!hasUsableInputMethodStyle()) {
             XCloseIM(_glfw.x11.im);
             _glfw.x11.im = NULL;
         }
     }
 
-    if (_glfw.x11.im)
-    {
+    if (_glfw.x11.im) {
         XIMCallback callback;
         callback.callback = (XIMProc) inputMethodDestroyCallback;
         callback.client_data = NULL;
         XSetIMValues(_glfw.x11.im, XNDestroyCallback, &callback, NULL);
 
-        for (_GLFWwindow* window = _glfw.windowListHead;  window;  window = window->next)
+        for (_GLFWwindow* window = _glfw.windowListHead; window; window = window->next)
             _glfwCreateInputContextX11(window);
     }
 }
@@ -495,13 +470,11 @@ static void inputMethodInstantiateCallback(Display* display,
 // Return the atom ID only if it is listed in the specified array
 //
 static Atom getAtomIfSupported(Atom* supportedAtoms,
-                               unsigned long atomCount,
-                               const char* atomName)
-{
+    unsigned long atomCount,
+    const char* atomName) {
     const Atom atom = XInternAtom(_glfw.x11.display, atomName, False);
 
-    for (unsigned long i = 0;  i < atomCount;  i++)
-    {
+    for (unsigned long i = 0; i < atomCount; i++) {
         if (supportedAtoms[i] == atom)
             return atom;
     }
@@ -511,16 +484,14 @@ static Atom getAtomIfSupported(Atom* supportedAtoms,
 
 // Check whether the running window manager is EWMH-compliant
 //
-static void detectEWMH(void)
-{
+static void detectEWMH(void) {
     // First we read the _NET_SUPPORTING_WM_CHECK property on the root window
 
     Window* windowFromRoot = NULL;
     if (!_glfwGetWindowPropertyX11(_glfw.x11.root,
-                                   _glfw.x11.NET_SUPPORTING_WM_CHECK,
-                                   XA_WINDOW,
-                                   (unsigned char**) &windowFromRoot))
-    {
+        _glfw.x11.NET_SUPPORTING_WM_CHECK,
+        XA_WINDOW,
+        (unsigned char**) &windowFromRoot)) {
         return;
     }
 
@@ -531,10 +502,9 @@ static void detectEWMH(void)
 
     Window* windowFromChild = NULL;
     if (!_glfwGetWindowPropertyX11(*windowFromRoot,
-                                   _glfw.x11.NET_SUPPORTING_WM_CHECK,
-                                   XA_WINDOW,
-                                   (unsigned char**) &windowFromChild))
-    {
+        _glfw.x11.NET_SUPPORTING_WM_CHECK,
+        XA_WINDOW,
+        (unsigned char**) &windowFromChild)) {
         XFree(windowFromRoot);
         return;
     }
@@ -543,8 +513,7 @@ static void detectEWMH(void)
 
     // If the property exists, it should contain the XID of the window
 
-    if (*windowFromRoot != *windowFromChild)
-    {
+    if (*windowFromRoot != *windowFromChild) {
         XFree(windowFromRoot);
         XFree(windowFromChild);
         return;
@@ -561,9 +530,9 @@ static void detectEWMH(void)
     Atom* supportedAtoms = NULL;
     const unsigned long atomCount =
         _glfwGetWindowPropertyX11(_glfw.x11.root,
-                                  _glfw.x11.NET_SUPPORTED,
-                                  XA_ATOM,
-                                  (unsigned char**) &supportedAtoms);
+            _glfw.x11.NET_SUPPORTED,
+            XA_ATOM,
+            (unsigned char**) &supportedAtoms);
 
     // See which of the atoms we support that are supported by the WM
 
@@ -602,15 +571,13 @@ static void detectEWMH(void)
 
 // Look for and initialize supported X11 extensions
 //
-static GLFWbool initExtensions(void)
-{
+static GLFWbool initExtensions(void) {
 #if defined(__OpenBSD__) || defined(__NetBSD__)
     _glfw.x11.vidmode.handle = _glfwPlatformLoadModule("libXxf86vm.so");
 #else
     _glfw.x11.vidmode.handle = _glfwPlatformLoadModule("libXxf86vm.so.1");
 #endif
-    if (_glfw.x11.vidmode.handle)
-    {
+    if (_glfw.x11.vidmode.handle) {
         _glfw.x11.vidmode.QueryExtension = (PFN_XF86VidModeQueryExtension)
             _glfwPlatformGetModuleSymbol(_glfw.x11.vidmode.handle, "XF86VidModeQueryExtension");
         _glfw.x11.vidmode.GetGammaRamp = (PFN_XF86VidModeGetGammaRamp)
@@ -622,8 +589,8 @@ static GLFWbool initExtensions(void)
 
         _glfw.x11.vidmode.available =
             XF86VidModeQueryExtension(_glfw.x11.display,
-                                      &_glfw.x11.vidmode.eventBase,
-                                      &_glfw.x11.vidmode.errorBase);
+                &_glfw.x11.vidmode.eventBase,
+                &_glfw.x11.vidmode.errorBase);
     }
 
 #if defined(__CYGWIN__)
@@ -633,26 +600,23 @@ static GLFWbool initExtensions(void)
 #else
     _glfw.x11.xi.handle = _glfwPlatformLoadModule("libXi.so.6");
 #endif
-    if (_glfw.x11.xi.handle)
-    {
+    if (_glfw.x11.xi.handle) {
         _glfw.x11.xi.QueryVersion = (PFN_XIQueryVersion)
             _glfwPlatformGetModuleSymbol(_glfw.x11.xi.handle, "XIQueryVersion");
         _glfw.x11.xi.SelectEvents = (PFN_XISelectEvents)
             _glfwPlatformGetModuleSymbol(_glfw.x11.xi.handle, "XISelectEvents");
 
         if (XQueryExtension(_glfw.x11.display,
-                            "XInputExtension",
-                            &_glfw.x11.xi.majorOpcode,
-                            &_glfw.x11.xi.eventBase,
-                            &_glfw.x11.xi.errorBase))
-        {
+            "XInputExtension",
+            &_glfw.x11.xi.majorOpcode,
+            &_glfw.x11.xi.eventBase,
+            &_glfw.x11.xi.errorBase)) {
             _glfw.x11.xi.major = 2;
             _glfw.x11.xi.minor = 0;
 
             if (XIQueryVersion(_glfw.x11.display,
-                               &_glfw.x11.xi.major,
-                               &_glfw.x11.xi.minor) == Success)
-            {
+                &_glfw.x11.xi.major,
+                &_glfw.x11.xi.minor) == Success) {
                 _glfw.x11.xi.available = GLFW_TRUE;
             }
         }
@@ -665,8 +629,7 @@ static GLFWbool initExtensions(void)
 #else
     _glfw.x11.randr.handle = _glfwPlatformLoadModule("libXrandr.so.2");
 #endif
-    if (_glfw.x11.randr.handle)
-    {
+    if (_glfw.x11.randr.handle) {
         _glfw.x11.randr.AllocGamma = (PFN_XRRAllocGamma)
             _glfwPlatformGetModuleSymbol(_glfw.x11.randr.handle, "XRRAllocGamma");
         _glfw.x11.randr.FreeGamma = (PFN_XRRFreeGamma)
@@ -705,39 +668,32 @@ static GLFWbool initExtensions(void)
             _glfwPlatformGetModuleSymbol(_glfw.x11.randr.handle, "XRRUpdateConfiguration");
 
         if (XRRQueryExtension(_glfw.x11.display,
-                              &_glfw.x11.randr.eventBase,
-                              &_glfw.x11.randr.errorBase))
-        {
+            &_glfw.x11.randr.eventBase,
+            &_glfw.x11.randr.errorBase)) {
             if (XRRQueryVersion(_glfw.x11.display,
-                                &_glfw.x11.randr.major,
-                                &_glfw.x11.randr.minor))
-            {
+                &_glfw.x11.randr.major,
+                &_glfw.x11.randr.minor)) {
                 // The GLFW RandR path requires at least version 1.3
                 if (_glfw.x11.randr.major > 1 || _glfw.x11.randr.minor >= 3)
                     _glfw.x11.randr.available = GLFW_TRUE;
-            }
-            else
-            {
+            } else {
                 _glfwInputError(GLFW_PLATFORM_ERROR,
-                                "X11: Failed to query RandR version");
+                    "X11: Failed to query RandR version");
             }
         }
     }
 
-    if (_glfw.x11.randr.available)
-    {
+    if (_glfw.x11.randr.available) {
         XRRScreenResources* sr = XRRGetScreenResourcesCurrent(_glfw.x11.display,
-                                                              _glfw.x11.root);
+            _glfw.x11.root);
 
-        if (!sr->ncrtc || !XRRGetCrtcGammaSize(_glfw.x11.display, sr->crtcs[0]))
-        {
+        if (!sr->ncrtc || !XRRGetCrtcGammaSize(_glfw.x11.display, sr->crtcs[0])) {
             // This is likely an older Nvidia driver with broken gamma support
             // Flag it as useless and fall back to xf86vm gamma, if available
             _glfw.x11.randr.gammaBroken = GLFW_TRUE;
         }
 
-        if (!sr->ncrtc)
-        {
+        if (!sr->ncrtc) {
             // A system without CRTCs is likely a system with broken RandR
             // Disable the RandR monitor path and fall back to core functions
             _glfw.x11.randr.monitorBroken = GLFW_TRUE;
@@ -746,10 +702,9 @@ static GLFWbool initExtensions(void)
         XRRFreeScreenResources(sr);
     }
 
-    if (_glfw.x11.randr.available && !_glfw.x11.randr.monitorBroken)
-    {
+    if (_glfw.x11.randr.available && !_glfw.x11.randr.monitorBroken) {
         XRRSelectInput(_glfw.x11.display, _glfw.x11.root,
-                       RROutputChangeNotifyMask);
+            RROutputChangeNotifyMask);
     }
 
 #if defined(__CYGWIN__)
@@ -759,8 +714,7 @@ static GLFWbool initExtensions(void)
 #else
     _glfw.x11.xcursor.handle = _glfwPlatformLoadModule("libXcursor.so.1");
 #endif
-    if (_glfw.x11.xcursor.handle)
-    {
+    if (_glfw.x11.xcursor.handle) {
         _glfw.x11.xcursor.ImageCreate = (PFN_XcursorImageCreate)
             _glfwPlatformGetModuleSymbol(_glfw.x11.xcursor.handle, "XcursorImageCreate");
         _glfw.x11.xcursor.ImageDestroy = (PFN_XcursorImageDestroy)
@@ -782,8 +736,7 @@ static GLFWbool initExtensions(void)
 #else
     _glfw.x11.xinerama.handle = _glfwPlatformLoadModule("libXinerama.so.1");
 #endif
-    if (_glfw.x11.xinerama.handle)
-    {
+    if (_glfw.x11.xinerama.handle) {
         _glfw.x11.xinerama.IsActive = (PFN_XineramaIsActive)
             _glfwPlatformGetModuleSymbol(_glfw.x11.xinerama.handle, "XineramaIsActive");
         _glfw.x11.xinerama.QueryExtension = (PFN_XineramaQueryExtension)
@@ -792,9 +745,8 @@ static GLFWbool initExtensions(void)
             _glfwPlatformGetModuleSymbol(_glfw.x11.xinerama.handle, "XineramaQueryScreens");
 
         if (XineramaQueryExtension(_glfw.x11.display,
-                                   &_glfw.x11.xinerama.major,
-                                   &_glfw.x11.xinerama.minor))
-        {
+            &_glfw.x11.xinerama.major,
+            &_glfw.x11.xinerama.minor)) {
             if (XineramaIsActive(_glfw.x11.display))
                 _glfw.x11.xinerama.available = GLFW_TRUE;
         }
@@ -804,32 +756,29 @@ static GLFWbool initExtensions(void)
     _glfw.x11.xkb.minor = 0;
     _glfw.x11.xkb.available =
         XkbQueryExtension(_glfw.x11.display,
-                          &_glfw.x11.xkb.majorOpcode,
-                          &_glfw.x11.xkb.eventBase,
-                          &_glfw.x11.xkb.errorBase,
-                          &_glfw.x11.xkb.major,
-                          &_glfw.x11.xkb.minor);
+            &_glfw.x11.xkb.majorOpcode,
+            &_glfw.x11.xkb.eventBase,
+            &_glfw.x11.xkb.errorBase,
+            &_glfw.x11.xkb.major,
+            &_glfw.x11.xkb.minor);
 
-    if (_glfw.x11.xkb.available)
-    {
+    if (_glfw.x11.xkb.available) {
         Bool supported;
 
-        if (XkbSetDetectableAutoRepeat(_glfw.x11.display, True, &supported))
-        {
+        if (XkbSetDetectableAutoRepeat(_glfw.x11.display, True, &supported)) {
             if (supported)
                 _glfw.x11.xkb.detectable = GLFW_TRUE;
         }
 
         XkbStateRec state;
         if (XkbGetState(_glfw.x11.display, XkbUseCoreKbd, &state) == Success)
-            _glfw.x11.xkb.group = (unsigned int)state.group;
+            _glfw.x11.xkb.group = (unsigned int) state.group;
 
         XkbSelectEventDetails(_glfw.x11.display, XkbUseCoreKbd, XkbStateNotify,
-                              XkbGroupStateMask, XkbGroupStateMask);
+            XkbGroupStateMask, XkbGroupStateMask);
     }
 
-    if (_glfw.hints.init.x11.xcbVulkanSurface)
-    {
+    if (_glfw.hints.init.x11.xcbVulkanSurface) {
 #if defined(__CYGWIN__)
         _glfw.x11.x11xcb.handle = _glfwPlatformLoadModule("libX11-xcb-1.so");
 #elif defined(__OpenBSD__) || defined(__NetBSD__)
@@ -839,8 +788,7 @@ static GLFWbool initExtensions(void)
 #endif
     }
 
-    if (_glfw.x11.x11xcb.handle)
-    {
+    if (_glfw.x11.x11xcb.handle) {
         _glfw.x11.x11xcb.GetXCBConnection = (PFN_XGetXCBConnection)
             _glfwPlatformGetModuleSymbol(_glfw.x11.x11xcb.handle, "XGetXCBConnection");
     }
@@ -852,8 +800,7 @@ static GLFWbool initExtensions(void)
 #else
     _glfw.x11.xrender.handle = _glfwPlatformLoadModule("libXrender.so.1");
 #endif
-    if (_glfw.x11.xrender.handle)
-    {
+    if (_glfw.x11.xrender.handle) {
         _glfw.x11.xrender.QueryExtension = (PFN_XRenderQueryExtension)
             _glfwPlatformGetModuleSymbol(_glfw.x11.xrender.handle, "XRenderQueryExtension");
         _glfw.x11.xrender.QueryVersion = (PFN_XRenderQueryVersion)
@@ -862,13 +809,11 @@ static GLFWbool initExtensions(void)
             _glfwPlatformGetModuleSymbol(_glfw.x11.xrender.handle, "XRenderFindVisualFormat");
 
         if (XRenderQueryExtension(_glfw.x11.display,
-                                  &_glfw.x11.xrender.errorBase,
-                                  &_glfw.x11.xrender.eventBase))
-        {
+            &_glfw.x11.xrender.errorBase,
+            &_glfw.x11.xrender.eventBase)) {
             if (XRenderQueryVersion(_glfw.x11.display,
-                                    &_glfw.x11.xrender.major,
-                                    &_glfw.x11.xrender.minor))
-            {
+                &_glfw.x11.xrender.major,
+                &_glfw.x11.xrender.minor)) {
                 _glfw.x11.xrender.available = GLFW_TRUE;
             }
         }
@@ -881,8 +826,7 @@ static GLFWbool initExtensions(void)
 #else
     _glfw.x11.xshape.handle = _glfwPlatformLoadModule("libXext.so.6");
 #endif
-    if (_glfw.x11.xshape.handle)
-    {
+    if (_glfw.x11.xshape.handle) {
         _glfw.x11.xshape.QueryExtension = (PFN_XShapeQueryExtension)
             _glfwPlatformGetModuleSymbol(_glfw.x11.xshape.handle, "XShapeQueryExtension");
         _glfw.x11.xshape.ShapeCombineRegion = (PFN_XShapeCombineRegion)
@@ -894,12 +838,10 @@ static GLFWbool initExtensions(void)
 
         if (XShapeQueryExtension(_glfw.x11.display,
             &_glfw.x11.xshape.errorBase,
-            &_glfw.x11.xshape.eventBase))
-        {
+            &_glfw.x11.xshape.eventBase)) {
             if (XShapeQueryVersion(_glfw.x11.display,
                 &_glfw.x11.xshape.major,
-                &_glfw.x11.xshape.minor))
-            {
+                &_glfw.x11.xshape.minor)) {
                 _glfw.x11.xshape.available = GLFW_TRUE;
             }
         }
@@ -908,7 +850,7 @@ static GLFWbool initExtensions(void)
     // Update the key code LUT
     // FIXME: We should listen to XkbMapNotify events to track changes to
     // the keyboard mapping.
-    createKeyTables();
+    x11_createKeyTables();
 
     // String format atoms
     _glfw.x11.NULL_ = XInternAtom(_glfw.x11.display, "NULL", False);
@@ -989,8 +931,7 @@ static GLFWbool initExtensions(void)
 
 // Retrieve system content scale via folklore heuristics
 //
-static void getSystemContentScale(float* xscale, float* yscale)
-{
+static void getSystemContentScale(float* xscale, float* yscale) {
     // Start by assuming the default X11 DPI
     // NOTE: Some desktop environments (KDE) may remove the Xft.dpi field when it
     //       would be set to 96, so assume that is the case if we cannot find it
@@ -1000,16 +941,13 @@ static void getSystemContentScale(float* xscale, float* yscale)
     //       consistent user experience (matches Qt, Gtk, etc), although not
     //       always the most accurate one
     char* rms = XResourceManagerString(_glfw.x11.display);
-    if (rms)
-    {
+    if (rms) {
         XrmDatabase db = XrmGetStringDatabase(rms);
-        if (db)
-        {
+        if (db) {
             XrmValue value;
             char* type = NULL;
 
-            if (XrmGetResource(db, "Xft.dpi", "Xft.Dpi", &type, &value))
-            {
+            if (XrmGetResource(db, "Xft.dpi", "Xft.Dpi", &type, &value)) {
                 if (type && strcmp(type, "String") == 0)
                     xdpi = ydpi = atof(value.addr);
             }
@@ -1024,8 +962,7 @@ static void getSystemContentScale(float* xscale, float* yscale)
 
 // Create a blank cursor for hidden and disabled cursor modes
 //
-static Cursor createHiddenCursor(void)
-{
+static Cursor createHiddenCursor(void) {
     unsigned char pixels[16 * 16 * 4] = { 0 };
     GLFWimage image = { 16, 16, pixels };
     return _glfwCreateNativeCursorX11(&image, 0, 0);
@@ -1033,42 +970,37 @@ static Cursor createHiddenCursor(void)
 
 // Create a helper window for IPC
 //
-static Window createHelperWindow(void)
-{
+static Window createHelperWindow(void) {
     XSetWindowAttributes wa;
     wa.event_mask = PropertyChangeMask;
 
     return XCreateWindow(_glfw.x11.display, _glfw.x11.root,
-                         0, 0, 1, 1, 0, 0,
-                         InputOnly,
-                         DefaultVisual(_glfw.x11.display, _glfw.x11.screen),
-                         CWEventMask, &wa);
+        0, 0, 1, 1, 0, 0,
+        InputOnly,
+        DefaultVisual(_glfw.x11.display, _glfw.x11.screen),
+        CWEventMask, &wa);
 }
 
 // Create the pipe for empty events without assumuing the OS has pipe2(2)
 //
-static GLFWbool createEmptyEventPipe(void)
-{
-    if (pipe(_glfw.x11.emptyEventPipe) != 0)
-    {
+static GLFWbool createEmptyEventPipe(void) {
+    if (pipe(_glfw.x11.emptyEventPipe) != 0) {
         _glfwInputError(GLFW_PLATFORM_ERROR,
-                        "X11: Failed to create empty event pipe: %s",
-                        strerror(errno));
+            "X11: Failed to create empty event pipe: %s",
+            strerror(errno));
         return GLFW_FALSE;
     }
 
-    for (int i = 0; i < 2; i++)
-    {
+    for (int i = 0; i < 2; i++) {
         const int sf = fcntl(_glfw.x11.emptyEventPipe[i], F_GETFL, 0);
         const int df = fcntl(_glfw.x11.emptyEventPipe[i], F_GETFD, 0);
 
         if (sf == -1 || df == -1 ||
             fcntl(_glfw.x11.emptyEventPipe[i], F_SETFL, sf | O_NONBLOCK) == -1 ||
-            fcntl(_glfw.x11.emptyEventPipe[i], F_SETFD, df | FD_CLOEXEC) == -1)
-        {
+            fcntl(_glfw.x11.emptyEventPipe[i], F_SETFD, df | FD_CLOEXEC) == -1) {
             _glfwInputError(GLFW_PLATFORM_ERROR,
-                            "X11: Failed to set flags for empty event pipe: %s",
-                            strerror(errno));
+                "X11: Failed to set flags for empty event pipe: %s",
+                strerror(errno));
             return GLFW_FALSE;
         }
     }
@@ -1078,8 +1010,7 @@ static GLFWbool createEmptyEventPipe(void)
 
 // X error handler
 //
-static int errorHandler(Display *display, XErrorEvent* event)
-{
+static int errorHandler(Display* display, XErrorEvent* event) {
     if (_glfw.x11.display != display)
         return 0;
 
@@ -1094,8 +1025,7 @@ static int errorHandler(Display *display, XErrorEvent* event)
 
 // Sets the X error handler callback
 //
-void _glfwGrabErrorHandlerX11(void)
-{
+void _glfwGrabErrorHandlerX11(void) {
     assert(_glfw.x11.errorHandler == NULL);
     _glfw.x11.errorCode = Success;
     _glfw.x11.errorHandler = XSetErrorHandler(errorHandler);
@@ -1103,8 +1033,7 @@ void _glfwGrabErrorHandlerX11(void)
 
 // Clears the X error handler callback
 //
-void _glfwReleaseErrorHandlerX11(void)
-{
+void _glfwReleaseErrorHandlerX11(void) {
     // Synchronize to make sure all commands are processed
     XSync(_glfw.x11.display, False);
     XSetErrorHandler(_glfw.x11.errorHandler);
@@ -1113,19 +1042,17 @@ void _glfwReleaseErrorHandlerX11(void)
 
 // Reports the specified error, appending information about the last X error
 //
-void _glfwInputErrorX11(int error, const char* message)
-{
+void _glfwInputErrorX11(int error, const char* message) {
     char buffer[_GLFW_MESSAGE_SIZE];
     XGetErrorText(_glfw.x11.display, _glfw.x11.errorCode,
-                  buffer, sizeof(buffer));
+        buffer, sizeof(buffer));
 
     _glfwInputError(error, "%s: %s", message, buffer);
 }
 
 // Creates a native cursor object from the specified image and hotspot
 //
-Cursor _glfwCreateNativeCursorX11(const GLFWimage* image, int xhot, int yhot)
-{
+Cursor _glfwCreateNativeCursorX11(const GLFWimage* image, int xhot, int yhot) {
     Cursor cursor;
 
     if (!_glfw.x11.xcursor.handle)
@@ -1141,14 +1068,13 @@ Cursor _glfwCreateNativeCursorX11(const GLFWimage* image, int xhot, int yhot)
     unsigned char* source = (unsigned char*) image->pixels;
     XcursorPixel* target = native->pixels;
 
-    for (int i = 0;  i < image->width * image->height;  i++, target++, source += 4)
-    {
+    for (int i = 0; i < image->width * image->height; i++, target++, source += 4) {
         unsigned int alpha = source[3];
 
         *target = (alpha << 24) |
-                  ((unsigned char) ((source[0] * alpha) / 255) << 16) |
-                  ((unsigned char) ((source[1] * alpha) / 255) <<  8) |
-                  ((unsigned char) ((source[2] * alpha) / 255) <<  0);
+            ((unsigned char) ((source[0] * alpha) / 255) << 16) |
+            ((unsigned char) ((source[1] * alpha) / 255) << 8) |
+            ((unsigned char) ((source[2] * alpha) / 255) << 0);
     }
 
     cursor = XcursorImageLoadCursor(_glfw.x11.display, native);
@@ -1162,8 +1088,7 @@ Cursor _glfwCreateNativeCursorX11(const GLFWimage* image, int xhot, int yhot)
 //////                       GLFW platform API                      //////
 //////////////////////////////////////////////////////////////////////////
 
-GLFWbool _glfwConnectX11(int platformID, _GLFWplatform* platform)
-{
+GLFWbool _glfwConnectX11(int platformID, _GLFWplatform* platform) {
     const _GLFWplatform x11 =
     {
         .platformID = GLFW_PLATFORM_X11,
@@ -1262,8 +1187,7 @@ GLFWbool _glfwConnectX11(int platformID, _GLFWplatform* platform)
 #else
     void* module = _glfwPlatformLoadModule("libX11.so.6");
 #endif
-    if (!module)
-    {
+    if (!module) {
         if (platformID == GLFW_PLATFORM_X11)
             _glfwInputError(GLFW_PLATFORM_ERROR, "X11: Failed to load Xlib");
 
@@ -1276,8 +1200,7 @@ GLFWbool _glfwConnectX11(int platformID, _GLFWplatform* platform)
         _glfwPlatformGetModuleSymbol(module, "XrmInitialize");
     PFN_XOpenDisplay XOpenDisplay = (PFN_XOpenDisplay)
         _glfwPlatformGetModuleSymbol(module, "XOpenDisplay");
-    if (!XInitThreads || !XrmInitialize || !XOpenDisplay)
-    {
+    if (!XInitThreads || !XrmInitialize || !XOpenDisplay) {
         if (platformID == GLFW_PLATFORM_X11)
             _glfwInputError(GLFW_PLATFORM_ERROR, "X11: Failed to load Xlib entry point");
 
@@ -1289,20 +1212,15 @@ GLFWbool _glfwConnectX11(int platformID, _GLFWplatform* platform)
     XrmInitialize();
 
     Display* display = XOpenDisplay(NULL);
-    if (!display)
-    {
-        if (platformID == GLFW_PLATFORM_X11)
-        {
+    if (!display) {
+        if (platformID == GLFW_PLATFORM_X11) {
             const char* name = getenv("DISPLAY");
-            if (name)
-            {
+            if (name) {
                 _glfwInputError(GLFW_PLATFORM_UNAVAILABLE,
-                                "X11: Failed to open display %s", name);
-            }
-            else
-            {
+                    "X11: Failed to open display %s", name);
+            } else {
                 _glfwInputError(GLFW_PLATFORM_UNAVAILABLE,
-                                "X11: The DISPLAY environment variable is missing");
+                    "X11: The DISPLAY environment variable is missing");
             }
         }
 
@@ -1317,8 +1235,7 @@ GLFWbool _glfwConnectX11(int platformID, _GLFWplatform* platform)
     return GLFW_TRUE;
 }
 
-int _glfwInitX11(void)
-{
+int _glfwInitX11(void) {
     _glfw.x11.xlib.AllocClassHint = (PFN_XAllocClassHint)
         _glfwPlatformGetModuleSymbol(_glfw.x11.xlib.handle, "XAllocClassHint");
     _glfw.x11.xlib.AllocSizeHints = (PFN_XAllocSizeHints)
@@ -1536,28 +1453,24 @@ int _glfwInitX11(void)
     _glfw.x11.helperWindowHandle = createHelperWindow();
     _glfw.x11.hiddenCursorHandle = createHiddenCursor();
 
-    if (XSupportsLocale() && _glfw.x11.xlib.utf8)
-    {
+    if (XSupportsLocale() && _glfw.x11.xlib.utf8) {
         XSetLocaleModifiers("");
 
         // If an IM is already present our callback will be called right away
         XRegisterIMInstantiateCallback(_glfw.x11.display,
-                                       NULL, NULL, NULL,
-                                       inputMethodInstantiateCallback,
-                                       NULL);
+            NULL, NULL, NULL,
+            inputMethodInstantiateCallback,
+            NULL);
     }
 
     _glfwPollMonitorsX11();
     return GLFW_TRUE;
 }
 
-void _glfwTerminateX11(void)
-{
-    if (_glfw.x11.helperWindowHandle)
-    {
+void _glfwTerminateX11(void) {
+    if (_glfw.x11.helperWindowHandle) {
         if (XGetSelectionOwner(_glfw.x11.display, _glfw.x11.CLIPBOARD) ==
-            _glfw.x11.helperWindowHandle)
-        {
+            _glfw.x11.helperWindowHandle) {
             _glfwPushSelectionToManagerX11();
         }
 
@@ -1565,8 +1478,7 @@ void _glfwTerminateX11(void)
         _glfw.x11.helperWindowHandle = None;
     }
 
-    if (_glfw.x11.hiddenCursorHandle)
-    {
+    if (_glfw.x11.hiddenCursorHandle) {
         XFreeCursor(_glfw.x11.display, _glfw.x11.hiddenCursorHandle);
         _glfw.x11.hiddenCursorHandle = (Cursor) 0;
     }
@@ -1575,60 +1487,51 @@ void _glfwTerminateX11(void)
     _glfw_free(_glfw.x11.clipboardString);
 
     XUnregisterIMInstantiateCallback(_glfw.x11.display,
-                                     NULL, NULL, NULL,
-                                     inputMethodInstantiateCallback,
-                                     NULL);
+        NULL, NULL, NULL,
+        inputMethodInstantiateCallback,
+        NULL);
 
-    if (_glfw.x11.im)
-    {
+    if (_glfw.x11.im) {
         XCloseIM(_glfw.x11.im);
         _glfw.x11.im = NULL;
     }
 
-    if (_glfw.x11.display)
-    {
+    if (_glfw.x11.display) {
         XCloseDisplay(_glfw.x11.display);
         _glfw.x11.display = NULL;
     }
 
-    if (_glfw.x11.x11xcb.handle)
-    {
+    if (_glfw.x11.x11xcb.handle) {
         _glfwPlatformFreeModule(_glfw.x11.x11xcb.handle);
         _glfw.x11.x11xcb.handle = NULL;
     }
 
-    if (_glfw.x11.xcursor.handle)
-    {
+    if (_glfw.x11.xcursor.handle) {
         _glfwPlatformFreeModule(_glfw.x11.xcursor.handle);
         _glfw.x11.xcursor.handle = NULL;
     }
 
-    if (_glfw.x11.randr.handle)
-    {
+    if (_glfw.x11.randr.handle) {
         _glfwPlatformFreeModule(_glfw.x11.randr.handle);
         _glfw.x11.randr.handle = NULL;
     }
 
-    if (_glfw.x11.xinerama.handle)
-    {
+    if (_glfw.x11.xinerama.handle) {
         _glfwPlatformFreeModule(_glfw.x11.xinerama.handle);
         _glfw.x11.xinerama.handle = NULL;
     }
 
-    if (_glfw.x11.xrender.handle)
-    {
+    if (_glfw.x11.xrender.handle) {
         _glfwPlatformFreeModule(_glfw.x11.xrender.handle);
         _glfw.x11.xrender.handle = NULL;
     }
 
-    if (_glfw.x11.vidmode.handle)
-    {
+    if (_glfw.x11.vidmode.handle) {
         _glfwPlatformFreeModule(_glfw.x11.vidmode.handle);
         _glfw.x11.vidmode.handle = NULL;
     }
 
-    if (_glfw.x11.xi.handle)
-    {
+    if (_glfw.x11.xi.handle) {
         _glfwPlatformFreeModule(_glfw.x11.xi.handle);
         _glfw.x11.xi.handle = NULL;
     }
@@ -1639,14 +1542,12 @@ void _glfwTerminateX11(void)
     _glfwTerminateEGL();
     _glfwTerminateGLX();
 
-    if (_glfw.x11.xlib.handle)
-    {
+    if (_glfw.x11.xlib.handle) {
         _glfwPlatformFreeModule(_glfw.x11.xlib.handle);
         _glfw.x11.xlib.handle = NULL;
     }
 
-    if (_glfw.x11.emptyEventPipe[0] || _glfw.x11.emptyEventPipe[1])
-    {
+    if (_glfw.x11.emptyEventPipe[0] || _glfw.x11.emptyEventPipe[1]) {
         close(_glfw.x11.emptyEventPipe[0]);
         close(_glfw.x11.emptyEventPipe[1]);
     }
