@@ -1077,7 +1077,7 @@ static void inputText(_GLFWwindow* window, uint32_t scancode) {
     }
 }
 
-static void handleEvents(double* timeout) {
+static void wl_handleEvents(double* timeout) {
 #if defined(GLFW_BUILD_LINUX_JOYSTICK)
     if (_glfw.joysticksInitialized)
         _glfwDetectJoystickConnectionLinux();
@@ -2337,15 +2337,15 @@ GLFWbool _glfwRawMouseMotionSupportedWayland(void) {
 
 void _glfwPollEventsWayland(void) {
     double timeout = 0.0;
-    handleEvents(&timeout);
+    wl_handleEvents(&timeout);
 }
 
 void _glfwWaitEventsWayland(void) {
-    handleEvents(NULL);
+    wl_handleEvents(NULL);
 }
 
 void _glfwWaitEventsTimeoutWayland(double timeout) {
-    handleEvents(&timeout);
+    wl_handleEvents(&timeout);
 }
 
 void _glfwPostEmptyEventWayland(void) {
