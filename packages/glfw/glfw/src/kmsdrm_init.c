@@ -302,7 +302,7 @@ int is_keyboard(const char* device_path) {
     }
 
     // Output the device name for debugging (optional)
-    printf("Device name: %s\n", name);
+    debug_printf("Device name: %s\n", name);
 
     // Check if the device supports key events (EV_KEY)
     unsigned long evbit[2];  // 2 bits to store capability info

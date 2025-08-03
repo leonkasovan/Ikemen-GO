@@ -130,7 +130,8 @@ drm: ${srcFiles} src/assets.zip
 
 # Generic Linux that supports X11 and Wayland
 linux: ${srcFiles} src/assets.zip
-	export CGO_ENABLED=1 && go build -a -tags="kmsdrm,x11,wayland,gles2" -trimpath -ldflags="-s -w" -v -o ./bin/ikemen_linux ./src
+	export CGO_ENABLED=1 && go build -tags="kmsdrm,x11,wayland,gles2" -trimpath -ldflags="-s -w" -v -o ./bin/ikemen_linux ./src
+#	export CGO_ENABLED=1 && go build -a -tags="kmsdrm,x11,wayland,gles2,debug" -trimpath -ldflags="-s -w" -v -o ./bin/ikemen_linux ./src
 
 src/assets.zip: data/* external/* font/*
 	zip -r src/assets.zip data external font

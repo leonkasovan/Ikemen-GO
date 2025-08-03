@@ -90,7 +90,7 @@ static int find_drm_device(drmModeRes** resources) {
          * drmModeResources, it means it's also a
          * KMS-capable device.
          */
-        printf("[GLFW] Opening DRM device %s\n", device->nodes[DRM_NODE_PRIMARY]);
+        debug_printf("[GLFW] Opening DRM device %s\n", device->nodes[DRM_NODE_PRIMARY]);
         fd = open(device->nodes[DRM_NODE_PRIMARY], O_RDWR);
         if (fd < 0)
             continue;
@@ -316,7 +316,7 @@ int init_surface(struct gbm* gbm, uint64_t modifier) {
         _glfwInputError(GLFW_PLATFORM_ERROR, "init_surface: Failed to create gbm surface\n");
         return -3;
     }
-    printf("init_surface: %dx%d created\n", gbm->width, gbm->height);
+    debug_printf("init_surface: %dx%d created\n", gbm->width, gbm->height);
     return 0;
 }
 

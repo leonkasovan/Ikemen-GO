@@ -264,16 +264,6 @@ int64_t get_time_ns(void) {
 #endif
 
 static void swapBuffersEGL(_GLFWwindow* window) {
-    // debug platform id
-    // if (_glfw.platform.platformID == GLFW_PLATFORM_WAYLAND) {
-    //     printf("swapBuffersEGL: GLFW_PLATFORM_WAYLAND\n"); // DEBUG
-    // } else if (_glfw.platform.platformID == GLFW_PLATFORM_X11) {
-    //     printf("swapBuffersEGL: GLFW_PLATFORM_X11\n"); // DEBUG
-    // } else if (_glfw.platform.platformID == GLFW_PLATFORM_KMSDRM) {
-    //     printf("swapBuffersEGL: GLFW_PLATFORM_KMSDRM\n"); // DEBUG
-    // } else {
-    //     printf("swapBuffersEGL: Unknown platform %d\n", _glfw.platform.platformID); // DEBUG
-    // }
 #ifdef DEBUG
 #ifdef __linux__
     static unsigned int frame = 0;
@@ -597,9 +587,9 @@ GLFWbool _glfwInitEGL(void) {
     } else {
      // printf("_glfwInitEGL: using EGL Library version %d.%d\n", major, minor);
         debug_printf("\n===================================\n");
-        printf("EGL information:\n");
-        printf("  version: %s\n", eglQueryString(_glfw.egl.display, 0x3054));
-        printf("  vendor: %s\n", eglQueryString(_glfw.egl.display, 0x3053));
+        debug_printf("EGL information:\n");
+        debug_printf("  version: %s\n", eglQueryString(_glfw.egl.display, 0x3054));
+        debug_printf("  vendor: %s\n", eglQueryString(_glfw.egl.display, 0x3053));
         debug_printf("  client extensions: \"%s\"\n", eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS));
         debug_printf("  display extensions: \"%s\"\n", eglQueryString(_glfw.egl.display, EGL_EXTENSIONS));
         debug_printf("===================================\n");

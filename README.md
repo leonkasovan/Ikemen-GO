@@ -16,11 +16,28 @@ Download the ZIP archive that matches your operating system and extract its cont
 On Windows, double-click `Ikemen_GO.exe` (`Ikemen_GO_x86.exe` on 32-bit OSes).
 On macOS or Linux, double-click `Ikemen_GO.command`.
 
+```
+ikemen_linux
+ikemen_linux -install
+ikemen_linux -installrun
+ikemen_linux -validate
+GLFW_PLATFORM=kmsdrm ikemen_linux
+GLFW_PLATFORM=x11 ikemen_linux
+```
+
 ## Developing
 These instructions are for those interested in developing the Ikemen GO engine itself. Instructions for creating custom stages, fonts, characters and other resources can be found in the community forum.
 
 ### Building
 You can find instructions for building Ikemen GO on our wiki. Instructions are available for [Windows](https://github.com/ikemen-engine/Ikemen-GO/wiki/Building,-Installing-and-Distributing#building-on-windows), [macOS](https://github.com/ikemen-engine/Ikemen-GO/wiki/Building,-Installing-and-Distributing#building-on-macos), and [Linux](https://github.com/ikemen-engine/Ikemen-GO/wiki/Building,-Installing-and-Distributing#building-on-linux).
+
+```
+git clone -b stable https://github.com/leonkasovan/Ikemen-GO.git ikemen-go-stable
+cd ikemen-go-stable
+make linux
+OR
+make windows
+```
 
 ### Debugging
 In order to run the compiled Ikemen GO executable, you will need to download the [engine dependencies](https://github.com/ikemen-engine/Ikemen_GO-Elecbyte-Screenpack) and unpack them into the Ikemen-GO source directory. After that, you can use [Goland](https://www.jetbrains.com/go/) or [Visual Studio Code](https://code.visualstudio.com/) to debug.

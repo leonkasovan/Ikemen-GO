@@ -84,6 +84,7 @@ GLFWbool _glfwSelectPlatform(int desiredID, _GLFWplatform* platform) {
     if (desiredID == GLFW_ANY_PLATFORM) {
         const char* const session = getenv("XDG_SESSION_TYPE");
 #ifdef _GLFW_WAYLAND
+        if (desiredID == GLFW_ANY_PLATFORM)
         if ((session && strcmp(session, "wayland") == 0) || getenv("WAYLAND_DISPLAY")) {
             desiredID = GLFW_PLATFORM_WAYLAND;
             debug_printf("Detected Wayland session: %s\n", getenv("WAYLAND_DISPLAY"));

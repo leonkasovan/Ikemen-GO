@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image"
 	"strings"
+	"os"
 
 	glfw "github.com/ikemen-engine/Ikemen-GO/packages/glfw"
 )
@@ -29,8 +30,24 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 	x, y := 0, 0
 	w2, h2 := w, h
 
+	// Initialize Hints
+	glfw.InitHint(0x00053001, 0x00038002) // GLFW_WAYLAND_LIBDECOR=GLFW_WAYLAND_DISABLE_LIBDECOR
+	
+	platform := os.Getenv("GLFW_PLATFORM")
+	if platform != "" {
+		switch platform {
+		case "x11":
+			glfw.InitHint(0x00050003, 0x00060004) // GLFW_PLATFORM=GLFW_PLATFORM_X11
+		case "wayland":
+			glfw.InitHint(0x00050003, 0x00060003) // GLFW_PLATFORM=GLFW_PLATFORM_WAYLAND
+		case "kmsdrm":
+			glfw.InitHint(0x00050003, 0x00060006) // GLFW_PLATFORM=GLFW_PLATFORM_KMSDRM
+		default:
+			return nil, fmt.Errorf("unsupported GLFW platform: %s", platform)
+		}
+	}
+
 	// Initialize Windowing system
-	glfw.InitHint(0x00053001, 0x00038002) // disable libdecor for wayland
 	chk(glfw.Init())
 	fmt.Printf("GLFW Version: %v\n", glfw.GetVersionString())
 	fmt.Printf("GLFW Platform: %v\n", glfw.GetPlatform())
@@ -126,7 +143,7 @@ func (w *Window) SwapBuffers() {
 
 func (w *Window) SetIcon(icon []image.Image) {
 	// Some Wayland platform does not support setting the window icon, so we skip it
-	if glfw.GetPlatform() == "x11" {
+	if glfw.GetPlatform() == "x11" || glfw.GetPlatform() == "win32" {
 		w.Window.SetIcon(icon)
 	}
 }
