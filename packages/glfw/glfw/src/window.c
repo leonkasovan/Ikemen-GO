@@ -177,16 +177,15 @@ GLFWAPI GLFWwindow* glfwCreateWindow(int width, int height,
     assert(height >= 0);
 
     _GLFW_REQUIRE_INIT_OR_RETURN(NULL);
-#ifndef _GLFW_KMSDRM
-    // in kmsdrm, it request automated highest width and height (fullscreen)
-    if (width <= 0 || height <= 0) {
-        _glfwInputError(GLFW_INVALID_VALUE,
-            "Invalid window size %ix%i",
-            width, height);
+    if (_glfw.platform.platformID == GLFW_PLATFORM_WAYLAND || _glfw.platform.platformID == GLFW_PLATFORM_X11) {
+        if (width <= 0 || height <= 0) {
+            _glfwInputError(GLFW_INVALID_VALUE,
+                "Invalid window size %ix%i",
+                width, height);
 
-        return NULL;
+            return NULL;
+        }
     }
-#endif    
 
     fbconfig = _glfw.hints.framebuffer;
     ctxconfig = _glfw.hints.context;

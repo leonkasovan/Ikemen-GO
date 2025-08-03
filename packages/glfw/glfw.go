@@ -93,6 +93,35 @@ func GetVersionString() string {
 	return C.GoString(C.glfwGetVersionString())
 }
 
+// GetPlatform returns the platform that GLFW is using. This is useful for
+// determining which platform specific features are available.
+//
+// This function may only be called from the main thread.
+//
+// Possible return values:
+//   - "x11"      for X11 on Linux and other Unix-like systems
+//   - "wayland"  for Wayland on Linux and other Unix-like systems
+//   - "cocoa"    for Cocoa on macOS
+//   - "win32"    for Win32 on Windows
+//   - "kmsdrm"   for KMS/DRM on Linux and other Unix-like systems
+//   - "unknown"  if the platform is not recognized
+func GetPlatform() string {
+	switch C.glfwGetPlatform() {
+	case C.GLFW_PLATFORM_X11:
+		return "x11"
+	case C.GLFW_PLATFORM_WAYLAND:
+		return "wayland"
+	case C.GLFW_PLATFORM_COCOA:
+		return "cocoa"
+	case C.GLFW_PLATFORM_WIN32:
+		return "win32"
+	case C.GLFW_PLATFORM_KMSDRM:
+		return "kmsdrm"
+	default:
+		return "unknown"
+	}
+}
+
 // GetClipboardString returns the contents of the system clipboard, if it
 // contains or is convertible to a UTF-8 encoded string.
 //

@@ -243,6 +243,7 @@ static void makeContextCurrentEGL(_GLFWwindow* window) {
     _glfwPlatformSetTls(&_glfw.contextSlot, window);
 }
 
+#ifdef _GLFW_KMSDRM
 static void page_flip_handler(int fd, unsigned int frame, unsigned int sec, unsigned int usec, void* data) {
     /* suppress 'unused parameter' warnings */
     (void) fd, (void) frame, (void) sec, (void) usec;
@@ -250,6 +251,7 @@ static void page_flip_handler(int fd, unsigned int frame, unsigned int sec, unsi
     int* waiting_for_flip = data;
     *waiting_for_flip = 0;
 }
+#endif
 
 #ifdef DEBUG
 #ifdef __linux__
@@ -262,6 +264,16 @@ int64_t get_time_ns(void) {
 #endif
 
 static void swapBuffersEGL(_GLFWwindow* window) {
+    // debug platform id
+    // if (_glfw.platform.platformID == GLFW_PLATFORM_WAYLAND) {
+    //     printf("swapBuffersEGL: GLFW_PLATFORM_WAYLAND\n"); // DEBUG
+    // } else if (_glfw.platform.platformID == GLFW_PLATFORM_X11) {
+    //     printf("swapBuffersEGL: GLFW_PLATFORM_X11\n"); // DEBUG
+    // } else if (_glfw.platform.platformID == GLFW_PLATFORM_KMSDRM) {
+    //     printf("swapBuffersEGL: GLFW_PLATFORM_KMSDRM\n"); // DEBUG
+    // } else {
+    //     printf("swapBuffersEGL: Unknown platform %d\n", _glfw.platform.platformID); // DEBUG
+    // }
 #ifdef DEBUG
 #ifdef __linux__
     static unsigned int frame = 0;
@@ -282,6 +294,7 @@ static void swapBuffersEGL(_GLFWwindow* window) {
 #endif
 
 #ifdef _GLFW_KMSDRM
+    if (_glfw.platform.platformID == GLFW_PLATFORM_KMSDRM) {
     fd_set fds;
     drmEventContext evctx = {
             .version = 2,
@@ -345,9 +358,12 @@ static void swapBuffersEGL(_GLFWwindow* window) {
         gbm_surface_release_buffer(_glfw.kmsdrm.gbm.surface, _glfw.kmsdrm.gbm.bo);
     }
     _glfw.kmsdrm.gbm.bo = next_bo;
-#else
-    eglSwapBuffers(_glfw.egl.display, window->context.egl.surface);
+    }
 #endif
+
+    if (_glfw.platform.platformID == GLFW_PLATFORM_WAYLAND || _glfw.platform.platformID == GLFW_PLATFORM_X11) {
+        eglSwapBuffers(_glfw.egl.display, window->context.egl.surface);
+    }
 
 #ifdef DEBUG
 #ifdef __linux__    

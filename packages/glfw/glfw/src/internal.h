@@ -45,8 +45,6 @@
 #error "You must not define any header option macros when compiling GLFW"
 #endif
 
-#define DEBUG 1
-
 #define GLFW_INCLUDE_NONE
 #include "../include/GLFW/glfw3.h"
 

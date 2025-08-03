@@ -22,24 +22,12 @@ function main.f_fileExists(file)
 	if file == '' then
 		return false
 	end
-	local f = io.open(file,'r')
-	if f ~= nil then
-		io.close(f)
-		return true
-	end
-	return false
+	return io.exists(file)
 end
 
 --check if a file or directory exists in this path
-function main.f_exists(file)
-	local ok, err, code = os.rename(file, file)
-	if not ok then
-		if code == 13 or string.match(err, "file exists") then
-			--permission denied, but it exists
-			return true
-		end
-	end
-	return ok, err
+function main.f_exists(obj)
+	return io.exists(obj)
 end
 
 --return file content

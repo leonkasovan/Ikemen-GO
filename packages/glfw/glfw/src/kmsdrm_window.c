@@ -52,8 +52,6 @@ _glfwCreateWindowKMSDRM
         glfwMakeContextCurrent((GLFWwindow*) previous);
 */
 
-#define _GNU_SOURCE
-
 #include "internal.h"
 
 #if defined(_GLFW_KMSDRM)

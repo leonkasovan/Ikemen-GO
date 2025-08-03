@@ -23,6 +23,16 @@ var ioFuncs = map[string]LGFunction{
 	"read":   ioRead,
 	"type":   ioType,
 	"write":  ioWrite,
+	"exists": func(L *LState) int {
+		path := L.CheckString(1)
+		exists := physfs.Exists(path)
+		if exists {
+			L.Push(LTrue)
+		} else {
+			L.Push(LFalse)
+		}
+		return 1
+	},
 }
 
 const lFileClass = "FILE*"

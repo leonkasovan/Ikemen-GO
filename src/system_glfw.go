@@ -10,7 +10,7 @@ import (
 
 type Window struct {
 	*glfw.Window
-	title      string
+	title string
 	fullscreen bool
 	x, y, w, h int
 }
@@ -32,17 +32,18 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 	// Initialize Windowing system
 	glfw.InitHint(0x00053001, 0x00038002) // disable libdecor for wayland
 	chk(glfw.Init())
-	fmt.Printf("GLFW Platform: %v\n", glfw.GetVersionString())
+	fmt.Printf("GLFW Version: %v\n", glfw.GetVersionString())
+	fmt.Printf("GLFW Platform: %v\n", glfw.GetPlatform())
 
-	// Check if we are running in KMS DRM mode
-	if !strings.Contains(glfw.GetVersionString(), "KMSDRM") {
+	// Check if we are running in X11 or Wayland mode
+	if glfw.GetPlatform() == "x11" || glfw.GetPlatform() == "wayland" {
 		monitor = glfw.GetPrimaryMonitor()
 		// "-windowed" overrides the configuration setting but does not change it
 		_, forceWindowed := sys.cmdFlags["-windowed"]
 		fullscreen = s.cfg.Video.Fullscreen && !forceWindowed
 		// Calculate window size & offset it
 		mode = monitor.GetVideoMode()
-		// fmt.Printf("Monitor size: %dx%d\n", mode.Width, mode.Height)
+		fmt.Printf("Monitor size: %dx%d\n", mode.Width, mode.Height)
 		w2, h2 = w, h
 		if !fullscreen && (sys.cfg.Video.WindowWidth > 0 || sys.cfg.Video.WindowHeight > 0) {
 			w2, h2 = sys.cfg.Video.WindowWidth, sys.cfg.Video.WindowHeight
@@ -50,10 +51,10 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 		x, y = (mode.Width-w2)/2, (mode.Height-h2)/2
 		glfw.WindowHint(glfw.Resizable, glfw.True)
 	}
-	// fmt.Printf("Window size: %dx%d\n", w2, h2)
-	// fmt.Printf("Window position: %d,%d\n", x, y)
+	fmt.Printf("Window size: %dx%d\n", w2, h2)
+	fmt.Printf("Window position: %d,%d\n", x, y)
 
-	// Initialize Gfx with OpenGL (ES)
+	// Initialize Gfx with OpenGL
 	s.initGfx()
 
 	// Create main window.
@@ -68,7 +69,7 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 	}
 
 	// Set windows attributes
-	if !strings.Contains(glfw.GetVersionString(), "KMSDRM") && !strings.Contains(glfw.GetVersionString(), "Wayland") {
+	if glfw.GetPlatform() == "x11" {
 		if fullscreen {
 			window.SetPos(0, 0)
 			if s.cfg.Video.Borderless {
@@ -94,7 +95,7 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 		glfw.SwapInterval(s.cfg.Video.VSync)
 	}
 
-	if strings.Contains(glfw.GetVersionString(), "KMSDRM") { // KMS DRM mode, override window size
+	if glfw.GetPlatform() == "kmsdrm" { // KMS DRM mode, override window size
 		w, h = window.GetSize()
 		if s.cfg.Video.WindowWidth != w {
 			fmt.Printf("Overriding configuration Video.WindowWidth(%d) with Monitor's width(%d)\n", s.cfg.Video.WindowWidth, w)
@@ -125,7 +126,7 @@ func (w *Window) SwapBuffers() {
 
 func (w *Window) SetIcon(icon []image.Image) {
 	// Some Wayland platform does not support setting the window icon, so we skip it
-	if !strings.Contains(glfw.GetVersionString(), "Wayland") {
+	if glfw.GetPlatform() == "x11" {
 		w.Window.SetIcon(icon)
 	}
 }

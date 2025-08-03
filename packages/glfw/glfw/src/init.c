@@ -64,7 +64,11 @@ static _GLFWinitconfig _glfwInitHints =
     },
     .wl =
     {
+#ifdef GLAD_GLES2_IMPLEMENTATION
+        .libdecorMode = GLFW_WAYLAND_DISABLE_LIBDECOR
+#else
         .libdecorMode = GLFW_WAYLAND_PREFER_LIBDECOR
+#endif
     },
 };
 

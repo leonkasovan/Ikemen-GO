@@ -26,9 +26,9 @@ package glfw
 // Linux Build Tags
 // ----------------
 // GLFW Options:
-#cgo linux,x11 CFLAGS: -D_GLFW_X11 -D_GNU_SOURCE
-#cgo linux,wayland CFLAGS: -D_GLFW_WAYLAND -D_GNU_SOURCE -Iglfw/deps/wayland
-#cgo linux,kmsdrm CFLAGS: -D_GLFW_KMSDRM -DDEBUG -I/usr/include/libdrm
+#cgo linux,x11 CFLAGS: -D_GLFW_X11 -D_GNU_SOURCE -DDEBUG
+#cgo linux,wayland CFLAGS: -D_GLFW_WAYLAND -D_GNU_SOURCE -DDEBUG -Iglfw/deps/wayland
+#cgo linux,kmsdrm CFLAGS: -D_GLFW_KMSDRM -D_GNU_SOURCE -DDEBUG -I/usr/include/libdrm
 
 // Linker Options:
 #cgo linux,!gles1,!gles2,!gles3,!vulkan LDFLAGS: -lGL
