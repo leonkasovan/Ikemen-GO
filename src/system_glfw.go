@@ -53,7 +53,7 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 	fmt.Printf("GLFW Platform: %v\n", glfw.GetPlatform())
 
 	// Check if we are running in X11 or Wayland mode
-	if glfw.GetPlatform() == "x11" || glfw.GetPlatform() == "wayland" {
+	if glfw.GetPlatform() == "x11" || glfw.GetPlatform() == "wayland" || glfw.GetPlatform() == "win32"{
 		monitor = glfw.GetPrimaryMonitor()
 		// "-windowed" overrides the configuration setting but does not change it
 		_, forceWindowed := sys.cmdFlags["-windowed"]
@@ -86,7 +86,7 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 	}
 
 	// Set windows attributes
-	if glfw.GetPlatform() == "x11" {
+	if glfw.GetPlatform() == "x11" || glfw.GetPlatform() == "win32" {
 		if fullscreen {
 			window.SetPos(0, 0)
 			if s.cfg.Video.Borderless {

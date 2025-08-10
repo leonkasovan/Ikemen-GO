@@ -585,7 +585,6 @@ GLFWbool _glfwInitEGL(void) {
         _glfwTerminateEGL();
         return GLFW_FALSE;
     } else {
-     // printf("_glfwInitEGL: using EGL Library version %d.%d\n", major, minor);
         debug_printf("\n===================================\n");
         debug_printf("EGL information:\n");
         debug_printf("  version: %s\n", eglQueryString(_glfw.egl.display, 0x3054));

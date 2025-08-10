@@ -59,6 +59,28 @@ glfwGetGamepadState
 #define SYN_DROPPED 3
 #endif
 
+static uint16_t crc16_for_byte(uint8_t r)
+{
+    uint16_t crc = 0;
+    int i;
+    for (i = 0; i < 8; ++i) {
+        crc = ((crc ^ r) & 1 ? 0xA001 : 0) ^ crc >> 1;
+        r >>= 1;
+    }
+    return crc;
+}
+
+static uint16_t crc16(uint16_t crc, const void *data, size_t len)
+{
+    // As an optimization we can precalculate a 256 entry table for each byte
+    size_t i;
+    for (i = 0; i < len; ++i) {
+        crc = crc16_for_byte((uint8_t)crc ^ ((const uint8_t *)data)[i]) ^ crc >> 8;
+    }
+    return crc;
+}
+
+
 // Apply an EV_KEY event to the specified joystick
 //
 static void handleKeyEvent(_GLFWjoystick* js, int code, int value) {
@@ -171,17 +193,21 @@ static GLFWbool openJoystickDevice(const char* path) {
         strncpy(name, "Unknown", sizeof(name));
 
     char guid[33] = "";
+    uint16_t crc = 0;
+    crc = crc16(crc, name, strlen(name));
 
     // Generate a joystick GUID that matches the SDL 2.0.5+ one
     if (id.vendor && id.product && id.version) {
-        sprintf(guid, "%02x%02x0000%02x%02x0000%02x%02x0000%02x%02x0000",
+        sprintf(guid, "%02x%02x%02x%02x%02x%02x0000%02x%02x0000%02x%02x0000",
             id.bustype & 0xff, id.bustype >> 8,
+            crc & 0xff, crc >> 8,
             id.vendor & 0xff, id.vendor >> 8,
             id.product & 0xff, id.product >> 8,
             id.version & 0xff, id.version >> 8);
     } else {
-        sprintf(guid, "%02x%02x0000%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x00",
+        sprintf(guid, "%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x00",
             id.bustype & 0xff, id.bustype >> 8,
+            crc & 0xff, crc >> 8,
             name[0], name[1], name[2], name[3],
             name[4], name[5], name[6], name[7],
             name[8], name[9], name[10]);
