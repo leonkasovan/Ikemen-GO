@@ -17,7 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unsafe"
+	// "unsafe"
 
 	lua "github.com/ikemen-engine/Ikemen-GO/packages/gopher-lua"
 	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
@@ -1675,18 +1675,14 @@ func systemScriptInit(l *lua.LState) {
 	})
 	luaRegister(l, "getDirectoryFiles", func(*lua.LState) int {
 		dir := l.NewTable()
-		cDir := C.CString(strArg(l, 1))
-		defer C.free(unsafe.Pointer(cDir))
-		files := C.PHYSFS_enumerateFiles(cDir)
-		pfiles := files
-		defer C.PHYSFS_freeList(unsafe.Pointer(files))
-		if pfiles != nil {
-			for {
-				if *pfiles == nil {
-					break
-				}
-				dir.Append(lua.LString(C.GoString(*pfiles)))
-				pfiles = (**C.char)(unsafe.Pointer(uintptr(unsafe.Pointer(pfiles)) + unsafe.Sizeof(*pfiles)))
+		filelist, err := physfs.EnumerateFiles(strArg(l, 1))
+		if err != nil {
+			sys.errLog.Printf("failed to enumerate files in directory %v: %v", strArg(l, 1), err)
+			l.RaiseError("failed to enumerate files in directory %v: %v", strArg(l, 1), err)
+		}
+		for _, f := range filelist {
+			if f != "" && f[0] != '.' { // skip hidden files
+				dir.Append(lua.LString(f))
 			}
 		}
 
