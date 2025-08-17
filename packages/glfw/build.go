@@ -30,6 +30,7 @@ package glfw
 #cgo linux,wayland CFLAGS: -D_GLFW_WAYLAND -D_GNU_SOURCE -Iglfw/deps/wayland
 #cgo linux,kmsdrm CFLAGS: -D_GLFW_KMSDRM -D_GNU_SOURCE -I/usr/include/libdrm
 #cgo debug CFLAGS: -DDEBUG
+#cgo gles2 CFLAGS: -DGLAD_GLES2_IMPLEMENTATION
 
 // Linker Options:
 #cgo linux,!gles1,!gles2,!gles3,!vulkan LDFLAGS: -lGL
