@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<gameList>
+  <game>
+    <path>./Ikemen.sh</path>
+    <name>Ikemen</name>
+    <desc>An open-source fighting game engine that supports MUGEN resources</desc>
+    <releasedate>20250818T000000</releasedate>
+    <developer>Ikemen Developers</developer>
+    <publisher>Ikemen</publisher>
+    <genre>Action</genre>
+    <image>./ikemen/screenshot.png</image>
+  </game>
+</gameList>

@@ -735,10 +735,7 @@ Extra Options (by LeonKasovan):
 -updatechar             Update character def in select.def based on chars directory
 -updatestage            Update stage def in select.def based on stages directory
 -validate               Validate game assets existance
--fix                    Fix game assets naming (into lowercase)
 -install                Install default screenpack
--allstage               Auto load all stages
--allchar				Auto load all characters
 
 Debug Options:
 -nojoy                  Disables joysticks
