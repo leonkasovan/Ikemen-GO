@@ -33,20 +33,19 @@
 
 // Linux-specific joystick data
 //
-typedef struct _GLFWjoystickLinux
-{
+typedef struct _GLFWjoystickLinux {
     int                     fd;
     char                    path[PATH_MAX];
-    int                     keyMap[KEY_CNT - BTN_MISC];
+    int                     keyMap[KEY_CNT];
     int                     absMap[ABS_CNT];
+    char                    hasAbs[ABS_CNT];
     struct input_absinfo    absInfo[ABS_CNT];
     int                     hats[4][2];
 } _GLFWjoystickLinux;
 
 // Linux-specific joystick API data
 //
-typedef struct _GLFWlibraryLinux
-{
+typedef struct _GLFWlibraryLinux {
     int                     inotify;
     int                     watch;
     regex_t                 regex;

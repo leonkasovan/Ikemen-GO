@@ -1311,10 +1311,14 @@ GLFWAPI int glfwGetGamepadState(int jid, GLFWgamepadstate* state) {
         } else if (e->type == _GLFW_JOYSTICK_HATBIT) {
             const unsigned int hat = e->index >> 4;
             const unsigned int bit = e->index & 0xf;
-            if (js->hats[hat] & bit)
+            if (js->hats[hat] & bit) {
+                // debug_printf("[input.c][glfwGetGamepadState] Hat %d bit %d pressed mapped to button %d\n", hat, bit, i);
                 state->buttons[i] = GLFW_PRESS;
-        } else if (e->type == _GLFW_JOYSTICK_BUTTON)
+            }
+        } else if (e->type == _GLFW_JOYSTICK_BUTTON) {
+            // if (js->buttons[e->index]) debug_printf("[input.c][glfwGetGamepadState] Joystick Button %d pressed mapped to Gamepad Button %d\n", e->index, i);
             state->buttons[i] = js->buttons[e->index];
+        }
     }
 
     for (i = 0; i <= GLFW_GAMEPAD_AXIS_LAST; i++) {

@@ -29,6 +29,7 @@ package glfw
 #cgo linux,x11 CFLAGS: -D_GLFW_X11 -D_GNU_SOURCE
 #cgo linux,wayland CFLAGS: -D_GLFW_WAYLAND -D_GNU_SOURCE -Iglfw/deps/wayland
 #cgo linux,kmsdrm CFLAGS: -D_GLFW_KMSDRM -D_GNU_SOURCE -I/usr/include/libdrm
+#cgo linux,sdl2 CFLAGS: -D_GLFW_SDL2 -D_GNU_SOURCE
 #cgo debug CFLAGS: -DDEBUG
 #cgo gles2 CFLAGS: -DGLAD_GLES2_IMPLEMENTATION
 
@@ -39,7 +40,7 @@ package glfw
 #cgo linux,gles3 LDFLAGS: -lGLESv3
 #cgo linux,vulkan LDFLAGS: -lvulkan
 #cgo linux,x11 LDFLAGS: -lX11 -lXrandr -lXxf86vm -lXi -lXcursor -lm -lXinerama -ldl -lrt
-#cgo linux,wayland LDFLAGS: -lwayland-client -lwayland-cursor -lwayland-egl -lxkbcommon -lm -ldl -lrt
+#cgo linux,wayland LDFLAGS: -lxkbcommon -lm -ldl -lrt
 #cgo linux,kmsdrm LDFLAGS: -lm -ldl -lrt -lgbm -lEGL -ldrm
 
 // BSD Build Tags

@@ -21,6 +21,9 @@ package glfw
 	#include "glfw/src/kmsdrm_monitor.c"
 	#include "glfw/src/linux_keyboard.c"
 #endif
+#ifdef _GLFW_SDL2
+	#include "glfw/src/sdl2_platform.c"
+#endif
 #include "glfw/src/posix_poll.c"
 #include "glfw/src/posix_module.c"
 #include "glfw/src/platform.c"

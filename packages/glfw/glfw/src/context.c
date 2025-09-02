@@ -507,12 +507,11 @@ GLFWbool _glfwRefreshContextAttribs(_GLFWwindow* window,
             window->context.getProcAddress("glClear");
         glClear(GL_COLOR_BUFFER_BIT);
 
-#ifndef _GLFW_KMSDRM        
-        if (window->doublebuffer)
-            window->context.swapBuffers(window);
-#endif
+        if ((_glfw.platform.platformID == GLFW_PLATFORM_WAYLAND) || (_glfw.platform.platformID == GLFW_PLATFORM_X11)) {
+            if (window->doublebuffer)
+                window->context.swapBuffers(window);
+        }
     }
-
 
     glfwMakeContextCurrent((GLFWwindow*) previous);
     return GLFW_TRUE;

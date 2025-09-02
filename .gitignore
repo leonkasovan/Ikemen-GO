@@ -8,6 +8,7 @@ go/*
 *.sh
 *.png
 *.zip
+*.o
 save/*
 Ikemen_GO.exe
 Ikemen_GO_Linux
@@ -58,3 +59,4 @@ src/*.syso
 
 !port/Ikemen.sh
 !port/ikemen/screenshot.png
+!upload_rocknix.sh

@@ -1357,6 +1357,7 @@ extern "C" {
 #define GLFW_PLATFORM_X11           0x00060004
 #define GLFW_PLATFORM_NULL          0x00060005
 #define GLFW_PLATFORM_KMSDRM        0x00060006
+#define GLFW_PLATFORM_SDL2          0x00060007
           /*! @} */
 
 #define GLFW_DONT_CARE              -1

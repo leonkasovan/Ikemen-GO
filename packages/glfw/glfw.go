@@ -117,6 +117,8 @@ func GetPlatform() string {
 		return "win32"
 	case C.GLFW_PLATFORM_KMSDRM:
 		return "kmsdrm"
+	case C.GLFW_PLATFORM_SDL2:
+		return "sdl2"
 	default:
 		return "unknown"
 	}

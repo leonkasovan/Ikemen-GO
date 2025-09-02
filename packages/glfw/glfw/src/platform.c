@@ -29,6 +29,7 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 // These construct a string literal from individual numeric constants
 #define _GLFW_CONCAT_VERSION(m, n, r) #m "." #n "." #r
@@ -58,6 +59,9 @@ static const struct {
 #if defined(_GLFW_KMSDRM)
     { GLFW_PLATFORM_KMSDRM, _glfwConnectKMSDRM },
 #endif
+#if defined(_GLFW_SDL2)
+    { GLFW_PLATFORM_SDL2, _glfwConnectSDL2 },
+#endif
 };
 
 GLFWbool _glfwSelectPlatform(int desiredID, _GLFWplatform* platform) {
@@ -70,6 +74,7 @@ GLFWbool _glfwSelectPlatform(int desiredID, _GLFWplatform* platform) {
         desiredID != GLFW_PLATFORM_WAYLAND &&
         desiredID != GLFW_PLATFORM_X11 &&
         desiredID != GLFW_PLATFORM_KMSDRM &&
+        desiredID != GLFW_PLATFORM_SDL2 &&
         desiredID != GLFW_PLATFORM_NULL) {
         _glfwInputError(GLFW_INVALID_ENUM, "Invalid platform ID 0x%08X", desiredID);
         return GLFW_FALSE;
@@ -95,6 +100,20 @@ GLFWbool _glfwSelectPlatform(int desiredID, _GLFWplatform* platform) {
         if ((session && strcmp(session, "x11") == 0) || getenv("DISPLAY")) {
             desiredID = GLFW_PLATFORM_X11;
             debug_printf("Detected X11 session: %s\n", getenv("DISPLAY"));
+        }
+#endif
+#ifdef _GLFW_SDL2
+        if (session)
+            debug_printf("Detected session type: %s\n", session);
+        char *sdl2_path_lib[] = { "/usr/lib/libSDL2-2.0.so.0", "/usr/lib64/libSDL2-2.0.so.0", "/lib/aarch64-linux-gnu/libSDL2-2.0.so" };
+        if (desiredID == GLFW_ANY_PLATFORM)
+        // Check for SDL2 library in predefined paths
+        for (i = 0; i < sizeof(sdl2_path_lib) / sizeof(sdl2_path_lib[0]); i++) {
+            if (access(sdl2_path_lib[i], F_OK) != -1) {
+                desiredID = GLFW_PLATFORM_SDL2;
+                debug_printf("Detected SDL2 library: %s\n", sdl2_path_lib[i]);
+                break;
+            }
         }
 #endif
 #ifdef _GLFW_KMSDRM
@@ -148,6 +167,7 @@ GLFWAPI int glfwPlatformSupported(int platformID) {
         platformID != GLFW_PLATFORM_WAYLAND &&
         platformID != GLFW_PLATFORM_X11 &&
         platformID != GLFW_PLATFORM_KMSDRM &&
+        platformID != GLFW_PLATFORM_SDL2 &&
         platformID != GLFW_PLATFORM_NULL) {
         _glfwInputError(GLFW_INVALID_ENUM, "Invalid platform ID 0x%08X", platformID);
         return GLFW_FALSE;
@@ -182,6 +202,9 @@ GLFWAPI const char* glfwGetVersionString(void) {
 #endif
 #if defined(_GLFW_KMSDRM)
         " KMSDRM"
+#endif
+#if defined(_GLFW_SDL2)
+        " SDL2"
 #endif
         " Null"
         " EGL"

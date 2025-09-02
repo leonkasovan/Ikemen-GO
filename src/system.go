@@ -322,18 +322,18 @@ func (s *System) init(w, h int32) *lua.LState {
 	s.window, err = s.newWindow(int(s.scrrect[2]), int(s.scrrect[3]))
 	chk(err)
 
+	// Update gamepad mappings from environment variable
+	if mapping := os.Getenv("SDL_GAMECONTROLLERCONFIG"); mapping != "" {
+		if input.UpdateGamepadMappings(mapping) {
+			fmt.Printf("Gamepad mappings updated from environment variable SDL_GAMECONTROLLERCONFIG.\n%v\n", mapping)
+		}
+	}
+
 	// Update gamepad mappings from config file
 	if physfs.Exists(s.cfg.Config.GamepadMappings) {
 		mappings, _ := LoadText(s.cfg.Config.GamepadMappings)
 		if input.UpdateGamepadMappings(mappings) {
 			fmt.Printf("Gamepad mappings updated from %v.\n", s.cfg.Config.GamepadMappings)
-		}
-	}
-
-	// Update gamepad mappings from environment variable
-	if mapping := os.Getenv("SDL_GAMECONTROLLERCONFIG"); mapping != "" {
-		if input.UpdateGamepadMappings(mapping) {
-			fmt.Printf("Gamepad mappings updated from environment variable SDL_GAMECONTROLLERCONFIG.\n%v\n", mapping)
 		}
 	}
 

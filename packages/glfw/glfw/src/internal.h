@@ -514,6 +514,12 @@ struct _GLFWcontext {
         void* buffer;
     } osmesa;
 
+#if defined(_GLFW_SDL2)
+    struct {
+        SDL_GLContext   handle;
+    } sdl2;
+#endif
+
     // This is defined in platform.h
     GLFW_PLATFORM_CONTEXT_STATE
 };

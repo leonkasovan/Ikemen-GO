@@ -115,6 +115,13 @@ int64_t get_time_ns(void);
 #define GLFW_KMSDRM_LIBRARY_WINDOW_STATE
 #endif
 
+#if defined(_GLFW_SDL2)
+#include "sdl2_platform.h"
+#else
+#define GLFW_SDL2_WINDOW_STATE
+#define GLFW_SDL2_LIBRARY_WINDOW_STATE
+#endif
+
 #include "null_joystick.h"
 
 #if defined(_GLFW_WIN32)
@@ -131,7 +138,7 @@ int64_t get_time_ns(void);
 #define GLFW_COCOA_LIBRARY_JOYSTICK_STATE
 #endif
 
-#if (defined(_GLFW_X11) || defined(_GLFW_WAYLAND) || defined(_GLFW_KMSDRM)) && defined(__linux__)
+#if (defined(_GLFW_X11) || defined(_GLFW_WAYLAND) || defined(_GLFW_KMSDRM) || defined(_GLFW_SDL2)) && defined(__linux__)
 #define GLFW_BUILD_LINUX_JOYSTICK
 #endif
 
@@ -159,6 +166,7 @@ int64_t get_time_ns(void);
         GLFW_WAYLAND_WINDOW_STATE \
         GLFW_X11_WINDOW_STATE \
         GLFW_KMSDRM_WINDOW_STATE \
+        GLFW_SDL2_WINDOW_STATE \
         GLFW_NULL_WINDOW_STATE \
 
 #define GLFW_PLATFORM_MONITOR_STATE \
@@ -191,6 +199,7 @@ int64_t get_time_ns(void);
         GLFW_WAYLAND_LIBRARY_WINDOW_STATE \
         GLFW_X11_LIBRARY_WINDOW_STATE \
         GLFW_KMSDRM_LIBRARY_WINDOW_STATE \
+        GLFW_SDL2_LIBRARY_WINDOW_STATE \
         GLFW_NULL_LIBRARY_WINDOW_STATE \
 
 #define GLFW_PLATFORM_LIBRARY_JOYSTICK_STATE \

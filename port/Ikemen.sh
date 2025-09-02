@@ -1,5 +1,6 @@
 #!/bin/bash
 
+XDG_DATA_HOME=${XDG_DATA_HOME:-$HOME/.local/share}
 if [ -d "/opt/system/Tools/PortMaster/" ]; then
   controlfolder="/opt/system/Tools/PortMaster"
 elif [ -d "/opt/tools/PortMaster/" ]; then
@@ -21,11 +22,11 @@ cd $GAMEDIR
 export SDL_GAMECONTROLLERCONFIG="$sdl_controllerconfig"
 
 pm_platform_helper "$GAMEDIR/ikemen_linux.${DEVICE_ARCH}"
+$GPTOKEYB "ikemen_linux.${DEVICE_ARCH}" &
 
 if [ -d "$GAMEDIR/data/" ]; then
   ./ikemen_linux.${DEVICE_ARCH} -updatechar -updatestage
 else
   ./ikemen_linux.${DEVICE_ARCH} -installrun
 fi
-
 pm_finish
