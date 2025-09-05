@@ -236,87 +236,140 @@ static GLFWbool openJoystickDevice(const char* path) {
         }
     }
 
-    char guid[33] = "";
+    char guid[64] = "";
     uint16_t crc = 0;
     crc = crc16(crc, name, strlen(name));
-
-    // Generate a joystick GUID that matches the SDL 2.0.5+ one
-    if (id.vendor && id.product && id.version) {
-        sprintf(guid, "%02x%02x%02x%02x%02x%02x0000%02x%02x0000%02x%02x0000",
-            id.bustype & 0xff, id.bustype >> 8,
-            crc & 0xff, crc >> 8,
-            id.vendor & 0xff, id.vendor >> 8,
-            id.product & 0xff, id.product >> 8,
-            id.version & 0xff, id.version >> 8);
-    } else {
-        sprintf(guid, "%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x00",
-            id.bustype & 0xff, id.bustype >> 8,
-            crc & 0xff, crc >> 8,
-            name[0], name[1], name[2], name[3],
-            name[4], name[5], name[6], name[7],
-            name[8], name[9], name[10]);
-    }
-
     int axisCount = 0, buttonCount = 0, hatCount = 0;
 
-    for (int code = BTN_JOYSTICK; code < KEY_MAX; code++) {
-        if (!test_bit(code, keybit))
-            continue;
-        debug_printf("[GLFW] Joystick has button: %d mapped to %d\n", code, buttonCount);
-        linjs.keyMap[code] = buttonCount;
-        buttonCount++;
+#if defined(_GLFW_SDL2)
+    if (_glfw.sdl2.linked.minor == 0) {
+        // Generate a joystick GUID that matches the SDL 2.0.5+ one
+        if (id.vendor && id.product && id.version) {
+            sprintf(guid, "%02x%02x0000%02x%02x0000%02x%02x0000%02x%02x0000",
+                id.bustype & 0xff, id.bustype >> 8,
+                id.vendor & 0xff, id.vendor >> 8,
+                id.product & 0xff, id.product >> 8,
+                id.version & 0xff, id.version >> 8);
+        } else {
+            sprintf(guid, "%02x%02x0000%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x00",
+                id.bustype & 0xff, id.bustype >> 8,
+                name[0], name[1], name[2], name[3],
+                name[4], name[5], name[6], name[7],
+                name[8], name[9], name[10]);
+        }
+    } else {
+#endif
+        // Generate a joystick GUID that matches the SDL 2.2x.0+ one
+        if (id.vendor && id.product && id.version) {
+            sprintf(guid, "%02x%02x%02x%02x%02x%02x0000%02x%02x0000%02x%02x0000",
+                id.bustype & 0xff, id.bustype >> 8,
+                crc & 0xff, crc >> 8,
+                id.vendor & 0xff, id.vendor >> 8,
+                id.product & 0xff, id.product >> 8,
+                id.version & 0xff, id.version >> 8);
+        } else {
+            sprintf(guid, "%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x00",
+                id.bustype & 0xff, id.bustype >> 8,
+                crc & 0xff, crc >> 8,
+                name[0], name[1], name[2], name[3],
+                name[4], name[5], name[6], name[7],
+                name[8], name[9], name[10]);
+        }
+#if defined(_GLFW_SDL2)
     }
 
-    for (int code = 0; code < BTN_JOYSTICK; code++) {
-        if (test_bit(code, keybit)) {
+    if (_glfw.sdl2.linked.minor == 0) {
+        for (int code = BTN_MISC; code < KEY_CNT; code++) {
+            if (!test_bit(code, keybit))
+                continue;
+
             debug_printf("[GLFW] Joystick has button: %d mapped to %d\n", code, buttonCount);
             linjs.keyMap[code] = buttonCount;
             buttonCount++;
         }
-    }
 
-    for (int i = ABS_HAT0X; i <= ABS_HAT3Y; i += 2) {
-        int hat_x = -1;
-        int hat_y = -1;
-        // const int hat_index = (i - ABS_HAT0X) / 2;
-        linjs.absMap[i] = -1;
-        linjs.absMap[i + 1] = -1;
-        struct input_absinfo absinfo_x;
-        struct input_absinfo absinfo_y;
-        if (test_bit(i, absbit)) {
-            hat_x = ioctl(linjs.fd, EVIOCGABS(i), &absinfo_x);
-        }
-        if (test_bit(i + 1, absbit)) {
-            hat_y = ioctl(linjs.fd, EVIOCGABS(i + 1), &absinfo_y);
-        }
-        if (GuessIfAxesAreDigitalHat((hat_x < 0 ? (void*) 0 : &absinfo_x),
-            (hat_y < 0 ? (void*) 0 : &absinfo_y))) {
+        for (int code = 0; code < ABS_CNT; code++) {
+            linjs.absMap[code] = -1;
+            if (!test_bit(code, absbit)) {
+                continue;
 
-            debug_printf("[GLFW] Joystick has digital hat: %d mapped to %d\n", i, hatCount);
-            linjs.absMap[i] = hatCount;
-            linjs.absMap[i + 1] = hatCount;
-            ++hatCount;
-        }
-    }
+                if (code >= ABS_HAT0X && code <= ABS_HAT3Y) {
+                    linjs.absMap[code + 1] = -1;
+                    linjs.absMap[code] = hatCount;
+                    hatCount++;
+                    // Skip the Y axis
+                    code++;
+                } else {
+                    if (ioctl(linjs.fd, EVIOCGABS(code), &linjs.absInfo[code]) < 0)
+                        continue;
 
-    for (int i = 0; i < ABS_MAX; ++i) {
-        linjs.hasAbs[i] = GLFW_FALSE;
-        // Skip digital hats
-        if (i >= ABS_HAT0X && i <= ABS_HAT3Y && linjs.absMap[i] >= 0) {
-            continue;
+                    linjs.absMap[code] = axisCount;
+                    axisCount++;
+                }
+            }
         }
-        if (test_bit(i, absbit)) {
-            // struct input_absinfo absinfo;
-            if (ioctl(linjs.fd, EVIOCGABS(i), &linjs.absInfo[i]) < 0) {
+    } else {
+#endif
+        for (int code = BTN_JOYSTICK; code < KEY_MAX; code++) {
+            if (!test_bit(code, keybit))
+                continue;
+            debug_printf("[GLFW] Joystick has button: %d mapped to %d\n", code, buttonCount);
+            linjs.keyMap[code] = buttonCount;
+            buttonCount++;
+        }
+
+        for (int code = 0; code < BTN_JOYSTICK; code++) {
+            if (test_bit(code, keybit)) {
+                debug_printf("[GLFW] Joystick has button: %d mapped to %d\n", code, buttonCount);
+                linjs.keyMap[code] = buttonCount;
+                buttonCount++;
+            }
+        }
+
+        for (int i = ABS_HAT0X; i <= ABS_HAT3Y; i += 2) {
+            int hat_x = -1;
+            int hat_y = -1;
+            // const int hat_index = (i - ABS_HAT0X) / 2;
+            linjs.absMap[i] = -1;
+            linjs.absMap[i + 1] = -1;
+            struct input_absinfo absinfo_x;
+            struct input_absinfo absinfo_y;
+            if (test_bit(i, absbit)) {
+                hat_x = ioctl(linjs.fd, EVIOCGABS(i), &absinfo_x);
+            }
+            if (test_bit(i + 1, absbit)) {
+                hat_y = ioctl(linjs.fd, EVIOCGABS(i + 1), &absinfo_y);
+            }
+            if (GuessIfAxesAreDigitalHat((hat_x < 0 ? (void*) 0 : &absinfo_x),
+                (hat_y < 0 ? (void*) 0 : &absinfo_y))) {
+
+                debug_printf("[GLFW] Joystick has digital hat: %d mapped to %d\n", i, hatCount);
+                linjs.absMap[i] = hatCount;
+                linjs.absMap[i + 1] = hatCount;
+                ++hatCount;
+            }
+        }
+
+        for (int i = 0; i < ABS_MAX; ++i) {
+            linjs.hasAbs[i] = GLFW_FALSE;
+            // Skip digital hats
+            if (i >= ABS_HAT0X && i <= ABS_HAT3Y && linjs.absMap[i] >= 0) {
                 continue;
             }
-            debug_printf("[GLFW] Joystick has absolute axis: %d mapped to %d\n", i, axisCount);
-            linjs.absMap[i] = axisCount;
-            linjs.hasAbs[i] = GLFW_TRUE;
-            ++axisCount;
+            if (test_bit(i, absbit)) {
+                // struct input_absinfo absinfo;
+                if (ioctl(linjs.fd, EVIOCGABS(i), &linjs.absInfo[i]) < 0) {
+                    continue;
+                }
+                debug_printf("[GLFW] Joystick has absolute axis: %d mapped to %d\n", i, axisCount);
+                linjs.absMap[i] = axisCount;
+                linjs.hasAbs[i] = GLFW_TRUE;
+                ++axisCount;
+            }
         }
+#if defined(_GLFW_SDL2)
     }
-
+#endif    
     //debug count of buttons, hat and axis
     debug_printf("[GLFW] Joystick '%s' connected\n", name);
     debug_printf("[GLFW]  - GUID: %s\n", guid);

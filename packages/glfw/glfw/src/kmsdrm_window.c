@@ -189,7 +189,7 @@ int init_drm(struct drm* drm, const char* device, const char* mode_str, int conn
     int i, ret, area;
 
     if (device) {
-        drm->fd = open(device, O_RDWR);
+        drm->fd = open(device, O_RDWR | O_CLOEXEC);
         ret = get_resources("init_drm", drm->fd, &resources);
         if (ret < 0 && errno == EOPNOTSUPP)
             _glfwInputError(GLFW_PLATFORM_ERROR, "%s does not look like a modeset device\n", device);
@@ -297,6 +297,41 @@ int init_drm(struct drm* drm, const char* device, const char* mode_str, int conn
     drm->connector_id = connector->connector_id;
     drm->count = count;
     drm->nonblocking = nonblocking;
+
+/*
+    // Detect async page flip support
+    uint64_t has_async = 0;
+    if (drmGetCap(drm->fd, DRM_CAP_ASYNC_PAGE_FLIP, &has_async) == 0 && has_async)
+        drm->async_flip = true;
+    else
+        drm->async_flip = false;
+
+    // Detect atomic support
+    uint64_t has_atomic = 0;
+    if (drmGetCap(drm->fd, DRM_CAP_ATOMIC, &has_atomic) == 0 && has_atomic)
+        drm->atomic = true;
+    else
+        drm->atomic = false;
+
+    // Cache DRM property IDs
+    drmModeObjectProperties* props = drmModeObjectGetProperties(drm->fd, drm->crtc_id, DRM_MODE_OBJECT_CRTC);
+    for (int i = 0; i < props->count_props; i++) {
+        drmModePropertyRes* p = drmModeGetProperty(drm->fd, props->props[i]);
+        if (strcmp(p->name, "FB_ID") == 0) drm->props.fb_id = p->prop_id;
+        if (strcmp(p->name, "MODE_ID") == 0) drm->props.mode_id = p->prop_id;
+        if (strcmp(p->name, "ACTIVE") == 0) drm->props.active = p->prop_id;
+        drmModeFreeProperty(p);
+    }
+    drmModeFreeObjectProperties(props);
+
+    props = drmModeObjectGetProperties(drm->fd, drm->connector_id, DRM_MODE_OBJECT_CONNECTOR);
+    for (int i = 0; i < props->count_props; i++) {
+        drmModePropertyRes* p = drmModeGetProperty(drm->fd, props->props[i]);
+        if (strcmp(p->name, "CRTC_ID") == 0) drm->props.crtc_id = p->prop_id;
+        drmModeFreeProperty(p);
+    }
+    drmModeFreeObjectProperties(props); */
+
     return 0;
 }
 

@@ -19,7 +19,7 @@ import (
 )
 
 var Version = "eXtra"
-var BuildTime = "20250216"
+var BuildTime string // set at build time using -ldflags "-X main.BuildTime=`date`"
 
 //go:embed assets.zip
 var assetsZip []byte

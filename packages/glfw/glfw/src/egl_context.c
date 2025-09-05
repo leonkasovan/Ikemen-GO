@@ -358,7 +358,7 @@ static void swapBuffersEGL(_GLFWwindow* window) {
 #ifdef DEBUG
 #ifdef __linux__    
     int64_t cur_time = get_time_ns();
-    if (cur_time > (_glfw.report_time + 2 * NSEC_PER_SEC)) {
+    if (cur_time > (_glfw.report_time + NSEC_PER_SEC)) {
         debug_printf("Render %u fps\n", frame);
         _glfw.report_time = cur_time;
         frame = 0;

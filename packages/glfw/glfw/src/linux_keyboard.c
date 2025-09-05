@@ -71,7 +71,7 @@ static int linux_translateKey(uint32_t scancode) {
 
 // Return true if the specified device is a keyboard, store its name and open a file descriptor to it
 // Return falsae if the device is not a keyboard
-int isKeyboardDevice(/*in*/ const char* devicePath, /*out*/ char* deviceName, /*in */size_t nameSize, int* fd) {
+int isKeyboardDevice(/*in*/ const char* devicePath, /*out*/ char* deviceName, /*in */size_t nameSize, int *fd) {
     *fd = -1;
     *fd = open(devicePath, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
     if (*fd < 0) {
@@ -108,7 +108,7 @@ int isKeyboardDevice(/*in*/ const char* devicePath, /*out*/ char* deviceName, /*
 
     // Check if the device supports EV_KEY events and has keys typically found on keyboards
     return (evbit[EV_KEY / (8 * sizeof(unsigned long))] & (1 << (EV_KEY % (8 * sizeof(unsigned long))))) &&
-        (keybit[KEY_A / (8 * sizeof(unsigned long))] & (1 << (KEY_A % (8 * sizeof(unsigned long)))));
+           (keybit[KEY_A / (8 * sizeof(unsigned long))] & (1 << (KEY_A % (8 * sizeof(unsigned long)))));
 }
 
 // Attempt to open the specified keyboard device

@@ -57,6 +57,13 @@
 #define DRM_DISPLAY_MODE_LEN 32
 #endif
 
+struct drm_props {
+    uint32_t fb_id;
+    uint32_t mode_id;
+    uint32_t active;
+    uint32_t crtc_id;
+};
+
 struct drm {
     int fd;
     int crtc_index;
@@ -65,6 +72,9 @@ struct drm {
     uint32_t connector_id;
     unsigned int count;
     bool nonblocking;
+    bool atomic;
+    bool async_flip;
+    struct drm_props props;
 };
 
 struct drm_fb {

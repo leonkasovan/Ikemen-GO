@@ -66,6 +66,8 @@ int _glfwInitSDL2(void) {
     _glfw.sdl2.sdl.JoystickEventState = (PFN_SDL_JoystickEventState) _glfwPlatformGetModuleSymbol(_glfw.sdl2.sdl.handle, "SDL_JoystickEventState");
     _glfw.sdl2.sdl.GL_GetDrawableSize = (PFN_SDL_GL_GetDrawableSize) _glfwPlatformGetModuleSymbol(_glfw.sdl2.sdl.handle, "SDL_GL_GetDrawableSize");
     _glfw.sdl2.sdl.GetWindowSize = (PFN_SDL_GetWindowSize) _glfwPlatformGetModuleSymbol(_glfw.sdl2.sdl.handle, "SDL_GetWindowSize");
+    _glfw.sdl2.sdl.GetVersion = (PFN_SDL_GetVersion) _glfwPlatformGetModuleSymbol(_glfw.sdl2.sdl.handle, "SDL_GetVersion");
+    _glfw.sdl2.sdl.JoystickGetGUIDString = (PFN_SDL_JoystickGetGUIDString) _glfwPlatformGetModuleSymbol(_glfw.sdl2.sdl.handle, "SDL_JoystickGetGUIDString");
 
     if (!_glfw.sdl2.sdl.Init ||
         !_glfw.sdl2.sdl.Quit ||
@@ -99,7 +101,9 @@ int _glfwInitSDL2(void) {
         !_glfw.sdl2.sdl.JoystickGetHat ||
         !_glfw.sdl2.sdl.JoystickEventState ||
         !_glfw.sdl2.sdl.GL_GetDrawableSize ||
-        !_glfw.sdl2.sdl.GetWindowSize) {
+        !_glfw.sdl2.sdl.GetWindowSize ||
+        !_glfw.sdl2.sdl.GetVersion ||
+        !_glfw.sdl2.sdl.JoystickGetGUIDString) {
         _glfwInputError(GLFW_PLATFORM_ERROR,
             "SDL2: Failed to load SDL functions entry point");
         return GLFW_FALSE;
@@ -110,6 +114,16 @@ int _glfwInitSDL2(void) {
             "SDL2: Failed to initialize SDL: %s", SDL_GetError());
         return GLFW_FALSE;
     }
+    SDL_VERSION(&_glfw.sdl2.compiled);
+    SDL_GetVersion(&_glfw.sdl2.linked);
+    debug_printf("GLFW: Compiled with SDL version %d.%d.%d\n",
+                 _glfw.sdl2.compiled.major,
+                 _glfw.sdl2.compiled.minor,
+                 _glfw.sdl2.compiled.patch);
+    debug_printf("GLFW: Linked   with SDL version %d.%d.%d\n",
+                 _glfw.sdl2.linked.major,
+                 _glfw.sdl2.linked.minor,
+                 _glfw.sdl2.linked.patch);
     return GLFW_TRUE;
 }
 
@@ -141,7 +155,23 @@ static void makeContextCurrentSDL2(_GLFWwindow* window) {
 
 // swapBuffersSDL2 implementation
 static void swapBuffersSDL2(_GLFWwindow* window) {
+#ifdef DEBUG
+#ifdef __linux__
+    static unsigned int frame = 0;
+#endif
+#endif    
     SDL_GL_SwapWindow(window->sdl2.window);
+#ifdef DEBUG
+#ifdef __linux__    
+    int64_t cur_time = get_time_ns();
+    if (cur_time > (_glfw.report_time + NSEC_PER_SEC)) {
+        debug_printf("Render %u fps\n", frame);
+        _glfw.report_time = cur_time;
+        frame = 0;
+    }
+    frame++;
+#endif
+#endif
 }
 
 // swapIntervalSDL2 implementation

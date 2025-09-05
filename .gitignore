@@ -5,7 +5,6 @@ go/*
 *.log
 *.cmd
 *.bat
-*.sh
 *.png
 *.zip
 *.o
@@ -56,7 +55,4 @@ bin/*
 
 # Compilation files
 src/*.syso
-
-!port/Ikemen.sh
 !port/ikemen/screenshot.png
-!upload_rocknix.sh

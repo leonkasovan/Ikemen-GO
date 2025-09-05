@@ -10,4 +10,14 @@
     <genre>Action</genre>
     <image>./ikemen/screenshot.png</image>
   </game>
+  <game>
+    <path>./IkemenDebug.sh</path>
+    <name>Ikemen (Debug)</name>
+    <desc>An open-source fighting game engine that supports MUGEN resources with debug info</desc>
+    <releasedate>20250818T000000</releasedate>
+    <developer>Ikemen Developers</developer>
+    <publisher>Ikemen</publisher>
+    <genre>Action</genre>
+    <image>./ikemen/screenshot.png</image>
+  </game>
 </gameList>
