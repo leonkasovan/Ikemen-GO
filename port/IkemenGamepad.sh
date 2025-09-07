@@ -21,15 +21,9 @@ cd $GAMEDIR
 # Provide appropriate controller configuration if it recognizes SDL controller input
 export SDL_GAMECONTROLLERCONFIG="$sdl_controllerconfig"
 
-pm_platform_helper "$GAMEDIR/ikemen_linux.${DEVICE_ARCH}"
-$GPTOKEYB "ikemen_linux.${DEVICE_ARCH}" &
+pm_platform_helper "$GAMEDIR/sdlGamepadMapper"
+$GPTOKEYB "sdlGamepadMapper" &
 
-# if var $sdl_controllerconfig is not set OR gamecontrollerdb.txt not exists , generate with sdlGamepadMapper
-[ -n "$sdl_controllerconfig" ] || [ -f "external/gamecontrollerdb.txt" ] || ./sdlGamepadMapper "external/gamecontrollerdb.txt"
+./sdlGamepadMapper  "external/gamecontrollerdb.txt"
 
-if [ -d "$GAMEDIR/data/" ]; then
-  ./ikemen_linux.${DEVICE_ARCH} -updatechar -updatestage -debug
-else
-  ./ikemen_linux.${DEVICE_ARCH} -installrun -debug
-fi
 pm_finish

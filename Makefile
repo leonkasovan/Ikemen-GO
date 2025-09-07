@@ -125,7 +125,7 @@ drm: ${srcFiles} src/assets.zip
 # Generic Linux that supports X11 and Wayland
 linux: ${srcFiles} src/assets.zip
 #	export CGO_ENABLED=1 && go build -tags="kmsdrm,sdl2,x11,wayland,gles2,debug" -trimpath -ldflags="-s -w" -v -o ./bin/ikemen_linux ./src
-	export CGO_ENABLED=1 && go build -a -tags="wayland,sdl2,gles2,debug" -trimpath -ldflags="-s -w -X 'main.BuildTime=$(BUILD_DATE)'" -v -o ./bin/ikemen_linux ./src
+	export CGO_ENABLED=1 && go build -x -tags="wayland,sdl2,gles2,debug" -trimpath -ldflags="-s -w -X 'main.BuildTime=$(BUILD_DATE)'" -v -o ./bin/ikemen_linux ./src > build.log 2>&1 || (echo "Build failed. See build.log for details." && exit 1)
 
 src/assets.zip: data/* external/* font/*
 	rm src/assets.zip || true
@@ -134,7 +134,17 @@ src/assets.zip: data/* external/* font/*
 # Create a zip file containing the assets
 	zip -r src/assets.zip data external font
 
-port: bin/ikemen_linux
+sdlGamepadMapper:
+	$(CC) -s -o bin/sdlGamepadMapper tool/sdlGamepadMapper.c `sdl2-config --cflags --libs`
+
+port: sdlGamepadMapper
 	rm port/ikemen.zip || true
 	cp bin/ikemen_linux port/ikemen/ikemen_linux.aarch64
-	cd port && zip -r ikemen.zip Ikemen.sh IkemenDebug.sh ikemen/
+	cp bin/sdlGamepadMapper port/ikemen/sdlGamepadMapper
+	cd port && zip -r ikemen.zip Ikemen.sh IkemenDebug.sh IkemenGamepad.sh ikemen/
+
+clean:
+	rm -rf bin/*
+	rm -rf src/assets.zip
+	rm -rf port/ikemen.zip
+	rm -rf build.log

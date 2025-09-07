@@ -28,10 +28,75 @@
 #include <linux/input-event-codes.h>
 #if defined(_GLFW_SDL2)
 
+const char *osGetValue(const char *name) {
+    static char value[256] = {0};
+    FILE *file;
+    char line[512];
+    
+    // Clear previous value
+    value[0] = '\0';
+    
+    file = fopen("/etc/os-release", "r");
+    if (file == NULL) {
+        return NULL;
+    }
+    
+    while (fgets(line, sizeof(line), file)) {
+        // Skip comments and empty lines
+        if (line[0] == '#' || line[0] == '\n' || line[0] == '\0') {
+            continue;
+        }
+        
+        // Remove trailing newline
+        line[strcspn(line, "\n")] = '\0';
+        
+        // Find the equals sign
+        char *equals = strchr(line, '=');
+        if (equals == NULL) {
+            continue;
+        }
+        
+        // Split key and value
+        *equals = '\0';
+        char *key = line;
+        char *val = equals + 1;
+        
+        // Remove quotes from value if present
+        if (val[0] == '"' && val[strlen(val)-1] == '"') {
+            val[strlen(val)-1] = '\0';
+            val++;
+        }
+        
+        // Check if this is the key we're looking for
+        if (strcmp(key, name) == 0) {
+            strncpy(value, val, sizeof(value) - 1);
+            value[sizeof(value) - 1] = '\0'; // Ensure null termination
+            break;
+        }
+    }
+    
+    fclose(file);
+    
+    // Return NULL if value is empty, otherwise return the value
+    return (value[0] == '\0') ? NULL : value;
+}
+
 int _glfwInitSDL2(void) {
     // These must be set before any failure checks
     // _glfw.sdl2.window = NULL;
     // _glfw.sdl2.context = NULL;
+
+    const char* value;
+    if (getenv("CFW_NAME")) {
+        snprintf(_glfw.sdl2.cfw, sizeof(_glfw.sdl2.cfw), "%s", getenv("CFW_NAME"));
+    } else if ((value = osGetValue("OS_NAME"))) {
+        snprintf(_glfw.sdl2.cfw, sizeof(_glfw.sdl2.cfw), "%s", value);
+    } else if ((value = osGetValue("NAME"))){
+        snprintf(_glfw.sdl2.cfw, sizeof(_glfw.sdl2.cfw), "%s", value);
+    } else {
+        snprintf(_glfw.sdl2.cfw, sizeof(_glfw.sdl2.cfw), "Unknown OS");
+    }
+    debug_printf("Running on \"%s\" OS\n", _glfw.sdl2.cfw);
 
     _glfw.sdl2.sdl.Init = (PFN_SDL_Init) _glfwPlatformGetModuleSymbol(_glfw.sdl2.sdl.handle, "SDL_Init");
     _glfw.sdl2.sdl.Quit = (PFN_SDL_Quit) _glfwPlatformGetModuleSymbol(_glfw.sdl2.sdl.handle, "SDL_Quit");
@@ -68,6 +133,14 @@ int _glfwInitSDL2(void) {
     _glfw.sdl2.sdl.GetWindowSize = (PFN_SDL_GetWindowSize) _glfwPlatformGetModuleSymbol(_glfw.sdl2.sdl.handle, "SDL_GetWindowSize");
     _glfw.sdl2.sdl.GetVersion = (PFN_SDL_GetVersion) _glfwPlatformGetModuleSymbol(_glfw.sdl2.sdl.handle, "SDL_GetVersion");
     _glfw.sdl2.sdl.JoystickGetGUIDString = (PFN_SDL_JoystickGetGUIDString) _glfwPlatformGetModuleSymbol(_glfw.sdl2.sdl.handle, "SDL_JoystickGetGUIDString");
+    _glfw.sdl2.sdl.JoystickGetGUID = (PFN_SDL_JoystickGetGUID) _glfwPlatformGetModuleSymbol(_glfw.sdl2.sdl.handle, "SDL_JoystickGetGUID");
+    _glfw.sdl2.sdl.JoystickOpen = (PFN_SDL_JoystickOpen) _glfwPlatformGetModuleSymbol(_glfw.sdl2.sdl.handle, "SDL_JoystickOpen");
+    _glfw.sdl2.sdl.JoystickClose = (PFN_SDL_JoystickClose) _glfwPlatformGetModuleSymbol(_glfw.sdl2.sdl.handle, "SDL_JoystickClose");
+    _glfw.sdl2.sdl.JoystickInstanceID = (PFN_SDL_JoystickInstanceID) _glfwPlatformGetModuleSymbol(_glfw.sdl2.sdl.handle, "SDL_JoystickInstanceID");
+    _glfw.sdl2.sdl.JoystickGetDeviceIndexFromInstanceID = (PFN_SDL_JoystickGetDeviceIndexFromInstanceID) _glfwPlatformGetModuleSymbol(_glfw.sdl2.sdl.handle, "SDL_JoystickGetDeviceIndexFromInstanceID");
+    _glfw.sdl2.sdl.JoystickAxisEventCodeById = (PFN_SDL_JoystickAxisEventCodeById) _glfwPlatformGetModuleSymbol(_glfw.sdl2.sdl.handle, "SDL_JoystickAxisEventCodeById");
+    _glfw.sdl2.sdl.JoystickButtonEventCodeById = (PFN_SDL_JoystickButtonEventCodeById) _glfwPlatformGetModuleSymbol(_glfw.sdl2.sdl.handle, "SDL_JoystickButtonEventCodeById");
+    _glfw.sdl2.sdl.JoystickHatEventCodeById = (PFN_SDL_JoystickHatEventCodeById) _glfwPlatformGetModuleSymbol(_glfw.sdl2.sdl.handle, "SDL_JoystickHatEventCodeById");
 
     if (!_glfw.sdl2.sdl.Init ||
         !_glfw.sdl2.sdl.Quit ||
@@ -103,13 +176,17 @@ int _glfwInitSDL2(void) {
         !_glfw.sdl2.sdl.GL_GetDrawableSize ||
         !_glfw.sdl2.sdl.GetWindowSize ||
         !_glfw.sdl2.sdl.GetVersion ||
-        !_glfw.sdl2.sdl.JoystickGetGUIDString) {
+        !_glfw.sdl2.sdl.JoystickGetGUIDString ||
+        !_glfw.sdl2.sdl.JoystickGetGUID ||
+        !_glfw.sdl2.sdl.JoystickOpen ||
+        !_glfw.sdl2.sdl.JoystickClose ||
+        !_glfw.sdl2.sdl.JoystickInstanceID) {
         _glfwInputError(GLFW_PLATFORM_ERROR,
             "SDL2: Failed to load SDL functions entry point");
         return GLFW_FALSE;
     }
 
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0) {
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_JOYSTICK) != 0) {
         _glfwInputError(GLFW_PLATFORM_ERROR,
             "SDL2: Failed to initialize SDL: %s", SDL_GetError());
         return GLFW_FALSE;

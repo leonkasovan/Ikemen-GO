@@ -5,11 +5,11 @@ FILE="port/ikemen.zip"
 # FILE="bin/ikemen_linux"
 
 # Remote server info
-USER="root"
-HOST="192.168.1.36"
-REMOTE_DIR="/userdata/system/.local/share/PortMaster/autoinstall"
-# REMOTE_DIR="/userdata/roms/ports/ikemen"
-PASSWORD="linux"
+USER="ark"
+HOST="192.168.1.32"
+REMOTE_DIR="/opt/system/Tools/PortMaster/autoinstall"
+# REMOTE_DIR="/roms/ports/ikemen"ssh
+PASSWORD="ark"
 
 # Upload using sshpass
 sshpass -p "$PASSWORD" scp "$FILE" "${USER}@${HOST}:${REMOTE_DIR}"

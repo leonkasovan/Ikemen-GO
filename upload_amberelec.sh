@@ -6,10 +6,10 @@ FILE="port/ikemen.zip"
 
 # Remote server info
 USER="root"
-HOST="192.168.1.36"
-REMOTE_DIR="/userdata/system/.local/share/PortMaster/autoinstall"
-# REMOTE_DIR="/userdata/roms/ports/ikemen"
-PASSWORD="linux"
+HOST="192.168.1.40"
+REMOTE_DIR="/storage/roms/ports/PortMaster/autoinstall"
+# REMOTE_DIR="/storage/roms/ports/ikemen"
+PASSWORD="amberelec"
 
 # Upload using sshpass
 sshpass -p "$PASSWORD" scp "$FILE" "${USER}@${HOST}:${REMOTE_DIR}"

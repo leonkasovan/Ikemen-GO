@@ -36,6 +36,14 @@ typedef void (* PFN_SDL_GL_GetDrawableSize)(SDL_Window* window, int* w, int* h);
 typedef void (* PFN_SDL_GetWindowSize)(SDL_Window* window, int* w, int* h);
 typedef void (* PFN_SDL_GetVersion)(SDL_version* ver);
 typedef void (* PFN_SDL_JoystickGetGUIDString)(SDL_JoystickGUID guid, char* pszGUID, int cbGUID);
+typedef SDL_JoystickGUID (* PFN_SDL_JoystickGetGUID)(SDL_Joystick* joystick);
+typedef SDL_Joystick* (* PFN_SDL_JoystickOpen)(int device_index);
+typedef int (* PFN_SDL_JoystickClose)(SDL_Joystick* joystick);
+typedef int (* PFN_SDL_JoystickInstanceID)(SDL_Joystick* joystick);
+typedef int (* PFN_SDL_JoystickGetDeviceIndexFromInstanceID)(int instance_id);
+typedef int (* PFN_SDL_JoystickAxisEventCodeById)(int device_instance_id, int axis); // optional
+typedef int (* PFN_SDL_JoystickButtonEventCodeById)(int device_instance_id, int button); // optional
+typedef int (* PFN_SDL_JoystickHatEventCodeById)(int device_instance_id, int hat); // optional
 
 #define SDL_Init _glfw.sdl2.sdl.Init
 #define SDL_Quit _glfw.sdl2.sdl.Quit
@@ -72,6 +80,14 @@ typedef void (* PFN_SDL_JoystickGetGUIDString)(SDL_JoystickGUID guid, char* pszG
 #define SDL_GetWindowSize _glfw.sdl2.sdl.GetWindowSize
 #define SDL_GetVersion _glfw.sdl2.sdl.GetVersion
 #define SDL_JoystickGetGUIDString _glfw.sdl2.sdl.JoystickGetGUIDString
+#define SDL_JoystickGetGUID _glfw.sdl2.sdl.JoystickGetGUID
+#define SDL_JoystickOpen _glfw.sdl2.sdl.JoystickOpen
+#define SDL_JoystickClose _glfw.sdl2.sdl.JoystickClose
+#define SDL_JoystickInstanceID _glfw.sdl2.sdl.JoystickInstanceID
+#define SDL_JoystickGetDeviceIndexFromInstanceID _glfw.sdl2.sdl.JoystickGetDeviceIndexFromInstanceID
+#define SDL_JoystickAxisEventCodeById _glfw.sdl2.sdl.JoystickAxisEventCodeById
+#define SDL_JoystickButtonEventCodeById _glfw.sdl2.sdl.JoystickButtonEventCodeById
+#define SDL_JoystickHatEventCodeById _glfw.sdl2.sdl.JoystickHatEventCodeById
 
 #define GLFW_SDL2_WINDOW_STATE         _GLFWwindowSDL2  sdl2;
 #define GLFW_SDL2_LIBRARY_WINDOW_STATE _GLFWlibrarySDL2 sdl2;
@@ -85,6 +101,7 @@ typedef struct _GLFWlibrarySDL2 {
 	// SDL_GLContext context;
 	SDL_version compiled;
 	SDL_version linked;
+	char cfw[32];
 
 	struct {
 		void* handle;
@@ -124,6 +141,14 @@ typedef struct _GLFWlibrarySDL2 {
 		PFN_SDL_GetWindowSize GetWindowSize;
 		PFN_SDL_GetVersion GetVersion;
 		PFN_SDL_JoystickGetGUIDString JoystickGetGUIDString;
+		PFN_SDL_JoystickGetGUID JoystickGetGUID;
+		PFN_SDL_JoystickOpen JoystickOpen;
+		PFN_SDL_JoystickClose JoystickClose;
+		PFN_SDL_JoystickInstanceID JoystickInstanceID;
+		PFN_SDL_JoystickGetDeviceIndexFromInstanceID JoystickGetDeviceIndexFromInstanceID;
+		PFN_SDL_JoystickAxisEventCodeById JoystickAxisEventCodeById; // optional
+		PFN_SDL_JoystickButtonEventCodeById JoystickButtonEventCodeById; // optional
+		PFN_SDL_JoystickHatEventCodeById JoystickHatEventCodeById; // optional
 	} sdl;
 
 } _GLFWlibrarySDL2;

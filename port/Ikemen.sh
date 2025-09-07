@@ -24,6 +24,9 @@ export SDL_GAMECONTROLLERCONFIG="$sdl_controllerconfig"
 pm_platform_helper "$GAMEDIR/ikemen_linux.${DEVICE_ARCH}"
 $GPTOKEYB "ikemen_linux.${DEVICE_ARCH}" &
 
+# if var $sdl_controllerconfig is not set OR gamecontrollerdb.txt not exists , generate with sdlGamepadMapper
+[ -n "$sdl_controllerconfig" ] || [ -f "external/gamecontrollerdb.txt" ] || ./sdlGamepadMapper "external/gamecontrollerdb.txt"
+
 if [ -d "$GAMEDIR/data/" ]; then
   ./ikemen_linux.${DEVICE_ARCH} -updatechar -updatestage
 else

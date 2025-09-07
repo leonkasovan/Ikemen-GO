@@ -56,3 +56,4 @@ bin/*
 # Compilation files
 src/*.syso
 !port/ikemen/screenshot.png
+port/ikemen/sdlGamepadMapper
