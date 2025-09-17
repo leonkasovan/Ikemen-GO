@@ -6,7 +6,7 @@ FILE="port/ikemen.zip"
 
 # Remote server info
 USER="root"
-HOST="192.168.1.36"
+HOST="192.168.1.15"
 REMOTE_DIR="/userdata/system/.local/share/PortMaster/autoinstall"
 # REMOTE_DIR="/userdata/roms/ports/ikemen"
 PASSWORD="linux"

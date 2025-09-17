@@ -44,6 +44,7 @@ typedef int (* PFN_SDL_JoystickGetDeviceIndexFromInstanceID)(int instance_id);
 typedef int (* PFN_SDL_JoystickAxisEventCodeById)(int device_instance_id, int axis); // optional
 typedef int (* PFN_SDL_JoystickButtonEventCodeById)(int device_instance_id, int button); // optional
 typedef int (* PFN_SDL_JoystickHatEventCodeById)(int device_instance_id, int hat); // optional
+typedef int (* PFN_SDL_NumJoysticks)(void);
 
 #define SDL_Init _glfw.sdl2.sdl.Init
 #define SDL_Quit _glfw.sdl2.sdl.Quit
@@ -88,6 +89,7 @@ typedef int (* PFN_SDL_JoystickHatEventCodeById)(int device_instance_id, int hat
 #define SDL_JoystickAxisEventCodeById _glfw.sdl2.sdl.JoystickAxisEventCodeById
 #define SDL_JoystickButtonEventCodeById _glfw.sdl2.sdl.JoystickButtonEventCodeById
 #define SDL_JoystickHatEventCodeById _glfw.sdl2.sdl.JoystickHatEventCodeById
+#define SDL_NumJoysticks _glfw.sdl2.sdl.NumJoysticks
 
 #define GLFW_SDL2_WINDOW_STATE         _GLFWwindowSDL2  sdl2;
 #define GLFW_SDL2_LIBRARY_WINDOW_STATE _GLFWlibrarySDL2 sdl2;
@@ -149,6 +151,7 @@ typedef struct _GLFWlibrarySDL2 {
 		PFN_SDL_JoystickAxisEventCodeById JoystickAxisEventCodeById; // optional
 		PFN_SDL_JoystickButtonEventCodeById JoystickButtonEventCodeById; // optional
 		PFN_SDL_JoystickHatEventCodeById JoystickHatEventCodeById; // optional
+		PFN_SDL_NumJoysticks NumJoysticks;
 	} sdl;
 
 } _GLFWlibrarySDL2;

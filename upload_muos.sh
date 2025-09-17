@@ -3,15 +3,13 @@
 # File to upload
 FILE="port/ikemen.zip"
 # FILE="bin/ikemen_linux"
-# FILE="bin/sdlGamepadMapper"
 
 # Remote server info
-USER="ark"
-HOST="192.168.1.32"
-REMOTE_DIR="/opt/system/Tools/PortMaster/autoinstall"
-# REMOTE_DIR="/roms/ports/ikemen/ikemen_linux.aarch64"
-# REMOTE_DIR="/roms/ports/ikemen"
-PASSWORD="ark"
+USER="root"
+HOST="192.168.1.15"
+REMOTE_DIR="/mnt/mmc/MUOS/PortMaster/autoinstall/"
+# REMOTE_DIR="/mnt/union/ports/ikemen/"
+PASSWORD="root"
 
 # Upload using sshpass
 sshpass -p "$PASSWORD" scp "$FILE" "${USER}@${HOST}:${REMOTE_DIR}"

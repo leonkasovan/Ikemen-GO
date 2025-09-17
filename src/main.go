@@ -437,7 +437,7 @@ func main() {
 			if !physfs.Mount(file.Name(), "/", 1) {
 				fmt.Printf("Mounting %v [FAIL]\n", file.Name())
 			} else {
-				// fmt.Printf("Mounting %v [OK]\n", file.Name())
+				fmt.Printf("Mounting %v [OK]\n", file.Name())
 			}
 		}
 	}
@@ -457,7 +457,7 @@ func main() {
 			if !physfs.Mount(file.Name(), "/", 1) {
 				fmt.Printf("Mounting %v [FAIL]\n", file.Name())
 			} else {
-				// fmt.Printf("Mounting %v [OK]\n", file.Name())
+				fmt.Printf("Mounting %v [OK]\n", file.Name())
 			}
 		}
 	}
@@ -643,7 +643,7 @@ func main() {
 	// Initialize game and create window
 	sys.luaLState = sys.init(sys.gameWidth, sys.gameHeight)
 	defer sys.shutdown()
-
+	
 	// Begin processing game using its lua scripts
 	no := 1
 	if err := sys.luaLState.DoFile(sys.cfg.Config.System); err != nil {
@@ -736,6 +736,9 @@ Extra Options (by LeonKasovan):
 -updatestage            Update stage def in select.def based on stages directory
 -validate               Validate game assets existance
 -install                Install default screenpack
+-installrun             Install default screenpack and run the engine
+-test                   Run LUA script test.lua in external/script/ and exit (without run the engine)
+-pack                   Create compresses assets: chars,stages,sound,data,font,external,save into base.zp0
 
 Debug Options:
 -nojoy                  Disables joysticks

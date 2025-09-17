@@ -79,12 +79,16 @@ static _GLFWmapping* findMapping(const char* guid) {
 //
 static GLFWbool isValidElementForJoystick(const _GLFWmapelement* e,
     const _GLFWjoystick* js) {
-    if (e->type == _GLFW_JOYSTICK_HATBIT && (e->index >> 4) >= js->hatCount)
+    if (e->type == _GLFW_JOYSTICK_HATBIT && (e->index >> 4) >= js->hatCount) {
+        debug_printf("[input.c] Invalid hat index %d (of %d)\n", e->index >> 4, js->hatCount);
         return GLFW_FALSE;
-    else if (e->type == _GLFW_JOYSTICK_BUTTON && e->index >= js->buttonCount)
+    } else if (e->type == _GLFW_JOYSTICK_BUTTON && e->index >= js->buttonCount) {
+        debug_printf("[input.c] Invalid button index %d (of %d)\n", e->index, js->buttonCount);
         return GLFW_FALSE;
-    else if (e->type == _GLFW_JOYSTICK_AXIS && e->index >= js->axisCount)
+    } else if (e->type == _GLFW_JOYSTICK_AXIS && e->index >= js->axisCount) {
+        debug_printf("[input.c] Invalid axis index %d (of %d)\n", e->index, js->axisCount);
         return GLFW_FALSE;
+    }
 
     return GLFW_TRUE;
 }
@@ -147,6 +151,7 @@ static GLFWbool parseMapping(_GLFWmapping* mapping, const char* string) {
     length = strcspn(c, ",");
     if (length != 32 || c[length] != ',') {
         _glfwInputError(GLFW_INVALID_VALUE, NULL);
+        debug_printf("[input.c] Invalid GUID length\n");
         return GLFW_FALSE;
     }
 
@@ -156,6 +161,7 @@ static GLFWbool parseMapping(_GLFWmapping* mapping, const char* string) {
     length = strcspn(c, ",");
     if (length >= sizeof(mapping->name) || c[length] != ',') {
         _glfwInputError(GLFW_INVALID_VALUE, NULL);
+        debug_printf("[input.c] Invalid name length\n");
         return GLFW_FALSE;
     }
 
@@ -164,8 +170,11 @@ static GLFWbool parseMapping(_GLFWmapping* mapping, const char* string) {
 
     while (*c) {
         // TODO: Implement output modifiers
-        if (*c == '+' || *c == '-')
+        if (*c == '+' || *c == '-') {
+            // debug_printf("[input.c] [%s] [%s] Output modifiers not supported %c%c%c%c%c%c%c\n",mapping->name, mapping->guid,
+            //     c[0], c[1], c[2], c[3], c[4], c[5], c[6]);
             return GLFW_FALSE;
+        }
 
         for (i = 0; i < sizeof(fields) / sizeof(fields[0]); i++) {
             length = strlen(fields[i].name);
@@ -215,8 +224,10 @@ static GLFWbool parseMapping(_GLFWmapping* mapping, const char* string) {
             } else {
                 const char* name = _glfw.platform.getMappingName();
                 length = strlen(name);
-                if (strncmp(c, name, length) != 0)
+                if (strncmp(c, name, length) != 0) {
+                    debug_printf("[input.c] Unknown platform name\n");
                     return GLFW_FALSE;
+                }
             }
 
             break;

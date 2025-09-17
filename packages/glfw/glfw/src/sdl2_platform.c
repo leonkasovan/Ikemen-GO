@@ -141,6 +141,7 @@ int _glfwInitSDL2(void) {
     _glfw.sdl2.sdl.JoystickAxisEventCodeById = (PFN_SDL_JoystickAxisEventCodeById) _glfwPlatformGetModuleSymbol(_glfw.sdl2.sdl.handle, "SDL_JoystickAxisEventCodeById");
     _glfw.sdl2.sdl.JoystickButtonEventCodeById = (PFN_SDL_JoystickButtonEventCodeById) _glfwPlatformGetModuleSymbol(_glfw.sdl2.sdl.handle, "SDL_JoystickButtonEventCodeById");
     _glfw.sdl2.sdl.JoystickHatEventCodeById = (PFN_SDL_JoystickHatEventCodeById) _glfwPlatformGetModuleSymbol(_glfw.sdl2.sdl.handle, "SDL_JoystickHatEventCodeById");
+    _glfw.sdl2.sdl.NumJoysticks = (PFN_SDL_NumJoysticks) _glfwPlatformGetModuleSymbol(_glfw.sdl2.sdl.handle, "SDL_NumJoysticks");
 
     if (!_glfw.sdl2.sdl.Init ||
         !_glfw.sdl2.sdl.Quit ||
@@ -180,7 +181,8 @@ int _glfwInitSDL2(void) {
         !_glfw.sdl2.sdl.JoystickGetGUID ||
         !_glfw.sdl2.sdl.JoystickOpen ||
         !_glfw.sdl2.sdl.JoystickClose ||
-        !_glfw.sdl2.sdl.JoystickInstanceID) {
+        !_glfw.sdl2.sdl.JoystickInstanceID ||
+        !_glfw.sdl2.sdl.NumJoysticks) {
         _glfwInputError(GLFW_PLATFORM_ERROR,
             "SDL2: Failed to load SDL functions entry point");
         return GLFW_FALSE;

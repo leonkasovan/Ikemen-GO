@@ -7,6 +7,7 @@ import (
 	"log"
 	"math"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"runtime"
@@ -322,18 +323,14 @@ func (s *System) init(w, h int32) *lua.LState {
 	s.window, err = s.newWindow(int(s.scrrect[2]), int(s.scrrect[3]))
 	chk(err)
 
-	// Update gamepad mappings from environment variable
-	if mapping := os.Getenv("SDL_GAMECONTROLLERCONFIG"); mapping != "" {
-		if input.UpdateGamepadMappings(mapping) {
-			fmt.Printf("Gamepad mappings updated from environment variable SDL_GAMECONTROLLERCONFIG.\n%v\n", mapping)
-		}
-	}
 
 	// Update gamepad mappings from config file
 	if physfs.Exists(s.cfg.Config.GamepadMappings) {
 		mappings, _ := LoadText(s.cfg.Config.GamepadMappings)
 		if input.UpdateGamepadMappings(mappings) {
-			fmt.Printf("Gamepad mappings updated from %v.\n", s.cfg.Config.GamepadMappings)
+			fmt.Printf("Gamepad mappings updated from %v:\n%v\n\n", s.cfg.Config.GamepadMappings, mappings)
+		} else {
+			fmt.Printf("Gamepad mappings can NOT update from %v:\n%v\n\n", s.cfg.Config.GamepadMappings, mappings)
 		}
 	}
 
@@ -353,7 +350,21 @@ func (s *System) init(w, h int32) *lua.LState {
 	}
 
 	if n_joysticks > 0 && n_gamepads == 0 {
-		fmt.Println("Update " + s.cfg.Config.GamepadMappings + " or use the gamepad mapping tool (sdljoymap).\n")
+		// fmt.Println("Update " + s.cfg.Config.GamepadMappings + " or use the gamepad mapping tool (sdljoymap).\n")
+		cmd := exec.Command("./sdlGamepadMapper", s.cfg.Config.GamepadMappings)
+		err := cmd.Run() // Start and wait until it finishes
+		if err != nil {
+			fmt.Println("Error:", err)
+		} else {
+			mappings, _ := LoadText(s.cfg.Config.GamepadMappings)
+			if input.UpdateGamepadMappings(mappings) {
+				fmt.Printf("New gamepad mappings saved to %v.\n", s.cfg.Config.GamepadMappings)
+				if input.joystick[0].IsGamepad() {
+					fmt.Printf("Gamepad [%v] GUID:%v connected.\n", input.GetGamepadName(0), input.GetJoystickGUID(0))
+					n_gamepads++
+				}
+			}
+		}
 	}
 
 	if n_gamepads == 0 {

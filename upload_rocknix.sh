@@ -2,13 +2,15 @@
 
 # File to upload
 # FILE="port/ikemen.zip"
+# FILE="port/Ikemen.sh"
 FILE="bin/ikemen_linux"
 
 # Remote server info
 USER="root"
-HOST="192.168.1.33"
+HOST="192.168.1.15"
 # REMOTE_DIR="/roms/ports/PortMaster/autoinstall"
-REMOTE_DIR="/roms/ports/ikemen"
+# REMOTE_DIR="/roms/ports"
+REMOTE_DIR="/roms/ports/ikemen/ikemen_linux.aarch64"
 PASSWORD="rocknix"
 
 # Upload using sshpass

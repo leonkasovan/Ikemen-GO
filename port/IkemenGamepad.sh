@@ -13,17 +13,8 @@ fi
 
 source $controlfolder/control.txt
 [ -f "${controlfolder}/mod_${CFW_NAME}.txt" ] && source "${controlfolder}/mod_${CFW_NAME}.txt"
-get_controls
 GAMEDIR=/$directory/ports/ikemen/
 cd $GAMEDIR
-> "$GAMEDIR/log.txt" && exec > >(tee "$GAMEDIR/log.txt") 2>&1
-
-# Provide appropriate controller configuration if it recognizes SDL controller input
-export SDL_GAMECONTROLLERCONFIG="$sdl_controllerconfig"
-
-pm_platform_helper "$GAMEDIR/sdlGamepadMapper"
-$GPTOKEYB "sdlGamepadMapper" &
+> "log.txt" && exec > >(tee "log.txt") 2>&1
 
 ./sdlGamepadMapper  "external/gamecontrollerdb.txt"
-
-pm_finish

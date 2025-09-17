@@ -51,6 +51,7 @@ glfwGetGamepadState
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <ctype.h>
 #include <linux/input.h>
 #include <linux/joystick.h>
 
@@ -241,25 +242,19 @@ static GLFWbool openJoystickDevice(const char* path) {
     uint16_t crc = 0;
     crc = crc16(crc, name, strlen(name));
     int axisCount = 0, buttonCount = 0, hatCount = 0;
-    const char* sdl_gamecontrollerconfig = getenv("SDL_GAMECONTROLLERCONFIG");
 
+#ifdef _GLFW_SDL2
     // Generate a joystick GUID that matches the SDL2
-    if (sdl_gamecontrollerconfig && sdl_gamecontrollerconfig[4] == '0' && sdl_gamecontrollerconfig[5] == '0'
-        && sdl_gamecontrollerconfig[6] == '0' && sdl_gamecontrollerconfig[7] == '0') {
-        if (id.vendor && id.product && id.version) {
-            sprintf(guid, "%02x%02x0000%02x%02x0000%02x%02x0000%02x%02x0000",
-                id.bustype & 0xff, id.bustype >> 8,
-                id.vendor & 0xff, id.vendor >> 8,
-                id.product & 0xff, id.product >> 8,
-                id.version & 0xff, id.version >> 8);
-        } else {
-            sprintf(guid, "%02x%02x0000%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x00",
-                id.bustype & 0xff, id.bustype >> 8,
-                name[0], name[1], name[2], name[3],
-                name[4], name[5], name[6], name[7],
-                name[8], name[9], name[10]);
+    if (_glfw.platform.platformID == GLFW_PLATFORM_SDL2) {
+        SDL_Joystick* joy = SDL_NumJoysticks() ? SDL_JoystickOpen(0) : NULL; // TODO: make sure path if referenced by joystick id 0
+        if (joy) {
+            debug_printf("[GLFW] Build joystick guid with SDL2 function\n");
+            SDL_JoystickGetGUIDString(SDL_JoystickGetGUID(joy), guid, sizeof(guid));
+            SDL_JoystickClose(joy);
         }
     } else {
+#endif
+        debug_printf("[GLFW] Build joystick guid with GLFW function\n");
         if (id.vendor && id.product && id.version) {
             sprintf(guid, "%02x%02x%02x%02x%02x%02x0000%02x%02x0000%02x%02x0000",
                 id.bustype & 0xff, id.bustype >> 8,
@@ -275,9 +270,11 @@ static GLFWbool openJoystickDevice(const char* path) {
                 name[4], name[5], name[6], name[7],
                 name[8], name[9], name[10]);
         }
+#ifdef _GLFW_SDL2
     }
+#endif
 
-    if (strcmp(_glfw.sdl2.cfw, "knulli") == 0) {    // Knulli spesific code
+    if (strcmp(_glfw.sdl2.cfw, "knulli") == 0 || strcmp(_glfw.sdl2.cfw, "muOS") == 0) {    // Knulli spesific code
         for (int code = 0; code < KEY_MAX; code++) {
             if (test_bit(code, keybit)) {
                 debug_printf("[GLFW] Joystick has button: %d mapped to %d\n", code, buttonCount);
