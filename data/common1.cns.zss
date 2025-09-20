@@ -728,7 +728,7 @@ if mugenVersion < 1.0 {
 	explod{
 		anim: F(60 + ($vely > const240p(5)) + ($vely > const240p(14)));
 		postype: none; #p1
-		pos: pos x + cameraPos x, 0, pos z;
+		pos: pos x + cameraPos x, 0; #0, 0
 		facing: facing;
 		sprpriority: ifElse($vely <= const240p(14), -10, 10);
 	}
@@ -908,7 +908,8 @@ if time = 0 {
 		explod{
 			anim: F60;
 			postype: none;
-			pos: pos x + cameraPos x, pos y - floor(vel y), pos z;
+			pos: pos x + cameraPos x,
+			pos y - floor(vel y);
 			facing: facing;
 			sprpriority: -10
 		}
