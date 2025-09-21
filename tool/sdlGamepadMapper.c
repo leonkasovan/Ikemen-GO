@@ -1,7 +1,20 @@
 /*
   SDL2 Gamepad Mapper.
   Copyright (C) 2025 Dhani Novan (dhani.novan@gmail.com)
-  Build in Ubuntu 20.04
+  Build in Ubuntu 20.0.4 with SDL2 2.0.10.
+
+  Usage:
+	# Generate default gamecontrollerdb.txt in current directory
+	sdlGamepadMapper
+
+	# Print connected joystick GUID and exit
+	sdlGamepadMapper --guid
+
+	# Generate db mapper in external/mycustomdb.txt
+	sdlGamepadMapper external/mycustomdb.txt
+
+	# Copy entry for connected joystick from source/gamecontrollerdb.txt into dest/gamecontrollerdb.txt
+	sdlGamepadMapper --guid source/gamecontrollerdb.txt dest/gamecontrollerdb.txt
 */
 
 #include <stdio.h>

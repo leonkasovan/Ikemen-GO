@@ -1,19 +1,205 @@
 package main
 
+/*
+#cgo pkg-config: sndfile
+#include <stdlib.h>
+#include <string.h>
+#include <sndfile.h>
+
+// MemFile holds pointer to the data and cursor position for virtual IO
+typedef struct {
+    const unsigned char* data;
+    sf_count_t size;
+    sf_count_t pos;
+} MemFile;
+
+static sf_count_t mem_get_filelen(void* user_data) {
+    MemFile* m = (MemFile*)user_data;
+    return m->size;
+}
+
+static sf_count_t mem_seek(sf_count_t offset, int whence, void* user_data) {
+    MemFile* m = (MemFile*)user_data;
+    sf_count_t np = m->pos;
+    if (whence == SEEK_SET) np = offset;
+    else if (whence == SEEK_CUR) np += offset;
+    else if (whence == SEEK_END) np = m->size + offset;
+    if (np < 0 || np > m->size) return -1;
+    m->pos = np;
+    return m->pos;
+}
+
+static sf_count_t mem_read(void* ptr, sf_count_t count, void* user_data) {
+    MemFile* m = (MemFile*)user_data;
+    if (m->pos + count > m->size) count = m->size - m->pos;
+    if (count <= 0) return 0;
+    memcpy(ptr, m->data + m->pos, (size_t)count);
+    m->pos += count;
+    return count;
+}
+
+static sf_count_t mem_write(const void* ptr, sf_count_t count, void* user_data) {
+    (void)ptr; (void)user_data;
+    // not used: read-only virtual file
+    return 0;
+}
+
+static sf_count_t mem_tell(void* user_data) {
+    MemFile* m = (MemFile*)user_data;
+    return m->pos;
+}
+
+// allocate and initialize MemFile and return pointer
+static MemFile* create_memfile(const unsigned char* data, sf_count_t size) {
+    MemFile* m = (MemFile*)malloc(sizeof(MemFile));
+    if (!m) return NULL;
+    m->data = data;
+    m->size = size;
+    m->pos = 0;
+    return m;
+}
+
+static void free_memfile(MemFile* m) {
+    if (m) free(m);
+}
+
+// ---- Global virtual IO struct ----
+static SF_VIRTUAL_IO vio_instance = {
+    mem_get_filelen,
+    mem_seek,
+    mem_read,
+    mem_write,
+    mem_tell
+};
+
+SF_VIRTUAL_IO* get_vio() {
+    return &vio_instance;
+}
+*/
+import "C"
+
 import (
-	"bytes"
+	"errors"
 	"encoding/binary"
 	"fmt"
 	"math"
+	"unsafe"
 
 	"github.com/gopxl/beep/v2"
 	"github.com/gopxl/beep/v2/effects"
-	"github.com/gopxl/beep/v2/mp3"
 	"github.com/gopxl/beep/v2/speaker"
-	"github.com/gopxl/beep/v2/vorbis"
-	"github.com/gopxl/beep/v2/wav"
 	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
 )
+
+// sndfileStreamer wraps SNDFILE* and MemFile for streaming + seeking
+type sndfileStreamer struct {
+	sf       *C.SNDFILE
+	info     C.SF_INFO
+	mem      *C.MemFile
+	channels int
+	sampleRate int
+	goBuffer  []byte // Pin Go buffer to ensure it's not GC'd
+}
+
+// Stream reads PCM into beep's stereo float64 buffer
+func (s *sndfileStreamer) Stream(samples [][2]float64) (int, bool) {
+	buf := make([]float32, len(samples)*s.channels)
+	// prevPos := C.sf_seek(s.sf, 0, C.SEEK_CUR)
+	read := C.sf_readf_float(s.sf,
+		(*C.float)(unsafe.Pointer(&buf[0])),
+		C.sf_count_t(len(samples)))
+	// newPos := C.sf_seek(s.sf, 0, C.SEEK_CUR)
+	// fmt.Printf("Stream: Requested %d samples, read %d, before pos %d, after pos %d\n", len(samples), int(read), int(prevPos), int(newPos))
+	if read == 0 {
+		errnum := C.sf_error(s.sf)
+		if errnum != 0 {
+			fmt.Printf("Libsndfile error: %d\n", int(errnum))
+		}
+		return 0, false
+	}
+	for i := 0; i < int(read); i++ {
+		base := i * s.channels
+		var l, r float32
+		if s.channels == 1 {
+			l, r = buf[base], buf[base]
+		} else {
+			l, r = buf[base], buf[base+1]
+		}
+		samples[i][0] = float64(l)
+		samples[i][1] = float64(r)
+	}
+	return int(read), true
+}
+
+func (s *sndfileStreamer) Err() error { return nil }
+func (s *sndfileStreamer) Close() error {
+	if s.sf != nil {
+		C.sf_close(s.sf)
+		s.sf = nil
+	}
+	if s.mem != nil {
+		C.free_memfile(s.mem)
+		s.mem = nil
+	}
+	s.goBuffer = nil // Allow Go to GC
+	return nil
+}
+
+// Position returns current frame index
+func (s *sndfileStreamer) Position() int {
+	pos := C.sf_seek(s.sf, 0, C.SEEK_CUR)
+	return int(pos)
+}
+
+// Seek moves to absolute frame index
+func (s *sndfileStreamer) Seek(frame int) error {
+	newpos := C.sf_seek(s.sf, C.sf_count_t(frame), C.SEEK_SET)
+	if newpos < 0 {
+		return errors.New("seek failed")
+	}
+	return nil
+}
+
+// Len returns total frames
+func (s *sndfileStreamer) Len() int {
+	return int(s.info.frames)
+}
+
+// decodeWithSndfile returns a streaming beep.StreamSeekCloser using libsndfile
+func decodeWithSndfile(data []byte) (beep.StreamSeekCloser, beep.Format, error) {
+	if len(data) == 0 {
+		return nil, beep.Format{}, errors.New("empty buffer")
+	}
+	ptr := (*C.uchar)(unsafe.Pointer(&data[0]))
+	mem := C.create_memfile(ptr, C.sf_count_t(len(data)))
+	if mem == nil {
+		return nil, beep.Format{}, errors.New("create_memfile failed")
+	}
+
+	var info C.SF_INFO
+	sf := C.sf_open_virtual(C.get_vio(), C.SFM_READ, &info, unsafe.Pointer(mem))
+	if sf == nil {
+		C.free_memfile(mem)
+		return nil, beep.Format{}, errors.New("sf_open_virtual failed")
+	}
+
+	streamer := &sndfileStreamer{
+		sf:         sf,
+		info:       info,
+		mem:        mem,
+		channels:   int(info.channels),
+		sampleRate: int(info.samplerate),
+		goBuffer:   data, // Pin buffer
+	}
+
+	format := beep.Format{
+		SampleRate:  beep.SampleRate(streamer.sampleRate),
+		NumChannels: 2, // always stereo for beep
+		Precision:   4,
+	}
+	// runtime.KeepAlive is not strictly needed here, but if you refactor, be sure buffer stays alive
+	return streamer, format, nil
+}
 
 const (
 	audioOutLen          = 2048
@@ -86,62 +272,70 @@ func (n *NormalizerLR) process(mul float64, sam *float64) float64 {
 
 // Based on Loop() from Beep package. It adds support for loop points.
 type StreamLooper struct {
-	s         beep.StreamSeeker
-	loopcount int
-	loopstart int
-	loopend   int
-	err       error
+    s         beep.StreamSeekCloser
+    loopcount int  // -1 = infinite, 0 = no looping, >0 = limited repeats
+    loopstart int  // frame index
+    loopend   int  // frame index
+    played    int  // how many loops finished
 }
 
-func newStreamLooper(s beep.StreamSeeker, loopcount, loopstart, loopend int) beep.Streamer {
-	sl := &StreamLooper{
-		s:         s,
-		loopcount: loopcount,
-		loopstart: loopstart,
-		loopend:   loopend,
-	}
-	if sl.loopstart < 0 || sl.loopstart >= s.Len() {
-		sl.loopstart = 0
-	}
-	if sl.loopend <= sl.loopstart || sl.loopend >= s.Len() {
-		sl.loopend = s.Len()
-	}
-	return sl
+// newStreamLooper wraps a streamer with loop control
+func newStreamLooper(src beep.StreamSeekCloser, loopcount, loopstart, loopend int) *StreamLooper {
+    // If loopend is 0 or beyond file length, set to Len()
+    if l, ok := src.(interface{ Len() int }); ok {
+        if loopend <= 0 || loopend > l.Len() {
+            loopend = l.Len()
+        }
+    }
+    return &StreamLooper{
+        s:         src,
+        loopcount: loopcount,
+        loopstart: loopstart,
+        loopend:   loopend,
+        played:    0,
+    }
 }
 
-// Adapted from beep.Loop2 (for dynamic modification)
-func (l *StreamLooper) Stream(samples [][2]float64) (n int, ok bool) {
-	if l.err != nil {
-		return 0, false
-	}
-	for len(samples) > 0 {
-		toStream := len(samples)
-		if l.loopcount != 0 {
-			samplesUntilEnd := l.loopend - l.s.Position()
-			if samplesUntilEnd <= 0 {
-				// End of loop, reset the position and decrease the loop count.
-				if l.loopcount > 0 {
-					l.loopcount--
-				}
-				if err := l.s.Seek(l.loopstart); err != nil {
-					l.err = err
-					return n, true
-				}
-				continue
-			}
-			// Stream only up to the end of the loop.
-			toStream = MinI(samplesUntilEnd, toStream)
-		}
+// Stream implements beep.Streamer
+func (l *StreamLooper) Stream(samples [][2]float64) (int, bool) {
+    total := 0
+    for total < len(samples) {
+        // Limit how many frames to request so we don't read past loopend
+        toRead := len(samples) - total
+        if l.loopend > 0 {
+            cur := l.s.Position()
+            remain := l.loopend - cur
+            if remain <= 0 {
+                // Loop handling
+                if l.loopcount == 0 || (l.loopcount > 0 && l.played >= l.loopcount) {
+                    return total, false // done
+                }
+                // Seek back to loopstart
+                if err := l.s.Seek(l.loopstart); err != nil {
+                    return total, false
+                }
+                l.played++
+                continue
+            }
+            if remain < toRead {
+                toRead = remain
+            }
+        }
 
-		sn, sok := l.s.Stream(samples[:toStream])
-		n += sn
-		if sn < toStream || !sok {
-			l.err = l.s.Err()
-			return n, n > 0
-		}
-		samples = samples[sn:]
-	}
-	return n, true
+        n, ok := l.s.Stream(samples[total : total+toRead])
+        total += n
+        if !ok {
+            // End of stream
+            if l.loopcount == 0 || (l.loopcount > 0 && l.played >= l.loopcount) {
+                return total, false
+            }
+            if err := l.s.Seek(l.loopstart); err != nil {
+                return total, false
+            }
+            l.played++
+        }
+    }
+    return total, true
 }
 
 func (b *StreamLooper) Err() error {
@@ -169,7 +363,7 @@ type Bgm struct {
 	bgmVolume  int
 	volRestore int
 	loop       int
-	streamer   beep.StreamSeeker
+	streamer   beep.StreamSeekCloser
 	ctrl       *beep.Ctrl
 	volctrl    *effects.Volume
 	format     string
@@ -214,22 +408,14 @@ func (bgm *Bgm) Open(filename string, loop, bgmVolume, bgmLoopStart, bgmLoopEnd,
 
 	var format beep.Format
 	var err error
-	if HasExtension(bgm.filename, ".ogg") {
-		bgm.streamer, format, err = vorbis.Decode(bgm.f)
-		bgm.format = "ogg"
-	} else if HasExtension(bgm.filename, ".mp3") {
-		bgm.streamer, format, err = mp3.Decode(bgm.f)
-		bgm.format = "mp3"
-	} else if HasExtension(bgm.filename, ".wav") {
-		bgm.streamer, format, err = wav.Decode(bgm.f)
-		bgm.format = "wav"
-		// TODO: Reactivate FLAC support. Check that seeking/looping works correctly.
-		//} else if HasExtension(bgm.filename, ".flac") {
-		//	bgm.streamer, format, err = flac.Decode(f)
-		//	bgm.format = "flac"
-	} else {
-		err = Error(fmt.Sprintf("unsupported file extension: %v", bgm.filename))
-	}
+	// if HasExtension(bgm.filename, ".mp3") {
+	// 	bgm.streamer, format, err = mp3.Decode(bgm.f)
+	// 	bgm.format = "mp3"
+	// } else {
+		data, _ := physfs.ReadAll(bgm.f)
+		bgm.streamer, format, err = decodeWithSndfile(data)
+        bgm.format = "sndfile"
+	// }
 	if err != nil {
 		bgm.f.Close()
 		bgm.f = nil
@@ -243,10 +429,6 @@ func (bgm *Bgm) Open(filename string, loop, bgmVolume, bgmLoopStart, bgmLoopEnd,
 		} else {
 			lc = -1
 		}
-	}
-	// Don't do anything if we have the nomusic command line flag
-	if _, ok := sys.cmdFlags["-nomusic"]; ok {
-		return
 	}
 	// Don't do anything if we have the nosound command line flag
 	if _, ok := sys.cmdFlags["-nosound"]; ok {
@@ -360,35 +542,32 @@ type Sound struct {
 
 func readSound(f *physfs.File, size uint32) (*Sound, error) {
 	if size < 128 {
-		return nil, fmt.Errorf("wav size is too small")
+		return nil, fmt.Errorf("sound size is too small")
 	}
-	wavData := make([]byte, size)
-	if _, err := f.Read(wavData); err != nil {
+	data := make([]byte, size)
+	if _, err := f.Read(data); err != nil {
 		return nil, err
 	}
-	// Decode the sound at least once, so that we know the format is OK
-	s, fmt, err := wav.Decode(bytes.NewReader(wavData))
+	streamer, format, err := decodeWithSndfile(data)
 	if err != nil {
+		sys.errLog.Printf("LibSND decode error: %v\n", err)
 		return nil, err
 	}
-	// Check if the file can be fully played
+
+	// Check if decodable
 	var samples [512][2]float64
-	for {
-		sn, _ := s.Stream(samples[:])
-		if sn == 0 {
-			// If sound wasn't able to be fully played, we disable it to avoid engine freezing
-			if s.Position() < s.Len() {
-				return nil, nil
-			}
-			break
-		}
+	if n, _ := streamer.Stream(samples[:]); n == 0 {
+		return nil, fmt.Errorf("sound corrupted")
 	}
-	return &Sound{wavData, fmt, s.Len()}, nil
+
+	return &Sound{data, format, streamer.Len()}, nil
 }
 
-func (s *Sound) GetStreamer() beep.StreamSeeker {
-	streamer, _, _ := wav.Decode(bytes.NewReader(s.wavData))
-	return streamer
+func (s *Sound) GetStreamer() beep.StreamSeekCloser {
+	if streamer, _, err := decodeWithSndfile(s.wavData); err == nil {
+		return streamer
+	}
+	return nil
 }
 
 // ------------------------------------------------------------------
@@ -559,7 +738,7 @@ func (s *SoundEffect) Err() error {
 // SoundChannel
 
 type SoundChannel struct {
-	streamer          beep.StreamSeeker
+	streamer          beep.StreamSeekCloser
 	sfx               *SoundEffect
 	ctrl              *beep.Ctrl
 	sound             *Sound
