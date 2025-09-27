@@ -8,7 +8,6 @@ package main
 
 import (
 	"bytes"
-	_ "embed" // Support for go:embed resources
 	"encoding/binary"
 	"fmt"
 	"math"
