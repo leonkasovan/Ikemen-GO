@@ -67,7 +67,7 @@ static void free_memfile(MemFile* m) {
 }
 
 // ---- Global virtual IO struct ----
-static SF_VIRTUAL_IO vio_instance = {
+static SF_VIRTUAL_IO vio_mem_instance = {
     mem_get_filelen,
     mem_seek,
     mem_read,
@@ -75,11 +75,65 @@ static SF_VIRTUAL_IO vio_instance = {
     mem_tell
 };
 
-SF_VIRTUAL_IO* get_vio() {
-    return &vio_instance;
+SF_VIRTUAL_IO* get_mem_vio() {
+    return &vio_mem_instance;
 }
 
-static int physfs_read(void *dest, int size, int nmemb, void *priv) {
+static sf_count_t physfs_get_filelen(void *user_data) {
+    PHYSFS_File *file = (PHYSFS_File *)user_data;
+    PHYSFS_sint64 len = PHYSFS_fileLength(file);
+    return (len > 0) ? (sf_count_t)len : 0;
+}
+
+static sf_count_t physfs_seek(sf_count_t offset, int whence, void* user_data) {
+    PHYSFS_File *file = (PHYSFS_File *)user_data;
+    PHYSFS_sint64 newPos = 0;
+
+    switch (whence) {
+    case SEEK_SET:
+        newPos = offset;
+        break;
+    case SEEK_CUR:
+        newPos = PHYSFS_tell(file) + offset;
+        break;
+    case SEEK_END:
+        newPos = PHYSFS_fileLength(file) + offset;
+        break;
+    default:
+        return -1;
+    }
+
+    if (!PHYSFS_seek(file, newPos))
+        return -1;
+    return 0;
+}
+
+static sf_count_t physfs_read(void* ptr, sf_count_t count, void* user_data) {
+    PHYSFS_File *file = (PHYSFS_File *)user_data;
+    sf_count_t got = PHYSFS_readBytes(file, ptr, count);
+    if (got < 0)
+        return 0;
+    return got;
+}
+
+static sf_count_t physfs_tell(void* user_data) {
+    PHYSFS_File *file = (PHYSFS_File *)user_data;
+    return PHYSFS_tell(file);
+}
+
+static SF_VIRTUAL_IO vio_physfs_instance = {
+    .get_filelen = physfs_get_filelen,
+    .seek        = physfs_seek,
+    .read        = physfs_read,
+    .write       = NULL,
+    .tell        = physfs_tell
+};
+
+SF_VIRTUAL_IO* get_physfs_vio() {
+    return &vio_physfs_instance;
+}
+
+static int xmp_physfs_read(void *dest, int size, int nmemb, void *priv) {
     PHYSFS_File *file = (PHYSFS_File *)priv;
     PHYSFS_sint64 want = (PHYSFS_sint64)(size * nmemb);
     PHYSFS_sint64 got = PHYSFS_readBytes(file, dest, want);
@@ -88,7 +142,7 @@ static int physfs_read(void *dest, int size, int nmemb, void *priv) {
     return (int)(got / size);
 }
 
-static int physfs_seek(void *priv, long offset, int whence) {
+static int xmp_physfs_seek(void *priv, long offset, int whence) {
     PHYSFS_File *file = (PHYSFS_File *)priv;
     PHYSFS_sint64 newPos = 0;
 
@@ -111,22 +165,22 @@ static int physfs_seek(void *priv, long offset, int whence) {
     return 0;
 }
 
-static long physfs_tell(void *priv) {
+static long xmp_physfs_tell(void *priv) {
     PHYSFS_File *file = (PHYSFS_File *)priv;
     return (long)PHYSFS_tell(file);
 }
 
-static int physfs_close(void *priv) {
+static int xmp_physfs_close(void *priv) {
     PHYSFS_File *file = (PHYSFS_File *)priv;
     PHYSFS_close(file);
     return 0;
 }
 
 struct xmp_callbacks physfs_cb = {
-    .read_func  = physfs_read,
-    .seek_func  = physfs_seek,
-    .tell_func  = physfs_tell,
-    .close_func = physfs_close
+    .read_func  = xmp_physfs_read,
+    .seek_func  = xmp_physfs_seek,
+    .tell_func  = xmp_physfs_tell,
+    .close_func = xmp_physfs_close
 };
 */
 import "C"
@@ -337,8 +391,8 @@ func (s *sndfileStreamer) Len() int {
 	return int(s.info.frames)
 }
 
-// decodeWithSndfile returns a streaming beep.StreamSeekCloser using libsndfile
-func decodeWithSndfile(data []byte) (beep.StreamSeekCloser, beep.Format, error) {
+// sndDecodeFromMemory returns a streaming beep.StreamSeekCloser using libsndfile
+func sndDecodeFromMemory(data []byte) (beep.StreamSeekCloser, beep.Format, error) {
 	if len(data) == 0 {
 		return nil, beep.Format{}, errors.New("empty buffer")
 	}
@@ -349,7 +403,7 @@ func decodeWithSndfile(data []byte) (beep.StreamSeekCloser, beep.Format, error) 
 	}
 
 	var info C.SF_INFO
-	sf := C.sf_open_virtual(C.get_vio(), C.SFM_READ, &info, unsafe.Pointer(mem))
+	sf := C.sf_open_virtual(C.get_mem_vio(), C.SFM_READ, &info, unsafe.Pointer(mem))
 	if sf == nil {
 		C.free_memfile(mem)
 		return nil, beep.Format{}, errors.New("sf_open_virtual failed")
@@ -372,6 +426,37 @@ func decodeWithSndfile(data []byte) (beep.StreamSeekCloser, beep.Format, error) 
 	// runtime.KeepAlive is not strictly needed here, but if you refactor, be sure buffer stays alive
 	return streamer, format, nil
 }
+
+func sndDecode(f *physfs.File) (beep.StreamSeekCloser, beep.Format, error) {
+	if f == nil {
+		return nil, beep.Format{}, errors.New("nil file handle")
+	}
+
+	var info C.SF_INFO
+
+	// Use PhysFS-backed virtual I/O
+	sf := C.sf_open_virtual(C.get_physfs_vio(), C.SFM_READ, &info, unsafe.Pointer(f))
+	if sf == nil {
+		return nil, beep.Format{}, errors.New("sf_open_virtual failed (libsndfile couldn't read file)")
+	}
+
+	streamer := &sndfileStreamer{
+		sf:         sf,
+		info:       info,
+		mem:        nil, // Not using in-memory mode
+		channels:   int(info.channels),
+		sampleRate: int(info.samplerate),
+	}
+
+	format := beep.Format{
+		SampleRate:  beep.SampleRate(streamer.sampleRate),
+		NumChannels: 2,
+		Precision:   4, // 32-bit float
+	}
+
+	return streamer, format, nil
+}
+
 
 const (
 	audioOutLen          = 2048
@@ -587,9 +672,8 @@ func (bgm *Bgm) Open(filename string, loop, bgmVolume, bgmLoopStart, bgmLoopEnd,
 		bgm.streamer, format, err = xmpDecode(bgm.f)
 		bgm.format = "xmp"
 	} else {
-		data, _ := physfs.ReadAll(bgm.f)
-		bgm.streamer, format, err = decodeWithSndfile(data)
-        bgm.format = "sndfile"
+		bgm.streamer, format, err = sndDecode(bgm.f)
+        bgm.format = "snd"
 	}
 	if err != nil {
 		bgm.f.Close()
@@ -723,7 +807,7 @@ func readSound(f *physfs.File, size uint32) (*Sound, error) {
 	if _, err := f.Read(data); err != nil {
 		return nil, err
 	}
-	streamer, format, err := decodeWithSndfile(data)
+	streamer, format, err := sndDecodeFromMemory(data)
 	if err != nil {
 		sys.errLog.Printf("LibSND decode error: %v\n", err)
 		return nil, err
@@ -739,7 +823,7 @@ func readSound(f *physfs.File, size uint32) (*Sound, error) {
 }
 
 func (s *Sound) GetStreamer() beep.StreamSeekCloser {
-	if streamer, _, err := decodeWithSndfile(s.wavData); err == nil {
+	if streamer, _, err := sndDecodeFromMemory(s.wavData); err == nil {
 		return streamer
 	}
 	return nil
