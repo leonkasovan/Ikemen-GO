@@ -7,6 +7,7 @@ package main
 #include <stdlib.h>
 #include <string.h>
 #include <sndfile.h>
+#include "../packages/physfs/physfs.h"
 
 // MemFile holds pointer to the data and cursor position for virtual IO
 typedef struct {
@@ -77,6 +78,56 @@ static SF_VIRTUAL_IO vio_instance = {
 SF_VIRTUAL_IO* get_vio() {
     return &vio_instance;
 }
+
+static int physfs_read(void *dest, int size, int nmemb, void *priv) {
+    PHYSFS_File *file = (PHYSFS_File *)priv;
+    PHYSFS_sint64 want = (PHYSFS_sint64)(size * nmemb);
+    PHYSFS_sint64 got = PHYSFS_readBytes(file, dest, want);
+    if (got < 0)
+        return 0;
+    return (int)(got / size);
+}
+
+static int physfs_seek(void *priv, long offset, int whence) {
+    PHYSFS_File *file = (PHYSFS_File *)priv;
+    PHYSFS_sint64 newPos = 0;
+
+    switch (whence) {
+    case SEEK_SET:
+        newPos = offset;
+        break;
+    case SEEK_CUR:
+        newPos = PHYSFS_tell(file) + offset;
+        break;
+    case SEEK_END:
+        newPos = PHYSFS_fileLength(file) + offset;
+        break;
+    default:
+        return -1;
+    }
+
+    if (!PHYSFS_seek(file, newPos))
+        return -1;
+    return 0;
+}
+
+static long physfs_tell(void *priv) {
+    PHYSFS_File *file = (PHYSFS_File *)priv;
+    return (long)PHYSFS_tell(file);
+}
+
+static int physfs_close(void *priv) {
+    PHYSFS_File *file = (PHYSFS_File *)priv;
+    PHYSFS_close(file);
+    return 0;
+}
+
+struct xmp_callbacks physfs_cb = {
+    .read_func  = physfs_read,
+    .seek_func  = physfs_seek,
+    .tell_func  = physfs_tell,
+    .close_func = physfs_close
+};
 */
 import "C"
 
@@ -86,6 +137,7 @@ import (
 	"fmt"
 	"math"
 	"unsafe"
+	"runtime"
 
 	"github.com/gopxl/beep/v2"
 	"github.com/gopxl/beep/v2/effects"
@@ -93,77 +145,122 @@ import (
 	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
 )
 
+// ------------------------------------------------------------------
 // xmStreamer wraps libxmp context for streaming
 type xmStreamer struct {
 	ctx        C.xmp_context
 	channels   int
 	sampleRate int
 	buffer     []int16
+	closed     bool
+	err        error
+
+	// runtime tracking
+	posFrames   int   // frames already produced (a frame == one sample per channel)
+	totalFrames int   // estimated total frames (from total_time)
 }
 
+// Stream fills the provided buffer with audio frames (Optimized version).
 func (x *xmStreamer) Stream(samples [][2]float64) (int, bool) {
-	// Play one frame, get PCM from xmp
-	if C.xmp_play_frame(x.ctx) != 0 {
+	if x.closed || x.err != nil {
 		return 0, false
 	}
-	var info C.struct_xmp_frame_info
-	C.xmp_get_frame_info(x.ctx, &info)
-	if info.buffer_size == 0 {
+
+	frameCount := len(samples)
+	if frameCount*2 > len(x.buffer) {
+		frameCount = len(x.buffer) / 2
+	}
+
+	res := C.xmp_play_buffer(x.ctx, unsafe.Pointer(&x.buffer[0]), C.int(frameCount*2*2), 0)
+	if res < 0 {
+		x.err = Error("xmp playback ended or failed")
 		return 0, false
 	}
-	// Convert PCM buffer to beep samples
-	nbuf := int(info.buffer_size) / 2 // int16 samples
-	if cap(x.buffer) < nbuf {
-		x.buffer = make([]int16, nbuf)
+
+	buf := x.buffer
+	const scale = 1.0 / 32768.0
+	for i := 0; i < frameCount; i++ {
+		j := i * 2
+		samples[i][0] = float64(buf[j]) * scale
+		samples[i][1] = float64(buf[j+1]) * scale
 	}
-	buf := x.buffer[:nbuf]
-	C.memcpy(unsafe.Pointer(&buf[0]), info.buffer, C.size_t(info.buffer_size))
-	for i := 0; i < len(samples) && i*2+1 < len(buf); i++ {
-		samples[i][0] = float64(buf[i*2]) / 32768.0
-		samples[i][1] = float64(buf[i*2+1]) / 32768.0
-	}
-	return len(samples), true
+	return frameCount, true
 }
-func (x *xmStreamer) Err() error { return nil }
+
+
+// Err returns the last error that occurred.
+func (x *xmStreamer) Err() error { return x.err }
+
+// Close releases all libxmp resources.
 func (x *xmStreamer) Close() error {
-	if x.ctx != nil {
-		C.xmp_end_player(x.ctx)
-		C.xmp_release_module(x.ctx)
-		C.xmp_free_context(x.ctx)
-		x.ctx = nil
+	if x.closed {
+		return nil
 	}
+	x.closed = true
+	C.xmp_end_player(x.ctx)
+	C.xmp_release_module(x.ctx)
+	C.xmp_free_context(x.ctx)
 	return nil
 }
-func (x *xmStreamer) Position() int { return 0 } // Not implemented
-func (x *xmStreamer) Seek(int) error { return nil }
-func (x *xmStreamer) Len() int       { return 0 }
 
-func xmpDecode(f *physfs.File) (beep.StreamSeekCloser, beep.Format, error) {
-	data, _ := physfs.ReadAll(f)
-	if len(data) == 0 {
-		return nil, beep.Format{}, errors.New("empty XM file")
-	}
+func (x *xmStreamer) Position() int {
+	return 0
+}
+
+// Seek attempts to position to absolute frame p.
+// Beep's Seek uses sample-frame positions (frames == sample pairs).
+func (x *xmStreamer) Seek(p int) error {
+	return nil
+}
+
+func (x *xmStreamer) Len() int {
+	return x.totalFrames
+}
+
+// newXMStreamer initializes a libxmp context for a given XM file.
+func newXMStreamer(f *physfs.File) (*xmStreamer, error) {
 	ctx := C.xmp_create_context()
 	if ctx == nil {
-		return nil, beep.Format{}, errors.New("xmp_create_context failed")
+		return nil, Error("failed to create xmp context")
 	}
-	cbuf := (*C.char)(unsafe.Pointer(&data[0]))
-	if C.xmp_load_module_from_memory(ctx, unsafe.Pointer(cbuf), C.long(len(data))) != 0 {
+
+	// Load module using callbacks
+    if (C.xmp_load_module_from_callbacks(ctx, unsafe.Pointer(f), C.physfs_cb) != 0) {
 		C.xmp_free_context(ctx)
-		return nil, beep.Format{}, errors.New("xmp_load_module_from_memory failed")
+        return nil, Error ("Failed to load XM module from callbacks");
+    }
+
+	var info C.struct_xmp_frame_info
+	C.xmp_get_frame_info(ctx, &info)
+
+	if C.xmp_start_player(ctx, audioFrequency, 0) != 0 {
+		C.xmp_release_module(ctx)
+		C.xmp_free_context(ctx)
+		return nil, Error("failed to start XM player")
 	}
-	C.xmp_start_player(ctx, 44100, 0)
-	x := &xmStreamer{
+
+	s := &xmStreamer{
 		ctx:        ctx,
 		channels:   2,
-		sampleRate: 44100,
+		sampleRate: audioFrequency,
+		totalFrames: int(float64(info.total_time) * float64(audioFrequency) / 1000.0), 
+		buffer:     make([]int16, audioOutLen*2), // 2048 stereo frames → lower memory
+	}
+	runtime.SetFinalizer(s, func(s *xmStreamer) { s.Close() })
+	return s, nil
+}
+
+func xmpDecode(f *physfs.File) (beep.StreamSeekCloser, beep.Format, error) {
+	streamer, err := newXMStreamer(f)
+	if err != nil {
+		return nil, beep.Format{}, err
 	}
 	format := beep.Format{
-		SampleRate:  beep.SampleRate(x.sampleRate),
-		NumChannels: x.channels,
+		SampleRate:  audioFrequency,
+		NumChannels: 2,
 		Precision:   2,
 	}
-	return x, format, nil
+	return streamer, format, nil
 }
 
 // sndfileStreamer wraps SNDFILE* and MemFile for streaming + seeking
@@ -437,7 +534,7 @@ func (b *StreamLooper) Seek(p int) error {
 
 type Bgm struct {
 	filename   string
-	f 	 *physfs.File
+	f          *physfs.File
 	bgmVolume  int
 	volRestore int
 	loop       int
@@ -486,18 +583,9 @@ func (bgm *Bgm) Open(filename string, loop, bgmVolume, bgmLoopStart, bgmLoopEnd,
 
 	var format beep.Format
 	var err error
-	if HasExtension(bgm.filename, ".xm") {
+	if HasExtension(bgm.filename, ".xm")  || HasExtension(bgm.filename, ".mod")  || HasExtension(bgm.filename, ".it")  || HasExtension(bgm.filename, ".s3m") {
 		bgm.streamer, format, err = xmpDecode(bgm.f)
-		bgm.format = "xm"
-	} else if HasExtension(bgm.filename, ".it") {
-		bgm.streamer, format, err = xmpDecode(bgm.f)
-		bgm.format = "it"
-	} else if HasExtension(bgm.filename, ".mod") {
-		bgm.streamer, format, err = xmpDecode(bgm.f)
-		bgm.format = "mod"
-	} else if HasExtension(bgm.filename, ".s3m") {
-		bgm.streamer, format, err = xmpDecode(bgm.f)
-		bgm.format = "s3m"
+		bgm.format = "xmp"
 	} else {
 		data, _ := physfs.ReadAll(bgm.f)
 		bgm.streamer, format, err = decodeWithSndfile(data)
