@@ -89,7 +89,7 @@ clean_appbundle:
 #	Windows: <default>
 
 windows: ${srcFiles} src/assets.zip
-	go build -trimpath -ldflags="-s -w -H=windowsgui" -v -o ./bin/ikemen_win.exe ./src
+	export CGO_ENABLED=1 && go build -trimpath -ldflags="-s -w -H=windowsgui" -v -o ./bin/ikemen_win.exe ./src
 
 # Steamdeck (SteamOS X11)
 steamdeck: ${srcFiles} src/assets.zip
