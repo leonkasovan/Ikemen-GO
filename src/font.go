@@ -581,6 +581,8 @@ func (f *Fnt) DrawText(txt string, x, y, xscl, yscl, rxadd float32, rot Rotation
 		tt = TT_add
 	}
 
+	alphaVal := int32(255 * sys.brightness * alpha)
+
 	// Initialize common render parameters
 	rp := RenderParams{
 		tex:            nil,
@@ -599,7 +601,7 @@ func (f *Fnt) DrawText(txt string, x, y, xscl, yscl, rxadd float32, rot Rotation
 		rot:            rot,
 		tint:           0,
 		blendMode:      tt,
-		blendAlpha:     [2]int32{int32(255 * sys.brightness * alpha), 255},
+		blendAlpha:     [2]int32{alphaVal, 255 - alphaVal},
 		mask:           0,
 		pfx:            palfx,
 		window:         window,
