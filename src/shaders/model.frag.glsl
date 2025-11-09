@@ -1,10 +1,9 @@
 #if __VERSION__ >= 450
-#define ENABLE_SHADOW 
 #define COMPAT_TEXTURE texture
 #define COMPAT_TEXTURE_CUBE texture
 #define COMPAT_TEXTURE_CUBE_LOD textureLod
-#define COMPAT_SHADOW_MAP_TEXTURE() texture(shadowCubeMap,vec4(1.0, -(xy.y*2-1),-(xy.x*2-1),index)).r
-#define COMPAT_SHADOW_CUBE_MAP_TEXTURE() texture(shadowCubeMap,vec4(xyz,index)).r
+#define COMPAT_SHADOW_MAP_TEXTURE(index) texture(shadowCubeMap,vec4(1.0, -(xy.y*2.0-1.0),-(xy.x*2.0-1.0),index)).r
+#define COMPAT_SHADOW_CUBE_MAP_TEXTURE(index) texture(shadowCubeMap,vec4(xyz,index)).r
 struct Light
 {
     vec3 direction;
@@ -18,7 +17,7 @@ struct Light
 
     float outerConeCos;
     int type;
-
+        
     float shadowBias;
     float shadowMapFar;
 };
@@ -76,18 +75,59 @@ layout(location = 6) in vec4 lightSpacePos[4];
 layout(location = 0) out vec4 FragColor;
 #else
 #if __VERSION__ >= 130
+// For desktop OpenGL 130+, use the cube map array extension
+#if !defined(GL_ES) && defined(GL_ARB_texture_cube_map_array)
 #extension GL_ARB_texture_cube_map_array : enable
+#endif
 #define COMPAT_VARYING in
 #define COMPAT_TEXTURE texture
 #define COMPAT_TEXTURE_CUBE texture
 #define COMPAT_TEXTURE_CUBE_LOD textureLod
-out vec4 FragColor;
 #ifdef ENABLE_SHADOW
-uniform samplerCubeArray shadowCubeMap;
-#define COMPAT_SHADOW_MAP_TEXTURE() texture(shadowCubeMap,vec4(1.0, -(xy.y*2-1),-(xy.x*2-1),index)).r
-#define COMPAT_SHADOW_CUBE_MAP_TEXTURE() texture(shadowCubeMap,vec4(xyz,index)).r
+#if defined(GL_ES)
+// For OpenGL ES, use separate samplerCube arrays instead of samplerCubeArray
+#define COMPAT_SHADOW_MAP_TEXTURE(index) \
+    (index == 0 ? texture(shadowCubeMaps[0], vec3(1.0, -(xy.y*2.0-1.0),-(xy.x*2.0-1.0))).r : \
+     index == 1 ? texture(shadowCubeMaps[1], vec3(1.0, -(xy.y*2.0-1.0),-(xy.x*2.0-1.0))).r : \
+     index == 2 ? texture(shadowCubeMaps[2], vec3(1.0, -(xy.y*2.0-1.0),-(xy.x*2.0-1.0))).r : \
+     texture(shadowCubeMaps[3], vec3(1.0, -(xy.y*2.0-1.0),-(xy.x*2.0-1.0))).r)
+
+#define COMPAT_SHADOW_CUBE_MAP_TEXTURE(index) \
+    (index == 0 ? texture(shadowCubeMaps[0], xyz).r : \
+     index == 1 ? texture(shadowCubeMaps[1], xyz).r : \
+     index == 2 ? texture(shadowCubeMaps[2], xyz).r : \
+     texture(shadowCubeMaps[3], xyz).r)
+#else
+#define COMPAT_SHADOW_MAP_TEXTURE(index) texture(shadowCubeMap,vec4(1.0, -(xy.y*2.0-1.0),-(xy.x*2.0-1.0),index)).r
+#define COMPAT_SHADOW_CUBE_MAP_TEXTURE(index) texture(shadowCubeMap,vec4(xyz,index)).r
+#endif
 #endif
 #else
+// OpenGL ES or legacy OpenGL
+#if __VERSION__ >= 300
+// GLSL ES 300+
+#extension GL_EXT_shader_texture_lod : enable
+#define COMPAT_VARYING in
+#define FragColor gl_FragColor
+#define COMPAT_TEXTURE texture
+#define COMPAT_TEXTURE_CUBE texture
+#define COMPAT_TEXTURE_CUBE_LOD textureLod
+#ifdef ENABLE_SHADOW
+#define COMPAT_SHADOW_MAP_TEXTURE(index) \
+    (index == 0 ? texture(shadowCubeMaps[0], vec3(1.0, -(xy.y*2.0-1.0),-(xy.x*2.0-1.0))).r : \
+     index == 1 ? texture(shadowCubeMaps[1], vec3(1.0, -(xy.y*2.0-1.0),-(xy.x*2.0-1.0))).r : \
+     index == 2 ? texture(shadowCubeMaps[2], vec3(1.0, -(xy.y*2.0-1.0),-(xy.x*2.0-1.0))).r : \
+     texture(shadowCubeMaps[3], vec3(1.0, -(xy.y*2.0-1.0),-(xy.x*2.0-1.0))).r)
+
+#define COMPAT_SHADOW_CUBE_MAP_TEXTURE(index) \
+    (index == 0 ? texture(shadowCubeMaps[0], xyz).r : \
+     index == 1 ? texture(shadowCubeMaps[1], xyz).r : \
+     index == 2 ? texture(shadowCubeMaps[2], xyz).r : \
+     texture(shadowCubeMaps[3], xyz).r)
+#endif
+#else
+// Legacy GLSL
+#extension GL_EXT_gpu_shader4 : enable
 #extension GL_ARB_shader_texture_lod : enable
 #define COMPAT_VARYING varying
 #define FragColor gl_FragColor
@@ -95,12 +135,23 @@ uniform samplerCubeArray shadowCubeMap;
 #define COMPAT_TEXTURE_CUBE textureCube
 #define COMPAT_TEXTURE_CUBE_LOD textureCubeLod
 #ifdef ENABLE_SHADOW
-//uniform sampler2D shadowMap[4];
-uniform samplerCube shadowCubeMap[4];
-#define COMPAT_SHADOW_MAP_TEXTURE() textureCube(shadowCubeMap[index],vec3(1.0, -(xy.y*2-1),-(xy.x*2-1))).r
-#define COMPAT_SHADOW_CUBE_MAP_TEXTURE() textureCube(shadowCubeMap[index],xyz).r
+#define COMPAT_SHADOW_MAP_TEXTURE(index) textureCube(shadowCubeMaps[index], vec3(1.0, -(xy.y*2.0-1.0),-(xy.x*2.0-1.0))).r
+#define COMPAT_SHADOW_CUBE_MAP_TEXTURE(index) textureCube(shadowCubeMaps[index], xyz).r
 #endif
 #endif
+#endif
+
+// Uniform declarations must come after version directives but before struct definitions
+#ifdef ENABLE_SHADOW
+#if defined(GL_ES) || __VERSION__ < 400
+// For OpenGL ES or older desktop OpenGL, use separate samplerCube arrays
+uniform samplerCube shadowCubeMaps[4];
+#else
+// For modern desktop OpenGL, use samplerCubeArray
+uniform samplerCubeArray shadowCubeMap;
+#endif
+#endif
+
 struct Light
 {
     vec3 direction;
@@ -118,6 +169,8 @@ struct Light
     float shadowBias;
     float shadowMapFar;
 };
+
+// Now declare all uniforms
 uniform sampler2D tex;
 uniform mat3 texTransform;
 uniform sampler2D normalMap;
@@ -145,7 +198,6 @@ uniform bool unlit;
 
 uniform Light lights[4];
 
-
 uniform vec3 add, mult;
 uniform float gray, hue;
 uniform bool useTexture;
@@ -164,6 +216,14 @@ COMPAT_VARYING vec3 tangent;
 COMPAT_VARYING vec3 bitangent;
 COMPAT_VARYING vec3 worldSpacePos;
 COMPAT_VARYING vec4 lightSpacePos[4];
+
+// Output declaration for GLSL 130+
+#if __VERSION__ >= 130 && !defined(GL_ES)
+out vec4 FragColor;
+#elif __VERSION__ >= 300
+// GLSL ES 300+ uses out
+out vec4 FragColor;
+#endif
 
 const bool useShadowMap = true;
 #endif
@@ -192,7 +252,7 @@ float DirectionalLightShadowCalculation(int index, vec4 lightSpacePos,float Ndot
     // get closest depth value from light's perspective (using [0,1] range fragPosLight as coords)
     float epsilon = 1.0 / 1024.0;
     vec2 xy = vec2(clamp(projCoords.x,epsilon,1.0-epsilon),clamp(projCoords.y,epsilon,1.0-epsilon));
-    float closestDepth = COMPAT_SHADOW_MAP_TEXTURE(); 
+    float closestDepth = COMPAT_SHADOW_MAP_TEXTURE(index); 
     // get depth of current fragment from light's perspective
     float currentDepth = projCoords.z;
     // check whether current frag pos is in shadow
@@ -212,7 +272,7 @@ float SpotLightShadowCalculation(int index, vec3 pointToLight, vec4 lightSpacePo
     }
     float epsilon = 1.0 / 1024.0;
     vec2 xy = vec2(clamp(lightSpacePos.x,epsilon,1.0-epsilon),clamp(lightSpacePos.y,epsilon,1.0-epsilon));
-    float closestDepth = COMPAT_SHADOW_MAP_TEXTURE();
+    float closestDepth = COMPAT_SHADOW_MAP_TEXTURE(index);
     // it is currently in linear range between [0,1]. Re-transform back to original value
     closestDepth *= farPlane;
     // get depth of current fragment from light's perspective
@@ -232,7 +292,7 @@ float PointLightShadowCalculation(int index, vec3 pointToLight,float NdotL,float
         return 1.0;
     }
     vec3 xyz = -pointToLight;
-    float closestDepth = COMPAT_SHADOW_CUBE_MAP_TEXTURE();
+    float closestDepth = COMPAT_SHADOW_CUBE_MAP_TEXTURE(index);
     // it is currently in linear range between [0,1]. Re-transform back to original value
     closestDepth *= farPlane;
     // now get current linear depth as the length between the fragment and light position
@@ -262,8 +322,8 @@ vec3 getNormal()
     vec3 t_ = (uv_dy.t * dFdx(worldSpacePos) - uv_dx.t * dFdy(worldSpacePos)) /
         (uv_dx.s * uv_dy.t - uv_dy.s * uv_dx.t);
     vec3 n, t, b, ng;
-    if(normal.x+normal.y+normal.z != 0){
-        if(tangent.x+tangent.y+tangent.z != 0){
+    if(normal.x+normal.y+normal.z != 0.0){
+        if(tangent.x+tangent.y+tangent.z != 0.0){
             t = normalize(tangent);
             b = normalize(bitangent);
             ng = normalize(normal);
@@ -284,7 +344,7 @@ vec3 getNormal()
         ng *= -1.0;
     }
     if(useNormalMap){
-        return normalize(mat3(t, b, ng) * normalize(COMPAT_TEXTURE(normalMap, vec2(normalMapTransform*vec3(texcoord,1))).xyz * 2.0 - vec3(1.0)));
+        return normalize(mat3(t, b, ng) * normalize(COMPAT_TEXTURE(normalMap, vec2(normalMapTransform*vec3(texcoord,1.0))).xyz * 2.0 - vec3(1.0)));
     }else{
         return ng;
     }
@@ -416,16 +476,20 @@ vec3 getIBLRadianceGGX(vec3 n, vec3 v, float roughness)
 
     return specularLight;
 }
-vec3 ibl(vec3 n,vec3 v,float metallic,float roughness,vec3 albedo){
+vec3 ibl(vec3 n, vec3 v, float metallic, float roughness, vec3 albedo)
+{
     vec3 f_diffuse = getDiffuseLight(n) * albedo.rgb;
     vec3 f_specular_metal = getIBLRadianceGGX(n, v, roughness);
     vec3 f_specular_dielectric = f_specular_metal;
+    
+    // Fixed calls with proper float literals
     vec3 f_metal_fresnel_ibl = getIBLGGXFresnel(n, v, roughness, albedo.rgb, 1.0);
+    vec3 f_dielectric_fresnel_ibl = getIBLGGXFresnel(n, v, roughness, vec3(0.04), 1.0);
+    
     vec3 f_metal_brdf_ibl = f_metal_fresnel_ibl * f_specular_metal;
-    vec3 f_dielectric_fresnel_ibl = getIBLGGXFresnel(n, v, roughness, vec3(0.04), 1);
-    vec3 f_dielectric_brdf_ibl = f_diffuse*(1-f_dielectric_fresnel_ibl) + f_specular_dielectric * f_dielectric_fresnel_ibl;
+    vec3 f_dielectric_brdf_ibl = f_diffuse * (1.0 - f_dielectric_fresnel_ibl) + f_specular_dielectric * f_dielectric_fresnel_ibl;
 
-    vec3 color = f_dielectric_brdf_ibl*(1-metallic)+f_metal_brdf_ibl*metallic;
+    vec3 color = f_dielectric_brdf_ibl * (1.0 - metallic) + f_metal_brdf_ibl * metallic;
     return color;
 }
 vec3 pbr(vec3 worldSpacePos,vec3 v,vec3 n,vec3 albedo,float metallic,float roughness,float ao){
@@ -435,12 +499,12 @@ vec3 pbr(vec3 worldSpacePos,vec3 v,vec3 n,vec3 albedo,float metallic,float rough
     float specularWeight = 1.0;
     vec3 f_specular = vec3(0.0);
     vec3 f_diffuse = vec3(0.0);
-    vec3 c_diff = albedo*(1-metallic);
+    vec3 c_diff = albedo*(1.0-metallic);
 
 	for(int i = 0; i < 4; ++i) 
     {
-        if(lights[i].color.r+lights[i].color.g+lights[i].color.b > 0){
-            vec3 pointToLight = vec3(0);
+        if(lights[i].color.r+lights[i].color.g+lights[i].color.b > 0.0){
+            vec3 pointToLight = vec3(0.0);
             if(lights[i].type == LightType_Directional){
                 pointToLight = -lights[i].direction;
             }else{
@@ -458,7 +522,7 @@ vec3 pbr(vec3 worldSpacePos,vec3 v,vec3 n,vec3 albedo,float metallic,float rough
                 vec3 l_specular = vec3(0.0);
                 l_diffuse += intensity * NdotL *  BRDF_lambertian(f0, f90, c_diff, specularWeight, VdotH);
                 l_specular += intensity * NdotL * BRDF_specularGGX(f0, f90, roughness*roughness, specularWeight, VdotH, NdotL, NdotV, NdotH);
-                float shadow = 1;
+                float shadow = 1.0;
                 if(lights[i].type == LightType_Point){
                     shadow = PointLightShadowCalculation(i,pointToLight,NdotL,lights[i].shadowMapFar,lights[i].shadowBias);
                 }else if(lights[i].type == LightType_Directional){
@@ -471,8 +535,8 @@ vec3 pbr(vec3 worldSpacePos,vec3 v,vec3 n,vec3 albedo,float metallic,float rough
             }
         }
     }   
-    vec3 f_ibl = vec3(0);
-    if(environmentIntensity > 0){
+    vec3 f_ibl = vec3(0.0);
+    if(environmentIntensity > 0.0){
         f_ibl = ibl(n,v,metallic,roughness,albedo);
     }
     //vec3 color = clamp(f_diffuse+f_specular+ao*f_ibl,0,1);
@@ -495,13 +559,13 @@ vec3 hue_shift(vec3 color, float dhue) {
 void main(void) {
     FragColor = vec4(1.0);
 	if(useTexture){
-		FragColor = COMPAT_TEXTURE(tex, vec2(texTransform*vec3(texcoord,1)));
+		FragColor = COMPAT_TEXTURE(tex, vec2(texTransform*vec3(texcoord,1.0)));
         FragColor.rgb = pow(FragColor.rgb,vec3(2.2));
 	}
     FragColor *= baseColorFactor;
 	FragColor *= vColor;
-    if(meshOutline > 0) {
-        FragColor.rgb = vec3(0,0,0);
+    if(meshOutline > 0.0) {
+        FragColor.rgb = vec3(0.0,0.0,0.0);
     }else if(!unlit){
         vec3 normalF = normal;
         if(useNormalMap){
@@ -509,15 +573,15 @@ void main(void) {
         }
         vec2 metallicRoughnessF = metallicRoughness;
         if(useMetallicRoughnessMap){
-            metallicRoughnessF = COMPAT_TEXTURE(metallicRoughnessMap, vec2(metallicRoughnessMapTransform*vec3(texcoord,1))).bg;
+            metallicRoughnessF = COMPAT_TEXTURE(metallicRoughnessMap, vec2(metallicRoughnessMapTransform*vec3(texcoord,1.0))).bg;
         }
-        float ambientOcclusion = 1;
-        if(ambientOcclusionStrength > 0){
-            ambientOcclusion = 1+ambientOcclusionStrength*(COMPAT_TEXTURE(ambientOcclusionMap, vec2(ambientOcclusionMapTransform*vec3(texcoord,1))).r-1);
+        float ambientOcclusion = 1.0;
+        if(ambientOcclusionStrength > 0.0){
+            ambientOcclusion = 1.0+ambientOcclusionStrength*(COMPAT_TEXTURE(ambientOcclusionMap, vec2(ambientOcclusionMapTransform*vec3(texcoord,1.0))).r-1.0);
         }
         FragColor.rgb = pbr(worldSpacePos,normalize(cameraPosition - worldSpacePos),normalize(normalF),FragColor.rgb,metallicRoughnessF[0],metallicRoughnessF[1],ambientOcclusion);
         if(useEmissionMap){
-            FragColor.rgb += emission * pow(COMPAT_TEXTURE(emissionMap, vec2(emissionMapTransform*vec3(texcoord,1))).rgb,vec3(2.2));
+            FragColor.rgb += emission * pow(COMPAT_TEXTURE(emissionMap, vec2(emissionMapTransform*vec3(texcoord,1.0))).rgb,vec3(2.2));
         }else{
             FragColor.rgb += emission;
         }
@@ -528,14 +592,14 @@ void main(void) {
 		if(FragColor.a < alphaThreshold){
 			discard;
 		}else{
-			FragColor.a = 1;
+			FragColor.a = 1.0;
 		}
 	}else if(FragColor.a<=0.0){
 		discard;
 	}
 	vec3 neg_base = vec3(1.0);
 	neg_base *= FragColor.a;
-	if (hue != 0) {
+	if (hue != 0.0) {
 		FragColor.rgb = hue_shift(FragColor.rgb,hue);			
 	}
 	if (neg) FragColor.rgb = neg_base - FragColor.rgb;

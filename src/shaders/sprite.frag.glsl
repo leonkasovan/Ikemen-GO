@@ -83,7 +83,7 @@ void main(void) {
 				c.a = 1.0;
 			}
 		}
-		if (hue != 0) {
+		if (hue != 0.0) {
 			c.rgb = hue_shift(c.rgb,hue);			
 		}
 		if (neg) c.rgb = neg_base - c.rgb;

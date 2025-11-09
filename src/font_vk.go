@@ -1,3 +1,5 @@
+//go:build vulkan
+
 package main
 
 import (

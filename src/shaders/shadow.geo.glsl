@@ -1,9 +1,39 @@
-#if __VERSION__ >= 130
+#ifdef GL_ES
+// OpenGL ES doesn't support geometry shaders
+// This shader should not be used in ES contexts
+// #error Geometry shaders are not supported in OpenGL ES
+#else
+// Desktop OpenGL versions
+
+#if __VERSION__ >= 400
 #define COMPAT_POS_IN(i) gl_in[i].gl_Position
+layout(triangles) in;
 layout(triangle_strip, max_vertices = 18) out;
 uniform int layerOffset;
 #define LAYER_OFFSET layerOffset
+in float vColor[];
+in vec2 texcoord[];
+out vec4 FragPos;
+out float vColorAlpha;
+out vec2 texcoord0;
+#elif __VERSION__ >= 150
+#define COMPAT_POS_IN(i) gl_in[i].gl_Position
 layout(triangles) in;
+layout(triangle_strip, max_vertices = 18) out;
+uniform int layerOffset;
+#define LAYER_OFFSET layerOffset
+in float vColor[];
+in vec2 texcoord[];
+out vec4 FragPos;
+out float vColorAlpha;
+out vec2 texcoord0;
+#elif __VERSION__ >= 130
+#extension GL_ARB_geometry_shader4 : enable
+#define COMPAT_POS_IN(i) gl_in[i].gl_Position
+layout(triangles) in;
+layout(triangle_strip, max_vertices = 18) out;
+uniform int layerOffset;
+#define LAYER_OFFSET layerOffset
 in float vColor[];
 in vec2 texcoord[];
 out vec4 FragPos;
@@ -11,6 +41,7 @@ out float vColorAlpha;
 out vec2 texcoord0;
 #else
 #extension GL_EXT_geometry_shader4: enable
+#extension GL_EXT_gpu_shader4: enable
 #define COMPAT_POS_IN(i) gl_PositionIn[i]
 #define LAYER_OFFSET 0
 
@@ -47,6 +78,7 @@ const int LightType_None = 0;
 const int LightType_Directional = 1;
 const int LightType_Point = 2;
 const int LightType_Spot = 3;
+
 void main() {
     if(lights[lightIndex].type == LightType_Point){
         for(int face = 0; face < 6; ++face)
@@ -74,4 +106,5 @@ void main() {
         }
         EndPrimitive();
     }
-} 
+}
+#endif

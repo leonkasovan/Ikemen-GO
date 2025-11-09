@@ -25,6 +25,7 @@ require (
 require (
 	github.com/Eiton/vulkan v0.0.0-20251024132427-732131af8682 // indirect
 	github.com/icza/bitio v1.1.0 // indirect
+	github.com/leonkasovan/gl v0.0.0-20250124141628-d79f807815dd // indirect
 	github.com/mewkiz/flac v1.0.12 // indirect
 	github.com/mewkiz/pkg v0.0.0-20230226050401-4010bf0fec14 // indirect
 )

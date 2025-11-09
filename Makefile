@@ -1,90 +1,76 @@
-# Set Bash as the shell.
-SHELL=/bin/bash
+# ------------------------------
+# Build configuration
+# ------------------------------
 
-# NOTE: Only used for make's change detection; Go still builds ./src.
-# /src files
-srcFiles=src/resources/defaultConfig.ini \
-	src/anim.go \
-	src/bgdef.go \
-	src/bytecode.go \
-	src/camera.go \
-	src/char.go \
-	src/common.go \
-	src/compiler.go \
-	src/compiler_functions.go \
-	src/config.go \
-	src/dllsearch_windows.go \
-	src/font.go \
-	src/image.go \
-	src/iniutils.go \
-	src/input.go \
-	src/input_glfw.go \
-	src/lifebar.go \
-	src/main.go \
-	src/net.go \
-	src/render.go \
-	src/render_gl.go \
-	src/render_gl_gl32.go \
-	src/rollback.go \
-	src/script.go \
-	src/sound.go \
-	src/stage.go \
-	src/state.go \
-	src/state_clone.go \
-	src/stdout_windows.go \
-	src/system.go \
-	src/system_glfw.go \
-	src/util_desktop.go \
-	src/util_js.go \
-	src/util_raw.go \
-	src/video_ffmpeg.go
-	
+GO       := go
+BUILD_DATE := $(shell date +%Y%m%d_%H%M%S 2>/dev/null || echo unknown_date)
+BIN_DIR  := bin
+SRC_DIR  := src
+ASSETS   := $(SRC_DIR)/assets.zip
+SCREENPACK := $(SRC_DIR)/screenpack.zip
 
-# Windows 64-bit target
-Ikemen_GO.exe: ${srcFiles}
-	bash ./build/build.sh Win64
+# ------------------------------
+# Detect platform
+# ------------------------------
 
-# Windows 32-bit target
-Ikemen_GO_x86.exe: ${srcFiles}
-	bash ./build/build.sh Win32
+UNAME_S := $(shell uname -s)
+UNAME_M := $(shell uname -m)
 
-# Linux target
-Ikemen_GO_Linux: ${srcFiles}
-	./build/build.sh Linux
+ifeq ($(UNAME_S),Linux)
+    DEFAULT_TARGET := linux
+	ifeq ($(UNAME_M),aarch64)
+		TAGS := opengles31
+# 		TAGS := opengl21
+	else
+		TAGS := opengl33
+	endif
+else ifeq ($(OS),Windows_NT)
+    DEFAULT_TARGET := win
+	TAGS := opengl33
+else
+    DEFAULT_TARGET := linux
+	TAGS := opengl33
+endif
 
-# Linux ARM target
-Ikemen_GO_LinuxARM: ${srcFiles}
-	./build/build.sh LinuxARM
+# ------------------------------
+# Main targets
+# ------------------------------
 
-# MacOS x64 target
-Ikemen_GO_MacOS: ${srcFiles}
-	bash ./build/build.sh MacOS
-	$(MAKE) clean_appbundle
-	$(MAKE) appbundle BINNAME=bin/Ikemen_GO_MacOS
+.PHONY: all win linux clean assets screenpack
 
-# MacOS Apple Silicon target
-Ikemen_GO_MacOSARM: ${srcFiles}
-	bash ./build/build.sh MacOSARM
-	$(MAKE) clean_appbundle
-	$(MAKE) appbundle BINNAME=bin/Ikemen_GO_MacOSARM
+all: $(DEFAULT_TARGET)
 
-# MacOS app bundle
-appbundle:
-	mkdir -p I.K.E.M.E.N-Go.app
-	mkdir -p I.K.E.M.E.N-Go.app/Contents
-	mkdir -p I.K.E.M.E.N-Go.app/Contents/MacOS
-	mkdir -p I.K.E.M.E.N-Go.app/Contents/Resources
-	# BINNAME can be a full path (e.g. bin/Ikemen_GO_MacOS) or just the filename.
-	cp $(BINNAME) I.K.E.M.E.N-Go.app/Contents/MacOS/$(notdir $(BINNAME))
-	cp ./build/Info.plist I.K.E.M.E.N-Go.app/Contents/Info.plist
-	cp ./build/bundle_run.sh I.K.E.M.E.N-Go.app/Contents/MacOS/bundle_run.sh
-	chmod +x I.K.E.M.E.N-Go.app/Contents/MacOS/bundle_run.sh
-	chmod +x I.K.E.M.E.N-Go.app/Contents/MacOS/$(notdir $(BINNAME))
-	mkdir -p build/icontmp/icon.iconset
-	cp external/icons/IkemenCylia_256.png build/icontmp/icon.iconset/icon_256x256.png
-	iconutil -c icns build/icontmp/icon.iconset -o build/icontmp/icon.icns
-	cp build/icontmp/icon.icns I.K.E.M.E.N-Go.app/Contents/Resources/icon.icns
-	rm -rf build/icontmp
+win: $(ASSETS) $(SCREENPACK)
+	@echo "Building for Windows with $(TAGS)..."
+	CGO_ENABLED=1 GOEXPERIMENT=arenas GOOS=windows GOARCH=amd64 \
+	$(GO) build -tags=$(TAGS) -trimpath -v -ldflags "-s -w -H windowsgui" \
+	-o $(BIN_DIR)/ikemen_win.exe ./$(SRC_DIR)
 
-clean_appbundle:
-	rm -rf I.K.E.M.E.N-Go.app
+linux: $(ASSETS) $(SCREENPACK)
+	@echo "Building for Linux with $(TAGS)..."
+	CGO_ENABLED=1 GOEXPERIMENT=arenas GOOS=linux \
+	$(GO) build -tags=$(TAGS) -trimpath -v -ldflags "-s -w" \
+	-o $(BIN_DIR)/ikemen_linux ./$(SRC_DIR)
+
+# ------------------------------
+# Asset packaging
+# ------------------------------
+
+$(ASSETS): data/* external/* font/*
+	@echo "Packaging assets..."
+	echo $(BUILD_DATE) > external/script/version
+	rm -f $(ASSETS)
+	cd $(SRC_DIR) && zip -r assets.zip ../data ../external ../font >/dev/null
+
+$(SCREENPACK):
+	@echo "Downloading screenpack..."
+	wget -nc -P $(SRC_DIR) https://github.com/leonkasovan/Ikemen-GO/releases/download/v1.0/screenpack.zip
+
+# ------------------------------
+# Utility targets
+# ------------------------------
+
+clean:
+	@echo "Cleaning up..."
+	rm -f $(ASSETS)
+	rm -rf $(BIN_DIR)/*

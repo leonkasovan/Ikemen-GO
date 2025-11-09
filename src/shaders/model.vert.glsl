@@ -88,7 +88,7 @@ COMPAT_VARYING vec3 worldSpacePos;
 COMPAT_VARYING vec4 lightSpacePos[4];
 
 
-#define useJoint0 weights_0.x+weights_0.y+weights_0.z+weights_0.w+weights_1.x+weights_1.y+weights_1.z+weights_1.w>0
+#define useJoint0 (weights_0.x+weights_0.y+weights_0.z+weights_0.w+weights_1.x+weights_1.y+weights_1.z+weights_1.w>0.0)
 const bool useJoint1 = true;
 const bool useNormal = true;
 const bool useTangent = true;
@@ -99,22 +99,40 @@ const bool useOutlineAttribute = true;
 
 mat4 getMatrixFromTexture(float index){
 	mat4 mat;
-	mat[0] = COMPAT_TEXTURE(jointMatrices,vec2(0.5/6.0,(index+0.5)/numJoints));
-	mat[1] = COMPAT_TEXTURE(jointMatrices,vec2(1.5/6.0,(index+0.5)/numJoints));
-	mat[2] = COMPAT_TEXTURE(jointMatrices,vec2(2.5/6.0,(index+0.5)/numJoints));
+#if __VERSION__ >= 450
+	mat[0] = COMPAT_TEXTURE(jointMatrices,vec2(0.5/6.0,(index+0.5) / float(numJoints)));
+	mat[1] = COMPAT_TEXTURE(jointMatrices,vec2(1.5/6.0,(index+0.5) / float(numJoints)));
+	mat[2] = COMPAT_TEXTURE(jointMatrices,vec2(2.5/6.0,(index+0.5) / float(numJoints)));
+#else
+	// For older GLSL versions, use constant expressions where possible
+	float yCoord = (index + 0.5) / float(numJoints);
+	mat[0] = COMPAT_TEXTURE(jointMatrices,vec2(0.08333333, yCoord)); // 0.5/6.0 = 0.08333333
+	mat[1] = COMPAT_TEXTURE(jointMatrices,vec2(0.25, yCoord));       // 1.5/6.0 = 0.25
+	mat[2] = COMPAT_TEXTURE(jointMatrices,vec2(0.41666666, yCoord)); // 2.5/6.0 = 0.41666666
+#endif
 	mat[3] = vec4(0,0,0,1);
 	return transpose(mat);
 }
+
 mat4 getNormalMatrixFromTexture(float index){
 	mat4 mat;
-	mat[0] = COMPAT_TEXTURE(jointMatrices,vec2(3.5/6.0,(index+0.5)/numJoints));
-	mat[1] = COMPAT_TEXTURE(jointMatrices,vec2(4.5/6.0,(index+0.5)/numJoints));
-	mat[2] = COMPAT_TEXTURE(jointMatrices,vec2(5.5/6.0,(index+0.5)/numJoints));
+#if __VERSION__ >= 450
+	mat[0] = COMPAT_TEXTURE(jointMatrices,vec2(3.5/6.0,(index+0.5)/ float(numJoints)));
+	mat[1] = COMPAT_TEXTURE(jointMatrices,vec2(4.5/6.0,(index+0.5)/ float(numJoints)));
+	mat[2] = COMPAT_TEXTURE(jointMatrices,vec2(5.5/6.0,(index+0.5)/ float(numJoints)));
+#else
+	// For older GLSL versions, use constant expressions where possible
+	float yCoord = (index + 0.5) / float(numJoints);
+	mat[0] = COMPAT_TEXTURE(jointMatrices,vec2(0.58333333, yCoord)); // 3.5/6.0 = 0.58333333
+	mat[1] = COMPAT_TEXTURE(jointMatrices,vec2(0.75, yCoord));       // 4.5/6.0 = 0.75
+	mat[2] = COMPAT_TEXTURE(jointMatrices,vec2(0.91666666, yCoord)); // 5.5/6.0 = 0.91666666
+#endif
 	mat[3] = vec4(0,0,0,1);
 	return transpose(mat);
 }
+
 mat4 getJointMatrix(){
-	mat4 ret = mat4(0);
+	mat4 ret = mat4(0.0);
 	ret += weights_0.x*getMatrixFromTexture(joints_0.x);
 	ret += weights_0.y*getMatrixFromTexture(joints_0.y);
 	ret += weights_0.z*getMatrixFromTexture(joints_0.z);
@@ -130,9 +148,10 @@ mat4 getJointMatrix(){
 	}
 	return ret;
 }
+
 mat3 getJointNormalMatrix(){
-	mat4 ret = mat4(0);
-	vec4 w1 = useJoint1?weights_1:vec4(0);
+	mat4 ret = mat4(0.0);
+	vec4 w1 = useJoint1?weights_1:vec4(0.0);
 	ret += weights_0.x*getNormalMatrixFromTexture(joints_0.x);
 	ret += weights_0.y*getNormalMatrixFromTexture(joints_0.y);
 	ret += weights_0.z*getNormalMatrixFromTexture(joints_0.z);
@@ -146,39 +165,41 @@ mat3 getJointNormalMatrix(){
 	}
 	return mat3(ret);
 }
+
 void main(void) {
 	texcoord = uv;
-	vColor = useVertColor?vertColor:vec4(1,1,1,1);
+	vColor = useVertColor?vertColor:vec4(1.0,1.0,1.0,1.0);
 	vec4 pos = vec4(position, 1.0);
-	normal = useNormal?normalIn:vec3(0,0,0);
-	tangent = useTangent?vec3(tangentIn):vec3(0,0,0);
-	vec4 outlineAttribute = useOutlineAttribute?outlineAttributeIn:vec4(0);
-	if(morphTargetWeight[0][0] != 0){
+	normal = useNormal?normalIn:vec3(0.0,0.0,0.0);
+	tangent = useTangent?vec3(tangentIn):vec3(0.0,0.0,0.0);
+	vec4 outlineAttribute = useOutlineAttribute?outlineAttributeIn:vec4(0.0);
+	
+	if(morphTargetWeight[0][0] != 0.0){
 		for(int idx = 0; idx < numTargets; ++idx)
 		{
-			float i = idx*numVertices+vertexId;
-			vec2 xy = vec2((i+0.5)/morphTargetTextureDimension-floor(i/morphTargetTextureDimension),(floor(i/morphTargetTextureDimension)+0.5)/morphTargetTextureDimension);
-			if(idx < morphTargetOffset[0]){
+			float i = float(idx*numVertices+int(vertexId));
+			vec2 xy = vec2((i+0.5)/float(morphTargetTextureDimension)-floor(i/float(morphTargetTextureDimension)),(floor(i/float(morphTargetTextureDimension))+0.5)/float(morphTargetTextureDimension));
+			if(idx < int(morphTargetOffset[0])){
 				pos += morphTargetWeight[idx/4][idx%4] * COMPAT_TEXTURE(morphTargetValues,xy);
-			}else if(idx < morphTargetOffset[1]){
+			}else if(idx < int(morphTargetOffset[1])){
 				normal += morphTargetWeight[idx/4][idx%4] * vec3(COMPAT_TEXTURE(morphTargetValues,xy));
-			}else if(idx < morphTargetOffset[2]){
+			}else if(idx < int(morphTargetOffset[2])){
 				tangent += morphTargetWeight[idx/4][idx%4] * vec3(COMPAT_TEXTURE(morphTargetValues,xy));
-			}else if(idx < morphTargetOffset[3]){
+			}else if(idx < int(morphTargetOffset[3])){
 				texcoord += morphTargetWeight[idx/4][idx%4] * vec2(COMPAT_TEXTURE(morphTargetValues,xy));
 			}else{
 				vColor += morphTargetWeight[idx/4][idx%4] * COMPAT_TEXTURE(morphTargetValues,xy);
 			}
 		}
 	}
+	
 	if(useJoint0){
-		
 		mat4 jointMatrix = getJointMatrix();
 		mat3 jointNormalMatrix = getJointNormalMatrix();
 		normal = mat3(normalMatrix) * jointNormalMatrix * normal;
 		vec4 tmp2 = model * jointMatrix * pos;
 		
-		if(outlineAttribute.w > 0){
+		if(outlineAttribute.w > 0.0){
 			vec3 p = normalize(mat3(normalMatrix) * outlineAttribute.xyz)*outlineAttribute.w*meshOutline*length(cameraPosition-tmp2.xyz);
 			tmp2.xyz += p;
 		}else{
@@ -192,15 +213,15 @@ void main(void) {
 			lightSpacePos[i] = lightMatrices[i] * tmp2;
 		}
 	}else{
-		if(normal.x+normal.y+normal.z != 0){
+		if(normal.x+normal.y+normal.z != 0.0){
 			normal = normalize(mat3(normalMatrix) * normal);
 		}
-		if(tangent.x+tangent.y+tangent.z != 0){
-			tangent = normalize(vec3(model * vec4(tangent,0)));
-			bitangent = cross(normal, tangent) * (useTangent?tangentIn.w:0);
+		if(tangent.x+tangent.y+tangent.z != 0.0){
+			tangent = normalize(vec3(model * vec4(tangent,0.0)));
+			bitangent = cross(normal, tangent) * (useTangent?tangentIn.w:0.0);
 		}
 		vec4 tmp2 = model * pos;
-		if(outlineAttribute.w > 0){
+		if(outlineAttribute.w > 0.0){
 			vec3 p = normalize(mat3(normalMatrix) * outlineAttribute.xyz)*outlineAttribute.w*meshOutline*length(cameraPosition-tmp2.xyz);
 			tmp2.xyz += p;
 		}else{

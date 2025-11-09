@@ -29,9 +29,9 @@ layout(binding = 1) uniform MaterialUniform {
 	bool enableAlpha;
 };
 layout(binding = 5) uniform sampler2D tex;
-layout(location = 0) in vec4 FragPos;
-layout(location = 1) in float vColorAlpha;
-layout(location = 2) in vec2 texcoord0;
+layout(location = 0) in vec4 fragPos;
+layout(location = 1) in float vColor;
+layout(location = 2) in vec2 texcoord;
 layout(location = 3) in flat int lightIndex;
 #else
 #if __VERSION__ >= 130
@@ -49,28 +49,39 @@ uniform float alphaThreshold;
 uniform vec4 baseColorFactor;
 uniform Light lights[4];
 uniform int lightIndex;
-COMPAT_VARYING vec4 FragPos;
-COMPAT_VARYING float vColorAlpha;
-COMPAT_VARYING vec2 texcoord0;
+COMPAT_VARYING vec4 fragPos;
+COMPAT_VARYING float vColor;
+COMPAT_VARYING vec2 texcoord;
 #endif
 
 const int LightType_None = 0;
 const int LightType_Directional = 1;
 const int LightType_Point = 2;
 const int LightType_Spot = 3;
+
 void main()
 {
     vec4 color = baseColorFactor;
     if(useTexture){
-        color = color * COMPAT_TEXTURE(tex, vec2(texTransform*vec3(texcoord0,1)));
+        color = color * COMPAT_TEXTURE(tex, vec2(texTransform*vec3(texcoord,1.0)));
     }
-    color.a *= vColorAlpha;
-    if((enableAlpha && color.a <= 0) || (color.a < alphaThreshold)){
+    color.a *= vColor;
+    
+    // Fixed: Use proper float comparison and separate conditions
+    bool shouldDiscard = false;
+    if(enableAlpha && color.a <= 0.0) {
+        shouldDiscard = true;
+    } else if(color.a < alphaThreshold) {
+        shouldDiscard = true;
+    }
+    
+    if(shouldDiscard) {
         discard;
     }
+    
     int index = int(lightIndex);
     if(lights[index].type != LightType_Directional){
-        float lightDistance = length(FragPos.xyz - lights[index].position);
+        float lightDistance = length(fragPos.xyz - lights[index].position);
     
         lightDistance = lightDistance / lights[index].shadowMapFar;
         

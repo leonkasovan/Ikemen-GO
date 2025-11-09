@@ -239,7 +239,6 @@ function main() {
 	# - macOS: app bundle uses bin/ later from Makefile
 	case "$OSTYPE" in
 		darwin*) OUTDIR="bin" ;;
-		*)       OUTDIR="."  ;;
 	esac
 	mkdir -p "$OUTDIR"
 	mkdir -p "$LIBDIR"

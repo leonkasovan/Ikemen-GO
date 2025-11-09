@@ -46,6 +46,11 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 		glfw.WindowHint(glfw.ContextVersionMinor, 2)
 		glfw.WindowHint(glfw.OpenGLForwardCompatible, glfw.True)
 		glfw.WindowHint(glfw.OpenGLProfile, glfw.OpenGLCoreProfile)
+	} else if s.cfg.Video.RenderMode == "OpenGL ES 3.1" {
+		glfw.WindowHint(glfw.ClientAPI, glfw.OpenGLESAPI)
+		glfw.WindowHint(glfw.ContextVersionMajor, 3)
+		glfw.WindowHint(glfw.ContextVersionMinor, 1)
+		glfw.WindowHint(glfw.ContextCreationAPI, glfw.EGLContextAPI)
 	} else if sys.cfg.Video.RenderMode == "OpenGL 2.1" {
 		glfw.WindowHint(glfw.ContextVersionMajor, 2)
 		glfw.WindowHint(glfw.ContextVersionMinor, 1)
@@ -80,14 +85,14 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 			window.SetPos(x, y)
 		}
 	}
-	if sys.cfg.Video.RenderMode == "OpenGL 3.2" || sys.cfg.Video.RenderMode == "OpenGL 2.1" {
+	if sys.cfg.Video.RenderMode == "OpenGL 3.2" || sys.cfg.Video.RenderMode == "OpenGL 2.1" || sys.cfg.Video.RenderMode == "OpenGL ES 3.1" {
 		window.MakeContextCurrent()
 	}
 	window.SetKeyCallback(keyCallback)
 	window.SetCharModsCallback(charCallback)
 	window.SetRefreshCallback(refreshCallback)
 
-	if sys.cfg.Video.RenderMode == "OpenGL 3.2" || sys.cfg.Video.RenderMode == "OpenGL 2.1" {
+	if sys.cfg.Video.RenderMode == "OpenGL 3.2" || sys.cfg.Video.RenderMode == "OpenGL 2.1" || sys.cfg.Video.RenderMode == "OpenGL ES 3.1" {
 		// V-Sync
 		if s.cfg.Video.VSync >= 0 {
 			glfw.SwapInterval(s.cfg.Video.VSync)
@@ -114,7 +119,7 @@ func (w *Window) SetIcon(icon []image.Image) {
 }
 
 func (w *Window) SetSwapInterval(interval int) {
-	if sys.cfg.Video.RenderMode == "OpenGL 3.2" || sys.cfg.Video.RenderMode == "OpenGL 2.1" {
+	if sys.cfg.Video.RenderMode == "OpenGL 3.2" || sys.cfg.Video.RenderMode == "OpenGL 2.1" || sys.cfg.Video.RenderMode == "OpenGL ES 3.1" {
 		glfw.SwapInterval(interval)
 	} else {
 		gfx.SetVSync()
@@ -181,7 +186,7 @@ func (w *Window) toggleFullscreen() {
 		}
 		w.SetInputMode(glfw.CursorMode, glfw.CursorHidden)
 	}
-	if sys.cfg.Video.VSync != -1 && (sys.cfg.Video.RenderMode == "OpenGL 3.2" || sys.cfg.Video.RenderMode == "OpenGL 2.1") {
+	if sys.cfg.Video.VSync != -1 && (sys.cfg.Video.RenderMode == "OpenGL 3.2" || sys.cfg.Video.RenderMode == "OpenGL 2.1" || sys.cfg.Video.RenderMode == "OpenGL ES 3.1") {
 		glfw.SwapInterval(sys.cfg.Video.VSync)
 	}
 	w.fullscreen = !w.fullscreen
@@ -200,7 +205,7 @@ func (w *Window) Close() {
 }
 
 func refreshCallback(w *glfw.Window) {
-	if sys.cfg.Video.RenderMode == "OpenGL 3.2" || sys.cfg.Video.RenderMode == "OpenGL 2.1" {
+	if sys.cfg.Video.RenderMode == "OpenGL 3.2" || sys.cfg.Video.RenderMode == "OpenGL 2.1" || sys.cfg.Video.RenderMode == "OpenGL ES 3.1" {
 		gfx.EndFrame()
 		w.SwapBuffers()
 	}

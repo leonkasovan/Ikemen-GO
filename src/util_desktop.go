@@ -5,9 +5,10 @@ package main
 import (
 	"io"
 	"os"
+	"fmt"
 
 	findfont "github.com/flopp/go-findfont"
-	"github.com/sqweek/dialog"
+	// "github.com/sqweek/dialog"
 )
 
 // Log writer implementation
@@ -17,11 +18,13 @@ func NewLogWriter() io.Writer {
 
 // Message box implementation
 func ShowInfoDialog(message, title string) {
-	dialog.Message(message).Title(title).Info()
+	// dialog.Message(message).Title(title).Info()
+	fmt.Printf("Info:\n%v\n", message)
 }
 
 func ShowErrorDialog(message string) {
-	dialog.Message(message).Title("I.K.E.M.E.N Error").Error()
+	// dialog.Message(message).Title("I.K.E.M.E.N Error").Error()
+	fmt.Printf("Error:\n%v\n", message)
 }
 
 // TTF font loading

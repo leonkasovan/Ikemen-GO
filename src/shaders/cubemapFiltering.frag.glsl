@@ -303,7 +303,7 @@ vec3 filterColor(vec3 N)
                 {
                     // without this the roughness=0 lod is too high
                     //lod = u_lodBias;
-                    lod = 0;
+                    lod = 0.0;
                 }
                 vec3 sampleColor = COMPAT_TEXTURE_CUBE_LOD(cubeMap, L, lod).rgb * intensityScale;
                 color += sampleColor * NdotL;

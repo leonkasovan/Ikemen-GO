@@ -84,12 +84,13 @@ COMPAT_ATTRIBUTE vec4 joints_0;
 COMPAT_ATTRIBUTE vec4 joints_1;
 COMPAT_ATTRIBUTE vec4 weights_0;
 COMPAT_ATTRIBUTE vec4 weights_1;
+
+// Proper output declarations
+COMPAT_VARYING vec4 fragPos;
 COMPAT_VARYING float vColor;
 COMPAT_VARYING vec2 texcoord;
 
-
-#define useJoint0 weights_0.x+weights_0.y+weights_0.z+weights_0.w+weights_1.x+weights_1.y+weights_1.z+weights_1.w>0
-#define fragPos gl_Position
+#define useJoint0 (weights_0.x+weights_0.y+weights_0.z+weights_0.w+weights_1.x+weights_1.y+weights_1.z+weights_1.w>0.0)
 const bool useJoint1 = true;
 const bool useVertColor = true;
 #endif
@@ -97,14 +98,23 @@ const bool useVertColor = true;
 
 mat4 getMatrixFromTexture(float index){
 	mat4 mat;
-	mat[0] = COMPAT_TEXTURE(jointMatrices,vec2(0.5/6.0,(index+0.5)/numJoints));
-	mat[1] = COMPAT_TEXTURE(jointMatrices,vec2(1.5/6.0,(index+0.5)/numJoints));
-	mat[2] = COMPAT_TEXTURE(jointMatrices,vec2(2.5/6.0,(index+0.5)/numJoints));
+#if __VERSION__ >= 450
+	mat[0] = COMPAT_TEXTURE(jointMatrices,vec2(0.5/6.0,(index+0.5)/float(numJoints)));
+	mat[1] = COMPAT_TEXTURE(jointMatrices,vec2(1.5/6.0,(index+0.5)/float(numJoints)));
+	mat[2] = COMPAT_TEXTURE(jointMatrices,vec2(2.5/6.0,(index+0.5)/float(numJoints)));
+#else
+	// For older GLSL versions, use constant expressions where possible
+	float yCoord = (index + 0.5) / float(numJoints);
+	mat[0] = COMPAT_TEXTURE(jointMatrices,vec2(0.08333333, yCoord)); // 0.5/6.0 = 0.08333333
+	mat[1] = COMPAT_TEXTURE(jointMatrices,vec2(0.25, yCoord));       // 1.5/6.0 = 0.25
+	mat[2] = COMPAT_TEXTURE(jointMatrices,vec2(0.41666666, yCoord)); // 2.5/6.0 = 0.41666666
+#endif
 	mat[3] = vec4(0,0,0,1);
 	return transpose(mat);
 }
+
 mat4 getJointMatrix(){
-	mat4 ret = mat4(0);
+	mat4 ret = mat4(0.0);
 	ret += weights_0.x*getMatrixFromTexture(joints_0.x);
 	ret += weights_0.y*getMatrixFromTexture(joints_0.y);
 	ret += weights_0.z*getMatrixFromTexture(joints_0.z);
@@ -120,22 +130,23 @@ mat4 getJointMatrix(){
 	}
 	return ret;
 }
+
 void main() {
 	texcoord = uv;
 	if(useVertColor) {
 		vColor = vertColor.a;
 	}else{
-		vColor = 1;
+		vColor = 1.0;
 	}
 	vec4 pos = vec4(position, 1.0);
-	if(morphTargetOffset[0] > 0){
+	if(morphTargetOffset[0] > 0.0){
 		for(int idx = 0; idx < numTargets; ++idx)
 		{
-			float i = idx*numVertices+vertexId;
-			vec2 xy = vec2((i+0.5)/morphTargetTextureDimension-floor(i/morphTargetTextureDimension),(floor(i/morphTargetTextureDimension)+0.5)/morphTargetTextureDimension);
-			if(idx < morphTargetOffset[0]){
+			float i = float(idx*numVertices+int(vertexId));
+			vec2 xy = vec2((i+0.5)/float(morphTargetTextureDimension)-floor(i/float(morphTargetTextureDimension)),(floor(i/float(morphTargetTextureDimension))+0.5)/float(morphTargetTextureDimension));
+			if(idx < int(morphTargetOffset[0])){
 				pos += morphTargetWeight[idx/4][idx%4] * COMPAT_TEXTURE(morphTargetValues,xy);
-			}else if(idx >= morphTargetOffset[2] && idx < morphTargetOffset[3]){
+			}else if(idx >= int(morphTargetOffset[2]) && idx < int(morphTargetOffset[3])){
 				texcoord += morphTargetWeight[idx/4][idx%4] * vec2(COMPAT_TEXTURE(morphTargetValues,xy));
 			}
 		}
@@ -150,5 +161,8 @@ void main() {
 	gl_Layer = int(layers[gl_InstanceIndex/4][gl_InstanceIndex%4]);
 	lightIndex = gl_Layer/6;
 	gl_Position = lightMatrices[gl_Layer] * fragPos;
+	#else
+	// For non-450 versions, we need to set gl_Position manually
+	gl_Position = fragPos; // Or whatever transformation you need
 	#endif
 }

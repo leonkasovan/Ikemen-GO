@@ -122,12 +122,6 @@ var panoramaToCubeMapFragShader string
 //go:embed shaders/cubemapFiltering.frag.glsl
 var cubemapFilteringFragShader string
 
-//go:embed shaders/font.frag.glsl
-var fragmentFontShader string
-
-//go:embed shaders/font.vert.glsl
-var vertexFontShader string
-
 // The global, platform-specific rendering backend
 var gfx Renderer
 var gfxFont FontRenderer

@@ -7,6 +7,7 @@ go/*
 *.bat
 *.sh
 *.png
+*.zip
 save/*
 Ikemen_GO.exe
 Ikemen_GO_Linux
@@ -33,6 +34,7 @@ stages/*
 sound/*
 debug/*
 video/*
+bin/*
 
 # Temp
 src/lua_triggers.go
