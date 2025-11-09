@@ -60,7 +60,6 @@ glfwGetGamepadState
 #define EVDEV_OFF(x)         ((x) % BITS_PER_LONG)
 #define EVDEV_LONG(x)        ((x) / BITS_PER_LONG)
 #define test_bit(bit, array) ((array[EVDEV_LONG(bit)] >> EVDEV_OFF(bit)) & 1)
-#define CFW "knulli"
 
 #ifndef SYN_DROPPED // < v2.6.39 kernel headers
 // Workaround for CentOS-6, which is supported till 2020-11-30, but still on v2.6.32
