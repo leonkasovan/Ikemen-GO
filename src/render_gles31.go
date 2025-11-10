@@ -13,9 +13,9 @@ import (
 	"runtime"
 	"unsafe"
 
-	
-	gl "github.com/leonkasovan/gl/v3.1/gles2"
-	glfw "github.com/go-gl/glfw/v3.3/glfw"
+
+	glfw "github.com/ikemen-engine/Ikemen-GO/packages/glfw"
+	gl "github.com/ikemen-engine/Ikemen-GO/packages/gl/v3.1/gles2"
 	mgl "github.com/go-gl/mathgl/mgl32"
 	"golang.org/x/mobile/exp/f32"
 )
@@ -458,7 +458,11 @@ func (r *Renderer_GL) InitModelShader() error {
 // Render initialization.
 // Creates the default shaders, the framebuffer and enables MSAA.
 func (r *Renderer_GL) Init() {
-	chk(gl.Init())
+	if err := gl.Init(glfw.GetProcAddress); err != nil {
+    	fmt.Println("gl.Init() failed:", err)
+	} else {
+		fmt.Println("gl.Init() success:")
+	}
 	sys.errLog.Printf("Using %v (%v)",
 		gl.GoStr(gl.GetString(gl.VERSION)), gl.GoStr(gl.GetString(gl.RENDERER)))
 
@@ -471,7 +475,7 @@ func (r *Renderer_GL) Init() {
 	}
 
 	// Store current timestamp
-	sys.prevTimestamp = glfw.GetTime()
+	sys.prevTimestamp = sys.GetTime()
 
 	// Prepare post shader slots (1 base + external)
 	r.postShaderSelect = make([]*ShaderProgram_GL, 1+len(sys.cfg.Video.ExternalShaders))
@@ -707,7 +711,7 @@ func (r *Renderer_GL) EndFrame() {
 	gl.BindVertexArray(r.vao)
 
 	x, y, width, height := int32(0), int32(0), int32(sys.scrrect[2]), int32(sys.scrrect[3])
-	time := glfw.GetTime() // consistent time across all shaders
+	time := sys.GetTime() // consistent time across all shaders
 
 	if sys.msaa > 0 {
 		gl.BindFramebuffer(gl.DRAW_FRAMEBUFFER, r.fbo_f)

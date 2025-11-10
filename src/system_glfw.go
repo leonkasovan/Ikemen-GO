@@ -3,8 +3,9 @@ package main
 import (
 	"fmt"
 	"image"
+	"unsafe"
 
-	glfw "github.com/go-gl/glfw/v3.3/glfw"
+	glfw "github.com/ikemen-engine/Ikemen-GO/packages/glfw"
 )
 
 type Window struct {
@@ -18,27 +19,38 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 	var err error
 	var window *glfw.Window
 	var monitor *glfw.Monitor
+	var mode *glfw.VidMode
 
-	// Initialize OpenGL
+	fullscreen := true
+	x, y := 0, 0
+	w2, h2 := w, h
+
+	// Initialize Hints
+	glfw.InitHint(0x00053001, 0x00038002) // GLFW_WAYLAND_LIBDECOR=GLFW_WAYLAND_DISABLE_LIBDECOR
+	
+	// Initialize Windowing system
 	chk(glfw.Init())
+	fmt.Printf("GLFW Version: %v\n", glfw.GetVersionString())
+	fmt.Printf("GLFW Platform: %v\n", glfw.GetPlatform())
 
-	if monitor = glfw.GetPrimaryMonitor(); monitor == nil {
-		return nil, fmt.Errorf("failed to obtain primary monitor")
+	// Check if we are running in X11 or Wayland mode
+	if glfw.GetPlatform() == "x11" || glfw.GetPlatform() == "wayland" || glfw.GetPlatform() == "win32"{
+		monitor = glfw.GetPrimaryMonitor()
+		// "-windowed" overrides the configuration setting but does not change it
+		_, forceWindowed := sys.cmdFlags["-windowed"]
+		fullscreen = s.cfg.Video.Fullscreen && !forceWindowed
+		// Calculate window size & offset it
+		mode = monitor.GetVideoMode()
+		fmt.Printf("Monitor size: %dx%d\n", mode.Width, mode.Height)
+		w2, h2 = w, h
+		if !fullscreen && (sys.cfg.Video.WindowWidth > 0 || sys.cfg.Video.WindowHeight > 0) {
+			w2, h2 = sys.cfg.Video.WindowWidth, sys.cfg.Video.WindowHeight
+		}
+		x, y = (mode.Width-w2)/2, (mode.Height-h2)/2
+		glfw.WindowHint(glfw.Resizable, glfw.True)
 	}
-
-	// "-windowed" overrides the configuration setting but does not change it
-	_, forceWindowed := sys.cmdFlags["-windowed"]
-	fullscreen := s.cfg.Video.Fullscreen && !forceWindowed
-
-	// Calculate window size & offset it
-	var mode = monitor.GetVideoMode()
-	var w2, h2 = w, h
-	if sys.cfg.Video.WindowWidth > 0 || sys.cfg.Video.WindowHeight > 0 {
-		w2, h2 = sys.cfg.Video.WindowWidth, sys.cfg.Video.WindowHeight
-	}
-	var x, y = (mode.Width - w2) / 2, (mode.Height - h2) / 2
-
-	glfw.WindowHint(glfw.Resizable, glfw.True)
+	fmt.Printf("Window size: %dx%d\n", w2, h2)
+	fmt.Printf("Window position: %d,%d\n", x, y)
 
 	// only GL 3.2 needs this
 	if sys.cfg.Video.RenderMode == "OpenGL 3.2" {
@@ -71,18 +83,20 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 	}
 
 	// Set windows attributes
-	if fullscreen {
-		window.SetPos(0, 0)
-		if s.cfg.Video.Borderless {
-			window.SetAttrib(glfw.Decorated, 0)
-			window.SetSize(mode.Width, mode.Height)
-		}
-		window.SetInputMode(glfw.CursorMode, glfw.CursorHidden)
-	} else {
-		window.SetSize(w2, h2)
-		window.SetInputMode(glfw.CursorMode, glfw.CursorNormal)
-		if s.cfg.Video.WindowCentered {
-			window.SetPos(x, y)
+	if glfw.GetPlatform() == "x11" || glfw.GetPlatform() == "win32" {
+		if fullscreen {
+			window.SetPos(0, 0)
+			if s.cfg.Video.Borderless {
+				window.SetAttrib(glfw.Decorated, 0)
+				window.SetSize(mode.Width, mode.Height)
+			}
+			window.SetInputMode(glfw.CursorMode, glfw.CursorHidden)
+		} else {
+			window.SetSize(w2, h2)
+			window.SetInputMode(glfw.CursorMode, glfw.CursorNormal)
+			if s.cfg.Video.WindowCentered {
+				window.SetPos(x, y)
+			}
 		}
 	}
 	if sys.cfg.Video.RenderMode == "OpenGL 3.2" || sys.cfg.Video.RenderMode == "OpenGL 2.1" || sys.cfg.Video.RenderMode == "OpenGL ES 3.1" {
@@ -99,9 +113,33 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 		}
 	}
 
+	if glfw.GetPlatform() == "kmsdrm" { // KMS DRM mode, override window size
+		w, h = window.GetSize()
+		if s.cfg.Video.WindowWidth != w {
+			fmt.Printf("Overriding configuration Video.WindowWidth(%d) with Monitor's width(%d)\n", s.cfg.Video.WindowWidth, w)
+			s.cfg.Video.WindowWidth = w
+		}
+		if s.cfg.Video.WindowHeight != h {
+			fmt.Printf("Overriding configuration Video.WindowHeight(%d) with Monitor's height(%d)\n", s.cfg.Video.WindowHeight, h)
+			s.cfg.Video.WindowHeight = h
+		}
+	}
+
 	ret := &Window{window, s.cfg.Config.WindowTitle, fullscreen, x, y, w, h}
 	return ret, err
 }
+
+func (s *System) GetTime() float64 {
+	return glfw.GetTime()
+}
+
+func (s *System) GetVulkanGetInstanceProcAddress() unsafe.Pointer {
+	return glfw.GetVulkanGetInstanceProcAddress()
+}
+
+// func (s *System) GetProcAddress() unsafe.Pointer {
+// 	return glfw.GetProcAddress
+// }
 
 func (w *Window) SwapBuffers() {
 	w.Window.SwapBuffers()

@@ -19,7 +19,9 @@ UNAME_M := $(shell uname -m)
 ifeq ($(UNAME_S),Linux)
     DEFAULT_TARGET := linux
 	ifeq ($(UNAME_M),aarch64)
-		TAGS := opengles31
+		TAGS := sdl2,opengles31,gles2
+# 		TAGS := x11,opengles31,gles2
+# 		TAGS := wayland,opengles31,gles2
 # 		TAGS := opengl21
 	else
 		TAGS := opengl33

@@ -16,7 +16,6 @@ import (
 	"unsafe"
 
 	gl "github.com/go-gl/gl/v3.3-core/gl"
-	glfw "github.com/go-gl/glfw/v3.3/glfw"
 	mgl "github.com/go-gl/mathgl/mgl32"
 	"golang.org/x/mobile/exp/f32"
 )
@@ -463,7 +462,7 @@ func (r *Renderer_GL) Init() {
 	}
 
 	// Store current timestamp
-	sys.prevTimestamp = glfw.GetTime()
+	sys.prevTimestamp = sys.GetTime()
 
 	r.postShaderSelect = make([]*ShaderProgram_GL, 1+len(sys.cfg.Video.ExternalShaders))
 

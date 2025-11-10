@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	glfw "github.com/go-gl/glfw/v3.3/glfw"
 	lua "github.com/yuin/gopher-lua"
 )
 
@@ -234,7 +233,7 @@ type GameState struct {
 	playBgmFlg      bool
 
 	// Input
-	keyInput  glfw.Key
+	keyInput  Key
 	keyString string
 
 	// LifeBar

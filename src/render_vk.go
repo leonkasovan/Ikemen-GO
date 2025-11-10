@@ -16,7 +16,6 @@ import (
 	"unsafe"
 
 	vk "github.com/Eiton/vulkan"
-	glfw "github.com/go-gl/glfw/v3.3/glfw"
 	mgl "github.com/go-gl/mathgl/mgl32"
 )
 
@@ -4687,7 +4686,7 @@ func (r *Renderer_VK) Init() {
 	r.VKState.VulkanModelPipelineState.VulkanModelSpecializationConstants1.useShadowMap = r.enableShadow
 	r.setVSync = false
 
-	vk.SetGetInstanceProcAddr(glfw.GetVulkanGetInstanceProcAddress())
+	vk.SetGetInstanceProcAddr(sys.GetVulkanGetInstanceProcAddress())
 	err := vk.Init()
 	if err != nil {
 		panic(err)
@@ -4849,7 +4848,7 @@ func (r *Renderer_VK) DestroyResources(queueLength int) {
 
 func (r *Renderer_VK) BeginFrame(clearColor bool) {
 	sys.absTickCountF++
-	now := glfw.GetTime()
+	now := sys.GetTime()
 	firstFrame := sys.prevTimestamp == 0
 	if now-sys.prevTimestamp >= 1 {
 		sys.gameFPS = sys.absTickCountF / float32(now-sys.prevTimestamp)
@@ -5118,7 +5117,7 @@ func (r *Renderer_VK) EndFrame() {
 	vk.CmdBindVertexBuffers(r.commandBuffers[0], 0, 1, []vk.Buffer{r.vertexBuffers[bufferIndex].buffer}, []vk.DeviceSize{0})
 
 	//TextureSize, CurrentTime
-	pushConstants := [3]float32{float32(r.renderTargets[0].texture.width), float32(r.renderTargets[0].texture.height), float32(glfw.GetTime())}
+	pushConstants := [3]float32{float32(r.renderTargets[0].texture.width), float32(r.renderTargets[0].texture.height), float32(sys.GetTime())}
 	vk.CmdPushConstants(r.commandBuffers[0], r.postProcessingProgram.pipelineLayout, vk.ShaderStageFlags(vk.ShaderStageVertexBit|vk.ShaderStageFragmentBit), 0, 4*3, unsafe.Pointer(&pushConstants[0]))
 
 	for i := 0; i < len(r.postProcessingProgram.pipelines)-1; i++ {
