@@ -798,8 +798,11 @@ func (r *Renderer_GL) EndFrame() {
 
 		// construct the quad and draw it
 		gl.DrawArrays(gl.TRIANGLE_STRIP, 0, 4)
+		sys.nDrawcall++
 		gl.DisableVertexAttribArray(uint32(loc))
 	}
+	sys.Drawcall = sys.nDrawcall
+	sys.nDrawcall = 0;
 }
 
 func (r *Renderer_GL) Await() {
@@ -1474,9 +1477,11 @@ func (r *Renderer_GL) SetModelIndexData(bufferIndex uint32, values ...uint32) {
 
 func (r *Renderer_GL) RenderQuad() {
 	gl.DrawArrays(gl.TRIANGLE_STRIP, 0, 4)
+	sys.nDrawcall++
 }
 func (r *Renderer_GL) RenderElements(mode PrimitiveMode, count, offset int) {
 	gl.DrawElementsWithOffset(r.MapPrimitiveMode(mode), int32(count), gl.UNSIGNED_INT, uintptr(offset))
+	sys.nDrawcall++
 }
 func (r *Renderer_GL) RenderShadowMapElements(mode PrimitiveMode, count, offset int) {
 	r.RenderElements(mode, count, offset)
@@ -1507,6 +1512,7 @@ func (r *Renderer_GL) RenderCubeMap(envTex Texture, cubeTex Texture) {
 		gl.Uniform1i(loc, int32(i))
 
 		gl.DrawArrays(gl.TRIANGLE_STRIP, 0, 4)
+		sys.nDrawcall++
 	}
 	gl.BindFramebuffer(gl.FRAMEBUFFER, r.fbo)
 	gl.BindTexture(gl.TEXTURE_CUBE_MAP, cubeTexture.handle)
@@ -1550,6 +1556,7 @@ func (r *Renderer_GL) RenderFilteredCubeMap(distribution int32, cubeTex Texture,
 		gl.Uniform1i(loc, int32(i))
 
 		gl.DrawArrays(gl.TRIANGLE_STRIP, 0, 4)
+		sys.nDrawcall++
 	}
 	gl.BindFramebuffer(gl.FRAMEBUFFER, r.fbo)
 }
@@ -1591,6 +1598,7 @@ func (r *Renderer_GL) RenderLUT(distribution int32, cubeTex Texture, lutTex Text
 	gl.FramebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, lutTexture.handle, 0)
 	gl.Clear(gl.COLOR_BUFFER_BIT)
 	gl.DrawArrays(gl.TRIANGLE_STRIP, 0, 4)
+	sys.nDrawcall++
 	gl.BindFramebuffer(gl.FRAMEBUFFER, r.fbo)
 }
 

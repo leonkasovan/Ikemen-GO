@@ -149,6 +149,8 @@ func (w *Window) SwapBuffers() {
 		sys.gameFPS = sys.absTickCountF / float32(glNow-sys.prevTimestamp)
 		sys.absTickCountF = 0
 		sys.prevTimestamp = glNow
+		fmt.Printf("%v FPS, %v Drawcall\n", sys.gameFPS, sys.Drawcall)
+		sys.nDrawcall = 0
 	}
 }
 

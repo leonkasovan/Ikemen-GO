@@ -329,6 +329,10 @@ type System struct {
 	prevTimestamp float64
 	absTickCountF float32
 
+	// Draw Call counter
+	nDrawcall int
+	Drawcall int
+
 	// screenshot deferral
 	isTakingScreenshot bool
 }
@@ -488,7 +492,7 @@ func (s *System) init(w, h int32) *lua.LState {
 			}
 			s.windowMainIcon[i], _, err = image.Decode(f[i])
 		}
-		s.window.SetIcon(s.windowMainIcon)
+		// s.window.SetIcon(s.windowMainIcon)
 		chk(err)
 	}
 	// [Icon add end]
@@ -1554,15 +1558,15 @@ func (s *System) clearAllSound() {
 	s.soundMixer.Clear()
 	// Quiesce stage videos so no background decoding continues while mixer is empty,
 	// and mark them as detached so SetPlaying(true) can re-attach next frame.
-	if s.stage != nil {
-		for _, b := range s.stage.bg {
-			if b != nil && b._type == BG_Video {
-				b.video.SetPlaying(false)
-				b.video.SetVisible(false)
-				b.video.MixerCleared()
-			}
-		}
-	}
+	// if s.stage != nil {
+	// 	for _, b := range s.stage.bg {
+	// 		if b != nil && b._type == BG_Video {
+	// 			b.video.SetPlaying(false)
+	// 			b.video.SetVisible(false)
+	// 			b.video.MixerCleared()
+	// 		}
+	// 	}
+	// }
 }
 
 // Remove the player's explods, projectiles and (optionally) helpers as well as stopping their sounds
