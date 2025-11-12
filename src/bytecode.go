@@ -4445,7 +4445,7 @@ func (sc playSnd) Run(c *Char, _ []int32) bool {
 
 	x := &crun.pos[0]
 	ls := crun.localscl
-	f, lw, lp, stopgh, stopcs := "", false, false, false, false
+	f, lw, lp, stopgh, stopcs, vscaleflg := "", false, false, false, false, false
 	var g, n, ch, vo, pri, lc int32 = -1, 0, -1, 100, 0, 0
 	var loopstart, loopend, startposition = 0, 0, 0
 	var p, fr float32 = 0, 1
@@ -4472,9 +4472,10 @@ func (sc playSnd) Run(c *Char, _ []int32) bool {
 			ls = 1
 			p = exp[0].evalF(c)
 		case playSnd_volume:
-			vo = vo + int32(float64(exp[0].evalI(c))*(25.0/64.0))
+			vo = vo + int32(float64(exp[0].evalI(c))*(25.0/128.0))
 		case playSnd_volumescale:
 			vo = exp[0].evalI(c)
+			vscaleflg = true
 		case playSnd_freqmul:
 			fr = ClampF(exp[0].evalF(c), 0.01, 5)
 		case playSnd_loop:
@@ -4499,6 +4500,10 @@ func (sc playSnd) Run(c *Char, _ []int32) bool {
 	// Read the loop parameter if loopcount not specified
 	if lc == 0 {
 		if lp {
+			// WINMUGEN has a bug where the volume parameter is disabled when loop is specified
+			if !vscaleflg && c.stWgi().ikemenver[0] == 0 && c.stWgi().ikemenver[1] == 0 {
+				vo = 100
+			}
 			crun.playSound(f, lw, -1, g, n, ch, vo, p, fr, ls, x, true, pri, loopstart, loopend, startposition, stopgh, stopcs)
 		} else {
 			crun.playSound(f, lw, 0, g, n, ch, vo, p, fr, ls, x, true, pri, loopstart, loopend, startposition, stopgh, stopcs)
