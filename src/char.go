@@ -1243,7 +1243,7 @@ func (ai *AfterImage) recAfterImg(sd *SprData, hitpause bool) {
 	ai.timecount++
 }
 
-func (ai *AfterImage) recAndCue(sd *SprData, rec bool, hitpause bool, layer int32) {
+func (ai *AfterImage) recAndCue(sd *SprData, rec bool, hitpause bool, layer int32, screen_space bool) {
 	if ai.time == 0 || (ai.timecount >= ai.timegap*ai.length+ai.time-1 && ai.time > 0) ||
 		ai.timegap < 1 || ai.timegap > 32767 ||
 		ai.framegap < 1 || ai.framegap > 32767 {
@@ -1280,7 +1280,7 @@ func (ai *AfterImage) recAndCue(sd *SprData, rec bool, hitpause bool, layer int3
 				alpha:        ai.alpha,
 				priority:     img.priority - step, // Afterimages decrease in sprpriority over time
 				rot:          img.rot,
-				screen:       false,
+				screen:       screen_space,
 				undarken:     sd.undarken,
 				facing:       sd.facing,
 				airOffsetFix: sd.airOffsetFix,
@@ -1820,7 +1820,7 @@ func (e *Explod) update(playerNo int) {
 		sd.syncLayer = e.syncLayer
 	}
 	// Record afterimage
-	e.aimg.recAndCue(sd, sys.tickNextFrame() && act, sys.tickNextFrame() && e.ignorehitpause && (e.supermovetime != 0 || e.pausemovetime != 0), e.layerno)
+	e.aimg.recAndCue(sd, sys.tickNextFrame() && act, sys.tickNextFrame() && e.ignorehitpause && (e.supermovetime != 0 || e.pausemovetime != 0), e.layerno, e.space == Space_screen)
 
 	sprs.add(sd)
 
@@ -2489,7 +2489,7 @@ func (p *Projectile) cueDraw() {
 			xshear:       p.xshear,
 		}
 
-		p.aimg.recAndCue(sd, sys.tickNextFrame() && notpause, false, p.layerno)
+		p.aimg.recAndCue(sd, sys.tickNextFrame() && notpause, false, p.layerno, false)
 		sprs.add(sd)
 
 		// Add a shadow if color is not 0
@@ -11628,7 +11628,7 @@ func (c *Char) cueDraw() {
 		charSD.syncLayer = 0 // Character body is always at layer 0
 
 		// Record afterimage
-		c.aimg.recAndCue(charSD, rec, sys.tickNextFrame() && c.hitPause(), c.layerNo)
+		c.aimg.recAndCue(charSD, rec, sys.tickNextFrame() && c.hitPause(), c.layerNo, false)
 		// Hitshake effect
 		if c.ghv.hitshaketime > 0 && c.ss.time&1 != 0 {
 			charSD.pos[0] -= c.facing

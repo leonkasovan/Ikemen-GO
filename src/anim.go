@@ -866,9 +866,6 @@ func (a *Animation) ShadowDraw(window *[4]int32, x, y, xscl, yscl, vscl, rxadd f
 	// Determine animation angle. Invert for shadows
 	h, v, angle := a.drawSub1(rot.angle, facing)
 	rot.angle = -angle
-	if yscl < 0 && rot.angle != 0 {
-		rxadd = -rxadd
-	}
 
 	// Compute X and Y AIR animation offsets
 	xoff := xscl * airOffsetFix[0] * h * (float32(a.frames[a.drawidx].Xoffset) + a.interpolate_offset_x) * (1 / a.scale_x)
@@ -888,7 +885,7 @@ func (a *Animation) ShadowDraw(window *[4]int32, x, y, xscl, yscl, vscl, rxadd f
 		xbs:            xscl * h * sys.widthScale,
 		ys:             yscl * v * sys.heightScale,
 		vs:             vscl,
-		rxadd:          rxadd,
+		rxadd:          rxadd * sys.widthScale / sys.heightScale,
 		xas:            h,
 		yas:            v,
 		rot:            rot,
@@ -1338,6 +1335,7 @@ func (sl ShadowList) draw(x, y, scl float32) {
 		}
 
 		if rot.angle != 0 {
+			xshear = -xshear
 			offsetX -= xrotoff
 		} else {
 			offsetX += xrotoff
