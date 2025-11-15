@@ -14,7 +14,6 @@ import (
 	"unsafe"
 
 
-	glfw "github.com/ikemen-engine/Ikemen-GO/packages/glfw"
 	gl "github.com/ikemen-engine/Ikemen-GO/packages/gl/v3.1/gles2"
 	mgl "github.com/go-gl/mathgl/mgl32"
 	"golang.org/x/mobile/exp/f32"
@@ -458,7 +457,7 @@ func (r *Renderer_GL) InitModelShader() error {
 // Render initialization.
 // Creates the default shaders, the framebuffer and enables MSAA.
 func (r *Renderer_GL) Init() {
-	if err := gl.Init(glfw.GetProcAddress); err != nil {
+	if err := gl.Init(sys.GetProcAddress()); err != nil {
     	fmt.Println("gl.Init() failed:", err)
 	} else {
 		fmt.Println("gl.Init() success:")

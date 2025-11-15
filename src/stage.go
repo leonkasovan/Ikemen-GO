@@ -131,7 +131,7 @@ type backGround struct {
 	palfx              *PalFX
 	anim               *Animation
 	bga                bgAction
-	video              bgVideo
+	// video              bgVideo
 	id                 int32
 	start              [2]float32
 	xofs               float32
@@ -213,76 +213,77 @@ func readBackGround(is IniSection, link *backGround,
 	}
 	var tmp int32
 	is.ReadI32("layerno", &bg.layerno)
-	if bg._type == BG_Video {
-		path := is["path"]
-		LoadFile(&path, []string{def, "", sys.motifDir, "data/", "video/"}, func(filename string) error {
-			path = filename
-			return nil
-		})
-		if len(path) != 0 {
-			volume := 100
-			if v, ok := is["volume"]; ok {
-				volume = int(Atoi(v))
-			}
+	// if bg._type == BG_Video {
+	// 	path := is["path"]
+	// 	LoadFile(&path, []string{def, "", sys.motifDir, "data/", "video/"}, func(filename string) error {
+	// 		path = filename
+	// 		return nil
+	// 	})
+	// 	if len(path) != 0 {
+	// 		volume := 100
+	// 		if v, ok := is["volume"]; ok {
+	// 			volume = int(Atoi(v))
+	// 		}
 
-			var sm BgVideoScaleMode
-			if v, ok := is["scalemode"]; ok {
-				switch strings.ToLower(strings.TrimSpace(v)) {
-				case "none":
-					sm = SM_None
-				case "stretch":
-					sm = SM_Stretch
-				case "fit":
-					sm = SM_Fit
-				case "fitwidth":
-					sm = SM_FitWidth
-				case "fitheight":
-					sm = SM_FitHeight
-				case "zoomfill":
-					sm = SM_ZoomFill
-				default:
-					return nil, Error("Invalid BG Video scale mode: " + v)
-				}
-			}
+	// 		var sm BgVideoScaleMode
+	// 		if v, ok := is["scalemode"]; ok {
+	// 			switch strings.ToLower(strings.TrimSpace(v)) {
+	// 			case "none":
+	// 				sm = SM_None
+	// 			case "stretch":
+	// 				sm = SM_Stretch
+	// 			case "fit":
+	// 				sm = SM_Fit
+	// 			case "fitwidth":
+	// 				sm = SM_FitWidth
+	// 			case "fitheight":
+	// 				sm = SM_FitHeight
+	// 			case "zoomfill":
+	// 				sm = SM_ZoomFill
+	// 			default:
+	// 				return nil, Error("Invalid BG Video scale mode: " + v)
+	// 			}
+	// 		}
 
-			var sf BgVideoScaleFilter
-			if v, ok := is["scalefilter"]; ok {
-				switch strings.ToLower(strings.TrimSpace(v)) {
-				case "fastbilinear":
-					sf = SF_FastBilinear
-				case "bilinear":
-					sf = SF_Bilinear
-				case "bicubic":
-					sf = SF_Bicubic
-				case "experimental":
-					sf = SF_Experimental
-				case "neighbor":
-					sf = SF_Neighbor
-				case "area":
-					sf = SF_Area
-				case "bicublin":
-					sf = SF_Bicublin
-				case "gauss":
-					sf = SF_Gauss
-				case "sinc":
-					sf = SF_Sinc
-				case "lanczos":
-					sf = SF_Lanczos
-				case "spline":
-					sf = SF_Spline
-				default:
-					return nil, Error("Invalid BG Video scale filter: " + v)
-				}
-			}
+	// 		var sf BgVideoScaleFilter
+	// 		if v, ok := is["scalefilter"]; ok {
+	// 			switch strings.ToLower(strings.TrimSpace(v)) {
+	// 			case "fastbilinear":
+	// 				sf = SF_FastBilinear
+	// 			case "bilinear":
+	// 				sf = SF_Bilinear
+	// 			case "bicubic":
+	// 				sf = SF_Bicubic
+	// 			case "experimental":
+	// 				sf = SF_Experimental
+	// 			case "neighbor":
+	// 				sf = SF_Neighbor
+	// 			case "area":
+	// 				sf = SF_Area
+	// 			case "bicublin":
+	// 				sf = SF_Bicublin
+	// 			case "gauss":
+	// 				sf = SF_Gauss
+	// 			case "sinc":
+	// 				sf = SF_Sinc
+	// 			case "lanczos":
+	// 				sf = SF_Lanczos
+	// 			case "spline":
+	// 				sf = SF_Spline
+	// 			default:
+	// 				return nil, Error("Invalid BG Video scale filter: " + v)
+	// 			}
+	// 		}
 
-			var loop bool
-			is.ReadBool("loop", &loop)
+	// 		var loop bool
+	// 		is.ReadBool("loop", &loop)
 
-			if err := bg.video.Open(path, volume, sm, sf, loop); err != nil {
-				return nil, err
-			}
-		}
-	} else if bg._type != BG_Dummy {
+	// 		if err := bg.video.Open(path, volume, sm, sf, loop); err != nil {
+	// 			return nil, err
+	// 		}
+	// 	}
+	// } else if bg._type != BG_Dummy {
+	if bg._type != BG_Dummy {
 		var hasAnim bool
 		if (bg._type != BG_Normal || len(is["spriteno"]) == 0) &&
 			is.ReadI32("actionno", &bg.actionno) {
@@ -659,31 +660,31 @@ func (bg backGround) draw(pos [2]float32, drawscl, bgscl, stglscl float32,
 
 	// Render background if it's within the screen area
 	if rect[0] < sys.scrrect[2] && rect[1] < sys.scrrect[3] && rect[0]+rect[2] > 0 && rect[1]+rect[3] > 0 {
-		if bg._type == BG_Video {
-			bg.video.Tick()
-			if bg.video.texture == nil {
-				return
-			}
+		// if bg._type == BG_Video {
+		// 	bg.video.Tick()
+		// 	if bg.video.texture == nil {
+		// 		return
+		// 	}
 
-			bg.anim.isVideo = true
-			bg.anim.spr = newSprite()
-			bg.anim.spr.Tex = bg.video.texture
+		// 	bg.anim.isVideo = true
+		// 	bg.anim.spr = newSprite()
+		// 	bg.anim.spr.Tex = bg.video.texture
 
-			w := float32(bg.video.texture.GetWidth())
-			h := float32(bg.video.texture.GetHeight())
-			//if bg.video.scaleMode != SM_None {
-			//	w /= sys.widthScale
-			//	h /= sys.heightScale
-			//}
-			bg.anim.spr.Size = [2]uint16{
-				uint16(math.Ceil(float64(w))),
-				uint16(math.Ceil(float64(h))),
-			}
+		// 	w := float32(bg.video.texture.GetWidth())
+		// 	h := float32(bg.video.texture.GetHeight())
+		// 	//if bg.video.scaleMode != SM_None {
+		// 	//	w /= sys.widthScale
+		// 	//	h /= sys.heightScale
+		// 	//}
+		// 	bg.anim.spr.Size = [2]uint16{
+		// 		uint16(math.Ceil(float64(w))),
+		// 		uint16(math.Ceil(float64(h))),
+		// 	}
 
-			bg.anim.scale_x = 1
-			bg.anim.scale_y = 1
+		// 	bg.anim.scale_x = 1
+		// 	bg.anim.scale_y = 1
 
-		}
+		// }
 
 		// Xshear offset correction
 		xsoffset := -bg.xshear * SignF(bg.scalestart[1]) * (float32(bg.anim.spr.Offset[1]) * scly)
@@ -1817,14 +1818,14 @@ func (s *Stage) action() {
 
 	// Always (every frame) sync decoder run state to global pause + Enable.
 	// This prevents the decoder clock from advancing during pause.
-	for i := range s.bg {
-		if s.bg[i]._type == BG_Video {
-			shouldPlay := s.bg[i].enabled && canStep
-			// Apply visibility first so there's no frame-0 audio when Visible=0.
-			s.bg[i].video.SetVisible(s.bg[i].visible)
-			s.bg[i].video.SetPlaying(shouldPlay)
-		}
-	}
+	// for i := range s.bg {
+	// 	if s.bg[i]._type == BG_Video {
+	// 		shouldPlay := s.bg[i].enabled && canStep
+	// 		// Apply visibility first so there's no frame-0 audio when Visible=0.
+	// 		s.bg[i].video.SetVisible(s.bg[i].visible)
+	// 		s.bg[i].video.SetPlaying(shouldPlay)
+	// 	}
+	// }
 
 	// Update BG elements
 	for i, b := range s.bg {
@@ -1963,14 +1964,14 @@ func (s *Stage) reset() {
 	s.stageTime = 0
 	s.sff.palList.ResetRemap()
 	s.bga.clear()
-	for i := range s.bg {
-		s.bg[i].reset()
-		// Ensure videos start paused, then rewind.
-		if s.bg[i]._type == BG_Video {
-			s.bg[i].video.SetPlaying(false)
-			s.bg[i].video.Reset()
-		}
-	}
+	// for i := range s.bg {
+	// 	s.bg[i].reset()
+	// 	// Ensure videos start paused, then rewind.
+	// 	if s.bg[i]._type == BG_Video {
+	// 		s.bg[i].video.SetPlaying(false)
+	// 		s.bg[i].video.Reset()
+	// 	}
+	// }
 	if s.model != nil {
 		s.model.reset()
 	}
@@ -1979,11 +1980,11 @@ func (s *Stage) reset() {
 
 // destroy stops any background video media so the stage can be safely discarded.
 func (s *Stage) destroy() {
-	for _, b := range s.bg {
-		if b != nil && b._type == BG_Video {
-			b.video.Close()
-		}
-	}
+	// for _, b := range s.bg {
+	// 	if b != nil && b._type == BG_Video {
+	// 		b.video.Close()
+	// 	}
+	// }
 }
 
 func (s *Stage) modifyBGCtrl(id int32, t, v [3]int32, x, y float32, src, dst [2]int32,

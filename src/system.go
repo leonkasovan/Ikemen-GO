@@ -492,7 +492,7 @@ func (s *System) init(w, h int32) *lua.LState {
 			}
 			s.windowMainIcon[i], _, err = image.Decode(f[i])
 		}
-		// s.window.SetIcon(s.windowMainIcon)
+		s.window.SetIcon(s.windowMainIcon)
 		chk(err)
 	}
 	// [Icon add end]

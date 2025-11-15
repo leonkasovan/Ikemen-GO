@@ -288,13 +288,13 @@ func (s *BGDef) action() {
 	}
 
 	// After BGCtrl mutates states, align video play/pause to "active"
-	for i := range s.bg {
-		if s.bg[i]._type == BG_Video {
-			// Apply visibility first to avoid initial audio blip at t=0 when Visible=0.
-			s.bg[i].video.SetVisible(s.bg[i].visible)
-			s.bg[i].video.SetPlaying(s.bg[i].enabled)
-		}
-	}
+	// for i := range s.bg {
+	// 	if s.bg[i]._type == BG_Video {
+	// 		// Apply visibility first to avoid initial audio blip at t=0 when Visible=0.
+	// 		s.bg[i].video.SetVisible(s.bg[i].visible)
+	// 		s.bg[i].video.SetPlaying(s.bg[i].enabled)
+	// 	}
+	// }
 
 	s.bga.action()
 	if s.model != nil {

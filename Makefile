@@ -19,8 +19,9 @@ UNAME_M := $(shell uname -m)
 ifeq ($(UNAME_S),Linux)
     DEFAULT_TARGET := linux
 	ifeq ($(UNAME_M),aarch64)
-		TAGS := sdl2,opengles31,gles2
-# 		TAGS := x11,opengles31,gles2
+# 		TAGS := sdl2,opengles31,gles2
+		TAGS := x11,opengles31,gles2
+# 		TAGS := x11,vulkan
 # 		TAGS := wayland,opengles31,gles2
 # 		TAGS := opengl21
 	else
@@ -51,7 +52,7 @@ win: $(ASSETS) $(SCREENPACK)
 linux: $(ASSETS) $(SCREENPACK)
 	@echo "Building for Linux with $(TAGS)..."
 	CGO_ENABLED=1 GOEXPERIMENT=arenas GOOS=linux \
-	$(GO) build -tags=$(TAGS) -trimpath -v -ldflags "-s -w" \
+	$(GO) build -x -tags=$(TAGS) -trimpath -v -ldflags "-s -w" \
 	-o $(BIN_DIR)/ikemen_linux ./$(SRC_DIR)
 
 # ------------------------------

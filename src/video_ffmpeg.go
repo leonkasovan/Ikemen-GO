@@ -1,3 +1,4 @@
+//go:build video
 package main
 
 import (
