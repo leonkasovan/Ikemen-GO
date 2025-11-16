@@ -2486,6 +2486,7 @@ func (s *System) draw(x, y, scl float32) {
 
 		// Draw stage elements with layerNo == 0
 		if !s.gsf(GSF_nobg) {
+			// DRAWCALL 20
 			s.stage.draw(0, bgx, bgy, scl)
 		}
 
@@ -2536,6 +2537,7 @@ func (s *System) draw(x, y, scl float32) {
 		//	fade(rect, 0, 255)
 		//}
 
+		// DRAWCALL 40
 		// Draw lifebar layers -1 and 0
 		s.lifebar.draw(-1)
 		s.lifebar.draw(0)

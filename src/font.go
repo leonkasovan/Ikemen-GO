@@ -516,6 +516,7 @@ func (f *Fnt) Print(txt string, x, y, xscl, yscl, rxadd float32, rot Rotation, b
 		if f.Type == "truetype" {
 			f.DrawTtf(txt, x, y, xscl, yscl, align, true, window, frgba)
 		} else {
+			// DRAWCALL 20
 			f.DrawText(txt, x, y, xscl, yscl, rxadd, rot, bank, align, window, palfx, frgba[3])
 		}
 	}
@@ -758,6 +759,7 @@ func (ts *TextSprite) Draw() {
 		// Shows the characters progressively
 		charsToShow := int(Min(int32(lineLength), maxChars-int32(totalCharsShown)))
 		if charsToShow <= 0 {
+			charsToShow = i
 			continue
 		}
 
