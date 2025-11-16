@@ -177,7 +177,7 @@ type System struct {
 	stageLoopNo             int
 	stageLocalcoords        map[string][2]float32
 	wireframeDisplay        bool
-	nextCharId              int32
+	lastCharId              int32
 	tickCount               int
 	oldTickCount            int
 	tickCountF              float32
@@ -222,6 +222,7 @@ type System struct {
 	spritesLayer1           DrawList
 	shadows                 ShadowList
 	reflections             ReflectionList
+	afterImageCount         [MaxPlayerNo]int32
 	debugc1hit              ClsnRect
 	debugc1rev              ClsnRect
 	debugc1not              ClsnRect
@@ -1471,28 +1472,85 @@ func (s *System) clsnOverlap(clsn1 [][4]float32, scl1, pos1 [2]float32, facing1 
 	return false
 }
 
+// Assign starting player ID's in a way similar to Mugen
+// This isn't strictly necessary but might improve backward compatibility
+// TODO: We may be going through too much work for nothing here. A natural ID order of each loaded player having "ID + 1" would probably be better
+func (s *System) initPlayerID() {
+	// Assign a new player ID only if needed
+	assignID := func(i int) {
+		if i < 0 || i >= len(sys.chars) || len(sys.chars[i]) == 0 || sys.chars[i][0] == nil {
+			return
+		}
+
+		c := sys.chars[i][0]
+
+		if sys.round == 1 || c.roundsExisted() == 0 {
+			c.id = sys.newCharId()
+		}
+	}
+
+	// Free some ID's in subsequent rounds
+	if sys.round > 1 {
+		sys.pruneCharId()
+	}
+
+	// Odd player number ID's
+	for i := 0; i < MaxSimul*2; i += 2 {
+		assignID(i)
+	}
+
+	// Even player number ID's
+	for i := 1; i < MaxSimul*2; i += 2 {
+		assignID(i)
+	}
+
+	// Extra player ID's
+	for i := MaxSimul * 2; i < MaxPlayerNo; i++ {
+		assignID(i)
+	}
+}
+
+// Prune player ID's above the last active root ID
+// Mugen doesn't do this, but it avoids having to work with very high ID's in later rounds
+func (s *System) pruneCharId() {
+	s.lastCharId = Max(0, sys.cfg.Config.HelperMax-1)
+
+	for _, p := range s.chars {
+		if len(p) > 0 && p[0] != nil && p[0].id > s.lastCharId {
+			s.lastCharId = p[0].id
+		}
+		// At this point we're still checking the previous round's player ID's
+		// However that works out well for Turns mode because it means a joining player won't reuse the ID of a defeated player
+	}
+}
+
+// Determine the next available character ID while keeping track of the last number used
 func (s *System) newCharId() int32 {
-	// Check if the next ID is already being used by a helper with "preserve"
-	// We specifically check for preserved helpers because otherwise this also detects the players from the previous match that are being replaced
-	newid := s.nextCharId
-	taken := true
-	for taken {
-		taken = false
+	newid := s.lastCharId + 1
+
+	// Check if the next ID is already being used
+	// This is needed because helpers may be preserved between rounds
+	for {
+		conflict := false
 		for _, p := range s.chars {
 			for _, c := range p {
-				//if c.id == newid && c.preserve != 0 && !c.csf(CSF_destroy) {
-				if c.id == newid && c.preserve && !c.csf(CSF_destroy) {
-					taken = true
+				if c != nil && c.id == newid && !c.csf(CSF_destroy) {
+					// Note: We only recycle destroyed helper ID's because the ID's refresh each round, unlike Mugen
+					conflict = true
 					newid++
 					break
 				}
 			}
-			if taken {
-				break // Skip outer loop
+			if conflict {
+				break
 			}
 		}
+		if !conflict {
+			break
+		}
 	}
-	s.nextCharId = newid + 1
+
+	s.lastCharId = newid
 	return newid
 }
 
@@ -1624,15 +1682,21 @@ func (s *System) resetRoundState() {
 	s.winskipped = false
 	s.intro = s.lifebar.ro.start_waittime + s.lifebar.ro.ctrl_time + 1
 	s.curRoundTime = s.maxRoundTime
-	s.nextCharId = s.cfg.Config.HelperMax
+
+	// Mugen resets the starting ID between matches but not between rounds
+	// Previously Ikemen reset it between rounds, but that creates the odd scenario where a new player in Turns mode will have the same ID as a previous player
+	//s.nextCharId = s.cfg.Config.HelperMax
+
 	if (s.tmode[0] == TM_Turns && s.wins[1] >= s.numTurns[0]-1) ||
 		(s.tmode[0] != TM_Turns && s.wins[1] >= s.lifebar.ro.match_wins[0]-1) {
 		s.decisiveRound[0] = true
 	}
+
 	if (s.tmode[1] == TM_Turns && s.wins[0] >= s.numTurns[1]-1) ||
 		(s.tmode[1] != TM_Turns && s.wins[0] >= s.lifebar.ro.match_wins[1]-1) {
 		s.decisiveRound[1] = true
 	}
+
 	var roundRef int32
 	if s.round == 1 {
 		s.stageLoopNo = 0
@@ -1681,7 +1745,6 @@ func (s *System) resetRoundState() {
 		if len(p) == 0 {
 			continue
 		}
-		s.nextCharId = Max(s.nextCharId, p[0].id+1)
 		s.clearPlayerAssets(i, false)
 		p[0].posReset()
 		p[0].setCtrl(false)
@@ -1856,14 +1919,18 @@ func (s *System) runIntroSkip() {
 	}
 }
 
-func (s *System) action() {
-	// Clear sprite data
+func (s *System) clearSpriteData() {
+	// Main sprites
 	s.spritesLayerN1 = s.spritesLayerN1[:0]
 	s.spritesLayerU = s.spritesLayerU[:0]
 	s.spritesLayer0 = s.spritesLayer0[:0]
 	s.spritesLayer1 = s.spritesLayer1[:0]
+
+	// Shadows and reflections
 	s.shadows = s.shadows[:0]
 	s.reflections = s.reflections[:0]
+
+	// Debug sprites
 	s.debugc1hit = s.debugc1hit[:0]
 	s.debugc1rev = s.debugc1rev[:0]
 	s.debugc1not = s.debugc1not[:0]
@@ -1875,6 +1942,15 @@ func (s *System) action() {
 	s.debugcsize = s.debugcsize[:0]
 	s.debugch = s.debugch[:0]
 	s.clsnText = nil
+
+	// Reset afterimage tracker
+	for i := range s.afterImageCount {
+		s.afterImageCount[i] = 0
+	}
+}
+
+func (s *System) action() {
+	s.clearSpriteData()
 
 	var x, y, scl float32 = s.cam.Pos[0], s.cam.Pos[1], s.cam.Scale / s.cam.BaseScale()
 	s.cam.ResetTracking()
@@ -3938,6 +4014,7 @@ func newLoader() *Loader {
 	return &Loader{state: LS_NotYet, loadExit: make(chan LoaderState, 1)}
 }
 
+/*
 func (l *Loader) loadPlayerChar(pn int) int {
 	return l.loadCharacter(pn, false)
 }
@@ -3945,6 +4022,7 @@ func (l *Loader) loadPlayerChar(pn int) int {
 func (l *Loader) loadAttachedChar(pn int) int {
 	return l.loadCharacter(pn, true)
 }
+*/
 
 func (l *Loader) loadCharacter(pn int, attached bool) int {
 	if !attached && sys.roundsExisted[pn&1] > 0 {
@@ -4144,6 +4222,7 @@ func (l *Loader) loadCharacter(pn int, attached bool) int {
 			}
 		}
 	}
+
 	return 1
 }
 

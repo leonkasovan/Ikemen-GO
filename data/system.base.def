@@ -614,7 +614,7 @@
 	searchemptyboxesdown = 0
 
 	; Adjustments on per cell basis, <col> and <row> should be replaced with
-	; cell x, y coordinates, starting from index 0.
+	; cell x, y coordinates, starting from index 1.
 	;cell.<col>.<row>.offset = 0, 0
 	;cell.<col>.<row>.facing = 1
 	; Set to 1 to mark slot as dummy cell, without bloating select.def

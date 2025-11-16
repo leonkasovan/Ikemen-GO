@@ -1304,7 +1304,6 @@ func systemScriptInit(l *lua.LState) {
 				return 1
 			}
 			winp := int32(0)
-			p := make([]*Char, len(sys.chars))
 			sys.debugRef = [2]int{}
 			sys.roundsExisted = [2]int32{}
 			sys.matchWins = [2]int32{}
@@ -1320,6 +1319,11 @@ func systemScriptInit(l *lua.LState) {
 
 			// Anonymous function to perform gameplay
 			fight := func() (int32, error) {
+				// Reset character list
+				if sys.round == 1 {
+					sys.charList.clear()
+				}
+
 				// Load characters and stage
 				if err := load(); err != nil {
 					return -1, err
@@ -1328,44 +1332,12 @@ func systemScriptInit(l *lua.LState) {
 					return -1, nil
 				}
 
-				// Reset and setup characters
-				if sys.round == 1 {
-					sys.charList.clear()
-				}
-				nextId := sys.cfg.Config.HelperMax
-				for i := 0; i < MaxSimul*2; i += 2 {
-					if len(sys.chars[i]) > 0 {
-						if sys.round == 1 {
-							sys.chars[i][0].id = sys.newCharId()
-						} else if sys.chars[i][0].roundsExisted() == 0 {
-							sys.chars[i][0].id = nextId
-						}
-						nextId++
-					}
-				}
-				for i := 1; i < MaxSimul*2; i += 2 {
-					if len(sys.chars[i]) > 0 {
-						if sys.round == 1 {
-							sys.chars[i][0].id = sys.newCharId()
-						} else if sys.chars[i][0].roundsExisted() == 0 {
-							sys.chars[i][0].id = nextId
-						}
-						nextId++
-					}
-				}
-				for i := MaxSimul * 2; i < MaxPlayerNo; i += 1 {
-					if len(sys.chars[i]) > 0 {
-						if sys.round == 1 {
-							sys.chars[i][0].id = sys.newCharId()
-						} else if sys.chars[i][0].roundsExisted() == 0 {
-							sys.chars[i][0].id = nextId
-						}
-						nextId++
-					}
-				}
+				// Assign round start player ID's
+				sys.initPlayerID()
+
 				for i, c := range sys.chars {
 					if len(c) > 0 {
-						p[i] = c[0]
+						// Add or replace in charList
 						if sys.round == 1 {
 							sys.charList.add(c[0])
 						} else if c[0].roundsExisted() == 0 {
@@ -1373,9 +1345,13 @@ func systemScriptInit(l *lua.LState) {
 								panic(fmt.Errorf("failed to replace player: %v", i))
 							}
 						}
+
+						// Load palette if character is just joining the match
 						if c[0].roundsExisted() == 0 {
 							c[0].loadPalette()
 						}
+
+						// Copy each other's command lists
 						for j, cj := range sys.chars {
 							if i != j && len(cj) > 0 {
 								if len(cj[0].cmd) == 0 {
@@ -1459,24 +1435,28 @@ func systemScriptInit(l *lua.LState) {
 			// Will repeat on turns mode character change and hard reset
 			for {
 				var err error
+
 				// Call gameplay anonymous function
 				if winp, err = fight(); err != nil {
 					l.RaiseError(err.Error())
 				}
+
 				// If a team won, and not going to the next character in turns mode, break
 				if winp < 0 || sys.tmode[0] != TM_Turns && sys.tmode[1] != TM_Turns ||
 					sys.wins[0] >= sys.matchWins[0] || sys.wins[1] >= sys.matchWins[1] ||
 					sys.gameEnd {
 					break
 				}
+
 				// Reset roundsExisted to 0 if the losing side is on turns mode
 				for i := 0; i < 2; i++ {
-					if !p[i].win() && sys.tmode[i] == TM_Turns {
+					if !sys.chars[i][0].win() && sys.tmode[i] == TM_Turns {
 						sys.lifebar.fa[TM_Turns][i].numko++
 						sys.lifebar.nm[TM_Turns][i].numko++
 						sys.roundsExisted[i] = 0
 					}
 				}
+
 				sys.loader.reset()
 			}
 
@@ -5983,7 +5963,7 @@ func triggerFunctions(l *lua.LState) {
 		return 1
 	})
 	luaRegister(l, "lastplayerid", func(*lua.LState) int {
-		l.Push(lua.LNumber(sys.nextCharId - 1))
+		l.Push(lua.LNumber(sys.lastCharId))
 		return 1
 	})
 	luaRegister(l, "layerNo", func(*lua.LState) int {

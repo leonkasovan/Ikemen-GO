@@ -324,9 +324,10 @@ func (c *Config) normalize() {
 	c.SetValueUpdate("Options.Tag.Min", int(Clamp(int32(c.Options.Tag.Min), 2, int32(MaxSimul))))
 
 	// Options that determine allocation sizes should not be negative
-	if c.Config.AfterImageMax < 0 {
-		c.SetValueUpdate("Config.AfterImageMax", 0)
-	}
+	// Update: AfterImageMax no longer does, but it's good to keep it in mind
+	//if c.Config.AfterImageMax < 0 {
+	///	c.SetValueUpdate("Config.AfterImageMax", 0)
+	//}
 
 	path := strings.TrimSpace(c.Config.ScreenshotFolder)
 	if path != "" {

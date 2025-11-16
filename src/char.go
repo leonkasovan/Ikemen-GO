@@ -9,7 +9,10 @@ import (
 	"strings"
 )
 
-const MaxQuotes = 100
+const (
+	MaxAimgLength = 60
+	MaxQuotes     = 100
+)
 
 type SystemCharFlag uint32
 
@@ -1067,22 +1070,19 @@ type AfterImage struct {
 	framegap       int32
 	trans          TransType
 	alpha          [2]int32
-	palfx          []*PalFX
-	imgs           [64]aimgImage
+	palfx          [MaxAimgLength]*PalFX
+	imgs           [MaxAimgLength]aimgImage
 	imgidx         int32
 	restgap        int32
 	reccount       int32
 	timecount      int32
 	priority       int32
 	ignorehitpause bool
+	hasAnim        bool
 }
 
 func newAfterImage() *AfterImage {
-	maxFrames := Max(0, sys.cfg.Config.AfterImageMax)
-
-	ai := &AfterImage{
-		palfx: make([]*PalFX, maxFrames),
-	}
+	ai := &AfterImage{}
 
 	for i := range ai.palfx {
 		ai.palfx[i] = newPalFX()
@@ -1090,22 +1090,14 @@ func newAfterImage() *AfterImage {
 		ai.palfx[i].allowNeg = true
 	}
 
-	ai.clear()
+	ai.setDefault()
 
 	return ai
 }
 
-func (ai *AfterImage) clear() {
+func (ai *AfterImage) setDefault() {
 	ai.time = 0
 	ai.length = 20
-	if len(ai.palfx) > 0 {
-		ai.palfx[0].eColor = 1
-		ai.palfx[0].eHue = 0
-		ai.palfx[0].eInvertall = false
-		ai.palfx[0].eInvertblend = 0
-		ai.palfx[0].eAdd = [...]int32{30, 30, 30}
-		ai.palfx[0].eMul = [...]int32{120, 120, 220}
-	}
 	ai.postbright = [3]int32{}
 	ai.add = [...]int32{10, 10, 25}
 	ai.mul = [...]float32{0.65, 0.65, 0.75}
@@ -1118,6 +1110,43 @@ func (ai *AfterImage) clear() {
 	ai.reccount = 0
 	ai.timecount = 0
 	ai.ignorehitpause = true
+
+	if len(ai.palfx) > 0 && ai.palfx[0] != nil {
+		ai.palfx[0].eColor = 1
+		ai.palfx[0].eHue = 0
+		ai.palfx[0].eInvertall = false
+		ai.palfx[0].eInvertblend = 0
+		ai.palfx[0].eAdd = [...]int32{30, 30, 30}
+		ai.palfx[0].eMul = [...]int32{120, 120, 220}
+	}
+}
+
+func (ai *AfterImage) clear() {
+	ai.time = 0
+	ai.reccount, ai.timecount, ai.timegap = 0, 0, 0
+
+	// Clear animation data
+	// This makes afterimages lighter in save states
+	// We lock this operation behind the bool because clear() is called every frame when the afterimage is inactive
+	if ai.hasAnim {
+		for i := range ai.imgs {
+			ai.imgs[i].anim = nil
+		}
+		ai.hasAnim = false
+	}
+}
+
+// Correct parameters while printing debug warnings for the char in question
+func (ai *AfterImage) validateParams(c *Char) {
+	// Check if length is allowed
+	if ai.length < 0 {
+		sys.appendToConsole(c.warn() + "AfterImage length must be positive")
+		ai.length = 0
+	}
+	if ai.length > MaxAimgLength {
+		sys.appendToConsole(c.warn() + fmt.Sprintf("AfterImage length exceeds the maximum of %v", MaxAimgLength))
+		ai.length = MaxAimgLength
+	}
 }
 
 func (ai *AfterImage) setPalColor(color int32) {
@@ -1208,8 +1237,10 @@ func (ai *AfterImage) recAfterImg(sd *SprData, hitpause bool) {
 		ai.reccount, ai.timegap = 0, 0
 		return
 	}
+
 	if ai.restgap <= 0 {
 		img := &ai.imgs[ai.imgidx]
+
 		if sd.anim != nil {
 			img.anim = &Animation{}
 			*img.anim = *sd.anim
@@ -1229,31 +1260,34 @@ func (ai *AfterImage) recAfterImg(sd *SprData, hitpause bool) {
 		} else {
 			img.anim = nil
 		}
+
 		img.pos = sd.pos
 		img.scl = sd.scl
 		img.rot = sd.rot
 		img.projection = sd.projection
 		img.fLength = sd.fLength
 		img.priority = sd.priority - 2 // Starting afterimage sprpriority offset
-		ai.imgidx = (ai.imgidx + 1) & 63
+
+		ai.imgidx = (ai.imgidx + 1) % MaxAimgLength
 		ai.reccount++
 		ai.restgap = ai.timegap
+		ai.hasAnim = true
 	}
+
 	ai.restgap--
 	ai.timecount++
 }
 
-func (ai *AfterImage) recAndCue(sd *SprData, rec bool, hitpause bool, layer int32, screen_space bool) {
+func (ai *AfterImage) recAndCue(sd *SprData, playerNo int, rec bool, hitpause bool, layer int32, screen_space bool) {
+	// Check if this afterimage is no longer active or invalid
 	if ai.time == 0 || (ai.timecount >= ai.timegap*ai.length+ai.time-1 && ai.time > 0) ||
 		ai.timegap < 1 || ai.timegap > 32767 ||
 		ai.framegap < 1 || ai.framegap > 32767 {
-		ai.time = 0
-		ai.reccount, ai.timecount, ai.timegap = 0, 0, 0
+		ai.clear()
 		return
 	}
 
-	end := Min(sys.cfg.Config.AfterImageMax,
-		(Min(Min(ai.reccount, int32(len(ai.imgs))), ai.length)/ai.framegap)*ai.framegap)
+	end := (Min(Min(ai.reccount, int32(len(ai.imgs))), ai.length) / ai.framegap) * ai.framegap
 
 	// Decide layering
 	sprs := &sys.spritesLayer0
@@ -1264,12 +1298,24 @@ func (ai *AfterImage) recAndCue(sd *SprData, rec bool, hitpause bool, layer int3
 	}
 
 	for i := ai.framegap; i <= end; i += ai.framegap {
-		img := &ai.imgs[(ai.imgidx-i)&63]
+		// Respect AfterImageMax
+		if sys.afterImageCount[playerNo] >= sys.cfg.Config.AfterImageMax {
+			break
+		}
+
+		img := &ai.imgs[(ai.imgidx-i+MaxAimgLength)%MaxAimgLength]
+
 		if img.priority >= sd.priority { // Maximum afterimage sprpriority offset
 			img.priority = sd.priority - 2
 		}
+
 		if ai.time < 0 || (ai.timecount/ai.timegap-i) < (ai.time-2)/ai.timegap+1 {
+
 			step := i/ai.framegap - 1
+			if step < 0 || step >= int32(len(ai.palfx)) {
+				continue
+			}
+
 			ai.palfx[step].remap = sd.pfx.remap
 			sprs.add(&SprData{
 				anim:         img.anim,
@@ -1289,9 +1335,14 @@ func (ai *AfterImage) recAndCue(sd *SprData, rec bool, hitpause bool, layer int3
 				window:       sd.window,
 				xshear:       sd.xshear,
 			})
-			// Afterimages don't cast shadows or reflections
+
+			// Track number of afterimage sprites used by this player
+			sys.afterImageCount[playerNo]++
+
+			// Note: Afterimages don't cast shadows or reflections
 		}
 	}
+
 	if rec || hitpause && ai.ignorehitpause {
 		ai.recAfterImg(sd, hitpause)
 	}
@@ -1631,7 +1682,7 @@ func (e *Explod) update(playerNo int) {
 
 	if sys.tickFrame() {
 		if e.removetime >= 0 && e.time >= e.removetime ||
-			act && e.removetime < -1 && e.anim.loopend {
+			act && e.removetime <= -2 && e.anim.loopend {
 			e.id, e.anim = IErr, nil
 			return
 		}
@@ -1819,9 +1870,13 @@ func (e *Explod) update(playerNo int) {
 		sd.syncId = e.syncId
 		sd.syncLayer = e.syncLayer
 	}
-	// Record afterimage
-	e.aimg.recAndCue(sd, sys.tickNextFrame() && act, sys.tickNextFrame() && e.ignorehitpause && (e.supermovetime != 0 || e.pausemovetime != 0), e.layerno, e.space == Space_screen)
 
+	// Record afterimage
+	e.aimg.recAndCue(sd, playerNo, sys.tickNextFrame() && act,
+		sys.tickNextFrame() && e.ignorehitpause && (e.supermovetime != 0 || e.pausemovetime != 0),
+		e.layerno, e.space == Space_screen)
+
+	// Add to drawlist
 	sprs.add(sd)
 
 	// Add shadow if color is not 0
@@ -2489,7 +2544,9 @@ func (p *Projectile) cueDraw() {
 			xshear:       p.xshear,
 		}
 
-		p.aimg.recAndCue(sd, sys.tickNextFrame() && notpause, false, p.layerno, false)
+		// Record afterimage
+		p.aimg.recAndCue(sd, p.playerno, sys.tickNextFrame() && notpause, false, p.layerno, false)
+
 		sprs.add(sd)
 
 		// Add a shadow if color is not 0
@@ -6021,8 +6078,10 @@ func (c *Char) destroySelf(recursive, removeexplods, removetexts bool) bool {
 
 // Make a new helper before reading the bytecode parameters
 func (c *Char) newHelper() (h *Char) {
-	// If any existing helper entry is valid for overwriting, use it
+	// Start at index 1, skipping the root
 	i := int32(1)
+
+	// If any existing helper entry is available for overwriting, use it
 	for ; int(i) < len(sys.chars[c.playerNo]); i++ {
 		if sys.chars[c.playerNo][i].helperIndex < 0 {
 			h = sys.chars[c.playerNo][i]
@@ -6033,9 +6092,14 @@ func (c *Char) newHelper() (h *Char) {
 
 	// Otherwise append to the end
 	if int(i) >= len(sys.chars[c.playerNo]) {
+		// Check helper limit
 		if i > sys.cfg.Config.HelperMax { // Do not count index 0
+			root := sys.chars[c.playerNo][0]
+			sys.appendToConsole(root.warn() + fmt.Sprintf("Reached limit of %v helpers. Helper creation skipped", sys.cfg.Config.HelperMax))
 			return
 		}
+
+		// Add helper if allowed
 		h = newChar(c.playerNo, i)
 		sys.chars[c.playerNo] = append(sys.chars[c.playerNo], h)
 	}
@@ -6571,7 +6635,15 @@ func (c *Char) spawnProjectile() *Projectile {
 	}
 
 	// If no inactive projectile was found, append a new one within the max limit
-	if p == nil && len(*playerProjs) < sys.cfg.Config.ProjectileMax {
+	if p == nil {
+		// Check projectile limit
+		if len(*playerProjs) >= sys.cfg.Config.ProjectileMax {
+			root := sys.chars[c.playerNo][0]
+			sys.appendToConsole(root.warn() + fmt.Sprintf("Reached limit of %v projectiles. New projectile creation skipped", sys.cfg.Config.ProjectileMax))
+			return nil
+		}
+
+		// Add projectile if allowed
 		newP := newProjectile()
 		*playerProjs = append(*playerProjs, newP)
 		p = newP
@@ -11628,11 +11700,13 @@ func (c *Char) cueDraw() {
 		charSD.syncLayer = 0 // Character body is always at layer 0
 
 		// Record afterimage
-		c.aimg.recAndCue(charSD, rec, sys.tickNextFrame() && c.hitPause(), c.layerNo, false)
+		c.aimg.recAndCue(charSD, c.playerNo, rec, sys.tickNextFrame() && c.hitPause(), c.layerNo, false)
+
 		// Hitshake effect
 		if c.ghv.hitshaketime > 0 && c.ss.time&1 != 0 {
 			charSD.pos[0] -= c.facing
 		}
+
 		// Draw char according to layer number
 		sprs := &sys.spritesLayer0
 		if c.layerNo > 0 {
@@ -11754,8 +11828,23 @@ type CharList struct {
 }
 
 func (cl *CharList) clear() {
+	// Reset CharList
 	*cl = CharList{idMap: make(map[int32]*Char)}
-	sys.nextCharId = sys.cfg.Config.HelperMax
+
+	// Reset player ID tracker to baseline
+	// ID's start from HelperMax in Mugen. We don't strictly need to do the same but it might improve backward compatibility
+	// TODO: Mugen codes that rely on this fact already don't work correctly in Mugen, so it may be pointless to do the same
+	sys.lastCharId = Max(0, sys.cfg.Config.HelperMax-1)
+
+	// Clear all player ID's to avoid false conflicts with stale players
+	// TODO: Maybe stale players should be cleared better
+	for _, p := range sys.chars {
+		for _, c := range p {
+			if c != nil {
+				c.id = -1
+			}
+		}
+	}
 }
 
 func (cl *CharList) add(c *Char) {

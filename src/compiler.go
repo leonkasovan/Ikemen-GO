@@ -5974,12 +5974,14 @@ func (c *Compiler) paramTrans(is IniSection, sc *StateControllerBase,
 			defsrc, defdst = 255, 128
 		case "addalpha":
 			tt = TT_add
-			defsrc, defdst = 255, 0 // In Mugen it defaults to this before reading the alpha
+			defsrc, defdst = 255, 0
+			// In Mugen it defaults to this before reading the alpha
+			// Older Mugen versions have a bug where AddAlpha defaults to no change if the animation also uses AddAlpha (AS_D_). This is fixed in 1.1
 		case "sub":
 			tt = TT_sub
 			defsrc, defdst = 255, 255
 		default:
-			// In Mugen, cns ignore invalid parameter names
+			// In Mugen, CNS ignores invalid parameter names
 			if !cnsParam || c.zssMode || !sys.ignoreMostErrors {
 				return Error("Invalid trans type: " + data)
 			} else {

@@ -151,17 +151,18 @@ func NewLoopTimer(fps uint32, framesToSpread uint32) LoopTimer {
 }
 
 func (lt *LoopTimer) OnGGPOTimeSyncEvent(framesAhead float32) {
+	lt.waitTotal = time.Duration(float32(time.Second/60) * framesAhead)
+	lt.lastAdvantage = float32(time.Second/60) * framesAhead
+
 	if sys.intro > 0 && sys.tickCount == 0 {
-		lt.waitTotal = time.Duration(float32(time.Second/60) * framesAhead)
-		lt.lastAdvantage = float32(time.Second/60) * framesAhead
-		if lt.lastAdvantage < float32(0) {
+		// Wait longer during the start of each round, allowing both players to load assets
+		if lt.lastAdvantage < 0 {
 			lt.timeWait = time.Duration(lt.lastAdvantage) / time.Duration(lt.framesToSpreadWait)
 			lt.waitCount = time.Duration(lt.framesToSpreadWait)
 		}
 	} else {
-		lt.waitTotal = time.Duration(float32(time.Second/60) * framesAhead)
-		lt.lastAdvantage = float32(time.Second/60) * framesAhead
-		lt.lastAdvantage = lt.lastAdvantage / 4
+		// Normal waiting time
+		lt.lastAdvantage /= 4
 		lt.timeWait = time.Duration(lt.lastAdvantage) / time.Duration(lt.framesToSpreadWait)
 		lt.waitCount = time.Duration(lt.framesToSpreadWait)
 	}
