@@ -84,7 +84,7 @@ func (s *ShaderProgram_GL) RegisterTextures(names ...string) {
 
 func (r *Renderer_GL) compileShader(shaderType uint32, src string) (shader uint32, err error) {
 	shader = gl.CreateShader(shaderType)
-	src = "#version 150\n" + src + "\x00"
+	src = "#version 330\n" + src + "\x00"
 	s, _ := gl.Strs(src)
 	var l int32 = int32(len(src) - 1)
 	gl.ShaderSource(shader, 1, s, &l)
@@ -452,7 +452,10 @@ func (r *Renderer_GL) InitModelShader() error {
 // Creates the default shaders, the framebuffer and enables MSAA.
 func (r *Renderer_GL) Init() {
 	chk(gl.Init())
-	sys.errLog.Printf("Using OpenGL %v (%v)", gl.GoStr(gl.GetString(gl.VERSION)), gl.GoStr(gl.GetString(gl.RENDERER)))
+	fmt.Printf("Real GL Version: %v\n", gl.GoStr(gl.GetString(gl.VERSION)))
+	fmt.Printf("Real GLSL Version: %v\n", gl.GoStr(gl.GetString(gl.SHADING_LANGUAGE_VERSION)))
+	fmt.Printf("Real GL Renderer: %v\n", gl.GoStr(gl.GetString(gl.RENDERER)))
+	fmt.Printf("Real GL Vendor: %v\n", gl.GoStr(gl.GetString(gl.VENDOR)))
 
 	var maxSamples int32
 	gl.GetIntegerv(gl.MAX_SAMPLES, &maxSamples)

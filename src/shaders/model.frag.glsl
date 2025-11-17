@@ -17,7 +17,7 @@ struct Light
 
     float outerConeCos;
     int type;
-        
+
     float shadowBias;
     float shadowMapFar;
 };
@@ -35,7 +35,7 @@ layout(binding = 1) uniform MaterialUniform {
 	vec2 metallicRoughness;
 	float ambientOcclusionStrength;
 	float alphaThreshold;
-	
+
 	bool unlit;
 	bool enableAlpha;
 };
@@ -45,7 +45,7 @@ layout(binding = 2) uniform UniformBufferObject {
 	layout(offset = 200) float hue;
 	layout(offset = 208) vec3 add;
 	layout(offset = 224) vec3 mult;
-	
+
 };
 layout (constant_id = 6) const bool useTexture = false;
 layout (constant_id = 7) const bool useNormalMap = false;
@@ -86,17 +86,8 @@ layout(location = 0) out vec4 FragColor;
 #ifdef ENABLE_SHADOW
 #if defined(GL_ES)
 // For OpenGL ES, use separate samplerCube arrays instead of samplerCubeArray
-#define COMPAT_SHADOW_MAP_TEXTURE(index) \
-    (index == 0 ? texture(shadowCubeMaps[0], vec3(1.0, -(xy.y*2.0-1.0),-(xy.x*2.0-1.0))).r : \
-     index == 1 ? texture(shadowCubeMaps[1], vec3(1.0, -(xy.y*2.0-1.0),-(xy.x*2.0-1.0))).r : \
-     index == 2 ? texture(shadowCubeMaps[2], vec3(1.0, -(xy.y*2.0-1.0),-(xy.x*2.0-1.0))).r : \
-     texture(shadowCubeMaps[3], vec3(1.0, -(xy.y*2.0-1.0),-(xy.x*2.0-1.0))).r)
-
-#define COMPAT_SHADOW_CUBE_MAP_TEXTURE(index) \
-    (index == 0 ? texture(shadowCubeMaps[0], xyz).r : \
-     index == 1 ? texture(shadowCubeMaps[1], xyz).r : \
-     index == 2 ? texture(shadowCubeMaps[2], xyz).r : \
-     texture(shadowCubeMaps[3], xyz).r)
+#define COMPAT_SHADOW_MAP_TEXTURE(index) (index == 0 ? texture(shadowCubeMaps[0], vec3(1.0, -(xy.y*2.0-1.0),-(xy.x*2.0-1.0))).r : index == 1 ? texture(shadowCubeMaps[1], vec3(1.0, -(xy.y*2.0-1.0),-(xy.x*2.0-1.0))).r : index == 2 ? texture(shadowCubeMaps[2], vec3(1.0, -(xy.y*2.0-1.0),-(xy.x*2.0-1.0))).r : texture(shadowCubeMaps[3], vec3(1.0, -(xy.y*2.0-1.0),-(xy.x*2.0-1.0))).r)
+#define COMPAT_SHADOW_CUBE_MAP_TEXTURE(index) (index == 0 ? texture(shadowCubeMaps[0], xyz).r : index == 1 ? texture(shadowCubeMaps[1], xyz).r : index == 2 ? texture(shadowCubeMaps[2], xyz).r : texture(shadowCubeMaps[3], xyz).r)
 #else
 #define COMPAT_SHADOW_MAP_TEXTURE(index) texture(shadowCubeMap,vec4(1.0, -(xy.y*2.0-1.0),-(xy.x*2.0-1.0),index)).r
 #define COMPAT_SHADOW_CUBE_MAP_TEXTURE(index) texture(shadowCubeMap,vec4(xyz,index)).r
@@ -113,17 +104,8 @@ layout(location = 0) out vec4 FragColor;
 #define COMPAT_TEXTURE_CUBE texture
 #define COMPAT_TEXTURE_CUBE_LOD textureLod
 #ifdef ENABLE_SHADOW
-#define COMPAT_SHADOW_MAP_TEXTURE(index) \
-    (index == 0 ? texture(shadowCubeMaps[0], vec3(1.0, -(xy.y*2.0-1.0),-(xy.x*2.0-1.0))).r : \
-     index == 1 ? texture(shadowCubeMaps[1], vec3(1.0, -(xy.y*2.0-1.0),-(xy.x*2.0-1.0))).r : \
-     index == 2 ? texture(shadowCubeMaps[2], vec3(1.0, -(xy.y*2.0-1.0),-(xy.x*2.0-1.0))).r : \
-     texture(shadowCubeMaps[3], vec3(1.0, -(xy.y*2.0-1.0),-(xy.x*2.0-1.0))).r)
-
-#define COMPAT_SHADOW_CUBE_MAP_TEXTURE(index) \
-    (index == 0 ? texture(shadowCubeMaps[0], xyz).r : \
-     index == 1 ? texture(shadowCubeMaps[1], xyz).r : \
-     index == 2 ? texture(shadowCubeMaps[2], xyz).r : \
-     texture(shadowCubeMaps[3], xyz).r)
+#define COMPAT_SHADOW_MAP_TEXTURE(index) (index == 0 ? texture(shadowCubeMaps[0], vec3(1.0, -(xy.y*2.0-1.0),-(xy.x*2.0-1.0))).r : index == 1 ? texture(shadowCubeMaps[1], vec3(1.0, -(xy.y*2.0-1.0),-(xy.x*2.0-1.0))).r : index == 2 ? texture(shadowCubeMaps[2], vec3(1.0, -(xy.y*2.0-1.0),-(xy.x*2.0-1.0))).r : texture(shadowCubeMaps[3], vec3(1.0, -(xy.y*2.0-1.0),-(xy.x*2.0-1.0))).r)
+#define COMPAT_SHADOW_CUBE_MAP_TEXTURE(index) (index == 0 ? texture(shadowCubeMaps[0], xyz).r : index == 1 ? texture(shadowCubeMaps[1], xyz).r : index == 2 ? texture(shadowCubeMaps[2], xyz).r : texture(shadowCubeMaps[3], xyz).r)
 #endif
 #else
 // Legacy GLSL
@@ -252,7 +234,7 @@ float DirectionalLightShadowCalculation(int index, vec4 lightSpacePos,float Ndot
     // get closest depth value from light's perspective (using [0,1] range fragPosLight as coords)
     float epsilon = 1.0 / 1024.0;
     vec2 xy = vec2(clamp(projCoords.x,epsilon,1.0-epsilon),clamp(projCoords.y,epsilon,1.0-epsilon));
-    float closestDepth = COMPAT_SHADOW_MAP_TEXTURE(index); 
+    float closestDepth = COMPAT_SHADOW_MAP_TEXTURE(index);
     // get depth of current fragment from light's perspective
     float currentDepth = projCoords.z;
     // check whether current frag pos is in shadow
@@ -301,7 +283,7 @@ float PointLightShadowCalculation(int index, vec3 pointToLight,float NdotL,float
     float bias = shadowBias*tan(acos(NdotL));
 
     float shadow = currentDepth-closestDepth < bias  ? 1.0 : 0.0;
-    
+
     #else
     float shadow = 1.0;
     #endif
@@ -481,11 +463,11 @@ vec3 ibl(vec3 n, vec3 v, float metallic, float roughness, vec3 albedo)
     vec3 f_diffuse = getDiffuseLight(n) * albedo.rgb;
     vec3 f_specular_metal = getIBLRadianceGGX(n, v, roughness);
     vec3 f_specular_dielectric = f_specular_metal;
-    
+
     // Fixed calls with proper float literals
     vec3 f_metal_fresnel_ibl = getIBLGGXFresnel(n, v, roughness, albedo.rgb, 1.0);
     vec3 f_dielectric_fresnel_ibl = getIBLGGXFresnel(n, v, roughness, vec3(0.04), 1.0);
-    
+
     vec3 f_metal_brdf_ibl = f_metal_fresnel_ibl * f_specular_metal;
     vec3 f_dielectric_brdf_ibl = f_diffuse * (1.0 - f_dielectric_fresnel_ibl) + f_specular_dielectric * f_dielectric_fresnel_ibl;
 
@@ -501,7 +483,7 @@ vec3 pbr(vec3 worldSpacePos,vec3 v,vec3 n,vec3 albedo,float metallic,float rough
     vec3 f_diffuse = vec3(0.0);
     vec3 c_diff = albedo*(1.0-metallic);
 
-	for(int i = 0; i < 4; ++i) 
+	for(int i = 0; i < 4; ++i)
     {
         if(lights[i].color.r+lights[i].color.g+lights[i].color.b > 0.0){
             vec3 pointToLight = vec3(0.0);
@@ -534,14 +516,14 @@ vec3 pbr(vec3 worldSpacePos,vec3 v,vec3 n,vec3 albedo,float metallic,float rough
                 f_specular += l_specular * shadow;
             }
         }
-    }   
+    }
     vec3 f_ibl = vec3(0.0);
     if(environmentIntensity > 0.0){
         f_ibl = ibl(n,v,metallic,roughness,albedo);
     }
     //vec3 color = clamp(f_diffuse+f_specular+ao*f_ibl,0,1);
     vec3 color = f_diffuse+f_specular+ao*f_ibl;
-    
+
     //color = color / (color + vec3(1.0));
     //color = pow(color, vec3(1.0/2.2));
 	return color;
@@ -600,7 +582,7 @@ void main(void) {
 	vec3 neg_base = vec3(1.0);
 	neg_base *= FragColor.a;
 	if (hue != 0.0) {
-		FragColor.rgb = hue_shift(FragColor.rgb,hue);			
+		FragColor.rgb = hue_shift(FragColor.rgb,hue);
 	}
 	if (neg) FragColor.rgb = neg_base - FragColor.rgb;
 	FragColor.rgb = mix(FragColor.rgb, vec3((FragColor.r + FragColor.g + FragColor.b) / 3.0), gray) + add*FragColor.a;
