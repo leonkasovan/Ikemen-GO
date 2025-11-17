@@ -1,6 +1,6 @@
-// dllsearch_windows.go
-//go:build windows
-
+//go:build xwindows
+// disable this for testing
+//
 package main
 
 import (

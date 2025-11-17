@@ -43,7 +43,7 @@ endif
 
 all: $(DEFAULT_TARGET)
 
-win: $(ASSETS) $(SCREENPACK)
+win:
 	@echo "Building for Windows with $(TAGS)..."
 	CGO_ENABLED=1 GOEXPERIMENT=arenas GOOS=windows GOARCH=amd64 \
 	$(GO) build -tags=$(TAGS) -trimpath -v -ldflags "-s -w -H windowsgui" \
@@ -67,7 +67,7 @@ $(ASSETS): data/* external/* font/*
 
 $(SCREENPACK):
 	@echo "Downloading screenpack..."
-	wget -nc -P $(SRC_DIR) https://github.com/leonkasovan/Ikemen-GO/releases/download/v1.0/screenpack.zip
+#	wget -nc -P $(SRC_DIR) https://github.com/leonkasovan/Ikemen-GO/releases/download/v1.0/screenpack.zip
 
 # ------------------------------
 # Utility targets

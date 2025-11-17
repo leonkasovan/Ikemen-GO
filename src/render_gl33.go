@@ -15,8 +15,8 @@ import (
 	"runtime"
 	"unsafe"
 
-	gl "github.com/go-gl/gl/v3.3-core/gl"
 	mgl "github.com/go-gl/mathgl/mgl32"
+	gl "github.com/ikemen-engine/Ikemen-GO/packages/gl/v3.3-core/gl"
 	"golang.org/x/mobile/exp/f32"
 )
 
@@ -43,7 +43,7 @@ func (r *Renderer_GL) newShaderProgram(vert, frag, geo, id string, crashWhenFail
 		return nil, err
 	}
 	if len(geo) > 0 {
-		if geoObj, err = r.compileShader(gl.GEOMETRY_SHADER_EXT, geo); chkEX(err, "Geo Shader compilation error on "+id+"\n", crashWhenFail) {
+		if geoObj, err = r.compileShader(gl.GEOMETRY_SHADER, geo); chkEX(err, "Geo Shader compilation error on "+id+"\n", crashWhenFail) {
 			return nil, err
 		}
 		if prog, err = r.linkProgram(vertObj, fragObj, geoObj); chkEX(err, "Link program error on "+id+"\n", crashWhenFail) {
@@ -441,7 +441,7 @@ func (r *Renderer_GL) InitModelShader() error {
 	r.cubemapFilteringShader, err = r.newShaderProgram(identVertShader, cubemapFilteringFragShader, "", "Cubemap Filtering Shader", false)
 	if err != nil {
 		return err
-	}								
+	}
 	r.cubemapFilteringShader.RegisterAttributes("VertCoord")
 	r.cubemapFilteringShader.RegisterUniforms("sampleCount", "distribution", "width", "currentFace", "roughness", "intensityScale", "isLUT")
 	r.cubemapFilteringShader.RegisterTextures("cubeMap")
@@ -656,6 +656,7 @@ func (r *Renderer_GL) Init() {
 
 			gl.BindFramebuffer(gl.FRAMEBUFFER, r.fbo_shadow)
 			gl.DrawBuffer(gl.NONE)
+			sys.nDrawcall++
 			gl.ReadBuffer(gl.NONE)
 			if status := gl.CheckFramebufferStatus(gl.FRAMEBUFFER); status != gl.FRAMEBUFFER_COMPLETE {
 				sys.errLog.Printf("framebuffer create failed: 0x%x", status)
@@ -702,7 +703,7 @@ func (r *Renderer_GL) EndFrame() {
 	gl.BindVertexArray(r.vao)
 
 	x, y, width, height := int32(0), int32(0), int32(sys.scrrect[2]), int32(sys.scrrect[3])
-	time := glfw.GetTime() // consistent time across all shaders
+	time := sys.GetTime() // consistent time across all shaders
 
 	if sys.msaa > 0 {
 		gl.BindFramebuffer(gl.DRAW_FRAMEBUFFER, r.fbo_f)
@@ -789,8 +790,11 @@ func (r *Renderer_GL) EndFrame() {
 
 		// construct the quad and draw it
 		gl.DrawArrays(gl.TRIANGLE_STRIP, 0, 4)
+		sys.nDrawcall++
 		gl.DisableVertexAttribArray(uint32(loc))
 	}
+	sys.Drawcall = sys.nDrawcall
+	sys.nDrawcall = 0
 }
 
 func (r *Renderer_GL) Await() {
@@ -1499,9 +1503,11 @@ func (r *Renderer_GL) SetModelIndexData(bufferIndex uint32, values ...uint32) {
 
 func (r *Renderer_GL) RenderQuad() {
 	gl.DrawArrays(gl.TRIANGLE_STRIP, 0, 4)
+	sys.nDrawcall++
 }
 func (r *Renderer_GL) RenderElements(mode PrimitiveMode, count, offset int) {
 	gl.DrawElementsWithOffset(r.MapPrimitiveMode(mode), int32(count), gl.UNSIGNED_INT, uintptr(offset))
+	sys.nDrawcall++
 }
 func (r *Renderer_GL) RenderShadowMapElements(mode PrimitiveMode, count, offset int) {
 	r.RenderElements(mode, count, offset)
@@ -1532,6 +1538,7 @@ func (r *Renderer_GL) RenderCubeMap(envTex Texture, cubeTex Texture) {
 		gl.Uniform1i(loc, int32(i))
 
 		gl.DrawArrays(gl.TRIANGLE_STRIP, 0, 4)
+		sys.nDrawcall++
 	}
 	gl.BindFramebuffer(gl.FRAMEBUFFER, r.fbo)
 	gl.BindTexture(gl.TEXTURE_CUBE_MAP, cubeTexture.handle)
@@ -1575,6 +1582,7 @@ func (r *Renderer_GL) RenderFilteredCubeMap(distribution int32, cubeTex Texture,
 		gl.Uniform1i(loc, int32(i))
 
 		gl.DrawArrays(gl.TRIANGLE_STRIP, 0, 4)
+		sys.nDrawcall++
 	}
 	gl.BindFramebuffer(gl.FRAMEBUFFER, r.fbo)
 }
@@ -1616,6 +1624,7 @@ func (r *Renderer_GL) RenderLUT(distribution int32, cubeTex Texture, lutTex Text
 	gl.FramebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, lutTexture.handle, 0)
 	gl.Clear(gl.COLOR_BUFFER_BIT)
 	gl.DrawArrays(gl.TRIANGLE_STRIP, 0, 4)
+	sys.nDrawcall++
 	gl.BindFramebuffer(gl.FRAMEBUFFER, r.fbo)
 }
 
