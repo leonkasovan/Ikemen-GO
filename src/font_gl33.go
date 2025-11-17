@@ -290,8 +290,8 @@ func (f *Font_GL) Width(scale float32, fs string, argv ...interface{}) float32 {
 
 // newProgram links the frag and vertex shader programs
 func (r *FontRenderer_GL) newProgram(vertexShaderSource, fragmentShaderSource string) (uint32, error) {
-	vertexShaderSource = "#version 300 es\nprecision mediump float;\n" + vertexShaderSource
-	fragmentShaderSource = "#version 300 es\nprecision mediump float;\n" + fragmentShaderSource
+	vertexShaderSource = "#version 330\n" + vertexShaderSource
+	fragmentShaderSource = "#version 330\n" + fragmentShaderSource
 	compileShader := func(source string, shaderType uint32) (uint32, error) {
 		shader := gl.CreateShader(shaderType)
 

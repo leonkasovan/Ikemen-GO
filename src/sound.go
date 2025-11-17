@@ -1,9 +1,8 @@
 package main
 
 /*
-#cgo LDFLAGS: -lxmp
-#cgo CFLAGS: -DLIBXMP_STATIC
-#include <xmp.h>
+#cgo CFLAGS: -I../packages -DLIBXMP_STATIC -DLIBXMP_CORE_PLAYER
+#include "xmp.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -31,6 +30,7 @@ import (
 	"github.com/gopxl/beep/v2/speaker"
 	"github.com/gopxl/beep/v2/vorbis"
 	"github.com/gopxl/beep/v2/wav"
+	_ "github.com/ikemen-engine/Ikemen-GO/packages/xmp"
 )
 
 const (

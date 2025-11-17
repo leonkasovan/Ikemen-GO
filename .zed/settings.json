@@ -1,0 +1,14 @@
+// Folder-specific settings
+//
+// For a full list of overridable settings, and general information on folder-specific settings,
+// see the documentation: https://zed.dev/docs/configuring-zed#settings-files
+{
+	"terminal": {
+		"shell": {
+			"program": "sh"
+		},
+		"env": {
+			"PATH": "F:\\w64devkit\\bin;F:\\go-go1.25.4\\bin"
+		}
+	}
+}
