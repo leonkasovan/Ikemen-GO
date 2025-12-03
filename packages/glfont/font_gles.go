@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
-	gl "github.com/leonkasovan/gl/v3.1/gles2"
+	gl "github.com/ikemen-engine/Ikemen-GO/packages/gl/v3.1/gles2"
 )
 
 // LoadFont loads the specified font at the given scale.

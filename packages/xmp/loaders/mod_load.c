@@ -42,7 +42,7 @@
 #include <ctype.h>
 #include "loader.h"
 #include "mod.h"
-#include "../path.h"
+#include "path.h"
 
 #ifndef LIBXMP_CORE_PLAYER
 struct mod_magic {

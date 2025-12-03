@@ -7,7 +7,7 @@ FILE="bin/ikemen_linux"
 
 # Remote server info
 USER="root"
-HOST="192.168.1.15"
+HOST="192.168.1.40"
 # REMOTE_DIR="/roms/ports/PortMaster/autoinstall"
 # REMOTE_DIR="/roms/ports"
 REMOTE_DIR="/roms/ports/ikemen/ikemen_linux.aarch64"

@@ -273,6 +273,7 @@ static GLFWbool openJoystickDevice(const char* path) {
     }
 #endif
 
+#ifdef _GLFW_SDL2
     if (strcmp(_glfw.sdl2.cfw, "knulli") == 0 || strcmp(_glfw.sdl2.cfw, "muOS") == 0) {    // Knulli spesific code
         for (int code = 0; code < KEY_MAX; code++) {
             if (test_bit(code, keybit)) {
@@ -282,6 +283,7 @@ static GLFWbool openJoystickDevice(const char* path) {
             }
         }
     } else {
+#endif
         for (int code = BTN_JOYSTICK; code < KEY_MAX; code++) {
             if (!test_bit(code, keybit))
                 continue;
@@ -297,8 +299,9 @@ static GLFWbool openJoystickDevice(const char* path) {
                 buttonCount++;
             }
         }
+#ifdef _GLFW_SDL2        
     }
-
+#endif
     for (int i = ABS_HAT0X; i <= ABS_HAT3Y; i += 2) {
         int hat_x = -1;
         int hat_y = -1;

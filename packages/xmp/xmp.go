@@ -1,39 +1,18 @@
 package xmp
 
 /*
-#cgo CFLAGS: -Iinclude
+#cgo CFLAGS: -Isrc -DLIBXMP_CORE_PLAYER -DLIBXMP_NO_DEPACKERS -DLIBXMP_NO_PROWIZARD -DLIBXMP_STATIC
+
+// Windows Build Tags
+#cgo windows CFLAGS: -D_WIN32
+
+// Linux Build Tags
+#cgo linux CFLAGS: -D__linux -D__linux__
 
 #include <stdlib.h>
 #include <stdio.h>
 #include "xmp.h"
 #include "../physfs/physfs.h"
-
-#include "src/control.c"
-#include "src/dataio.c"
-#include "src/effects.c"
-#include "src/filetype.c"
-#include "src/filter.c"
-#include "src/flow.c"
-#include "src/format.c"
-#include "src/hio.c"
-#include "src/lfo.c"
-#include "src/load_helpers.c"
-#include "src/load.c"
-#include "src/memio.c"
-#include "src/mix_all.c"
-#include "src/mixer.c"
-#include "src/period.c"
-#include "src/player.c"
-#include "src/read_event.c"
-#include "src/rng.c"
-#include "src/scan.c"
-#include "src/smix.c"
-#include "src/virtual.c"
-#include "loaders/sample.c"
-#include "loaders/common.c"
-#include "loaders/mod_load.c"
-#include "loaders/s3m_load.c"
-#include "loaders/xm_load.c"
 
 static long unsigned int  xmp_physfs_read(void *dest, long unsigned int size, long unsigned int nmemb, void *priv) {
     PHYSFS_File *file = (PHYSFS_File *)priv;
@@ -92,11 +71,13 @@ import (
 	"unsafe"
 	"github.com/gopxl/beep/v2"
 	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
+	_ "github.com/ikemen-engine/Ikemen-GO/packages/xmp/src"
+	_ "github.com/ikemen-engine/Ikemen-GO/packages/xmp/loaders"
 )
 
 const (
 	audioOutLen          = 2048
-	audioFrequency       = 48000
+	audioFrequency       = 44100
 )
 
 // ------------------------------------------------------------------

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	gl "github.com/leonkasovan/gl/v3.2/gles2"
+	gl "github.com/ikemen-engine/Ikemen-GO/packages/gl/v3.2/gles2"
 )
 
 // newProgram links the frag and vertex shader programs

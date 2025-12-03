@@ -13,7 +13,7 @@ package glfw
 //  - this file is given a build to exclude it from the regular build.
 import (
 	// Prevent go tooling from stripping out the c source files.
-	_ "github.com/ikemen-engine/Ikemen-GO/packages/glfw/glfw/deps"
-	_ "github.com/ikemen-engine/Ikemen-GO/packages/glfw/glfw/include/GLFW"
-	_ "github.com/ikemen-engine/Ikemen-GO/packages/glfw/glfw/src"
+	_ "glfw/deps"
+	_ "glfw/include/GLFW"
+	_ "glfw/glfw/src"
 )

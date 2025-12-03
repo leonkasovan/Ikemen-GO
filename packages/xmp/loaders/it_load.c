@@ -20,13 +20,13 @@
  * THE SOFTWARE.
  */
 
-#include "../common.h"
+#include "common.h"
 
 #ifndef LIBXMP_CORE_DISABLE_IT
 
 #include "loader.h"
 #include "it.h"
-#include "../period.h"
+#include "period.h"
 
 #define MAGIC_IMPM	MAGIC4('I','M','P','M')
 #define MAGIC_IMPI	MAGIC4('I','M','P','I')
