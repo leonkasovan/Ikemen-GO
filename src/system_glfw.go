@@ -42,27 +42,24 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 	glfw.WindowHint(glfw.Resizable, glfw.True)
 
 	// only GL 3.2 needs this
-	if sys.cfg.Video.RenderMode == "OpenGL 3.2" {
+	if sys.cfg.Video.RenderMode == "OpenGL 3.2" || sys.cfg.Video.RenderMode == "OpenGL 3.3" {
 		glfw.WindowHint(glfw.ContextVersionMajor, 3)
-		glfw.WindowHint(glfw.ContextVersionMinor, 2)
+		glfw.WindowHint(glfw.ContextVersionMinor, 3)
 		glfw.WindowHint(glfw.OpenGLForwardCompatible, glfw.True)
-		fmt.Printf("Using default Renderer OpenGL 3.2\n")
 		glfw.WindowHint(glfw.OpenGLProfile, glfw.OpenGLCoreProfile)
-	} else if s.cfg.Video.RenderMode == "OpenGL ES 3.1" {
+	} else if sys.cfg.Video.RenderMode == "OpenGL ES 3.1" {
 		glfw.WindowHint(glfw.ClientAPI, glfw.OpenGLESAPI)
 		glfw.WindowHint(glfw.ContextVersionMajor, 3)
 		glfw.WindowHint(glfw.ContextVersionMinor, 1)
 		glfw.WindowHint(glfw.ContextCreationAPI, glfw.EGLContextAPI)
-		fmt.Printf("Using default Renderer OpenGL ES 3.1\n")
 	} else if sys.cfg.Video.RenderMode == "OpenGL 2.1" {
 		glfw.WindowHint(glfw.ContextVersionMajor, 2)
 		glfw.WindowHint(glfw.ContextVersionMinor, 1)
-		fmt.Printf("Using default Renderer OpenGL 2.1\n")
 	} else {
 		glfw.WindowHint(glfw.ClientAPI, glfw.NoAPI)
 		glfw.WindowHint(glfw.ContextVersionMinor, 1)
-		fmt.Printf("Using default Renderer\n")
 	}
+	fmt.Printf("Using default Renderer %v\n", sys.cfg.Video.RenderMode)
 
 	// Create main window.
 	// NOTE: Borderless fullscreen is in reality just a window without borders.

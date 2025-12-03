@@ -84,7 +84,7 @@ layout(location = 0) out vec4 FragColor;
 #define COMPAT_TEXTURE_CUBE texture
 #define COMPAT_TEXTURE_CUBE_LOD textureLod
 #ifdef ENABLE_SHADOW
-#if defined(GL_ES)
+#if defined(GL_ES) || __VERSION__ < 400
 // For OpenGL ES, use separate samplerCube arrays instead of samplerCubeArray
 #define COMPAT_SHADOW_MAP_TEXTURE(index) (index == 0 ? texture(shadowCubeMaps[0], vec3(1.0, -(xy.y*2.0-1.0),-(xy.x*2.0-1.0))).r : index == 1 ? texture(shadowCubeMaps[1], vec3(1.0, -(xy.y*2.0-1.0),-(xy.x*2.0-1.0))).r : index == 2 ? texture(shadowCubeMaps[2], vec3(1.0, -(xy.y*2.0-1.0),-(xy.x*2.0-1.0))).r : texture(shadowCubeMaps[3], vec3(1.0, -(xy.y*2.0-1.0),-(xy.x*2.0-1.0))).r)
 #define COMPAT_SHADOW_CUBE_MAP_TEXTURE(index) (index == 0 ? texture(shadowCubeMaps[0], xyz).r : index == 1 ? texture(shadowCubeMaps[1], xyz).r : index == 2 ? texture(shadowCubeMaps[2], xyz).r : texture(shadowCubeMaps[3], xyz).r)

@@ -41,7 +41,6 @@ src/lua_triggers.go
 external/script/wip/*
 
 # IDE Files
-.vscode/*
 .vs/*
 .idea/*
 
