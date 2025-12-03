@@ -15,7 +15,8 @@ import (
 	"unsafe"
 
 	mgl "github.com/go-gl/mathgl/mgl32"
-	gl "github.com/leonkasovan/gl/v3.2/gles2"
+	gl "github.com/ikemen-engine/Ikemen-GO/packages/gl/v3.2/gles2"
+	"github.com/ikemen-engine/Ikemen-GO/packages/glfw"
 	"golang.org/x/mobile/exp/f32"
 )
 
@@ -35,10 +36,10 @@ type ShaderProgram_GLES32 struct {
 
 func (r *Renderer_GLES32) newShaderProgram(vert, frag, geo, id string, crashWhenFail bool) (s *ShaderProgram_GLES32, err error) {
 	var vertObj, fragObj, geoObj, prog uint32
-	if vertObj, err = r.compileShader(gl.VERTEX_SHADER, vert); chkEX(err, "Shader compliation error on "+id+"\n", crashWhenFail) {
+	if vertObj, err = r.compileShader(gl.VERTEX_SHADER, vert); chkEX(err, "Vertex Shader compliation error on "+id+"\n", crashWhenFail) {
 		return nil, err
 	}
-	if fragObj, err = r.compileShader(gl.FRAGMENT_SHADER, frag); chkEX(err, "Shader compliation error on "+id+"\n", crashWhenFail) {
+	if fragObj, err = r.compileShader(gl.FRAGMENT_SHADER, frag); chkEX(err, "Fragmen Shader compliation error on "+id+"\n", crashWhenFail) {
 		return nil, err
 	}
 	if len(geo) > 0 {
@@ -400,8 +401,13 @@ func (r *Renderer_GLES32) InitModelShader() error {
 // Render initialization.
 // Creates the default shaders, the framebuffer and enables MSAA.
 func (r *Renderer_GLES32) Init() {
-	chk(gl.Init())
-	sys.errLog.Printf("Using OpenGL %v (%v)", gl.GoStr(gl.GetString(gl.VERSION)), gl.GoStr(gl.GetString(gl.RENDERER)))
+	if err := gl.Init(glfw.GetProcAddress); err != nil {
+    	fmt.Println("gl.Init() failed:", err)
+	} else {
+		fmt.Println("gl.Init() success:")
+	}
+	// chk(gl.Init(glfw.GetProcAddress))
+	sys.errLog.Printf("Using OpenGL %v (%v)", gl.GetString(gl.VERSION), gl.GetString(gl.RENDERER))
 
 	var maxSamples int32
 	gl.GetIntegerv(gl.MAX_SAMPLES, &maxSamples)

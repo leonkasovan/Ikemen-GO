@@ -26,11 +26,11 @@
 #include <dirent.h>
 #endif
 
-#include "../common.h"
+#include "common.h"
 
 #include "xmp.h"
-#include "../path.h"
-#include "../period.h"
+#include "path.h"
+#include "period.h"
 #include "loader.h"
 
 int libxmp_init_instrument(struct module_data *m)

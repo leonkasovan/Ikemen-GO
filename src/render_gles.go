@@ -12,13 +12,12 @@ import (
 	"math"
 	"runtime"
 	"unsafe"
-
+	
+	gl "github.com/ikemen-engine/Ikemen-GO/packages/gl/v3.1/gles2"
 	mgl "github.com/go-gl/mathgl/mgl32"
-	gl "github.com/leonkasovan/gl/v3.1/gles2"
 	"golang.org/x/mobile/exp/f32"
+	"github.com/ikemen-engine/Ikemen-GO/packages/glfw"
 )
-
-//const GL_SHADER_VER = 120 // OpenGL 2.1
 
 // ------------------------------------------------------------------
 // ShaderProgram_GLES
@@ -36,10 +35,10 @@ type ShaderProgram_GLES struct {
 
 func (r *Renderer_GLES) newShaderProgram(vert, frag, geo, id string, crashWhenFail bool) (s *ShaderProgram_GLES, err error) {
 	var vertObj, fragObj, geoObj, prog uint32
-	if vertObj, err = r.compileShader(gl.VERTEX_SHADER, vert); chkEX(err, "Shader compliation error on "+id+"\n", crashWhenFail) {
+	if vertObj, err = r.compileShader(gl.VERTEX_SHADER, vert); chkEX(err, "Vertex Shader compliation error on "+id+"\n", crashWhenFail) {
 		return nil, err
 	}
-	if fragObj, err = r.compileShader(gl.FRAGMENT_SHADER, frag); chkEX(err, "Shader compliation error on "+id+"\n", crashWhenFail) {
+	if fragObj, err = r.compileShader(gl.FRAGMENT_SHADER, frag); chkEX(err, "Fragmen Shader compliation error on "+id+"\n", crashWhenFail) {
 		return nil, err
 	}
 	if len(geo) > 0 {
@@ -83,30 +82,29 @@ func (s *ShaderProgram_GLES) RegisterTextures(names ...string) {
 	}
 }
 
-func (r *Renderer_GLES) compileShader(shaderType uint32, src string) (shader uint32, err error) {
-	shader = gl.CreateShader(shaderType)
-	src = "#version 300 es\nprecision mediump float;\n" + src + "\x00"
-	s, _ := gl.Strs(src)
-	var l int32 = int32(len(src) - 1)
-	gl.ShaderSource(shader, 1, s, &l)
+func (r *Renderer_GLES) compileShader(shaderType uint32, src string) (uint32, error) {
+	shader := gl.CreateShader(shaderType)
+	fullSrc := "#version 300 es\nprecision mediump float;\n" + src + "\x00"
+	srcs, free := gl.Strs(fullSrc)
+	defer free()
+
+	gl.ShaderSource(shader, 1, srcs, nil)
 	gl.CompileShader(shader)
-	var ok int32
-	gl.GetShaderiv(shader, gl.COMPILE_STATUS, &ok)
-	if ok == 0 {
-		//var err error
-		var size, l int32
-		gl.GetShaderiv(shader, gl.INFO_LOG_LENGTH, &size)
-		if size > 0 {
-			str := make([]byte, size+1)
-			gl.GetShaderInfoLog(shader, size, &l, &str[0])
-			err = Error(str[:l])
-		} else {
-			err = Error("Unknown shader compile error")
+
+	var status int32
+	gl.GetShaderiv(shader, gl.COMPILE_STATUS, &status)
+	if status == gl.FALSE {
+		var logLen int32
+		gl.GetShaderiv(shader, gl.INFO_LOG_LENGTH, &logLen)
+		if logLen > 0 {
+			log := make([]byte, logLen)
+			var msgLen int32
+			gl.GetShaderInfoLog(shader, logLen, &msgLen, &log[0])
+			gl.DeleteShader(shader)
+			return 0, fmt.Errorf("shader compile error: %s", string(log[:msgLen]))
 		}
-		//chk(err)
 		gl.DeleteShader(shader)
-		//panic(Error("Shader compile error"))
-		return 0, err
+		return 0, fmt.Errorf("unknown shader compile error")
 	}
 	return shader, nil
 }
@@ -380,14 +378,21 @@ func (r *Renderer_GLES) InitModelShader() error {
 
 // Render initialization.
 // Creates the default shaders, the framebuffer and enables MSAA.
-func (r *Renderer_GLES) Init() {
+func (r *Renderer_GLES) Init() {	
 	r.enableModel = sys.cfg.Video.EnableModel
 	r.enableShadow = false //sys.cfg.Video.EnableModelShadow
-	chk(gl.Init())
+	if err := gl.Init(glfw.GetProcAddress); err != nil {
+    	fmt.Println("gl.Init() failed:", err)
+	} else {
+		fmt.Println("gl.Init() success:")
+	}
+	// chk(gl.Init())
+	fmt.Printf("gl.GetString pointer = %v\n", gl.GetString)
 	fmt.Printf("Using %v (%v)\n", gl.GoStr(gl.GetString(gl.VERSION)), gl.GoStr(gl.GetString(gl.RENDERER)))
 	fmt.Printf("scrrect: %v,%v - %v,%v\n", sys.scrrect[0], sys.scrrect[1], sys.scrrect[2], sys.scrrect[3])
 	fmt.Printf("gameWidth x gameHeight: %v,%v\n", sys.gameWidth, sys.gameHeight)
 	fmt.Printf("widthScale x heightScale: %v,%v\n", sys.widthScale, sys.heightScale)
+	fmt.Printf("EXTENSIONS:\n%v\n", gl.GoStr(gl.GetString(gl.EXTENSIONS)))
 
 	// Store current timestamp
 	sys.prevTimestamp = sys.GetTime()

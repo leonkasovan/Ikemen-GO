@@ -6,7 +6,7 @@ package dummy
 
 import (
 	// Prevent go tooling from stripping out the c source files.
-	_ "github.com/leonkasovan/glfw/v3.5/glfw/glfw/deps/glad"
-	_ "github.com/leonkasovan/glfw/v3.5/glfw/glfw/deps/mingw"
-	_ "github.com/leonkasovan/glfw/v3.5/glfw/glfw/deps/wayland"
+	_ "glfw/v3.5/glfw/glfw/deps/glad"
+	_ "glfw/v3.5/glfw/glfw/deps/mingw"
+	_ "glfw/v3.5/glfw/glfw/deps/wayland"
 )

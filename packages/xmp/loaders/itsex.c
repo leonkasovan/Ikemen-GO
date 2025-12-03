@@ -1,4 +1,4 @@
-#include "../common.h"
+#include "common.h"
 
 #ifndef LIBXMP_CORE_DISABLE_IT
 

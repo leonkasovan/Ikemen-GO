@@ -42,6 +42,7 @@ package glfw
 #cgo linux,x11 LDFLAGS: -lX11 -lXrandr -lXxf86vm -lXi -lXcursor -lm -lXinerama -ldl -lrt
 #cgo linux,wayland LDFLAGS: -lxkbcommon -lm -ldl -lrt
 #cgo linux,kmsdrm LDFLAGS: -lm -ldl -lrt -lgbm -lEGL -ldrm
+#cgo linux,sdl2 LDFLAGS: -lm
 
 // BSD Build Tags
 // ----------------
