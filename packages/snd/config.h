@@ -23,7 +23,7 @@
 #define HAVE_ALSA_ASOUNDLIB_H 1
 
 /* Define to 1 if you have the <byteswap.h> header file. */
-#define HAVE_BYTESWAP_H 1
+#define HAVE_BYTESWAP_H 0
 
 /* Define to 1 if you have the `calloc' function. */
 #define HAVE_CALLOC 1
@@ -59,7 +59,7 @@
 #define HAVE_FSTAT64 1
 
 /* Define to 1 if you have the `fsync' function. */
-#define HAVE_FSYNC 1
+// #define HAVE_FSYNC 1
 
 /* Define to 1 if you have the `ftruncate' function. */
 #define HAVE_FTRUNCATE 1
@@ -74,7 +74,7 @@
 #define HAVE_GMTIME 1
 
 /* Define to 1 if you have the `gmtime_r' function. */
-#define HAVE_GMTIME_R 1
+// #define HAVE_GMTIME_R 0
 
 /* Define to 1 if you have the <immintrin.h> header file. */
 /* #undef HAVE_IMMINTRIN_H */

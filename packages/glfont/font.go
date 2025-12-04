@@ -5,7 +5,7 @@ package glfont
 import (
 	"fmt"
 
-	"github.com/go-gl/gl/v2.1/gl"
+	// "github.com/go-gl/gl/v2.1/gl"
 	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
 )
 

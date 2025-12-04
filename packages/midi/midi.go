@@ -1,29 +1,30 @@
 /*
 mkdir build && cd build
-cmake .. \
-  -DBUILD_SHARED_LIBS=OFF \
-  -Denable-ipv6=OFF \
-  -Denable-sdl2=OFF \
-  -Denable-sdl3=OFF \
-  -Denable-network=OFF \
-  -Denable-dbus=OFF \
-  -Denable-systemd=OFF \
-  -Denable-pulseaudio=OFF \
-  -Denable-alsa=OFF \
-  -Denable-jack=OFF \
-  -Denable-pipewire=OFF \
-  -Denable-libsndfile=OFF \
-  -Denable-ladspa=OFF \
-  -Denable-readline=OFF \
-  -Denable-openmp=OFF \
-  -Denable-oss=OFF \
-  -DCMAKE_BUILD_TYPE=Release
+
+	cmake .. \
+	  -DBUILD_SHARED_LIBS=OFF \
+	  -Denable-ipv6=OFF \
+	  -Denable-sdl2=OFF \
+	  -Denable-sdl3=OFF \
+	  -Denable-network=OFF \
+	  -Denable-dbus=OFF \
+	  -Denable-systemd=OFF \
+	  -Denable-pulseaudio=OFF \
+	  -Denable-alsa=OFF \
+	  -Denable-jack=OFF \
+	  -Denable-pipewire=OFF \
+	  -Denable-libsndfile=OFF \
+	  -Denable-ladspa=OFF \
+	  -Denable-readline=OFF \
+	  -Denable-openmp=OFF \
+	  -Denable-oss=OFF \
+	  -DCMAKE_BUILD_TYPE=Release
 */
 package midi
 
 /*
 #cgo CFLAGS: -Iinclude
-#cgo LDFLAGS: -L. -lfluidsynth -lglib-2.0
+#cgo LDFLAGS: -L.
 
 // Windows Build Tags
 #cgo windows CFLAGS: -D_WIN32
@@ -46,14 +47,14 @@ import (
 )
 
 const (
-	audioOutLen    = 2048               // frames per call (stereo frames)
-	audioFrequency = 44100              // output samplerate (Hz)
+	audioOutLen    = 2048  // frames per call (stereo frames)
+	audioFrequency = 44100 // output samplerate (Hz)
 )
 
 // midiStreamer uses FluidSynth to synthesize MIDI into PCM for beep.
 type midiStreamer struct {
-	synth   *C.fluid_synth_t
-	player  *C.fluid_player_t
+	synth    *C.fluid_synth_t
+	player   *C.fluid_player_t
 	settings *C.fluid_settings_t
 
 	// scratch buffers for synthesis (left/right int16)

@@ -2,7 +2,7 @@ package opus
 
 /*
 #cgo CFLAGS: -Iinclude
-#cgo LDFLAGS: -L. -lopus
+#cgo LDFLAGS: -L.
 
 // Windows Build Tags
 #cgo windows CFLAGS: -D_WIN32

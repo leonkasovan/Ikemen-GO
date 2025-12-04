@@ -59,7 +59,12 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <sys/stat.h>
-
+#ifndef S_IFSOCK
+#define S_IFSOCK 0140000
+#endif
+#ifndef S_ISSOCK
+#define S_ISSOCK(m) (((m) & S_IFMT) == S_IFSOCK)
+#endif
 #include "sndfile.h"
 #include "common.h"
 
@@ -819,7 +824,7 @@ psf_open_handle (PSF_FILE * pfile)
 	pwszPath = malloc (nResult * sizeof (WCHAR)) ;
 	if (!pwszPath)
 		return INVALID_HANDLE_VALUE ;
-	
+
 	int nResult2 = MultiByteToWideChar (CP_UTF8, 0, pfile->path, -1, pwszPath, nResult) ;
 	if (nResult != nResult2)
 	{	free (pwszPath) ;
@@ -1203,4 +1208,3 @@ psf_ftruncate (SF_PRIVATE *psf, sf_count_t len)
 } /* psf_ftruncate */
 
 #endif
-

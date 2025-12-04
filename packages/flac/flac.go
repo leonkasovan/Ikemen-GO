@@ -2,7 +2,7 @@ package flac
 
 /*
 #cgo CFLAGS: -Iinclude
-#cgo LDFLAGS: -L. -lFLAC
+#cgo LDFLAGS: -L.
 
 // Windows Build Tags
 #cgo windows CFLAGS: -D_WIN32

@@ -21,7 +21,7 @@ extern "C" {
 # elif defined(BUILDING_DLL)
 #  define LIBXMP_EXPORT __declspec(dllexport)
 # else
-#  define LIBXMP_EXPORT __declspec(dllimport)
+#  define LIBXMP_EXPORT
 # endif
 #elif defined(__OS2__) && defined(__WATCOMC__)
 # if defined(LIBXMP_STATIC)

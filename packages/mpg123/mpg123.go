@@ -3,7 +3,7 @@ package mpg123
 
 /*
 #cgo CFLAGS: -Iinclude
-#cgo LDFLAGS: -L. -lmpg123
+#cgo LDFLAGS: -L.
 
 // Windows Build Tags
 #cgo windows CFLAGS: -D_WIN32

@@ -1,6 +1,9 @@
 package ogg
 
 /*
+
+#cgo CFLAGS: -Iinclude
+
 // Windows Build Tags
 #cgo windows CFLAGS: -D_WIN32
 

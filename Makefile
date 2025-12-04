@@ -88,8 +88,8 @@ clean_appbundle:
 #	Mac OS: darwin
 #	Windows: <default>
 
-windows: ${srcFiles} src/assets.zip
-	export CGO_ENABLED=1 && go build -trimpath -ldflags="-s -w -H=windowsgui" -v -o ./bin/ikemen_win.exe ./src
+windows: ${srcFiles}
+	export CGO_ENABLED=1 && go build -trimpath -x -ldflags="-s -w -H=windowsgui" -v -o ./bin/ikemen_win.exe ./src
 
 # Steamdeck (SteamOS X11)
 steamdeck: ${srcFiles} src/assets.zip
@@ -139,7 +139,7 @@ sdlGamepadMapper:
 	$(CC) -s -o bin/sdlGamepadMapper tool/sdlGamepadMapper.c `sdl2-config --cflags --libs`
 
 snd_rebuilder:
-	$(CC) -s tool/snd_rebuilder.c -o bin/snd_rebuilder -lmp3lame -lsndfile	
+	$(CC) -s tool/snd_rebuilder.c -o bin/snd_rebuilder -lmp3lame -lsndfile
 
 port: sdlGamepadMapper
 	rm port/ikemen.zip || true

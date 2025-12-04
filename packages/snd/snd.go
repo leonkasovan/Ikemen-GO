@@ -1,7 +1,7 @@
 package snd
 
 /*
-#cgo CFLAGS: -I../mpg123/include -I../opus/include
+#cgo CFLAGS: -I../mpg123/include -I../opus/include -I../flac/include -I../ogg/include -I../vorbis/include
 
 // Windows Build Tags
 #cgo windows CFLAGS: -D_WIN32
@@ -141,30 +141,31 @@ SF_VIRTUAL_IO* get_physfs_vio() {
 import "C"
 import (
 	"errors"
-	"unsafe"
 	"fmt"
+	"unsafe"
+
 	"github.com/gopxl/beep/v2"
-	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
-	_ "github.com/ikemen-engine/Ikemen-GO/packages/ogg"
-	_ "github.com/ikemen-engine/Ikemen-GO/packages/vorbis"
-	_ "github.com/ikemen-engine/Ikemen-GO/packages/opus"
-	_ "github.com/ikemen-engine/Ikemen-GO/packages/mpg123"
 	_ "github.com/ikemen-engine/Ikemen-GO/packages/flac"
+	_ "github.com/ikemen-engine/Ikemen-GO/packages/mpg123"
+	_ "github.com/ikemen-engine/Ikemen-GO/packages/ogg"
+	_ "github.com/ikemen-engine/Ikemen-GO/packages/opus"
+	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
+	_ "github.com/ikemen-engine/Ikemen-GO/packages/vorbis"
 )
 
 const (
-	audioOutLen          = 2048
-	audioFrequency       = 44100
+	audioOutLen    = 2048
+	audioFrequency = 44100
 )
 
 // sndfileStreamer wraps SNDFILE* and MemFile for streaming + seeking
 type sndfileStreamer struct {
-	sf       *C.SNDFILE
-	info     C.SF_INFO
-	mem      *C.MemFile
-	channels int
+	sf         *C.SNDFILE
+	info       C.SF_INFO
+	mem        *C.MemFile
+	channels   int
 	sampleRate int
-	goBuffer  []byte // Pin Go buffer to ensure it's not GC'd
+	goBuffer   []byte // Pin Go buffer to ensure it's not GC'd
 }
 
 // Stream reads PCM into beep's stereo float64 buffer

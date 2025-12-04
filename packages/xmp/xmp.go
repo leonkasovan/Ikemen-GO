@@ -4,7 +4,7 @@ package xmp
 #cgo CFLAGS: -Isrc -DLIBXMP_CORE_PLAYER -DLIBXMP_NO_DEPACKERS -DLIBXMP_NO_PROWIZARD -DLIBXMP_STATIC
 
 // Windows Build Tags
-#cgo windows CFLAGS: -D_WIN32
+#cgo windows CFLAGS: -D_WIN32 -DLIBXMP_STATIC
 
 // Linux Build Tags
 #cgo linux CFLAGS: -D__linux -D__linux__
@@ -69,15 +69,16 @@ import (
 	"errors"
 	"runtime"
 	"unsafe"
+
 	"github.com/gopxl/beep/v2"
 	"github.com/ikemen-engine/Ikemen-GO/packages/physfs"
-	_ "github.com/ikemen-engine/Ikemen-GO/packages/xmp/src"
 	_ "github.com/ikemen-engine/Ikemen-GO/packages/xmp/loaders"
+	_ "github.com/ikemen-engine/Ikemen-GO/packages/xmp/src"
 )
 
 const (
-	audioOutLen          = 2048
-	audioFrequency       = 44100
+	audioOutLen    = 2048
+	audioFrequency = 44100
 )
 
 // ------------------------------------------------------------------
@@ -91,8 +92,8 @@ type xmStreamer struct {
 	err        error
 
 	// runtime tracking
-	posFrames   int   // frames already produced (a frame == one sample per channel)
-	totalFrames int   // estimated total frames (from total_time)
+	posFrames   int // frames already produced (a frame == one sample per channel)
+	totalFrames int // estimated total frames (from total_time)
 }
 
 // Stream fills the provided buffer with audio frames (Optimized version).
@@ -121,7 +122,6 @@ func (x *xmStreamer) Stream(samples [][2]float64) (int, bool) {
 	}
 	return frameCount, true
 }
-
 
 // Err returns the last error that occurred.
 func (x *xmStreamer) Err() error { return x.err }
@@ -160,10 +160,10 @@ func newXMStreamer(f *physfs.File) (*xmStreamer, error) {
 	}
 
 	// Load module using callbacks
-    if (C.xmp_load_module_from_callbacks(ctx, unsafe.Pointer(f), C.physfs_cb) != 0) {
+	if C.xmp_load_module_from_callbacks(ctx, unsafe.Pointer(f), C.physfs_cb) != 0 {
 		C.xmp_free_context(ctx)
-        return nil, errors.New("Failed to load XM module from callbacks");
-    }
+		return nil, errors.New("Failed to load XM module from callbacks")
+	}
 
 	var info C.struct_xmp_frame_info
 	C.xmp_get_frame_info(ctx, &info)
@@ -175,11 +175,11 @@ func newXMStreamer(f *physfs.File) (*xmStreamer, error) {
 	}
 
 	s := &xmStreamer{
-		ctx:        ctx,
-		channels:   2,
-		sampleRate: audioFrequency,
-		totalFrames: int(float64(info.total_time) * float64(audioFrequency) / 1000.0), 
-		buffer:     make([]int16, audioOutLen*2), // 2048 stereo frames → lower memory
+		ctx:         ctx,
+		channels:    2,
+		sampleRate:  audioFrequency,
+		totalFrames: int(float64(info.total_time) * float64(audioFrequency) / 1000.0),
+		buffer:      make([]int16, audioOutLen*2), // 2048 stereo frames → lower memory
 	}
 	runtime.SetFinalizer(s, func(s *xmStreamer) { s.Close() })
 	return s, nil

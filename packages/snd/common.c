@@ -16,7 +16,7 @@
 ** Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
 */
 
-#include <config.h>
+#include "config.h"
 
 #include <limits.h>
 #include <stdarg.h>
@@ -1411,6 +1411,7 @@ psf_get_date_str (char *str, int maxlen)
 #if defined (HAVE_GMTIME_R)
 	/* If the re-entrant version is available, use it. */
 	tmptr = gmtime_r (&current, &timedata) ;
+	tmptr = NULL;
 #elif defined (HAVE_GMTIME)
 	/* Otherwise use the standard one and copy the data to local storage. */
 	tmptr = gmtime (&current) ;
