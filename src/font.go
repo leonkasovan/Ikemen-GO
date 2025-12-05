@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/binary"
+	"fmt"
 	"math"
 	"os"
 	"regexp"
@@ -361,7 +362,7 @@ func loadDefInfo(f *Fnt, filename string, is IniSection, height int32) {
 
 func LoadFntSff(f *Fnt, fontfile string, filename string) {
 	fileDir := SearchFile(filename, []string{fontfile, "font/", sys.motifDir, "", "data/"})
-	sff, err := loadSff(fileDir, false)
+	sff, err := loadSff(fileDir, false, true)
 
 	if err != nil {
 		panic(err)
@@ -505,6 +506,7 @@ func (f *Fnt) drawChar(
 	rp.size = spr.Size
 	rp.x = -x * sys.widthScale
 	rp.y = -y * sys.heightScale
+	rp.uv = spr.UV
 
 	RenderSprite(rp)
 	return float32(spr.Size[0]) * xscl
@@ -517,6 +519,7 @@ func (f *Fnt) Print(txt string, x, y, xscl, yscl, rxadd float32, rot Rotation, b
 			f.DrawTtf(txt, x, y, xscl, yscl, align, true, window, frgba)
 		} else {
 			// DRAWCALL 20
+			// f.DrawTextBatch(txt, x, y, xscl, yscl, rxadd, rot, bank, align, window, palfx, frgba[3])
 			f.DrawText(txt, x, y, xscl, yscl, rxadd, rot, bank, align, window, palfx, frgba[3])
 		}
 	}
@@ -616,6 +619,199 @@ func (f *Fnt) DrawText(txt string, x, y, xscl, yscl, rxadd float32, rot Rotation
 
 	for _, c := range txt {
 		x += f.drawChar(x, y, xscl, yscl, bank, bt, c, pal, rp) + xscl*float32(f.Spacing[0])
+	}
+}
+
+func (f *Fnt) DrawTextBatch(txt string, x, y, xscl, yscl, rxadd float32, rot Rotation, bank, align int32, window *[4]int32, palfx *PalFX, alpha float32) {
+	if len(txt) == 0 || xscl == 0 || yscl == 0 {
+		return
+	}
+
+	var bt int32
+	if f.BankType == "sprite" {
+		bt = bank
+		bank = 0
+	} else if bank < 0 || len(f.palettes) <= int(bank) {
+		bank = 0
+	}
+
+	// not existing characters treated as space
+	for i, c := range txt {
+		if c != ' ' && f.images[bt][c] == nil {
+			txt = txt[:i] + string(' ') + txt[i+1:]
+		}
+	}
+
+	// Original position adjustments
+	x += float32(f.offset[0])*xscl + float32(sys.gameWidth-320)/2
+	y += float32(f.offset[1]-int32(f.Size[1])+1)*yscl + float32(sys.gameHeight-240)
+
+	var rcx, rcy float32
+
+	if rot.IsZero() {
+		if xscl < 0 {
+			x *= -1
+		}
+		if yscl < 0 {
+			y *= -1
+		}
+		rcx, rcy = rcx*sys.widthScale, 0
+	} else {
+		rcx, rcy = (x+rcx)*sys.widthScale, y*sys.heightScale
+		x, y = AbsF(xscl)*float32(f.offset[0]), AbsF(yscl)*float32(f.offset[1])
+	}
+
+	if align == 0 {
+		x -= float32(f.TextWidth(txt, bank)) * xscl * 0.5
+	} else if align < 0 {
+		x -= float32(f.TextWidth(txt, bank)) * xscl
+	}
+
+	var pal []uint32
+	if len(f.palettes) != 0 {
+		pal = f.palettes[bank][:]
+	}
+
+	f.paltex = nil
+
+	// Set the trans type
+	tt := TT_none
+	if alpha < 1.0 {
+		tt = TT_add
+	}
+
+	alphaVal := int32(255 * sys.brightness * alpha)
+
+	// Initialize common render parameters
+	rp := RenderParams{
+		tex:            nil,
+		paltex:         nil,
+		size:           [2]uint16{0, 0},
+		x:              0,
+		y:              0,
+		tile:           notiling,
+		xts:            xscl * sys.widthScale,
+		xbs:            xscl * sys.widthScale,
+		ys:             yscl * sys.heightScale,
+		vs:             1,
+		rxadd:          rxadd,
+		xas:            1,
+		yas:            1,
+		rot:            rot,
+		tint:           0,
+		blendMode:      tt,
+		blendAlpha:     [2]int32{alphaVal, 255 - alphaVal},
+		mask:           0,
+		pfx:            palfx,
+		window:         window,
+		rcx:            rcx,
+		rcy:            rcy,
+		projectionMode: 0,
+		fLength:        0,
+		xOffset:        0,
+		yOffset:        0,
+	}
+
+	// Group characters by texture for batch rendering
+	type CharBatch struct {
+		texture  Texture
+		palette  Texture
+		vertices []float32
+	}
+
+	batches := make(map[string]*CharBatch)
+	currentX := x
+
+	// FIXED: Calculate base Y position for text rendering
+	// In OpenGL, Y=0 is at the bottom, but our game logic expects Y=0 at the top
+	// We need to convert from game coordinates to OpenGL coordinates
+	// baseY := float32(sys.scrrect[3]) - y // Convert from top-left to bottom-left origin
+
+	for _, c := range txt {
+		if c == ' ' {
+			currentX += xscl*float32(f.Size[0]) + xscl*float32(f.Spacing[0])
+			continue
+		}
+
+		spr := f.getCharSpr(c, bank, bt)
+		if spr == nil || spr.Tex == nil {
+			continue
+		}
+
+		// In case of mismatched color depth
+		if len(f.palettes) != 0 && len(f.coldepth) > int(bank) &&
+			f.images[bt][c].img[0].coldepth != 32 &&
+			f.coldepth[bank] != f.images[bt][c].img[0].coldepth {
+			pal = f.images[bt][c].img[0].Pal[:]
+		}
+
+		charX := currentX - xscl*float32(spr.Offset[0])
+		charY := y - yscl*float32(spr.Offset[1]) // This is in game coordinates (top-left origin)
+
+		// FIXED: Convert charY to OpenGL coordinates (bottom-left origin)
+		oglCharY := float32(sys.scrrect[3]) - charY
+
+		// Create a key for this texture/palette combination
+		texKey := fmt.Sprintf("%p_%p", spr.Tex, f.paltex)
+		if spr.coldepth <= 8 && f.paltex == nil {
+			f.paltex = spr.CachePalette(pal)
+		}
+
+		batch, exists := batches[texKey]
+		if !exists {
+			batch = &CharBatch{
+				texture:  spr.Tex,
+				palette:  f.paltex,
+				vertices: make([]float32, 0),
+			}
+			batches[texKey] = batch
+		}
+
+		// Add vertex data for this character (two triangles)
+		// Each vertex: x, y, u, v
+		u1, v1 := spr.UV[0], spr.UV[1]
+		u2, v2 := spr.UV[2], spr.UV[3]
+
+		// FIXED: Calculate screen coordinates properly
+		screenX := charX * sys.widthScale
+		screenY := oglCharY * sys.heightScale // Already converted to OpenGL coordinates
+		width := float32(spr.Size[0]) * xscl * sys.widthScale
+		height := float32(spr.Size[1]) * yscl * sys.heightScale
+
+		// FIXED: Adjust Y position since we're now working in OpenGL coordinates
+		// In OpenGL, Y increases upward, so we need to subtract height
+		bottomY := screenY - height
+
+		// Create two triangles (6 vertices) for the quad
+		// Triangle 1: Bottom-left, Bottom-right, Top-left
+		batch.vertices = append(batch.vertices,
+			screenX, bottomY, u1, v2, // Bottom-left
+			screenX+width, bottomY, u2, v2, // Bottom-right
+			screenX, screenY, u1, v1) // Top-left
+
+		// Triangle 2: Top-left, Bottom-right, Top-right
+		batch.vertices = append(batch.vertices,
+			screenX, screenY, u1, v1, // Top-left
+			screenX+width, bottomY, u2, v2, // Bottom-right
+			screenX+width, screenY, u2, v1) // Top-right
+
+		currentX += float32(spr.Size[0])*xscl + xscl*float32(f.Spacing[0])
+	}
+
+	// Render all batches
+	fmt.Printf("Batch %v\n", len(batches))
+	for _, batch := range batches {
+		if len(batch.vertices) == 0 {
+			fmt.Printf("WARNING: shit happen. No batch.vertices\n")
+			continue
+		}
+
+		// Update render parameters for this batch
+		rp.tex = batch.texture
+		rp.paltex = batch.palette
+
+		// Use the batch rendering version
+		f.RenderSpriteBatch(batch.vertices, rp)
 	}
 }
 
@@ -773,6 +969,8 @@ func (ts *TextSprite) Draw() {
 		if ts.fnt.Type == "truetype" {
 			ts.fnt.DrawTtf(line[:charsToShow], ts.x, newY, ts.xscl, ts.yscl, ts.align, true, &ts.window, ts.frgba)
 		} else {
+			// ts.fnt.DrawTextBatch(line[:charsToShow], ts.x-xsoffset, newY, ts.xscl, ts.yscl,
+			// xshear, Rotation{ts.angle, 0, 0}, ts.bank, ts.align, &ts.window, ts.palfx, ts.frgba[3])
 			ts.fnt.DrawText(line[:charsToShow], ts.x-xsoffset, newY, ts.xscl, ts.yscl,
 				xshear, Rotation{ts.angle, 0, 0}, ts.bank, ts.align, &ts.window, ts.palfx, ts.frgba[3])
 		}

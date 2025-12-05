@@ -3709,7 +3709,7 @@ func (s *Select) addChar(defLine string) {
 		LoadFile(&resolvedSpritePath, []string{sc.def, "", "data/"}, func(file string) error {
 			var selPal []int32
 			var err_sff error
-			sc.sff, selPal, err_sff = preloadSff(file, true, listSpr)
+			sc.sff, selPal, err_sff = preloadSff(file, true, listSpr, false)
 			if err_sff != nil {
 				return fmt.Errorf("failed to preload SFF %s for %s: %w", file, sc.def, err_sff)
 			}
@@ -3954,7 +3954,7 @@ func (s *Select) AddStage(def string) error {
 		// preload portion of sff file
 		LoadFile(&spr, []string{def, "", "data/"}, func(file string) error {
 			var err error
-			ss.sff, _, err = preloadSff(file, false, listSpr)
+			ss.sff, _, err = preloadSff(file, false, listSpr, false)
 			if err != nil {
 				panic(fmt.Errorf("failed to load %v: %v\nerror preloading %v", file, err, def))
 			}

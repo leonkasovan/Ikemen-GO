@@ -3,6 +3,7 @@ package main
 import (
 	"container/list"
 	_ "embed"
+	"fmt"
 	"math"
 
 	mgl "github.com/go-gl/mathgl/mgl32"
@@ -17,6 +18,7 @@ type Texture interface {
 	GetWidth() int32
 	GetHeight() int32
 	CopyData(src *Texture)
+	SavePNG(filename string, pal []uint32) error
 }
 
 type Renderer interface {
@@ -32,6 +34,7 @@ type Renderer interface {
 
 	BlendReset()
 	SetPipeline(eq BlendEquation, src, dst BlendFunc)
+	SetPipelineBatch()
 	ReleasePipeline()
 	prepareShadowMapPipeline(bufferIndex uint32)
 	setShadowMapPipeline(doubleSided, invertFrontFace, useUV, useNormal, useTangent, useVertColor, useJoint0, useJoint1 bool, numVertices, vertAttrOffset uint32)
@@ -72,10 +75,12 @@ type Renderer interface {
 	SetShadowFrameTexture(i uint32)
 	SetShadowFrameCubeTexture(i uint32)
 	SetVertexData(values ...float32)
+	SetVertexDataArray(values []float32)
 	SetModelVertexData(bufferIndex uint32, values []byte)
 	SetModelIndexData(bufferIndex uint32, values ...uint32)
 
 	RenderQuad()
+	RenderQuadBatch(vertexCount int32)
 	RenderElements(mode PrimitiveMode, count, offset int)
 	RenderShadowMapElements(mode PrimitiveMode, count, offset int)
 	RenderCubeMap(envTexture Texture, cubeTexture Texture)
@@ -199,6 +204,7 @@ type RenderParams struct {
 	fLength        float32 // Focal length
 	xOffset        float32
 	yOffset        float32
+	uv             [4]float32 // Optional atlas UV rect u1,v1,u2,v2
 }
 
 func (rp *RenderParams) IsValid() bool {
@@ -528,7 +534,13 @@ func RenderSprite(rp RenderParams) {
 		gfx.SetUniformFv("mult", pmul[:])
 		gfx.SetUniformFv("tint", tint[:])
 		gfx.SetUniformF("alpha", a)
-
+		// If an atlas UV rectangle is provided use it in the shader
+		useUV := 0
+		if rp.uv[2] != 0.0 || rp.uv[0] != 0.0 || rp.uv[3] != 0.0 || rp.uv[1] != 0.0 {
+			useUV = 1
+			gfx.SetUniformFv("uvRect", rp.uv[:])
+		}
+		gfx.SetUniformI("useUV", useUV)
 		renderSpriteQuad(modelview, rp)
 
 		gfx.ReleasePipeline()
@@ -537,7 +549,79 @@ func RenderSprite(rp RenderParams) {
 	renderWithBlending(render, rp.blendMode, rp.blendAlpha, rp.paltex != nil, invblend, &neg, &padd, &pmul, rp.paltex == nil)
 	gfx.DisableScissor()
 }
+func (f *Fnt) RenderSpriteBatch(vertices []float32, rp RenderParams) {
+	if len(vertices) == 0 {
+		return
+	}
 
+	neg, grayscale, padd, pmul, invblend, hue := false, float32(0), [3]float32{0, 0, 0}, [3]float32{1, 1, 1}, int32(0), float32(0)
+	tint := [4]float32{float32(rp.tint&0xff) / 255, float32(rp.tint>>8&0xff) / 255,
+		float32(rp.tint>>16&0xff) / 255, float32(rp.tint>>24&0xff) / 255}
+
+	if rp.pfx != nil {
+		neg, grayscale, padd, pmul, invblend, hue = rp.pfx.getFcPalFx(false, rp.blendAlpha)
+	}
+
+	proj := gfx.OrthographicProjectionMatrix(0, float32(sys.scrrect[2]), 0, float32(sys.scrrect[3]), -65535, 65535)
+	// FIXED: Use identity matrix for batch rendering since vertices are already in screen space
+	modelview := mgl.Ident4()
+
+	gfx.Scissor(rp.window[0], rp.window[1], rp.window[2], rp.window[3])
+
+	render := func(eq BlendEquation, src, dst BlendFunc, a float32) {
+		gfx.SetPipeline(eq, src, dst)
+
+		gfx.SetUniformMatrix("projection", proj[:])
+		gfx.SetUniformMatrix("modelview", modelview[:]) // Identity matrix
+		gfx.SetTexture("tex", rp.tex)
+		if rp.paltex == nil {
+			gfx.SetUniformI("isRgba", 1)
+		} else {
+			gfx.SetTexture("pal", rp.paltex)
+			gfx.SetUniformI("isRgba", 0)
+		}
+		gfx.SetUniformI("mask", int(rp.mask))
+		gfx.SetUniformI("isTrapez", int(Btoi(AbsF(AbsF(rp.xts)-AbsF(rp.xbs)) > 0.001)))
+		gfx.SetUniformI("isFlat", 0)
+
+		gfx.SetUniformI("neg", int(Btoi(neg)))
+		gfx.SetUniformF("gray", grayscale)
+		gfx.SetUniformF("hue", hue)
+		gfx.SetUniformFv("add", padd[:])
+		gfx.SetUniformFv("mult", pmul[:])
+		gfx.SetUniformFv("tint", tint[:])
+		gfx.SetUniformF("alpha", a)
+
+		// Note: For batch rendering, UVs are already in vertex data
+		gfx.SetUniformI("useUV", 1)
+		gfx.SetUniformFv("uvRect", []float32{0, 0, 1, 1}) // Use full texture
+
+		// Upload and render batch vertices
+		gfx.SetVertexDataArray(vertices)
+
+		gfx.SetPipelineBatch()
+		// Bind the text vertex buffer for attribute pointers
+		// gl.BindBuffer(gl.ARRAY_BUFFER, textVertexBuffer)
+		// loc := r.spriteShader.a["position"]
+		// gl.EnableVertexAttribArray(uint32(loc))
+		// gl.VertexAttribPointerWithOffset(uint32(loc), 2, gl.FLOAT, false, 16, 0)
+		// loc = r.spriteShader.a["uv"]
+		// gl.EnableVertexAttribArray(uint32(loc))
+		// gl.VertexAttribPointerWithOffset(uint32(loc), 2, gl.FLOAT, false, 16, 8)
+
+		// Draw all triangles
+		gfx.RenderQuadBatch(int32(len(vertices) / 4))
+
+		// Clean up
+		// gl.DisableVertexAttribArray(uint32(r.spriteShader.a["position"]))
+		// gl.DisableVertexAttribArray(uint32(r.spriteShader.a["uv"]))
+
+		gfx.ReleasePipeline()
+	}
+
+	renderWithBlending(render, rp.blendMode, rp.blendAlpha, rp.paltex != nil, invblend, &neg, &padd, &pmul, rp.paltex == nil)
+	gfx.DisableScissor()
+}
 func renderWithBlending(
 	render func(eq BlendEquation, src, dst BlendFunc, a float32),
 	blendMode TransType, blendAlpha [2]int32, correctAlpha bool, invblend int32, neg *bool, acolor *[3]float32, mcolor *[3]float32, isrgba bool) {
@@ -691,6 +775,12 @@ type TextureAtlas struct {
 
 func CreateTextureAtlas(width, height int32, depth int32, filter bool) *TextureAtlas {
 	ta := &TextureAtlas{width: width, height: height, texture: gfx.newTexture(width, height, depth, filter), depth: depth, filter: filter, skyline: list.New(), resize: false}
+	// Allocate backing storage for the atlas texture so subsequent TexSubImage2D
+	// calls from AddImage will succeed. SetData(nil) calls gl.TexImage2D with
+	// a nil pointer which creates an empty texture of the requested size.
+	if ta.texture != nil {
+		ta.texture.SetData(nil)
+	}
 	ta.skyline.PushBack([2]int32{0, 0})
 	return ta
 }
@@ -779,7 +869,9 @@ func (ta *TextureAtlas) FindPlaceToInsert(width, height int32) (int32, int32, bo
 
 func (ta *TextureAtlas) Resize(width, height int32) {
 	if width < ta.width || height < ta.height {
-		panic("New width cannot be smaller than old width")
+		fmt.Printf("New width=%v cannot be smaller than old width=%v OR\n", width, ta.width)
+		fmt.Printf("New height=%v cannot be smaller than old height=%v\n", height, ta.height)
+		panic("TextureAtlas.Resize")
 	}
 	if height < ta.height {
 		panic("New height cannot be smaller than old height")

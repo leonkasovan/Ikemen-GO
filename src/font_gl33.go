@@ -1,18 +1,19 @@
 //go:build opengl33
+
 package main
 
 import (
 	"fmt"
-	"os"
-	"strings"
 	"image"
 	"image/draw"
 	"io"
 	"io/ioutil"
+	"os"
+	"strings"
 
-	gl "github.com/ikemen-engine/Ikemen-GO/packages/gl/v3.3-core/gl"
 	"github.com/golang/freetype"
 	"github.com/golang/freetype/truetype"
+	gl "github.com/ikemen-engine/Ikemen-GO/packages/gl/v3.3-core/gl"
 	"golang.org/x/image/font"
 	"golang.org/x/image/math/fixed"
 )

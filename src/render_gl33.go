@@ -11,7 +11,12 @@ import (
 	_ "embed" // Support for go:embed resources
 	"encoding/binary"
 	"fmt"
+	"image"
+	clr "image/color"
+	"image/png"
+	"log"
 	"math"
+	"os"
 	"runtime"
 	"unsafe"
 
@@ -253,6 +258,10 @@ func (t *Texture_GL) SetData(data []byte) {
 	format := t.MapInternalFormat(Max(t.depth, 8))
 
 	gl.BindTexture(gl.TEXTURE_2D, t.handle)
+	// Ensure any pending GL commands which upload texture data finish before
+	// reading with GetTexImage. This avoids reading an incomplete texture on
+	// some drivers where uploads are deferred.
+	gl.Finish()
 	gl.PixelStorei(gl.UNPACK_ALIGNMENT, 1)
 	if data != nil {
 		gl.TexImage2D(gl.TEXTURE_2D, 0, int32(format), t.width, t.height, 0, format, gl.UNSIGNED_BYTE, unsafe.Pointer(&data[0]))
@@ -266,7 +275,31 @@ func (t *Texture_GL) SetData(data []byte) {
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
 }
 func (t *Texture_GL) SetSubData(data []byte, x, y, width, height int32) {
+	format := t.MapInternalFormat(Max(t.depth, 8))
 
+	gl.BindTexture(gl.TEXTURE_2D, t.handle)
+	gl.PixelStorei(gl.UNPACK_ALIGNMENT, 1)
+	if data != nil {
+		gl.TexSubImage2D(
+			gl.TEXTURE_2D,
+			0,
+			x, y,
+			width, height,
+			format,
+			gl.UNSIGNED_BYTE,
+			unsafe.Pointer(&data[0]),
+		)
+	} else {
+		gl.TexSubImage2D(
+			gl.TEXTURE_2D,
+			0,
+			x, y,
+			width, height,
+			format,
+			gl.UNSIGNED_BYTE,
+			nil,
+		)
+	}
 }
 func (t *Texture_GL) SetDataG(data []byte, mag, min, ws, wt TextureSamplingParam) {
 
@@ -289,8 +322,21 @@ func (t *Texture_GL) SetPixelData(data []float32) {
 	gl.TexImage2D(gl.TEXTURE_2D, 0, int32(internalFormat), t.width, t.height, 0, uint32(format), gl.FLOAT, unsafe.Pointer(&data[0]))
 }
 
-func (t Texture_GL) CopyData(src *Texture) {
-
+func (t *Texture_GL) CopyData(src *Texture) {
+	srcTex, ok := (*src).(*Texture_GL)
+	if !ok || srcTex == nil || !srcTex.IsValid() || !t.IsValid() {
+		return
+	}
+	if t.width != srcTex.width || t.height != srcTex.height || t.depth != srcTex.depth {
+		return
+	}
+	gl.BindTexture(gl.TEXTURE_2D, srcTex.handle)
+	// Allocate buffer for pixel data
+	pixelSize := int(t.width) * int(t.height) * int(t.depth/8)
+	data := make([]byte, pixelSize)
+	gl.GetTexImage(gl.TEXTURE_2D, 0, srcTex.MapInternalFormat(Max(srcTex.depth, 8)), gl.UNSIGNED_BYTE, unsafe.Pointer(&data[0]))
+	gl.BindTexture(gl.TEXTURE_2D, t.handle)
+	gl.TexSubImage2D(gl.TEXTURE_2D, 0, 0, 0, t.width, t.height, t.MapInternalFormat(Max(t.depth, 8)), gl.UNSIGNED_BYTE, unsafe.Pointer(&data[0]))
 }
 
 // Return whether texture has a valid handle
@@ -331,6 +377,332 @@ func (t *Texture_GL) MapTextureSamplingParam(i TextureSamplingParam) int32 {
 	}
 	return SamplingParam[i]
 }
+func (t *Texture_GL) SavePNG(filename string, pal []uint32) error {
+	log.Printf("SavePNG: filename=%q width=%d height=%d depth=%d handle=%d",
+		filename, t.width, t.height, t.depth, t.handle)
+
+	if !t.IsValid() {
+		log.Printf("SavePNG: texture is not valid (handle=%d, w=%d, h=%d)", t.handle, t.width, t.height)
+		return Error("texture not valid")
+	}
+
+	gl.BindTexture(gl.TEXTURE_2D, t.handle)
+	// Allocate buffer for pixel data
+	pixelSize := int(t.width) * int(t.height) * int(t.depth/8)
+	data := make([]byte, pixelSize)
+	gl.GetTexImage(gl.TEXTURE_2D, 0, t.MapInternalFormat(Max(t.depth, 8)), gl.UNSIGNED_BYTE, unsafe.Pointer(&data[0]))
+
+	if len(data) != pixelSize {
+		log.Printf("SavePNG: unexpected data length got=%d expected=%d", len(data), pixelSize)
+	}
+
+	if t.depth == 8 {
+		// 8-bit texture: data contains palette indices. If a palette is provided
+		// we'll create a paletted PNG using that palette. Otherwise fall back to
+		// a grayscale image where palette indices map to gray levels.
+		if pal != nil && len(pal) >= 256 {
+			// Build Go palette from uint32 entries (A<<24 | B<<16 | G<<8 | R)
+			gpal := make(clr.Palette, 256)
+			for i := 0; i < 256; i++ {
+				c := pal[i]
+				r := uint8(c & 0xff)
+				g := uint8((c >> 8) & 0xff)
+				b := uint8((c >> 16) & 0xff)
+				a := uint8((c >> 24) & 0xff)
+				gpal[i] = clr.RGBA{R: r, G: g, B: b, A: a}
+			}
+
+			img := image.NewPaletted(image.Rect(0, 0, int(t.width), int(t.height)), gpal)
+			n := copy(img.Pix, data)
+			if n != len(img.Pix) {
+				log.Printf("SavePNG: copied %d bytes into paletted image (expected %d)", n, len(img.Pix))
+			}
+
+			// Count used indices so we can make any used-but-fully-transparent
+			// palette entries opaque for the paletted PNG output. This preserves
+			// the index mapping while ensuring the saved paletted PNG is visible
+			// in image viewers that honor palette alpha.
+			usedCounts := make([]int, 256)
+			for _, idx := range img.Pix {
+				usedCounts[int(idx)]++
+			}
+			forced := []int{}
+			for i := 0; i < 256; i++ {
+				if usedCounts[i] > 0 {
+					_, _, _, ca := gpal[i].RGBA()
+					if ca>>8 == 0 { // alpha == 0
+						// Replace palette entry with same RGB but full alpha so
+						// paletted output is visible. Do not modify original
+						// `pal` slice — operate on gpal copy.
+						r, g, b, _ := gpal[i].RGBA()
+						gpal[i] = clr.RGBA{R: uint8(r >> 8), G: uint8(g >> 8), B: uint8(b >> 8), A: 255}
+						forced = append(forced, i)
+					}
+				}
+			}
+			if len(forced) > 0 {
+				log.Printf("SavePNG: forced %d palette entries to opaque for paletted output: %v", len(forced), forced)
+			}
+
+			f, err := os.Create(filename)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+
+			if err := png.Encode(f, img); err != nil {
+				log.Printf("SavePNG: png.Encode returned error: %v", err)
+				return err
+			}
+
+			// Also save an expanded RGBA image so viewers see the atlas even if
+			// the saved paletted PNG has transparent palette entries.
+			expanded := image.NewNRGBA(image.Rect(0, 0, int(t.width), int(t.height)))
+			for i := range data {
+				v := int(data[i])
+				if v < len(gpal) {
+					cr, cg, cb, ca := gpal[v].RGBA()
+					expanded.Pix[4*i+0] = uint8(cr >> 8)
+					expanded.Pix[4*i+1] = uint8(cg >> 8)
+					expanded.Pix[4*i+2] = uint8(cb >> 8)
+					expanded.Pix[4*i+3] = uint8(ca >> 8)
+				} else {
+					expanded.Pix[4*i+0] = 255
+					expanded.Pix[4*i+1] = 0
+					expanded.Pix[4*i+2] = 255
+					expanded.Pix[4*i+3] = 255
+				}
+			}
+			if ef, eerr := os.Create(filename + ".rgba.png"); eerr == nil {
+				png.Encode(ef, expanded)
+				ef.Close()
+				log.Printf("SavePNG: expanded RGBA image written to %s", filename+".rgba.png")
+			} else {
+				log.Printf("SavePNG: failed to write expanded RGBA: %v", eerr)
+			}
+
+			// Basic verification: ensure data isn't all a single repeated index (likely blank)
+			counts := make([]int, 256)
+			for i := range data {
+				counts[data[i]]++
+			}
+			var unique int
+			for _, c := range counts {
+				if c > 0 {
+					unique++
+				}
+			}
+
+			// Log top indices and palette alpha stats to help debug invisible/blank outputs
+			topN := 8
+			used := make([]bool, 256)
+			for k := 0; k < topN; k++ {
+				bestIdx := -1
+				bestCount := 0
+				for i, c := range counts {
+					if used[i] || c == 0 {
+						continue
+					}
+					if c > bestCount {
+						bestCount = c
+						bestIdx = i
+					}
+				}
+				if bestIdx == -1 {
+					break
+				}
+				used[bestIdx] = true
+				// cr, cg, cb, ca := gpal[bestIdx].RGBA()
+				// log.Printf("SavePNG: top[%d] idx=%d count=%d color=R=%d G=%d B=%d A=%d", k, bestIdx, bestCount, cr>>8, cg>>8, cb>>8, ca>>8)
+			}
+
+			// Count zero-alpha palette entries
+			zeroAlpha := 0
+			for i := 0; i < len(gpal); i++ {
+				_, _, _, ca := gpal[i].RGBA()
+				if ca>>8 == 0 {
+					zeroAlpha++
+				}
+			}
+			if zeroAlpha > 0 {
+				log.Printf("SavePNG: palette has %d/%d entries with zero alpha", zeroAlpha, len(gpal))
+			}
+
+			// Produce an index-map visualisation (ignores palette alpha) so we can
+			// see the index layout independent of palette transparency.
+			idxImg := image.NewNRGBA(image.Rect(0, 0, int(t.width), int(t.height)))
+			for i := range data {
+				idx := int(data[i])
+				r := uint8((idx * 97) % 256)
+				g := uint8((idx * 53) % 256)
+				b := uint8((idx * 193) % 256)
+				idxImg.Pix[4*i+0] = r
+				idxImg.Pix[4*i+1] = g
+				idxImg.Pix[4*i+2] = b
+				idxImg.Pix[4*i+3] = 255
+			}
+			if df, derr := os.Create(filename + ".indexmap.png"); derr == nil {
+				png.Encode(df, idxImg)
+				df.Close()
+				log.Printf("SavePNG: index map written to %s", filename+".indexmap.png")
+			} else {
+				log.Printf("SavePNG: failed to write index map: %v", derr)
+			}
+
+			// Also write a palette-visualisation where each index is mapped
+			// through the actual palette, but force alpha=255 so colors are visible
+			palvis := image.NewNRGBA(image.Rect(0, 0, int(t.width), int(t.height)))
+			for i := range data {
+				v := int(data[i])
+				if v < len(gpal) {
+					cr, cg, cb, _ := gpal[v].RGBA()
+					palvis.Pix[4*i+0] = uint8(cr >> 8)
+					palvis.Pix[4*i+1] = uint8(cg >> 8)
+					palvis.Pix[4*i+2] = uint8(cb >> 8)
+					palvis.Pix[4*i+3] = 255
+				} else {
+					palvis.Pix[4*i+0] = 255
+					palvis.Pix[4*i+1] = 0
+					palvis.Pix[4*i+2] = 255
+					palvis.Pix[4*i+3] = 255
+				}
+			}
+			if df, derr := os.Create(filename + ".palvis.png"); derr == nil {
+				png.Encode(df, palvis)
+				df.Close()
+				log.Printf("SavePNG: palette visualisation written to %s", filename+".palvis.png")
+			}
+
+			if unique <= 1 {
+				// Find the dominant index
+				dominantIdx := 0
+				dominantCount := 0
+				for i, c := range counts {
+					if c > dominantCount {
+						dominantIdx = i
+						dominantCount = c
+					}
+				}
+				log.Printf("SavePNG: saved paletted PNG but image appears uniform (unique indices=%d) dominantIdx=%d count=%d. Writing debug dump.", unique, dominantIdx, dominantCount)
+
+				// Log the first palette entries to help understand what the repeated
+				// index maps to (alpha may be zero).
+				for i := 0; i < 16 && i < len(gpal); i++ {
+					cr, cg, cb, ca := gpal[i].RGBA()
+					log.Printf("SavePNG: pal[%02d] = R=%d G=%d B=%d A=%d", i, cr>>8, cg>>8, cb>>8, ca>>8)
+				}
+				dbg := image.NewNRGBA(image.Rect(0, 0, int(t.width), int(t.height)))
+				for i := range data {
+					v := int(data[i])
+					if v < len(gpal) {
+						cr, cg, cb, ca := gpal[v].RGBA()
+						dbg.Pix[4*i+0] = uint8(cr >> 8)
+						dbg.Pix[4*i+1] = uint8(cg >> 8)
+						dbg.Pix[4*i+2] = uint8(cb >> 8)
+						a8 := uint8(ca >> 8)
+						if a8 == 0 {
+							a8 = 255
+						}
+						dbg.Pix[4*i+3] = a8
+					} else {
+						dbg.Pix[4*i+0] = 255
+						dbg.Pix[4*i+1] = 0
+						dbg.Pix[4*i+2] = 255
+						dbg.Pix[4*i+3] = 255
+					}
+				}
+				dfn := filename + ".debug.png"
+				if df, derr := os.Create(dfn); derr == nil {
+					png.Encode(df, dbg)
+					df.Close()
+					log.Printf("SavePNG: debug dump written to %s", dfn)
+				} else {
+					log.Printf("SavePNG: failed to write debug dump: %v", derr)
+				}
+			}
+
+			return nil
+		}
+
+		// Fallback: expand indices into an opaque grayscale NRGBA
+		grayImg := image.NewNRGBA(image.Rect(0, 0, int(t.width), int(t.height)))
+		for i := 0; i < len(data) && 4*i+3 < len(grayImg.Pix); i++ {
+			v := data[i]
+			grayImg.Pix[4*i+0] = v
+			grayImg.Pix[4*i+1] = v
+			grayImg.Pix[4*i+2] = v
+			grayImg.Pix[4*i+3] = 255
+		}
+		f, err := os.Create(filename)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+
+		if err := png.Encode(f, grayImg); err != nil {
+			log.Printf("SavePNG: png.Encode(grayscale) returned error: %v", err)
+			return err
+		}
+
+		// Quick verification for grayscale export
+		zero := true
+		for _, b := range grayImg.Pix {
+			if b != 0 {
+				zero = false
+				break
+			}
+		}
+		if zero {
+			log.Printf("SavePNG: grayscale export appears entirely zero for %s (w=%d h=%d)", filename, t.width, t.height)
+		}
+
+		return nil
+	}
+
+	// non-paletted data (4 bytes per pixel expected)
+	f, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	normalImg := image.NewNRGBA(image.Rect(0, 0, int(t.width), int(t.height)))
+	n := copy(normalImg.Pix, data)
+	if n != len(normalImg.Pix) {
+		log.Printf("SavePNG: copied %d/%d bytes into RGBA image for %s", n, len(normalImg.Pix), filename)
+	}
+	if err := png.Encode(f, normalImg); err != nil {
+		log.Printf("SavePNG: png.Encode(rgba) returned error: %v", err)
+		return err
+	}
+
+	// Verify image appears not-empty
+	allZero := true
+	for _, b := range normalImg.Pix {
+		if b != 0 {
+			allZero = false
+			break
+		}
+	}
+	if allZero {
+		log.Printf("SavePNG: saved image %s appears entirely zero (w=%d h=%d).", filename, t.width, t.height)
+		// create a visible diagnostic variant (invert) so the file is easier to inspect
+		dbg := image.NewNRGBA(image.Rect(0, 0, int(t.width), int(t.height)))
+		for i := 0; i < len(normalImg.Pix); i += 4 {
+			dbg.Pix[i+0] = 255
+			dbg.Pix[i+1] = 0
+			dbg.Pix[i+2] = 0
+			dbg.Pix[i+3] = 255
+		}
+		dfn := filename + ".debug.png"
+		if df, derr := os.Create(dfn); derr == nil {
+			png.Encode(df, dbg)
+			df.Close()
+			log.Printf("SavePNG: debug debug variant written to %s", dfn)
+		}
+	}
+
+	return nil
+}
 
 // ------------------------------------------------------------------
 // Renderer_GL
@@ -354,8 +726,9 @@ type Renderer_GL struct {
 	postVertBuffer   uint32
 	postShaderSelect []*ShaderProgram_GL
 	// Shader and vertex data for primitive rendering
-	spriteShader *ShaderProgram_GL
-	vertexBuffer uint32
+	spriteShader      *ShaderProgram_GL
+	vertexBuffer      uint32
+	vertexBufferBatch uint32
 	// Shader and index data for 3D model rendering
 	shadowMapShader         *ShaderProgram_GL
 	modelShader             *ShaderProgram_GL
@@ -486,12 +859,13 @@ func (r *Renderer_GL) Init() {
 	gl.GenBuffers(1, &r.vertexBuffer)
 	gl.GenBuffers(2, &r.modelVertexBuffer[0])
 	gl.GenBuffers(2, &r.modelIndexBuffer[0])
+	gl.GenBuffers(1, &r.vertexBufferBatch)
 
 	// Sprite shader
 	r.spriteShader, _ = r.newShaderProgram(vertShader, fragShader, "", "Main Shader", true)
 	r.spriteShader.RegisterAttributes("position", "uv")
 	r.spriteShader.RegisterUniforms("modelview", "projection", "x1x2x4x3",
-		"alpha", "tint", "mask", "neg", "gray", "add", "mult", "isFlat", "isRgba", "isTrapez", "hue")
+		"alpha", "tint", "mask", "neg", "gray", "add", "mult", "isFlat", "isRgba", "isTrapez", "hue", "uvRect", "useUV")
 	r.spriteShader.RegisterTextures("pal", "tex")
 
 	if r.enableModel {
@@ -898,6 +1272,16 @@ func (r *Renderer_GL) SetPipeline(eq BlendEquation, src, dst BlendFunc) {
 
 	// Must bind buffer before enabling attributes
 	gl.BindBuffer(gl.ARRAY_BUFFER, r.vertexBuffer)
+	loc := r.spriteShader.a["position"]
+	gl.EnableVertexAttribArray(uint32(loc))
+	gl.VertexAttribPointerWithOffset(uint32(loc), 2, gl.FLOAT, false, 16, 0)
+	loc = r.spriteShader.a["uv"]
+	gl.EnableVertexAttribArray(uint32(loc))
+	gl.VertexAttribPointerWithOffset(uint32(loc), 2, gl.FLOAT, false, 16, 8)
+}
+
+func (r *Renderer_GL) SetPipelineBatch() {
+	gl.BindBuffer(gl.ARRAY_BUFFER, r.vertexBufferBatch)
 	loc := r.spriteShader.a["position"]
 	gl.EnableVertexAttribArray(uint32(loc))
 	gl.VertexAttribPointerWithOffset(uint32(loc), 2, gl.FLOAT, false, 16, 0)
@@ -1492,6 +1876,18 @@ func (r *Renderer_GL) SetVertexData(values ...float32) {
 	gl.BindBuffer(gl.ARRAY_BUFFER, r.vertexBuffer)
 	gl.BufferData(gl.ARRAY_BUFFER, len(data), unsafe.Pointer(&data[0]), gl.STATIC_DRAW)
 }
+func (r *Renderer_GL) SetVertexDataArray(values []float32) {
+	if len(values) == 0 {
+		return
+	}
+
+	// Store for later use if needed
+	// textVertexData = values
+
+	data := f32.Bytes(binary.LittleEndian, values...)
+	gl.BindBuffer(gl.ARRAY_BUFFER, r.vertexBufferBatch)
+	gl.BufferData(gl.ARRAY_BUFFER, len(data), unsafe.Pointer(&data[0]), gl.STATIC_DRAW)
+}
 func (r *Renderer_GL) SetModelVertexData(bufferIndex uint32, values []byte) {
 	gl.BindBuffer(gl.ARRAY_BUFFER, r.modelVertexBuffer[bufferIndex])
 	gl.BufferData(gl.ARRAY_BUFFER, len(values), unsafe.Pointer(&values[0]), gl.STATIC_DRAW)
@@ -1506,6 +1902,10 @@ func (r *Renderer_GL) SetModelIndexData(bufferIndex uint32, values ...uint32) {
 
 func (r *Renderer_GL) RenderQuad() {
 	gl.DrawArrays(gl.TRIANGLE_STRIP, 0, 4)
+	sys.nDrawcall++
+}
+func (r *Renderer_GL) RenderQuadBatch(vertexCount int32) {
+	gl.DrawArrays(gl.TRIANGLES, 0, vertexCount)
 	sys.nDrawcall++
 }
 func (r *Renderer_GL) RenderElements(mode PrimitiveMode, count, offset int) {

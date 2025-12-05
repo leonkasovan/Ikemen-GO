@@ -547,8 +547,9 @@ func (sh *SffHeader) Read(r io.Reader, lofs *uint32, tofs *uint32) error {
 type Sprite struct {
 	Pal      []uint32
 	Tex      Texture
-	Group    uint16 // Group index: valid range 0–65535
-	Number   uint16 // Sprite index: valid range 0–65535
+	UV       [4]float32 // u1,v1,u2,v2
+	Group    uint16     // Group index: valid range 0–65535
+	Number   uint16     // Sprite index: valid range 0–65535
 	Size     [2]uint16
 	Offset   [2]int16
 	palidx   int
@@ -556,6 +557,7 @@ type Sprite struct {
 	coldepth byte
 	paltemp  []uint32
 	PalTex   Texture
+	Sff      *Sff // Reference to parent SFF
 }
 
 func (s *Sprite) isBlank() bool {
@@ -563,7 +565,7 @@ func (s *Sprite) isBlank() bool {
 }
 
 func newSprite() *Sprite {
-	return &Sprite{palidx: -1}
+	return &Sprite{palidx: -1, UV: [4]float32{0, 0, 0, 0}}
 }
 
 /*
@@ -729,8 +731,24 @@ func (s *Sprite) SetPxl(px []byte) {
 		return
 	}
 	sys.mainThreadTask <- func() {
-		s.Tex = gfx.newTexture(int32(s.Size[0]), int32(s.Size[1]), 8, false)
-		s.Tex.SetData(px)
+		if s.Sff == nil {
+			fmt.Printf("Sff null\n")
+			return
+		}
+		if s.Sff.Atlas_8 == nil { // No atlas, create individual texture
+			s.Tex = gfx.newTexture(int32(s.Size[0]), int32(s.Size[1]), 8, false)
+			s.Tex.SetData(px)
+		} else { // Use atlas
+			ok := false
+			s.UV, ok = s.Sff.Atlas_8.AddImage(int32(s.Size[0]), int32(s.Size[1]), px)
+			if ok {
+				s.Tex = s.Sff.Atlas_8.texture
+				// fmt.Printf("Added sprite %vx%v to atlas at UV %v,%v - %v,%v.\n", s.Size[0], s.Size[1], s.UV[0], s.UV[1], s.UV[2], s.UV[3])
+			} else {
+				s.Tex = nil
+				fmt.Printf("Warning: Sprite atlas full. Skipping sprite %vx%v.\n", s.Size[0], s.Size[1])
+			}
+		}
 	}
 }
 
@@ -1253,6 +1271,7 @@ func (s *Sprite) Draw(x, y, xscale, yscale float32, rxadd float32, rot Rotation,
 		fLength:        0,
 		xOffset:        -xscale * float32(s.Offset[0]),
 		yOffset:        -yscale * float32(s.Offset[1]),
+		uv:             s.UV,
 	}
 	RenderSprite(rp)
 }
@@ -1263,6 +1282,7 @@ type Sff struct {
 	palList PaletteList
 	// This is the sffCache key
 	filename string
+	Atlas_8  *TextureAtlas // 8-bit atlas for paletted sprites
 }
 type Palette struct {
 	palList PaletteList
@@ -1274,6 +1294,7 @@ func newSff() (s *Sff) {
 	for i := uint16(1); i <= uint16(sys.cfg.Config.PaletteMax); i++ {
 		s.palList.PalTable[[...]uint16{1, i}], _ = s.palList.NewPal()
 	}
+	s.Atlas_8 = nil
 	return
 }
 
@@ -1300,7 +1321,8 @@ func removeSFFCache(filename string) {
 	}
 }
 
-func loadSff(filename string, char bool) (*Sff, error) {
+func loadSff(filename string, char bool, useAtlas bool) (*Sff, error) {
+	fmt.Printf("loadSff %v\n", filename)
 	// If this SFF is already in the cache, just return a copy
 	if cached, ok := SffCache[filename]; ok {
 		cached.refCount++
@@ -1321,6 +1343,8 @@ func loadSff(filename string, char bool) (*Sff, error) {
 	read := func(x interface{}) error {
 		return binary.Read(f, binary.LittleEndian, x)
 	}
+	fmt.Printf("SFF Version: %d.%d.%d.%d\n", s.header.Ver0, s.header.Ver1, s.header.Ver2, s.header.Ver3)
+	fmt.Printf("NumberOfSprites: %v\nNumberOfPalettes: %v\n", s.header.NumberOfSprites, s.header.NumberOfPalettes)
 	if s.header.Ver0 != 1 {
 		uniquePals := make(map[[2]uint16]int)
 		for i := 0; i < int(s.header.NumberOfPalettes); i++ {
@@ -1345,7 +1369,7 @@ func loadSff(filename string, char bool) (*Sff, error) {
 			if old, ok := uniquePals[[...]uint16{gn_[0], gn_[1]}]; ok {
 				idx = old
 				pal = s.palList.Get(old)
-				sys.errLog.Printf("%v duplicated palette: %v,%v (%v/%v)\n", filename, gn_[0], gn_[1], i+1, s.header.NumberOfPalettes)
+				fmt.Printf("%v duplicated palette: %v,%v (%v/%v)\n", filename, gn_[0], gn_[1], i+1, s.header.NumberOfPalettes)
 			} else if siz == 0 {
 				idx = int(link)
 				pal = s.palList.Get(idx)
@@ -1387,9 +1411,14 @@ func loadSff(filename string, char bool) (*Sff, error) {
 	spriteList := make([]*Sprite, int(s.header.NumberOfSprites))
 	var prev *Sprite
 	shofs := int64(s.header.FirstSpriteHeaderOffset)
+	if useAtlas {
+		s.Atlas_8 = CreateTextureAtlas(512, 512, 8, false)
+		s.Atlas_8.resize = true
+	}
 	for i := 0; i < len(spriteList); i++ {
 		f.Seek(shofs, 0)
 		spriteList[i] = newSprite()
+		spriteList[i].Sff = s
 		var xofs, size uint32
 		var indexOfPrevious uint16
 		switch s.header.Ver0 {
@@ -1409,6 +1438,7 @@ func loadSff(filename string, char bool) (*Sff, error) {
 				dst, src := spriteList[i], spriteList[int(indexOfPrevious)]
 				sys.mainThreadTask <- func() {
 					dst.shareCopy(src)
+					dst.UV = src.UV
 				}
 			} else {
 				spriteList[i].palidx = 0 // index out of range
@@ -1449,6 +1479,25 @@ func loadSff(filename string, char bool) (*Sff, error) {
 			}
 		}
 	})
+	if s.Atlas_8 != nil {
+		var defpal []uint32
+		if len(s.palList.palettes) > 0 {
+			defpal = s.palList.Get(0)
+		}
+		// Schedule atlas saving on the main thread so we capture the uploaded
+		// atlas contents after any queued AddImage() / SetData operations finish.
+		// log.Printf("loadSff: scheduling delayed save of atlas_8.png (palette present=%t length=%d)", defpal != nil, len(defpal))
+		sys.mainThreadTask <- func() {
+			if s.Atlas_8 == nil || s.Atlas_8.texture == nil {
+				// log.Printf("loadSff (delayed): Atlas_8 or its texture is nil - cannot save atlas_8.png")
+				return
+			}
+			// log.Printf("loadSff (delayed): performing SavePNG on atlas_8.png (texture valid=%t)", s.Atlas_8.texture.IsValid())
+			if err := s.Atlas_8.texture.SavePNG(filename+"_atlas_8.png", defpal); err != nil {
+				// log.Printf("loadSff (delayed): SavePNG returned error: %v", err)
+			}
+		}
+	}
 	return s, nil
 }
 
@@ -1596,7 +1645,7 @@ func loadCharPalettes(sff *Sff, filename string, ref int) error {
 	return nil
 }
 
-func preloadSff(filename string, char bool, preloadSpr map[[2]uint16]bool) (*Sff, []int32, error) {
+func preloadSff(filename string, char bool, preloadSpr map[[2]uint16]bool, useAtlas bool) (*Sff, []int32, error) {
 	sff := newSff()
 	f, err := OpenFile(filename)
 	if err != nil {
@@ -1650,9 +1699,13 @@ func preloadSff(filename string, char bool, preloadSpr map[[2]uint16]bool) (*Sff
 			}
 		}
 	}
-
+	if useAtlas {
+		sff.Atlas_8 = CreateTextureAtlas(512, 512, 8, false)
+		sff.Atlas_8.resize = true
+	}
 	for i := 0; i < len(spriteList); i++ {
 		spriteList[i] = newSprite()
+		spriteList[i].Sff = sff
 		f.Seek(int64(shofs), 0)
 		switch h.Ver0 {
 		case 1:
