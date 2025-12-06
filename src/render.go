@@ -549,7 +549,7 @@ func RenderSprite(rp RenderParams) {
 	renderWithBlending(render, rp.blendMode, rp.blendAlpha, rp.paltex != nil, invblend, &neg, &padd, &pmul, rp.paltex == nil)
 	gfx.DisableScissor()
 }
-func (f *Fnt) RenderSpriteBatch(vertices []float32, rp RenderParams) {
+func RenderSpriteBatch(vertices []float32, rp RenderParams) {
 	if len(vertices) == 0 {
 		return
 	}

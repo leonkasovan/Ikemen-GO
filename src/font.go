@@ -519,8 +519,8 @@ func (f *Fnt) Print(txt string, x, y, xscl, yscl, rxadd float32, rot Rotation, b
 			f.DrawTtf(txt, x, y, xscl, yscl, align, true, window, frgba)
 		} else {
 			// DRAWCALL 20
-			// f.DrawTextBatch(txt, x, y, xscl, yscl, rxadd, rot, bank, align, window, palfx, frgba[3])
-			f.DrawText(txt, x, y, xscl, yscl, rxadd, rot, bank, align, window, palfx, frgba[3])
+			f.DrawTextBatch(txt, x, y, xscl, yscl, rxadd, rot, bank, align, window, palfx, frgba[3])
+			// f.DrawText(txt, x, y, xscl, yscl, rxadd, rot, bank, align, window, palfx, frgba[3])
 		}
 	}
 }
@@ -722,11 +722,6 @@ func (f *Fnt) DrawTextBatch(txt string, x, y, xscl, yscl, rxadd float32, rot Rot
 	batches := make(map[string]*CharBatch)
 	currentX := x
 
-	// FIXED: Calculate base Y position for text rendering
-	// In OpenGL, Y=0 is at the bottom, but our game logic expects Y=0 at the top
-	// We need to convert from game coordinates to OpenGL coordinates
-	// baseY := float32(sys.scrrect[3]) - y // Convert from top-left to bottom-left origin
-
 	for _, c := range txt {
 		if c == ' ' {
 			currentX += xscl*float32(f.Size[0]) + xscl*float32(f.Spacing[0])
@@ -746,10 +741,7 @@ func (f *Fnt) DrawTextBatch(txt string, x, y, xscl, yscl, rxadd float32, rot Rot
 		}
 
 		charX := currentX - xscl*float32(spr.Offset[0])
-		charY := y - yscl*float32(spr.Offset[1]) // This is in game coordinates (top-left origin)
-
-		// FIXED: Convert charY to OpenGL coordinates (bottom-left origin)
-		oglCharY := float32(sys.scrrect[3]) - charY
+		charY := y - yscl*float32(spr.Offset[1])
 
 		// Create a key for this texture/palette combination
 		texKey := fmt.Sprintf("%p_%p", spr.Tex, f.paltex)
@@ -767,42 +759,43 @@ func (f *Fnt) DrawTextBatch(txt string, x, y, xscl, yscl, rxadd float32, rot Rot
 			batches[texKey] = batch
 		}
 
-		// Add vertex data for this character (two triangles)
-		// Each vertex: x, y, u, v
 		u1, v1 := spr.UV[0], spr.UV[1]
 		u2, v2 := spr.UV[2], spr.UV[3]
 
-		// FIXED: Calculate screen coordinates properly
-		screenX := charX * sys.widthScale
-		screenY := oglCharY * sys.heightScale // Already converted to OpenGL coordinates
+		// --- COORDINATE FIX START ---
+		// 1. Calculate dimensions in screen pixels
 		width := float32(spr.Size[0]) * xscl * sys.widthScale
 		height := float32(spr.Size[1]) * yscl * sys.heightScale
 
-		// FIXED: Adjust Y position since we're now working in OpenGL coordinates
-		// In OpenGL, Y increases upward, so we need to subtract height
-		bottomY := screenY - height
+		// 2. Convert Top-Left Game coordinates to Top-Left Screen Pixels
+		screenX := charX * sys.widthScale
+		screenY := charY * sys.heightScale
+
+		// 3. Convert to OpenGL Y (Bottom-Left Origin)
+		// OpenGL Y=0 is bottom. We want the Top Edge of sprite at (ScreenHeight - screenY)
+		glTopY := float32(sys.scrrect[3]) - screenY
+		glBottomY := glTopY - height
+		// --- COORDINATE FIX END ---
 
 		// Create two triangles (6 vertices) for the quad
 		// Triangle 1: Bottom-left, Bottom-right, Top-left
 		batch.vertices = append(batch.vertices,
-			screenX, bottomY, u1, v2, // Bottom-left
-			screenX+width, bottomY, u2, v2, // Bottom-right
-			screenX, screenY, u1, v1) // Top-left
+			screenX, glBottomY, u1, v2, // Bottom-left
+			screenX+width, glBottomY, u2, v2, // Bottom-right
+			screenX, glTopY, u1, v1) // Top-left
 
 		// Triangle 2: Top-left, Bottom-right, Top-right
 		batch.vertices = append(batch.vertices,
-			screenX, screenY, u1, v1, // Top-left
-			screenX+width, bottomY, u2, v2, // Bottom-right
-			screenX+width, screenY, u2, v1) // Top-right
+			screenX, glTopY, u1, v1, // Top-left
+			screenX+width, glBottomY, u2, v2, // Bottom-right
+			screenX+width, glTopY, u2, v1) // Top-right
 
 		currentX += float32(spr.Size[0])*xscl + xscl*float32(f.Spacing[0])
 	}
 
 	// Render all batches
-	fmt.Printf("Batch %v\n", len(batches))
 	for _, batch := range batches {
 		if len(batch.vertices) == 0 {
-			fmt.Printf("WARNING: shit happen. No batch.vertices\n")
 			continue
 		}
 
@@ -811,7 +804,7 @@ func (f *Fnt) DrawTextBatch(txt string, x, y, xscl, yscl, rxadd float32, rot Rot
 		rp.paltex = batch.palette
 
 		// Use the batch rendering version
-		f.RenderSpriteBatch(batch.vertices, rp)
+		RenderSpriteBatch(batch.vertices, rp)
 	}
 }
 
@@ -969,10 +962,10 @@ func (ts *TextSprite) Draw() {
 		if ts.fnt.Type == "truetype" {
 			ts.fnt.DrawTtf(line[:charsToShow], ts.x, newY, ts.xscl, ts.yscl, ts.align, true, &ts.window, ts.frgba)
 		} else {
-			// ts.fnt.DrawTextBatch(line[:charsToShow], ts.x-xsoffset, newY, ts.xscl, ts.yscl,
-			// xshear, Rotation{ts.angle, 0, 0}, ts.bank, ts.align, &ts.window, ts.palfx, ts.frgba[3])
-			ts.fnt.DrawText(line[:charsToShow], ts.x-xsoffset, newY, ts.xscl, ts.yscl,
+			ts.fnt.DrawTextBatch(line[:charsToShow], ts.x-xsoffset, newY, ts.xscl, ts.yscl,
 				xshear, Rotation{ts.angle, 0, 0}, ts.bank, ts.align, &ts.window, ts.palfx, ts.frgba[3])
+			// ts.fnt.DrawText(line[:charsToShow], ts.x-xsoffset, newY, ts.xscl, ts.yscl,
+			// 	xshear, Rotation{ts.angle, 0, 0}, ts.bank, ts.align, &ts.window, ts.palfx, ts.frgba[3])
 		}
 
 		totalCharsShown += charsToShow
