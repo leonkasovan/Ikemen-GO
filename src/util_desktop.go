@@ -3,9 +3,9 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"os"
-	"fmt"
 
 	findfont "github.com/flopp/go-findfont"
 	// "github.com/sqweek/dialog"
@@ -40,6 +40,7 @@ func LoadFntTtf(f *Fnt, fontfile string, filename string, height int32) {
 			panic(err)
 		}
 	}
+	fmt.Printf("LoadFntTtf file: %s\n", fileDir)
 	// Load ttf
 	if height == -1 {
 		height = int32(f.Size[1])

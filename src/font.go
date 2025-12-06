@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/binary"
-	"fmt"
 	"math"
 	"os"
 	"regexp"
@@ -624,6 +623,7 @@ func (f *Fnt) DrawText(txt string, x, y, xscl, yscl, rxadd float32, rot Rotation
 
 func (f *Fnt) DrawTextBatch(txt string, x, y, xscl, yscl, rxadd float32, rot Rotation, bank, align int32, window *[4]int32, palfx *PalFX, alpha float32) {
 	if len(txt) == 0 || xscl == 0 || yscl == 0 {
+		// Removed Println to avoid console spam in production
 		return
 	}
 
@@ -635,11 +635,26 @@ func (f *Fnt) DrawTextBatch(txt string, x, y, xscl, yscl, rxadd float32, rot Rot
 		bank = 0
 	}
 
-	// not existing characters treated as space
-	for i, c := range txt {
+	// Not existing characters treated as space
+	// OPTIMIZATION: Check if replacement is needed before allocating new string
+	needsReplacement := false
+	for _, c := range txt {
 		if c != ' ' && f.images[bt][c] == nil {
-			txt = txt[:i] + string(' ') + txt[i+1:]
+			needsReplacement = true
+			break
 		}
+	}
+	if needsReplacement {
+		var sb strings.Builder
+		sb.Grow(len(txt))
+		for _, c := range txt {
+			if c != ' ' && f.images[bt][c] == nil {
+				sb.WriteRune(' ')
+			} else {
+				sb.WriteRune(c)
+			}
+		}
+		txt = sb.String()
 	}
 
 	// Original position adjustments
@@ -712,16 +727,17 @@ func (f *Fnt) DrawTextBatch(txt string, x, y, xscl, yscl, rxadd float32, rot Rot
 		yOffset:        0,
 	}
 
-	// Group characters by texture for batch rendering
-	type CharBatch struct {
-		texture  Texture
-		palette  Texture
-		vertices []float32
-	}
+	// OPTIMIZATION: Pre-allocate vertex slice
+	// 6 vertices per char * 4 floats per vertex = 24 floats per char
+	// We use a predefined capacity to avoid slice resizing during the loop
+	vertices := make([]float32, 0, len(txt)*24)
 
-	batches := make(map[string]*CharBatch)
+	var lastTex Texture
+	var lastPal Texture
+
 	currentX := x
 
+	// Batch Processing Loop
 	for _, c := range txt {
 		if c == ' ' {
 			currentX += xscl*float32(f.Size[0]) + xscl*float32(f.Spacing[0])
@@ -733,78 +749,75 @@ func (f *Fnt) DrawTextBatch(txt string, x, y, xscl, yscl, rxadd float32, rot Rot
 			continue
 		}
 
-		// In case of mismatched color depth
+		// Handle mismatched color depth
+		currentPalSlice := pal
 		if len(f.palettes) != 0 && len(f.coldepth) > int(bank) &&
 			f.images[bt][c].img[0].coldepth != 32 &&
 			f.coldepth[bank] != f.images[bt][c].img[0].coldepth {
-			pal = f.images[bt][c].img[0].Pal[:]
+			currentPalSlice = f.images[bt][c].img[0].Pal[:]
 		}
 
+		// Cache palette if needed
+		currentPalTex := f.paltex
+		if spr.coldepth <= 8 {
+			if f.paltex == nil {
+				f.paltex = spr.CachePalette(currentPalSlice)
+			}
+			currentPalTex = f.paltex
+		} else {
+			// For 32-bit sprites, we might not use a palette texture
+			currentPalTex = nil
+		}
+
+		// OPTIMIZATION: Texture State Change Check
+		// If texture or palette changes, we must flush the current batch
+		if (lastTex != nil && spr.Tex != lastTex) || (lastTex != nil && currentPalTex != lastPal) {
+			if len(vertices) > 0 {
+				rp.tex = lastTex
+				rp.paltex = lastPal
+				RenderSpriteBatch(vertices, rp)
+				vertices = vertices[:0] // Reset slice length, keep capacity
+			}
+		}
+
+		lastTex = spr.Tex
+		lastPal = currentPalTex
+
+		// Geometry Calculation
 		charX := currentX - xscl*float32(spr.Offset[0])
 		charY := y - yscl*float32(spr.Offset[1])
 
-		// Create a key for this texture/palette combination
-		texKey := fmt.Sprintf("%p_%p", spr.Tex, f.paltex)
-		if spr.coldepth <= 8 && f.paltex == nil {
-			f.paltex = spr.CachePalette(pal)
-		}
+		width := float32(spr.Size[0]) * xscl * sys.widthScale
+		height := float32(spr.Size[1]) * yscl * sys.heightScale
 
-		batch, exists := batches[texKey]
-		if !exists {
-			batch = &CharBatch{
-				texture:  spr.Tex,
-				palette:  f.paltex,
-				vertices: make([]float32, 0),
-			}
-			batches[texKey] = batch
-		}
+		screenX := charX * sys.widthScale
+		screenY := charY * sys.heightScale
+
+		// Coordinate Fix
+		glTopY := float32(sys.scrrect[3]) - screenY
+		glBottomY := glTopY - height
 
 		u1, v1 := spr.UV[0], spr.UV[1]
 		u2, v2 := spr.UV[2], spr.UV[3]
 
-		// --- COORDINATE FIX START ---
-		// 1. Calculate dimensions in screen pixels
-		width := float32(spr.Size[0]) * xscl * sys.widthScale
-		height := float32(spr.Size[1]) * yscl * sys.heightScale
+		// Append Quad (2 Triangles)
+		vertices = append(vertices,
+			screenX, glBottomY, u1, v2, // BL
+			screenX+width, glBottomY, u2, v2, // BR
+			screenX, glTopY, u1, v1, // TL
 
-		// 2. Convert Top-Left Game coordinates to Top-Left Screen Pixels
-		screenX := charX * sys.widthScale
-		screenY := charY * sys.heightScale
-
-		// 3. Convert to OpenGL Y (Bottom-Left Origin)
-		// OpenGL Y=0 is bottom. We want the Top Edge of sprite at (ScreenHeight - screenY)
-		glTopY := float32(sys.scrrect[3]) - screenY
-		glBottomY := glTopY - height
-		// --- COORDINATE FIX END ---
-
-		// Create two triangles (6 vertices) for the quad
-		// Triangle 1: Bottom-left, Bottom-right, Top-left
-		batch.vertices = append(batch.vertices,
-			screenX, glBottomY, u1, v2, // Bottom-left
-			screenX+width, glBottomY, u2, v2, // Bottom-right
-			screenX, glTopY, u1, v1) // Top-left
-
-		// Triangle 2: Top-left, Bottom-right, Top-right
-		batch.vertices = append(batch.vertices,
-			screenX, glTopY, u1, v1, // Top-left
-			screenX+width, glBottomY, u2, v2, // Bottom-right
-			screenX+width, glTopY, u2, v1) // Top-right
+			screenX, glTopY, u1, v1, // TL
+			screenX+width, glBottomY, u2, v2, // BR
+			screenX+width, glTopY, u2, v1) // TR
 
 		currentX += float32(spr.Size[0])*xscl + xscl*float32(f.Spacing[0])
 	}
 
-	// Render all batches
-	for _, batch := range batches {
-		if len(batch.vertices) == 0 {
-			continue
-		}
-
-		// Update render parameters for this batch
-		rp.tex = batch.texture
-		rp.paltex = batch.palette
-
-		// Use the batch rendering version
-		RenderSpriteBatch(batch.vertices, rp)
+	// Flush remaining vertices
+	if len(vertices) > 0 {
+		rp.tex = lastTex
+		rp.paltex = lastPal
+		RenderSpriteBatch(vertices, rp)
 	}
 }
 

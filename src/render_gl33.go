@@ -476,7 +476,7 @@ func (t *Texture_GL) SavePNG(filename string, pal []uint32) error {
 			if ef, eerr := os.Create(filename + ".rgba.png"); eerr == nil {
 				png.Encode(ef, expanded)
 				ef.Close()
-				log.Printf("SavePNG: expanded RGBA image written to %s", filename+".rgba.png")
+				// log.Printf("SavePNG: expanded RGBA image written to %s", filename+".rgba.png")
 			} else {
 				log.Printf("SavePNG: failed to write expanded RGBA: %v", eerr)
 			}
@@ -544,7 +544,7 @@ func (t *Texture_GL) SavePNG(filename string, pal []uint32) error {
 			if df, derr := os.Create(filename + ".indexmap.png"); derr == nil {
 				png.Encode(df, idxImg)
 				df.Close()
-				log.Printf("SavePNG: index map written to %s", filename+".indexmap.png")
+				// log.Printf("SavePNG: index map written to %s", filename+".indexmap.png")
 			} else {
 				log.Printf("SavePNG: failed to write index map: %v", derr)
 			}
@@ -570,7 +570,7 @@ func (t *Texture_GL) SavePNG(filename string, pal []uint32) error {
 			if df, derr := os.Create(filename + ".palvis.png"); derr == nil {
 				png.Encode(df, palvis)
 				df.Close()
-				log.Printf("SavePNG: palette visualisation written to %s", filename+".palvis.png")
+				// log.Printf("SavePNG: palette visualisation written to %s", filename+".palvis.png")
 			}
 
 			if unique <= 1 {
