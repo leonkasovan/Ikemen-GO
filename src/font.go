@@ -80,6 +80,12 @@ type Fnt struct {
 	ttf       TtfFont
 	paltex    Texture
 	atlas_8   *TextureAtlas
+
+	// Batch Rendering Fields
+    batchVertices []float32 // Persistent buffer to avoid allocation
+    batchTex      Texture   // Current texture for the active batch
+    batchPal      Texture   // Current palette for the active batch
+    isBatching    bool      // Are we currently in a manual batch block?
 }
 
 func newFnt() *Fnt {
@@ -399,57 +405,91 @@ func LoadFntSff(f *Fnt, fontfile string, filename string) {
 		panic(err)
 	}
 
-	// Load sprites
-	var pal_default []uint32
-	for k, sprite := range sff.sprites {
-		s := sff.getOwnPalSprite(sprite.Group, sprite.Number, &sff.palList)
-		if sprite.Group == 0 || f.BankType == "sprite" {
-			if f.images[int32(sprite.Group)] == nil {
-				f.images[int32(sprite.Group)] = make(map[rune]*FntCharImage)
-			}
-			if pal_default == nil && sff.header.Ver0 == 1 {
-				pal_default = s.Pal
-			}
-			offsetX := uint16(s.Offset[0])
-			sizeX := uint16(s.Size[0])
+	// FIX: Perform sprite extraction in the main thread task.
+	// This ensures we wait for any async texture operations (SetPxl) 
+	// initiated by loadSff to complete before we copy the sprite data.
+	sys.mainThreadTask <- func() {
+		// Load sprites
+		var pal_default []uint32
+		for k, sprite := range sff.sprites {
+			s := sff.getOwnPalSprite(sprite.Group, sprite.Number, &sff.palList)
+			if sprite.Group == 0 || f.BankType == "sprite" {
+				if f.images[int32(sprite.Group)] == nil {
+					f.images[int32(sprite.Group)] = make(map[rune]*FntCharImage)
+				}
+				if pal_default == nil && sff.header.Ver0 == 1 {
+					pal_default = s.Pal
+				}
+				offsetX := uint16(s.Offset[0])
+				sizeX := uint16(s.Size[0])
 
-			fci := &FntCharImage{
-				ofs: offsetX,
-				w:   sizeX,
+				fci := &FntCharImage{
+					ofs: offsetX,
+					w:   sizeX,
+				}
+				fci.img = make([]Sprite, 1)
+				fci.img[0] = *s
+				f.images[int32(sprite.Group)][rune(k[1])] = fci
 			}
-			fci.img = make([]Sprite, 1)
-			fci.img[0] = *s
-			f.images[int32(sprite.Group)][rune(k[1])] = fci
+		}
+
+		// Load palettes
+		f.palettes = make([][256]uint32, sff.header.NumberOfPalettes)
+		f.coldepth = make([]byte, sff.header.NumberOfPalettes)
+		var idef int
+		for i := 0; i < int(sff.header.NumberOfPalettes); i++ {
+			var pal []uint32
+			si, ok := sff.palList.PalTable[[...]uint16{0, uint16(i)}]
+			if ok && si >= 0 {
+				pal = sff.palList.Get(si)
+				if i == 0 {
+					idef = si
+				}
+				switch sff.palList.numcols[[...]uint16{0, uint16(i)}] {
+				case 256:
+					f.coldepth[i] = 8
+				case 32:
+					f.coldepth[i] = 5
+				}
+			} else {
+				pal = sff.palList.Get(idef)
+			}
+			copy(f.palettes[i][:], pal)
+		}
+		if len(f.palettes) == 0 && pal_default != nil {
+			f.palettes = make([][256]uint32, 1)
+			copy(f.palettes[0][:], pal_default)
 		}
 	}
+}
 
-	// Load palettes
-	f.palettes = make([][256]uint32, sff.header.NumberOfPalettes)
-	f.coldepth = make([]byte, sff.header.NumberOfPalettes)
-	var idef int
-	for i := 0; i < int(sff.header.NumberOfPalettes); i++ {
-		var pal []uint32
-		si, ok := sff.palList.PalTable[[...]uint16{0, uint16(i)}]
-		if ok && si >= 0 {
-			pal = sff.palList.Get(si)
-			if i == 0 {
-				idef = si
-			}
-			switch sff.palList.numcols[[...]uint16{0, uint16(i)}] {
-			case 256:
-				f.coldepth[i] = 8
-			case 32:
-				f.coldepth[i] = 5
-			}
-		} else {
-			pal = sff.palList.Get(idef)
-		}
-		copy(f.palettes[i][:], pal)
+// BeginBatch resets the buffer and prepares for accumulating vertices
+func (f *Fnt) BeginBatch() {
+	f.isBatching = true
+	f.batchVertices = f.batchVertices[:0]
+	f.batchTex = nil
+	f.batchPal = nil
+}
+
+// EndBatch flushes whatever is remaining in the buffer to the GPU
+func (f *Fnt) EndBatch(rp RenderParams) {
+	if len(f.batchVertices) > 0 {
+		rp.tex = f.batchTex
+		rp.paltex = f.batchPal
+        // Note: rp.rot is for the whole string, but batchVertices handles per-char UV rotation
+		RenderSpriteBatch(f.batchVertices, rp)
 	}
-	if len(f.palettes) == 0 && pal_default != nil {
-		f.palettes = make([][256]uint32, 1)
-		copy(f.palettes[0][:], pal_default)
-	}
+	f.isBatching = false
+}
+
+// FlushBatch forces a render of the current buffer (used when texture changes)
+func (f *Fnt) FlushBatch(rp RenderParams) {
+    if len(f.batchVertices) > 0 {
+        rp.tex = f.batchTex
+        rp.paltex = f.batchPal
+        RenderSpriteBatch(f.batchVertices, rp)
+        f.batchVertices = f.batchVertices[:0]
+    }
 }
 
 // CharWidth returns the width that has a specified character
@@ -555,8 +595,8 @@ func (f *Fnt) Print(txt string, x, y, xscl, yscl, rxadd float32, rot Rotation, b
 			f.DrawTtf(txt, x, y, xscl, yscl, align, true, window, frgba)
 		} else {
 			// DRAWCALL 20
-			// f.DrawTextBatch(txt, x, y, xscl, yscl, rxadd, rot, bank, align, window, palfx, frgba[3])
-			f.DrawText(txt, x, y, xscl, yscl, rxadd, rot, bank, align, window, palfx, frgba[3])
+			f.DrawTextBatch(txt, x, y, xscl, yscl, rxadd, rot, bank, align, window, palfx, frgba[3])
+			// f.DrawText(txt, x, y, xscl, yscl, rxadd, rot, bank, align, window, palfx, frgba[3])
 		}
 	}
 }
@@ -660,7 +700,6 @@ func (f *Fnt) DrawText(txt string, x, y, xscl, yscl, rxadd float32, rot Rotation
 
 func (f *Fnt) DrawTextBatch(txt string, x, y, xscl, yscl, rxadd float32, rot Rotation, bank, align int32, window *[4]int32, palfx *PalFX, alpha float32) {
 	if len(txt) == 0 || xscl == 0 || yscl == 0 {
-		// Removed Println to avoid console spam in production
 		return
 	}
 
@@ -672,34 +711,11 @@ func (f *Fnt) DrawTextBatch(txt string, x, y, xscl, yscl, rxadd float32, rot Rot
 		bank = 0
 	}
 
-	// Not existing characters treated as space
-	// OPTIMIZATION: Check if replacement is needed before allocating new string
-	needsReplacement := false
-	for _, c := range txt {
-		if c != ' ' && f.images[bt][c] == nil {
-			needsReplacement = true
-			break
-		}
-	}
-	if needsReplacement {
-		var sb strings.Builder
-		sb.Grow(len(txt))
-		for _, c := range txt {
-			if c != ' ' && f.images[bt][c] == nil {
-				sb.WriteRune(' ')
-			} else {
-				sb.WriteRune(c)
-			}
-		}
-		txt = sb.String()
-	}
-
-	// Original position adjustments
+	// 1. Calculate Coordinates & Rotation
 	x += float32(f.offset[0])*xscl + float32(sys.gameWidth-320)/2
 	y += float32(f.offset[1]-int32(f.Size[1])+1)*yscl + float32(sys.gameHeight-240)
 
 	var rcx, rcy float32
-
 	if rot.IsZero() {
 		if xscl < 0 {
 			x *= -1
@@ -713,28 +729,20 @@ func (f *Fnt) DrawTextBatch(txt string, x, y, xscl, yscl, rxadd float32, rot Rot
 		x, y = AbsF(xscl)*float32(f.offset[0]), AbsF(yscl)*float32(f.offset[1])
 	}
 
+	// Handle Alignment
 	if align == 0 {
 		x -= float32(f.TextWidth(txt, bank)) * xscl * 0.5
 	} else if align < 0 {
 		x -= float32(f.TextWidth(txt, bank)) * xscl
 	}
 
-	var pal []uint32
-	if len(f.palettes) != 0 {
-		pal = f.palettes[bank][:]
-	}
-
-	f.paltex = nil
-
-	// Set the trans type
+	// 2. Initialize Render Parameters
 	tt := TT_none
 	if alpha < 1.0 {
 		tt = TT_add
 	}
-
 	alphaVal := int32(255 * sys.brightness * alpha)
 
-	// Initialize common render parameters
 	rp := RenderParams{
 		tex:            nil,
 		paltex:         nil,
@@ -764,17 +772,20 @@ func (f *Fnt) DrawTextBatch(txt string, x, y, xscl, yscl, rxadd float32, rot Rot
 		yOffset:        0,
 	}
 
-	// OPTIMIZATION: Pre-allocate vertex slice
-	// 6 vertices per char * 4 floats per vertex = 24 floats per char
-	// We use a predefined capacity to avoid slice resizing during the loop
-	vertices := make([]float32, 0, len(txt)*24)
+	// 3. Buffer Management
+	localBatch := !f.isBatching
+	if localBatch {
+		f.BeginBatch()
+	}
 
-	var lastTex Texture
-	var lastPal Texture
+	var pal []uint32
+	if len(f.palettes) != 0 {
+		pal = f.palettes[bank][:]
+	}
 
 	currentX := x
 
-	// Batch Processing Loop
+	// 4. Vertex Generation Loop
 	for _, c := range txt {
 		if c == ' ' {
 			currentX += xscl*float32(f.Size[0]) + xscl*float32(f.Spacing[0])
@@ -782,11 +793,15 @@ func (f *Fnt) DrawTextBatch(txt string, x, y, xscl, yscl, rxadd float32, rot Rot
 		}
 
 		spr := f.getCharSpr(c, bank, bt)
-		if spr == nil || spr.Tex == nil {
+		if spr == nil {
+			currentX += xscl*float32(f.Size[0]) + xscl*float32(f.Spacing[0])
+			continue
+		}
+		if spr.Tex == nil {
 			continue
 		}
 
-		// Handle mismatched color depth
+		// Palette Logic
 		currentPalSlice := pal
 		if len(f.palettes) != 0 && len(f.coldepth) > int(bank) &&
 			f.images[bt][c].img[0].coldepth != 32 &&
@@ -794,31 +809,23 @@ func (f *Fnt) DrawTextBatch(txt string, x, y, xscl, yscl, rxadd float32, rot Rot
 			currentPalSlice = f.images[bt][c].img[0].Pal[:]
 		}
 
-		// Cache palette if needed
-		currentPalTex := f.paltex
+		// Palette Texture Logic
+		var currentPalTex Texture
 		if spr.coldepth <= 8 {
 			if f.paltex == nil {
 				f.paltex = spr.CachePalette(currentPalSlice)
 			}
 			currentPalTex = f.paltex
-		} else {
-			// For 32-bit sprites, we might not use a palette texture
-			currentPalTex = nil
 		}
 
-		// OPTIMIZATION: Texture State Change Check
-		// If texture or palette changes, we must flush the current batch
-		if (lastTex != nil && spr.Tex != lastTex) || (lastTex != nil && currentPalTex != lastPal) {
-			if len(vertices) > 0 {
-				rp.tex = lastTex
-				rp.paltex = lastPal
-				RenderSpriteBatch(vertices, rp)
-				vertices = vertices[:0] // Reset slice length, keep capacity
-			}
+		// Batch Flushing Logic
+		// If the texture or palette changes, we MUST draw what we have so far
+		if f.batchTex != nil && (spr.Tex != f.batchTex || currentPalTex != f.batchPal) {
+			f.FlushBatch(rp)
 		}
 
-		lastTex = spr.Tex
-		lastPal = currentPalTex
+		f.batchTex = spr.Tex
+		f.batchPal = currentPalTex
 
 		// Geometry Calculation
 		charX := currentX - xscl*float32(spr.Offset[0])
@@ -826,35 +833,36 @@ func (f *Fnt) DrawTextBatch(txt string, x, y, xscl, yscl, rxadd float32, rot Rot
 
 		width := float32(spr.Size[0]) * xscl * sys.widthScale
 		height := float32(spr.Size[1]) * yscl * sys.heightScale
-
 		screenX := charX * sys.widthScale
 		screenY := charY * sys.heightScale
 
-		// Coordinate Fix
 		glTopY := float32(sys.scrrect[3]) - screenY
 		glBottomY := glTopY - height
 
-		u1, v1 := spr.UV[0], spr.UV[1]
-		u2, v2 := spr.UV[2], spr.UV[3]
+		u1, v1, u2, v2 := spr.UV[0], spr.UV[1], spr.UV[2], spr.UV[3]
 
-		// Append Quad (2 Triangles)
-		vertices = append(vertices,
-			screenX, glBottomY, u1, v2, // BL
-			screenX+width, glBottomY, u2, v2, // BR
-			screenX, glTopY, u1, v1, // TL
+		// FIX: Handle individual textures (V2/SFF without atlas) that have default zero UVs.
+		// If all UVs are 0, assume the sprite uses the full texture.
+		if u1 == 0 && v1 == 0 && u2 == 0 && v2 == 0 {
+			u2, v2 = 1.0, 1.0
+		}
 
-			screenX, glTopY, u1, v1, // TL
-			screenX+width, glBottomY, u2, v2, // BR
-			screenX+width, glTopY, u2, v1) // TR
+		// Append to Persistent Buffer
+		f.batchVertices = append(f.batchVertices,
+			screenX, glBottomY, u1, v2,
+			screenX+width, glBottomY, u2, v2,
+			screenX, glTopY, u1, v1,
+			screenX, glTopY, u1, v1,
+			screenX+width, glBottomY, u2, v2,
+			screenX+width, glTopY, u2, v1,
+		)
 
 		currentX += float32(spr.Size[0])*xscl + xscl*float32(f.Spacing[0])
 	}
 
-	// Flush remaining vertices
-	if len(vertices) > 0 {
-		rp.tex = lastTex
-		rp.paltex = lastPal
-		RenderSpriteBatch(vertices, rp)
+	// 5. Auto-End if local
+	if localBatch {
+		f.EndBatch(rp)
 	}
 }
 
@@ -1012,10 +1020,10 @@ func (ts *TextSprite) Draw() {
 		if ts.fnt.Type == "truetype" {
 			ts.fnt.DrawTtf(line[:charsToShow], ts.x, newY, ts.xscl, ts.yscl, ts.align, true, &ts.window, ts.frgba)
 		} else {
-			// ts.fnt.DrawTextBatch(line[:charsToShow], ts.x-xsoffset, newY, ts.xscl, ts.yscl,
-			// 	xshear, Rotation{ts.angle, 0, 0}, ts.bank, ts.align, &ts.window, ts.palfx, ts.frgba[3])
-			ts.fnt.DrawText(line[:charsToShow], ts.x-xsoffset, newY, ts.xscl, ts.yscl,
+			ts.fnt.DrawTextBatch(line[:charsToShow], ts.x-xsoffset, newY, ts.xscl, ts.yscl,
 				xshear, Rotation{ts.angle, 0, 0}, ts.bank, ts.align, &ts.window, ts.palfx, ts.frgba[3])
+			// ts.fnt.DrawText(line[:charsToShow], ts.x-xsoffset, newY, ts.xscl, ts.yscl,
+			// 	xshear, Rotation{ts.angle, 0, 0}, ts.bank, ts.align, &ts.window, ts.palfx, ts.frgba[3])
 		}
 
 		totalCharsShown += charsToShow
