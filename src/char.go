@@ -3715,7 +3715,7 @@ func (c *Char) load(def string) error {
 		sprite_resolved := resolvePathRelativeToDef(sprite)
 		if err := LoadFile(&sprite_resolved, []string{gi.def, "", sys.motifDir, "data/"}, func(filename string) error {
 			var err_sff error
-			gi.sff, err_sff = loadSff(filename, true, false) // loadSff uses OpenFile
+			gi.sff, err_sff = loadSff(filename, true, nil) // loadSff uses OpenFile
 			return err_sff
 		}); err != nil {
 			return err

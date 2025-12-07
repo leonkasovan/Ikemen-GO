@@ -723,7 +723,7 @@ func (s *Sprite) GetPalTex(pl *PaletteList) Texture {
 	return pl.PalTex[pl.paletteMap[int(s.palidx)]]
 }
 
-func (s *Sprite) SetPxl(px []byte) {
+func (s *Sprite) SetPxl(px []byte, atlas_8 *TextureAtlas) {
 	if len(px) == 0 {
 		return
 	}
@@ -732,17 +732,17 @@ func (s *Sprite) SetPxl(px []byte) {
 	}
 	sys.mainThreadTask <- func() {
 		if s.Sff == nil {
-			fmt.Printf("Sff null\n")
+			// fmt.Printf("Sff null\n")
 			return
 		}
-		if s.Sff.Atlas_8 == nil { // No atlas, create individual texture
+		if atlas_8 == nil { // No atlas, create individual texture
 			s.Tex = gfx.newTexture(int32(s.Size[0]), int32(s.Size[1]), 8, false)
 			s.Tex.SetData(px)
 		} else { // Use atlas
 			ok := false
-			s.UV, ok = s.Sff.Atlas_8.AddImage(int32(s.Size[0]), int32(s.Size[1]), px)
+			s.UV, ok = atlas_8.AddImage(int32(s.Size[0]), int32(s.Size[1]), px)
 			if ok {
-				s.Tex = s.Sff.Atlas_8.texture
+				s.Tex = atlas_8.texture
 				// fmt.Printf("Added sprite %vx%v to atlas at UV %v,%v - %v,%v.\n", s.Size[0], s.Size[1], s.UV[0], s.UV[1], s.UV[2], s.UV[3])
 			} else {
 				s.Tex = nil
@@ -916,7 +916,7 @@ func (s *Sprite) read(f io.ReadSeeker, sh *SffHeader, offset int64, datasize uin
 			pal[i] = uint32(alpha)<<24 | uint32(rgb[2])<<16 | uint32(rgb[1])<<8 | uint32(rgb[0])
 		}
 	}
-	s.SetPxl(s.RlePcxDecode(px))
+	s.SetPxl(s.RlePcxDecode(px), nil)
 	return nil
 }
 
@@ -1119,7 +1119,7 @@ func (s *Sprite) Lz5Decode(rle []byte) (p []byte) {
 	return
 }
 
-func (s *Sprite) readV2(f io.ReadSeeker, offset int64, datasize uint32) error {
+func (s *Sprite) readV2(f io.ReadSeeker, offset int64, datasize uint32, atlas_8 *TextureAtlas) error {
 	var px []byte
 	var isRaw bool = false
 
@@ -1199,7 +1199,7 @@ func (s *Sprite) readV2(f io.ReadSeeker, offset int64, datasize uint32) error {
 	}
 
 	if !isRaw {
-		s.SetPxl(px)
+		s.SetPxl(px, atlas_8)
 	}
 	return nil
 }
@@ -1282,7 +1282,6 @@ type Sff struct {
 	palList PaletteList
 	// This is the sffCache key
 	filename string
-	Atlas_8  *TextureAtlas // 8-bit atlas for paletted sprites
 }
 type Palette struct {
 	palList PaletteList
@@ -1294,7 +1293,6 @@ func newSff() (s *Sff) {
 	for i := uint16(1); i <= uint16(sys.cfg.Config.PaletteMax); i++ {
 		s.palList.PalTable[[...]uint16{1, i}], _ = s.palList.NewPal()
 	}
-	s.Atlas_8 = nil
 	return
 }
 
@@ -1321,7 +1319,7 @@ func removeSFFCache(filename string) {
 	}
 }
 
-func loadSff(filename string, char bool, useAtlas bool) (*Sff, error) {
+func loadSff(filename string, char bool, atlas_8 *TextureAtlas) (*Sff, error) {
 	fmt.Printf("loadSff %v\n", filename)
 	// If this SFF is already in the cache, just return a copy
 	if cached, ok := SffCache[filename]; ok {
@@ -1411,10 +1409,10 @@ func loadSff(filename string, char bool, useAtlas bool) (*Sff, error) {
 	spriteList := make([]*Sprite, int(s.header.NumberOfSprites))
 	var prev *Sprite
 	shofs := int64(s.header.FirstSpriteHeaderOffset)
-	if useAtlas {
-		s.Atlas_8 = CreateTextureAtlas(512, 512, 8, false)
-		s.Atlas_8.resize = true
-	}
+	// if useAtlas {	// Created in LoadFnt
+	// 	s.atlas_8 = CreateTextureAtlas(512, 512, 8, false)
+	// 	s.atlas_8.resize = true
+	// }
 	for i := 0; i < len(spriteList); i++ {
 		f.Seek(shofs, 0)
 		spriteList[i] = newSprite()
@@ -1453,7 +1451,7 @@ func loadSff(filename string, char bool, useAtlas bool) (*Sff, error) {
 					return nil, err
 				}
 			case 2:
-				if err := spriteList[i].readV2(f, int64(xofs), size); err != nil {
+				if err := spriteList[i].readV2(f, int64(xofs), size, atlas_8); err != nil {
 					return nil, err
 				}
 			}
@@ -1479,24 +1477,26 @@ func loadSff(filename string, char bool, useAtlas bool) (*Sff, error) {
 			}
 		}
 	})
-	if s.Atlas_8 != nil {
+	if atlas_8 != nil {
 		var defpal []uint32
 		if len(s.palList.palettes) > 0 {
 			defpal = s.palList.Get(0)
 		}
 		// Schedule atlas saving on the main thread so we capture the uploaded
 		// atlas contents after any queued AddImage() / SetData operations finish.
-		// log.Printf("loadSff: scheduling delayed save of atlas_8.png (palette present=%t length=%d)", defpal != nil, len(defpal))
+		fmt.Printf("loadSff: scheduling delayed save of atlas_8.png (palette present=%t length=%d)", defpal != nil, len(defpal))
 		sys.mainThreadTask <- func() {
-			if s.Atlas_8 == nil || s.Atlas_8.texture == nil {
-				// log.Printf("loadSff (delayed): Atlas_8 or its texture is nil - cannot save atlas_8.png")
+			if atlas_8 == nil || atlas_8.texture == nil {
+				fmt.Printf("loadSff (delayed): atlas_8 or its texture is nil - cannot save atlas_8.png")
 				return
 			}
-			// log.Printf("loadSff (delayed): performing SavePNG on atlas_8.png (texture valid=%t)", s.Atlas_8.texture.IsValid())
-			if err := s.Atlas_8.texture.SavePNG(filename+"_atlas_8.png", defpal); err != nil {
-				// log.Printf("loadSff (delayed): SavePNG returned error: %v", err)
+			fmt.Printf("loadSff (delayed): performing SavePNG on atlas_8.png (texture valid=%t)", atlas_8.texture.IsValid())
+			if err := atlas_8.texture.SavePNG(filename+"_atlas_8.png", defpal); err != nil {
+				fmt.Printf("loadSff (delayed): SavePNG returned error: %v", err)
 			}
 		}
+	} else {
+		fmt.Printf("Atlas is empty for %v\n", filename)
 	}
 	return s, nil
 }
@@ -1645,7 +1645,7 @@ func loadCharPalettes(sff *Sff, filename string, ref int) error {
 	return nil
 }
 
-func preloadSff(filename string, char bool, preloadSpr map[[2]uint16]bool, useAtlas bool) (*Sff, []int32, error) {
+func preloadSff(filename string, char bool, preloadSpr map[[2]uint16]bool, atlas_8 *TextureAtlas) (*Sff, []int32, error) {
 	sff := newSff()
 	f, err := OpenFile(filename)
 	if err != nil {
@@ -1699,10 +1699,10 @@ func preloadSff(filename string, char bool, preloadSpr map[[2]uint16]bool, useAt
 			}
 		}
 	}
-	if useAtlas {
-		sff.Atlas_8 = CreateTextureAtlas(512, 512, 8, false)
-		sff.Atlas_8.resize = true
-	}
+	// if useAtlas {
+	// 	sff.atlas_8 = CreateTextureAtlas(512, 512, 8, false)
+	// 	sff.atlas_8.resize = true
+	// }
 	for i := 0; i < len(spriteList); i++ {
 		spriteList[i] = newSprite()
 		spriteList[i].Sff = sff
@@ -1778,7 +1778,7 @@ func preloadSff(filename string, char bool, preloadSpr map[[2]uint16]bool, useAt
 								pl, char && (prev == nil || spriteList[base].Group == 0 && spriteList[base].Number == 0),
 							)
 						case 2:
-							err = spriteList[base].readV2(f, int64(bxofs), bsize)
+							err = spriteList[base].readV2(f, int64(bxofs), bsize, atlas_8)
 						}
 						if err != nil {
 							return nil, nil, err
@@ -1800,7 +1800,7 @@ func preloadSff(filename string, char bool, preloadSpr map[[2]uint16]bool, useAt
 						return nil, nil, err
 					}
 				case 2:
-					if err := spriteList[i].readV2(f, int64(xofs), size); err != nil {
+					if err := spriteList[i].readV2(f, int64(xofs), size, atlas_8); err != nil {
 						return nil, nil, err
 					}
 				}

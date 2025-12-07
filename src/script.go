@@ -2394,7 +2394,7 @@ func systemScriptInit(l *lua.LState) {
 	})
 	luaRegister(l, "sffNew", func(l *lua.LState) int {
 		if !nilArg(l, 1) {
-			sff, err := loadSff(strArg(l, 1), false, false)
+			sff, err := loadSff(strArg(l, 1), false, nil)
 			if err != nil {
 				l.RaiseError("\nCan't load %v: %v\n", strArg(l, 1), err.Error())
 			}

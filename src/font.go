@@ -6,6 +6,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"fmt"
 )
 
 type FontRenderer interface {
@@ -78,6 +79,7 @@ type Fnt struct {
 	offset    [2]int32
 	ttf       TtfFont
 	paltex    Texture
+	atlas_8   *TextureAtlas
 }
 
 func newFnt() *Fnt {
@@ -88,6 +90,7 @@ func newFnt() *Fnt {
 }
 
 func loadFnt(filename string, height int32) (*Fnt, error) {
+	fmt.Printf("loadFnt %v\n", filename)
 	if HasExtension(filename, ".fnt") {
 		return loadFntV1(filename)
 	}
@@ -96,6 +99,7 @@ func loadFnt(filename string, height int32) (*Fnt, error) {
 }
 
 func loadFntV1(filename string) (*Fnt, error) {
+	fmt.Printf("loadFntV1 %v\n", filename)
 	f := newFnt()
 	f.images[0] = make(map[rune]*FntCharImage)
 
@@ -175,11 +179,21 @@ func loadFntV1(filename string) (*Fnt, error) {
 	}
 
 	px = spr.RlePcxDecode(px)
+	fmt.Printf("loadFntV1: PCX %vx%v loaded\n", spr.Size[0], spr.Size[1])
+
+	// Create Texture Atlas and Upload Texture to GPU
+	sys.mainThreadTask <- func() {
+		f.atlas_8 = CreateTextureAtlas(int32(spr.Size[0]), int32(spr.Size[1]), 8, false)
+		f.atlas_8.texture.SetData(px)
+		spr.Tex = f.atlas_8.texture
+	}
+
 	fp.Seek(int64(txtDataOffset), 0)
 	buf = make([]byte, txtDataLength)
 	if err := read(buf); err != nil {
 		return nil, err
 	}
+	fmt.Printf("Data:\n%v\n", string(buf))
 	lines := SplitAndTrim(string(buf), "\n")
 	i := 0
 	mapflg, defflg := true, true
@@ -259,35 +273,53 @@ func loadFntV1(filename string) (*Fnt, error) {
 		copy(f.palettes[i][:256-c], spr.Pal[:256-c])
 		copy(f.palettes[i][256-c:], spr.Pal[256-c*(i+1):256-c*i])
 	}
-	copyCharRect := func(dst []byte, dw int, src []byte, x, w, h int) {
-		dw2 := dw
-		if x+dw > w {
-			dw2 = w - x
-		}
-		if dw2 > 0 {
-			for i := 0; i < h; i++ {
-				copy(dst[dw*i:dw*i+dw2], src[w*i+x:w*i+x+dw2])
+
+	for cc, fci := range f.images[0] {
+		// 1. ALLOCATE MEMORY (Synchronous)
+		fci.img = make([]Sprite, len(f.palettes))
+
+		// 2. CAPTURE VARIABLES (Critical for closure)
+		// Without this, the closure below will always use the 'fci' from the 
+		// LAST iteration of the loop for every single task!
+		fci := fci 
+		cc := cc
+
+		// 3. SCHEDULE TEXTURE ASSIGNMENT (Asynchronous / Main Thread)
+		sys.mainThreadTask <- func() {
+			// Setup Bank 0
+			fci.img[0].shareCopy(spr)
+			fci.img[0].Size[0] = fci.w
+			fci.img[0].UV = [4]float32{float32(fci.ofs) / float32(spr.Size[0]), 0.0, float32(fci.ofs + fci.w) / float32(spr.Size[0]), 1.0}
+			
+			// Use the atlas texture which was created in the previous mainThreadTask
+			fci.img[0].Tex = f.atlas_8.texture
+			fmt.Printf("cc=%v bank=0 Tex=%v\n", cc, fci.img[0].Tex)
+
+			// Setup other banks (dependent on bank 0)
+			for i := 1; i < len(f.palettes); i++ {
+				fci.img[i].shareCopy(&fci.img[0])
+				fci.img[i].Size[0] = fci.w
+				fci.img[i].UV = fci.img[0].UV
+				fci.img[i].Tex = fci.img[0].Tex // Copy the valid texture
+				fmt.Printf("cc=%v bank=%v Tex=%v\n", cc, i, fci.img[i].Tex)
 			}
+		}
+
+		// 4. PALETTE ASSIGNMENT (Synchronous)
+		for i, p := range f.palettes {
+			fci.img[i].Offset[0], fci.img[i].Offset[1], fci.img[i].Pal = 0, 0, p[:]
 		}
 	}
-	for _, fci := range f.images[0] {
-		fci.img = make([]Sprite, len(f.palettes))
-		for i, p := range f.palettes {
-			if i == 0 {
-				fci.img[0].shareCopy(spr)
-				fci.img[0].Size[0] = fci.w
-				px2 := make([]byte, int(fci.w)*int(fci.img[0].Size[1]))
-				copyCharRect(px2, int(fci.w), px, int(fci.ofs),
-					int(spr.Size[0]), int(spr.Size[1]))
-				fci.img[0].SetPxl(px2)
+	
+	sys.mainThreadTask <- func() {
+		if f.atlas_8 != nil {
+			if err := f.atlas_8.texture.SavePNG(filename+"_atlas_8.png", f.palettes[0][:255]); err != nil {
+				fmt.Printf("loadFntv1: SavePNG returned error: %v\n", err)
 			} else {
-				i, fci := i, fci
-				sys.mainThreadTask <- func() {
-					fci.img[i].shareCopy(&fci.img[0])
-					fci.img[i].Size[0] = fci.w
-				}
+				fmt.Printf("loadFntv1: %v saved\n", filename+"_atlas_8.png")
 			}
-			fci.img[i].Offset[0], fci.img[i].Offset[1], fci.img[i].Pal = 0, 0, p[:]
+		} else {
+			fmt.Printf("Atlas is empty for %v\n", filename)
 		}
 	}
 	return f, nil
@@ -361,7 +393,7 @@ func loadDefInfo(f *Fnt, filename string, is IniSection, height int32) {
 
 func LoadFntSff(f *Fnt, fontfile string, filename string) {
 	fileDir := SearchFile(filename, []string{fontfile, "font/", sys.motifDir, "", "data/"})
-	sff, err := loadSff(fileDir, false, true)
+	sff, err := loadSff(fileDir, false, f.atlas_8)
 
 	if err != nil {
 		panic(err)
@@ -481,7 +513,12 @@ func (f *Fnt) drawChar(
 	}
 
 	spr := f.getCharSpr(c, bank, bt)
-	if spr == nil || spr.Tex == nil {
+	if spr == nil {
+		fmt.Printf("drawChar: spr == nil for char=%c[%v] bank=%v bt=%v\n", c, c, bank, bt)
+		return 0
+	}
+	if spr.Tex == nil {
+		fmt.Printf("drawChar: spr.Tex == nil for char=%c[%v] bank=%v bt=%v\n", c, c, bank, bt)
 		return 0
 	}
 
@@ -518,8 +555,8 @@ func (f *Fnt) Print(txt string, x, y, xscl, yscl, rxadd float32, rot Rotation, b
 			f.DrawTtf(txt, x, y, xscl, yscl, align, true, window, frgba)
 		} else {
 			// DRAWCALL 20
-			f.DrawTextBatch(txt, x, y, xscl, yscl, rxadd, rot, bank, align, window, palfx, frgba[3])
-			// f.DrawText(txt, x, y, xscl, yscl, rxadd, rot, bank, align, window, palfx, frgba[3])
+			// f.DrawTextBatch(txt, x, y, xscl, yscl, rxadd, rot, bank, align, window, palfx, frgba[3])
+			f.DrawText(txt, x, y, xscl, yscl, rxadd, rot, bank, align, window, palfx, frgba[3])
 		}
 	}
 }
@@ -975,10 +1012,10 @@ func (ts *TextSprite) Draw() {
 		if ts.fnt.Type == "truetype" {
 			ts.fnt.DrawTtf(line[:charsToShow], ts.x, newY, ts.xscl, ts.yscl, ts.align, true, &ts.window, ts.frgba)
 		} else {
-			ts.fnt.DrawTextBatch(line[:charsToShow], ts.x-xsoffset, newY, ts.xscl, ts.yscl,
-				xshear, Rotation{ts.angle, 0, 0}, ts.bank, ts.align, &ts.window, ts.palfx, ts.frgba[3])
-			// ts.fnt.DrawText(line[:charsToShow], ts.x-xsoffset, newY, ts.xscl, ts.yscl,
+			// ts.fnt.DrawTextBatch(line[:charsToShow], ts.x-xsoffset, newY, ts.xscl, ts.yscl,
 			// 	xshear, Rotation{ts.angle, 0, 0}, ts.bank, ts.align, &ts.window, ts.palfx, ts.frgba[3])
+			ts.fnt.DrawText(line[:charsToShow], ts.x-xsoffset, newY, ts.xscl, ts.yscl,
+				xshear, Rotation{ts.angle, 0, 0}, ts.bank, ts.align, &ts.window, ts.palfx, ts.frgba[3])
 		}
 
 		totalCharsShown += charsToShow
