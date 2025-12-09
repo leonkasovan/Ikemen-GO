@@ -12,7 +12,10 @@ import (
 	"math"
 	"runtime"
 	"unsafe"
-
+	"image"
+    clr "image/color" // Alias as clr to match your GL33 code
+    "image/png"
+    "os"
 
 	gl "github.com/ikemen-engine/Ikemen-GO/packages/gl/v3.1/gles2"
 	mgl "github.com/go-gl/mathgl/mgl32"
@@ -257,6 +260,10 @@ func (t *Texture_GL) SetData(data []byte) {
 	format := t.MapInternalFormat(Max(t.depth, 8))
 
 	gl.BindTexture(gl.TEXTURE_2D, t.handle)
+	// Ensure any pending GL commands which upload texture data finish before
+	// reading with GetTexImage. This avoids reading an incomplete texture on
+	// some drivers where uploads are deferred.
+	gl.Finish()
 	gl.PixelStorei(gl.UNPACK_ALIGNMENT, 1)
 	if data != nil {
 		gl.TexImage2D(gl.TEXTURE_2D, 0, int32(format), t.width, t.height, 0, format, gl.UNSIGNED_BYTE, unsafe.Pointer(&data[0]))
@@ -270,7 +277,31 @@ func (t *Texture_GL) SetData(data []byte) {
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
 }
 func (t *Texture_GL) SetSubData(data []byte, x, y, width, height int32) {
+	format := t.MapInternalFormat(Max(t.depth, 8))
 
+	gl.BindTexture(gl.TEXTURE_2D, t.handle)
+	gl.PixelStorei(gl.UNPACK_ALIGNMENT, 1)
+	if data != nil {
+		gl.TexSubImage2D(
+			gl.TEXTURE_2D,
+			0,
+			x, y,
+			width, height,
+			format,
+			gl.UNSIGNED_BYTE,
+			unsafe.Pointer(&data[0]),
+		)
+	} else {
+		gl.TexSubImage2D(
+			gl.TEXTURE_2D,
+			0,
+			x, y,
+			width, height,
+			format,
+			gl.UNSIGNED_BYTE,
+			nil,
+		)
+	}
 }
 func (t *Texture_GL) SetDataG(data []byte, mag, min, ws, wt TextureSamplingParam) {
 
@@ -292,8 +323,49 @@ func (t *Texture_GL) SetPixelData(data []float32) {
 	gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, t.width, t.height, 0, gl.RGBA, gl.FLOAT, unsafe.Pointer(&data[0]))
 }
 
-func (t Texture_GL) CopyData(src *Texture) {
+func (t *Texture_GL) CopyData(src *Texture) {
+	srcTex, ok := (*src).(*Texture_GL)
+	if !ok || srcTex == nil || !srcTex.IsValid() || !t.IsValid() {
+		return
+	}
+	if t.width != srcTex.width || t.height != srcTex.height {
+		return
+	}
 
+	// 1. SAVE THE CURRENT FRAMEBUFFER BINDING
+	// If we don't do this, we break the rendering loop by unbinding the main FBO.
+	var prevFBO int32
+	gl.GetIntegerv(gl.FRAMEBUFFER_BINDING, &prevFBO)
+
+	// Create source FBO
+	var srcFBO uint32
+	gl.GenFramebuffers(1, &srcFBO)
+	gl.BindFramebuffer(gl.READ_FRAMEBUFFER, srcFBO)
+	gl.FramebufferTexture2D(gl.READ_FRAMEBUFFER, gl.COLOR_ATTACHMENT0,
+		gl.TEXTURE_2D, srcTex.handle, 0)
+
+	// Create destination FBO
+	var dstFBO uint32
+	gl.GenFramebuffers(1, &dstFBO)
+	gl.BindFramebuffer(gl.DRAW_FRAMEBUFFER, dstFBO)
+	gl.FramebufferTexture2D(gl.DRAW_FRAMEBUFFER, gl.COLOR_ATTACHMENT0,
+		gl.TEXTURE_2D, t.handle, 0)
+
+	// Check status before blitting
+	if gl.CheckFramebufferStatus(gl.READ_FRAMEBUFFER) == gl.FRAMEBUFFER_COMPLETE &&
+		gl.CheckFramebufferStatus(gl.DRAW_FRAMEBUFFER) == gl.FRAMEBUFFER_COMPLETE {
+		
+		gl.BlitFramebuffer(0, 0, t.width, t.height,
+			0, 0, t.width, t.height,
+			gl.COLOR_BUFFER_BIT, gl.NEAREST)
+	}
+
+	// Cleanup Temp FBOs
+	gl.DeleteFramebuffers(1, &srcFBO)
+	gl.DeleteFramebuffers(1, &dstFBO)
+
+	// 2. RESTORE THE PREVIOUS FRAMEBUFFER
+	gl.BindFramebuffer(gl.FRAMEBUFFER, uint32(prevFBO))
 }
 
 // Return whether texture has a valid handle
@@ -336,7 +408,160 @@ func (t *Texture_GL) MapTextureSamplingParam(i TextureSamplingParam) int32 {
 
 	return SamplingParam[i]
 }
+func (t *Texture_GL) SavePNG(filename string, pal []uint32) error {
+	fmt.Printf("SavePNG: filename=%q width=%d height=%d depth=%d handle=%d\n",
+		filename, t.width, t.height, t.depth, t.handle)
 
+	if !t.IsValid() {
+		fmt.Printf("SavePNG: texture is not valid (handle=%d, w=%d, h=%d)\n", t.handle, t.width, t.height)
+		return Error("texture not valid")
+	}
+
+	// --- 1. Read Texture Data from GPU (GLES Workaround) ---
+
+	// Save the current framebuffer so we don't break the render loop
+	var prevFBO int32
+	gl.GetIntegerv(gl.FRAMEBUFFER_BINDING, &prevFBO)
+
+	// Create a temporary FBO to read the texture
+	var fbo uint32
+	gl.GenFramebuffers(1, &fbo)
+	gl.BindFramebuffer(gl.FRAMEBUFFER, fbo)
+	gl.FramebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t.handle, 0)
+
+	// Check FBO status
+	status := gl.CheckFramebufferStatus(gl.FRAMEBUFFER)
+	if status != gl.FRAMEBUFFER_COMPLETE {
+		gl.BindFramebuffer(gl.FRAMEBUFFER, uint32(prevFBO))
+		gl.DeleteFramebuffers(1, &fbo)
+		return Error(fmt.Sprintf("SavePNG: temp framebuffer incomplete: 0x%x", status))
+	}
+
+	// Read pixels as RGBA (safest for GLES compatibility)
+	// We read 4 bytes per pixel even if depth is 8.
+	rawSize := int(t.width) * int(t.height) * 4
+	rawData := make([]byte, rawSize)
+	gl.ReadPixels(0, 0, t.width, t.height, gl.RGBA, gl.UNSIGNED_BYTE, unsafe.Pointer(&rawData[0]))
+
+	// Restore state and cleanup
+	gl.BindFramebuffer(gl.FRAMEBUFFER, uint32(prevFBO))
+	gl.DeleteFramebuffers(1, &fbo)
+
+	// --- 2. Process Data ---
+
+	var data []byte
+
+	if t.depth == 8 {
+		// EXTRACT INDICES:
+		// If the texture is 8-bit (indexed), the index is in the Red channel.
+		// Since we read RGBA, we take every 4th byte.
+		count := int(t.width) * int(t.height)
+		data = make([]byte, count)
+		for i := 0; i < count; i++ {
+			data[i] = rawData[i*4] // Extract R component as index
+		}
+	} else {
+		// Use raw RGBA data
+		data = rawData
+	}
+
+	// --- 3. Palette Handling (Ported from render_gl33.go) ---
+
+	if t.depth == 8 {
+		// 8-bit texture: data contains palette indices.
+		if pal != nil && len(pal) >= 256 {
+			// Build Go palette from uint32 entries (A<<24 | B<<16 | G<<8 | R)
+			gpal := make(clr.Palette, 256)
+			for i := 0; i < 256; i++ {
+				c := pal[i]
+				r := uint8(c & 0xff)
+				g := uint8((c >> 8) & 0xff)
+				b := uint8((c >> 16) & 0xff)
+				a := uint8((c >> 24) & 0xff)
+				gpal[i] = clr.RGBA{R: r, G: g, B: b, A: a}
+			}
+
+			img := image.NewPaletted(image.Rect(0, 0, int(t.width), int(t.height)), gpal)
+			n := copy(img.Pix, data)
+			if n != len(img.Pix) {
+				fmt.Printf("SavePNG: copied %d bytes into paletted image (expected %d)\n", n, len(img.Pix))
+			}
+
+			// Fix invisible palette entries if they are used
+			usedCounts := make([]int, 256)
+			for _, idx := range img.Pix {
+				usedCounts[int(idx)]++
+			}
+			forced := []int{}
+			for i := 0; i < 256; i++ {
+				if usedCounts[i] > 0 {
+					_, _, _, ca := gpal[i].RGBA()
+					if ca>>8 == 0 { // alpha == 0
+						r, g, b, _ := gpal[i].RGBA()
+						gpal[i] = clr.RGBA{R: uint8(r >> 8), G: uint8(g >> 8), B: uint8(b >> 8), A: 255}
+						forced = append(forced, i)
+					}
+				}
+			}
+			if len(forced) > 0 {
+				fmt.Printf("SavePNG: forced %d palette entries to opaque\n", len(forced))
+			}
+
+			f, err := os.Create(filename)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+
+			if err := png.Encode(f, img); err != nil {
+				fmt.Printf("SavePNG: png.Encode returned error: %v\n", err)
+				return err
+			}
+			return nil
+		}
+
+		// Fallback: expand indices into an opaque grayscale NRGBA
+		grayImg := image.NewNRGBA(image.Rect(0, 0, int(t.width), int(t.height)))
+		for i := 0; i < len(data) && 4*i+3 < len(grayImg.Pix); i++ {
+			v := data[i]
+			grayImg.Pix[4*i+0] = v
+			grayImg.Pix[4*i+1] = v
+			grayImg.Pix[4*i+2] = v
+			grayImg.Pix[4*i+3] = 255
+		}
+		f, err := os.Create(filename)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+
+		if err := png.Encode(f, grayImg); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	// --- 4. Standard RGBA Saving ---
+
+	f, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	
+	// Create NRGBA image
+	normalImg := image.NewNRGBA(image.Rect(0, 0, int(t.width), int(t.height)))
+	// Note: glReadPixels returns data from bottom-left. Standard PNG is top-left.
+	// Typically you might need to flip rows here, but we'll copy directly to match current behavior.
+	copy(normalImg.Pix, data)
+
+	if err := png.Encode(f, normalImg); err != nil {
+		fmt.Printf("SavePNG: png.Encode(rgba) returned error: %v\n", err)
+		return err
+	}
+
+	return nil
+}
 
 // ------------------------------------------------------------------
 // Renderer_GL
@@ -360,8 +585,9 @@ type Renderer_GL struct {
 	postVertBuffer   uint32
 	postShaderSelect []*ShaderProgram_GL
 	// Shader and vertex data for primitive rendering
-	spriteShader *ShaderProgram_GL
-	vertexBuffer uint32
+	spriteShader      *ShaderProgram_GL
+	vertexBuffer      uint32
+	vertexBufferBatch uint32
 	// Shader and index data for 3D model rendering
 	shadowMapShader         *ShaderProgram_GL
 	modelShader             *ShaderProgram_GL
@@ -497,12 +723,13 @@ func (r *Renderer_GL) Init() {
 	gl.GenBuffers(1, &r.vertexBuffer)
 	gl.GenBuffers(2, &r.modelVertexBuffer[0])
 	gl.GenBuffers(2, &r.modelIndexBuffer[0])
+	gl.GenBuffers(1, &r.vertexBufferBatch)
 
 	// Sprite shader
 	r.spriteShader, _ = r.newShaderProgram(vertShader, fragShader, "", "Main Shader", true)
 	r.spriteShader.RegisterAttributes("position", "uv")
 	r.spriteShader.RegisterUniforms("modelview", "projection", "x1x2x4x3",
-		"alpha", "tint", "mask", "neg", "gray", "add", "mult", "isFlat", "isRgba", "isTrapez", "hue")
+		"alpha", "tint", "mask", "neg", "gray", "add", "mult", "isFlat", "isRgba", "isTrapez", "hue", "uvRect", "useUV")
 	r.spriteShader.RegisterTextures("pal", "tex")
 
 	if r.enableModel {
@@ -801,7 +1028,7 @@ func (r *Renderer_GL) EndFrame() {
 		gl.DisableVertexAttribArray(uint32(loc))
 	}
 	sys.Drawcall = sys.nDrawcall
-	sys.nDrawcall = 0;
+	sys.nDrawcall = 0
 }
 
 func (r *Renderer_GL) Await() {
@@ -902,6 +1129,16 @@ func (r *Renderer_GL) SetPipeline(eq BlendEquation, src, dst BlendFunc) {
 
 	// Must bind buffer before enabling attributes
 	gl.BindBuffer(gl.ARRAY_BUFFER, r.vertexBuffer)
+	loc := r.spriteShader.a["position"]
+	gl.EnableVertexAttribArray(uint32(loc))
+	gl.VertexAttribPointerWithOffset(uint32(loc), 2, gl.FLOAT, false, 16, 0)
+	loc = r.spriteShader.a["uv"]
+	gl.EnableVertexAttribArray(uint32(loc))
+	gl.VertexAttribPointerWithOffset(uint32(loc), 2, gl.FLOAT, false, 16, 8)
+}
+
+func (r *Renderer_GL) SetPipelineBatch() {
+	gl.BindBuffer(gl.ARRAY_BUFFER, r.vertexBufferBatch)
 	loc := r.spriteShader.a["position"]
 	gl.EnableVertexAttribArray(uint32(loc))
 	gl.VertexAttribPointerWithOffset(uint32(loc), 2, gl.FLOAT, false, 16, 0)
@@ -1462,6 +1699,14 @@ func (r *Renderer_GL) SetVertexData(values ...float32) {
 	gl.BindBuffer(gl.ARRAY_BUFFER, r.vertexBuffer)
 	gl.BufferData(gl.ARRAY_BUFFER, len(data), unsafe.Pointer(&data[0]), gl.STATIC_DRAW)
 }
+func (r *Renderer_GL) SetVertexDataArray(values []float32) {
+	if len(values) == 0 {
+		return
+	}
+	data := f32.Bytes(binary.LittleEndian, values...)
+	gl.BindBuffer(gl.ARRAY_BUFFER, r.vertexBufferBatch)
+	gl.BufferData(gl.ARRAY_BUFFER, len(data), unsafe.Pointer(&data[0]), gl.STATIC_DRAW)
+}
 func (r *Renderer_GL) SetModelVertexData(bufferIndex uint32, values []byte) {
 	gl.BindBuffer(gl.ARRAY_BUFFER, r.modelVertexBuffer[bufferIndex])
 	gl.BufferData(gl.ARRAY_BUFFER, len(values), unsafe.Pointer(&values[0]), gl.STATIC_DRAW)
@@ -1476,6 +1721,10 @@ func (r *Renderer_GL) SetModelIndexData(bufferIndex uint32, values ...uint32) {
 
 func (r *Renderer_GL) RenderQuad() {
 	gl.DrawArrays(gl.TRIANGLE_STRIP, 0, 4)
+	sys.nDrawcall++
+}
+func (r *Renderer_GL) RenderQuadBatch(vertexCount int32) {
+	gl.DrawArrays(gl.TRIANGLES, 0, vertexCount)
 	sys.nDrawcall++
 }
 func (r *Renderer_GL) RenderElements(mode PrimitiveMode, count, offset int) {

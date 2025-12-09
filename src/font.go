@@ -6,6 +6,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"fmt"
 )
 
 type FontRenderer interface {
@@ -78,6 +79,14 @@ type Fnt struct {
 	offset    [2]int32
 	ttf       TtfFont
 	paltex    Texture
+	atlas_8   *TextureAtlas
+
+	// Batch Rendering Fields
+    batchVertices []float32 // Persistent buffer to avoid allocation
+    batchTex      Texture   // Current texture for the active batch
+    batchPal      Texture   // Current palette for the active batch
+    isBatching    bool      // Are we currently in a manual batch block?
+	batchRP RenderParams // Store the "Master" params for this batch
 }
 
 func newFnt() *Fnt {
@@ -88,6 +97,7 @@ func newFnt() *Fnt {
 }
 
 func loadFnt(filename string, height int32) (*Fnt, error) {
+	fmt.Printf("loadFnt %v\n", filename)
 	if HasExtension(filename, ".fnt") {
 		return loadFntV1(filename)
 	}
@@ -96,6 +106,7 @@ func loadFnt(filename string, height int32) (*Fnt, error) {
 }
 
 func loadFntV1(filename string) (*Fnt, error) {
+	fmt.Printf("loadFntV1 %v\n", filename)
 	f := newFnt()
 	f.images[0] = make(map[rune]*FntCharImage)
 
@@ -175,11 +186,21 @@ func loadFntV1(filename string) (*Fnt, error) {
 	}
 
 	px = spr.RlePcxDecode(px)
+	fmt.Printf("loadFntV1: PCX %vx%v loaded\n", spr.Size[0], spr.Size[1])
+
+	// Create Texture Atlas and Upload Texture to GPU
+	sys.mainThreadTask <- func() {
+		f.atlas_8 = CreateTextureAtlas(int32(spr.Size[0]), int32(spr.Size[1]), 8, false)
+		f.atlas_8.texture.SetData(px)
+		spr.Tex = f.atlas_8.texture
+	}
+
 	fp.Seek(int64(txtDataOffset), 0)
 	buf = make([]byte, txtDataLength)
 	if err := read(buf); err != nil {
 		return nil, err
 	}
+	fmt.Printf("Data:\n%v\n", string(buf))
 	lines := SplitAndTrim(string(buf), "\n")
 	i := 0
 	mapflg, defflg := true, true
@@ -259,35 +280,53 @@ func loadFntV1(filename string) (*Fnt, error) {
 		copy(f.palettes[i][:256-c], spr.Pal[:256-c])
 		copy(f.palettes[i][256-c:], spr.Pal[256-c*(i+1):256-c*i])
 	}
-	copyCharRect := func(dst []byte, dw int, src []byte, x, w, h int) {
-		dw2 := dw
-		if x+dw > w {
-			dw2 = w - x
-		}
-		if dw2 > 0 {
-			for i := 0; i < h; i++ {
-				copy(dst[dw*i:dw*i+dw2], src[w*i+x:w*i+x+dw2])
+
+	for cc, fci := range f.images[0] {
+		// 1. ALLOCATE MEMORY (Synchronous)
+		fci.img = make([]Sprite, len(f.palettes))
+
+		// 2. CAPTURE VARIABLES (Critical for closure)
+		// Without this, the closure below will always use the 'fci' from the 
+		// LAST iteration of the loop for every single task!
+		fci := fci 
+		cc := cc
+
+		// 3. SCHEDULE TEXTURE ASSIGNMENT (Asynchronous / Main Thread)
+		sys.mainThreadTask <- func() {
+			// Setup Bank 0
+			fci.img[0].shareCopy(spr)
+			fci.img[0].Size[0] = fci.w
+			fci.img[0].UV = [4]float32{float32(fci.ofs) / float32(spr.Size[0]), 0.0, float32(fci.ofs + fci.w) / float32(spr.Size[0]), 1.0}
+			
+			// Use the atlas texture which was created in the previous mainThreadTask
+			fci.img[0].Tex = f.atlas_8.texture
+			fmt.Printf("cc=%v bank=0 Tex=%v\n", cc, fci.img[0].Tex)
+
+			// Setup other banks (dependent on bank 0)
+			for i := 1; i < len(f.palettes); i++ {
+				fci.img[i].shareCopy(&fci.img[0])
+				fci.img[i].Size[0] = fci.w
+				fci.img[i].UV = fci.img[0].UV
+				fci.img[i].Tex = fci.img[0].Tex // Copy the valid texture
+				fmt.Printf("cc=%v bank=%v Tex=%v\n", cc, i, fci.img[i].Tex)
 			}
+		}
+
+		// 4. PALETTE ASSIGNMENT (Synchronous)
+		for i, p := range f.palettes {
+			fci.img[i].Offset[0], fci.img[i].Offset[1], fci.img[i].Pal = 0, 0, p[:]
 		}
 	}
-	for _, fci := range f.images[0] {
-		fci.img = make([]Sprite, len(f.palettes))
-		for i, p := range f.palettes {
-			if i == 0 {
-				fci.img[0].shareCopy(spr)
-				fci.img[0].Size[0] = fci.w
-				px2 := make([]byte, int(fci.w)*int(fci.img[0].Size[1]))
-				copyCharRect(px2, int(fci.w), px, int(fci.ofs),
-					int(spr.Size[0]), int(spr.Size[1]))
-				fci.img[0].SetPxl(px2)
+	
+	sys.mainThreadTask <- func() {
+		if f.atlas_8 != nil {
+			if err := f.atlas_8.texture.SavePNG(filename+"_atlas_8.png", f.palettes[0][:255]); err != nil {
+				fmt.Printf("loadFntv1: SavePNG returned error: %v\n", err)
 			} else {
-				i, fci := i, fci
-				sys.mainThreadTask <- func() {
-					fci.img[i].shareCopy(&fci.img[0])
-					fci.img[i].Size[0] = fci.w
-				}
+				fmt.Printf("loadFntv1: %v saved\n", filename+"_atlas_8.png")
 			}
-			fci.img[i].Offset[0], fci.img[i].Offset[1], fci.img[i].Pal = 0, 0, p[:]
+		} else {
+			fmt.Printf("Atlas is empty for %v\n", filename)
 		}
 	}
 	return f, nil
@@ -361,63 +400,98 @@ func loadDefInfo(f *Fnt, filename string, is IniSection, height int32) {
 
 func LoadFntSff(f *Fnt, fontfile string, filename string) {
 	fileDir := SearchFile(filename, []string{fontfile, "font/", sys.motifDir, "", "data/"})
-	sff, err := loadSff(fileDir, false, true)
+	sff, err := loadSff(fileDir, false, f.atlas_8)
 
 	if err != nil {
 		panic(err)
 	}
 
-	// Load sprites
-	var pal_default []uint32
-	for k, sprite := range sff.sprites {
-		s := sff.getOwnPalSprite(sprite.Group, sprite.Number, &sff.palList)
-		if sprite.Group == 0 || f.BankType == "sprite" {
-			if f.images[int32(sprite.Group)] == nil {
-				f.images[int32(sprite.Group)] = make(map[rune]*FntCharImage)
-			}
-			if pal_default == nil && sff.header.Ver0 == 1 {
-				pal_default = s.Pal
-			}
-			offsetX := uint16(s.Offset[0])
-			sizeX := uint16(s.Size[0])
+	// FIX: Perform sprite extraction in the main thread task.
+	// This ensures we wait for any async texture operations (SetPxl) 
+	// initiated by loadSff to complete before we copy the sprite data.
+	sys.mainThreadTask <- func() {
+		// Load sprites
+		var pal_default []uint32
+		for k, sprite := range sff.sprites {
+			s := sff.getOwnPalSprite(sprite.Group, sprite.Number, &sff.palList)
+			if sprite.Group == 0 || f.BankType == "sprite" {
+				if f.images[int32(sprite.Group)] == nil {
+					f.images[int32(sprite.Group)] = make(map[rune]*FntCharImage)
+				}
+				if pal_default == nil && sff.header.Ver0 == 1 {
+					pal_default = s.Pal
+				}
+				offsetX := uint16(s.Offset[0])
+				sizeX := uint16(s.Size[0])
 
-			fci := &FntCharImage{
-				ofs: offsetX,
-				w:   sizeX,
+				fci := &FntCharImage{
+					ofs: offsetX,
+					w:   sizeX,
+				}
+				fci.img = make([]Sprite, 1)
+				fci.img[0] = *s
+				f.images[int32(sprite.Group)][rune(k[1])] = fci
 			}
-			fci.img = make([]Sprite, 1)
-			fci.img[0] = *s
-			f.images[int32(sprite.Group)][rune(k[1])] = fci
+		}
+
+		// Load palettes
+		f.palettes = make([][256]uint32, sff.header.NumberOfPalettes)
+		f.coldepth = make([]byte, sff.header.NumberOfPalettes)
+		var idef int
+		for i := 0; i < int(sff.header.NumberOfPalettes); i++ {
+			var pal []uint32
+			si, ok := sff.palList.PalTable[[...]uint16{0, uint16(i)}]
+			if ok && si >= 0 {
+				pal = sff.palList.Get(si)
+				if i == 0 {
+					idef = si
+				}
+				switch sff.palList.numcols[[...]uint16{0, uint16(i)}] {
+				case 256:
+					f.coldepth[i] = 8
+				case 32:
+					f.coldepth[i] = 5
+				}
+			} else {
+				pal = sff.palList.Get(idef)
+			}
+			copy(f.palettes[i][:], pal)
+		}
+		if len(f.palettes) == 0 && pal_default != nil {
+			f.palettes = make([][256]uint32, 1)
+			copy(f.palettes[0][:], pal_default)
 		}
 	}
+}
 
-	// Load palettes
-	f.palettes = make([][256]uint32, sff.header.NumberOfPalettes)
-	f.coldepth = make([]byte, sff.header.NumberOfPalettes)
-	var idef int
-	for i := 0; i < int(sff.header.NumberOfPalettes); i++ {
-		var pal []uint32
-		si, ok := sff.palList.PalTable[[...]uint16{0, uint16(i)}]
-		if ok && si >= 0 {
-			pal = sff.palList.Get(si)
-			if i == 0 {
-				idef = si
-			}
-			switch sff.palList.numcols[[...]uint16{0, uint16(i)}] {
-			case 256:
-				f.coldepth[i] = 8
-			case 32:
-				f.coldepth[i] = 5
-			}
-		} else {
-			pal = sff.palList.Get(idef)
-		}
-		copy(f.palettes[i][:], pal)
-	}
-	if len(f.palettes) == 0 && pal_default != nil {
-		f.palettes = make([][256]uint32, 1)
-		copy(f.palettes[0][:], pal_default)
-	}
+// BeginBatch resets the buffer and prepares for accumulating vertices
+func (f *Fnt) BeginBatch() {
+	f.isBatching = true
+	f.batchVertices = f.batchVertices[:0]
+	f.batchTex = nil
+	f.batchPal = nil
+}
+
+// EndBatch flushes whatever is remaining in the buffer to the GPU using captured state
+func (f *Fnt) EndBatch() {
+    if len(f.batchVertices) > 0 {
+        // Use the captured parameters from the first text draw
+        rp := f.batchRP
+        rp.tex = f.batchTex
+        rp.paltex = f.batchPal
+        RenderSpriteBatch(f.batchVertices, rp)
+    }
+    f.isBatching = false
+}
+
+// FlushBatch forces a render of the current buffer (used when texture changes)
+func (f *Fnt) FlushBatch(rp RenderParams) {
+    if len(f.batchVertices) > 0 {
+        rp.tex = f.batchTex
+        rp.paltex = f.batchPal
+        RenderSpriteBatch(f.batchVertices, rp)
+        f.batchVertices = f.batchVertices[:0]
+    }
 }
 
 // CharWidth returns the width that has a specified character
@@ -481,7 +555,12 @@ func (f *Fnt) drawChar(
 	}
 
 	spr := f.getCharSpr(c, bank, bt)
-	if spr == nil || spr.Tex == nil {
+	if spr == nil {
+		fmt.Printf("drawChar: spr == nil for char=%c[%v] bank=%v bt=%v\n", c, c, bank, bt)
+		return 0
+	}
+	if spr.Tex == nil {
+		fmt.Printf("drawChar: spr.Tex == nil for char=%c[%v] bank=%v bt=%v\n", c, c, bank, bt)
 		return 0
 	}
 
@@ -623,7 +702,6 @@ func (f *Fnt) DrawText(txt string, x, y, xscl, yscl, rxadd float32, rot Rotation
 
 func (f *Fnt) DrawTextBatch(txt string, x, y, xscl, yscl, rxadd float32, rot Rotation, bank, align int32, window *[4]int32, palfx *PalFX, alpha float32) {
 	if len(txt) == 0 || xscl == 0 || yscl == 0 {
-		// Removed Println to avoid console spam in production
 		return
 	}
 
@@ -635,34 +713,11 @@ func (f *Fnt) DrawTextBatch(txt string, x, y, xscl, yscl, rxadd float32, rot Rot
 		bank = 0
 	}
 
-	// Not existing characters treated as space
-	// OPTIMIZATION: Check if replacement is needed before allocating new string
-	needsReplacement := false
-	for _, c := range txt {
-		if c != ' ' && f.images[bt][c] == nil {
-			needsReplacement = true
-			break
-		}
-	}
-	if needsReplacement {
-		var sb strings.Builder
-		sb.Grow(len(txt))
-		for _, c := range txt {
-			if c != ' ' && f.images[bt][c] == nil {
-				sb.WriteRune(' ')
-			} else {
-				sb.WriteRune(c)
-			}
-		}
-		txt = sb.String()
-	}
-
-	// Original position adjustments
+	// 1. Calculate Coordinates & Rotation
 	x += float32(f.offset[0])*xscl + float32(sys.gameWidth-320)/2
 	y += float32(f.offset[1]-int32(f.Size[1])+1)*yscl + float32(sys.gameHeight-240)
 
 	var rcx, rcy float32
-
 	if rot.IsZero() {
 		if xscl < 0 {
 			x *= -1
@@ -676,28 +731,20 @@ func (f *Fnt) DrawTextBatch(txt string, x, y, xscl, yscl, rxadd float32, rot Rot
 		x, y = AbsF(xscl)*float32(f.offset[0]), AbsF(yscl)*float32(f.offset[1])
 	}
 
+	// Handle Alignment
 	if align == 0 {
 		x -= float32(f.TextWidth(txt, bank)) * xscl * 0.5
 	} else if align < 0 {
 		x -= float32(f.TextWidth(txt, bank)) * xscl
 	}
 
-	var pal []uint32
-	if len(f.palettes) != 0 {
-		pal = f.palettes[bank][:]
-	}
-
-	f.paltex = nil
-
-	// Set the trans type
+	// 2. Initialize Render Parameters
 	tt := TT_none
 	if alpha < 1.0 {
 		tt = TT_add
 	}
-
 	alphaVal := int32(255 * sys.brightness * alpha)
 
-	// Initialize common render parameters
 	rp := RenderParams{
 		tex:            nil,
 		paltex:         nil,
@@ -727,17 +774,27 @@ func (f *Fnt) DrawTextBatch(txt string, x, y, xscl, yscl, rxadd float32, rot Rot
 		yOffset:        0,
 	}
 
-	// OPTIMIZATION: Pre-allocate vertex slice
-	// 6 vertices per char * 4 floats per vertex = 24 floats per char
-	// We use a predefined capacity to avoid slice resizing during the loop
-	vertices := make([]float32, 0, len(txt)*24)
+	// 3. Buffer Management
+	localBatch := !f.isBatching
+	if localBatch {
+		f.BeginBatch()
+	}
 
-	var lastTex Texture
-	var lastPal Texture
+	// AUTO-CAPTURE STATE Logic
+	// If we are batching and this is the first draw (buffer empty),
+	// capture the current RenderParams as the "Master" state for the whole batch.
+	if f.isBatching && len(f.batchVertices) == 0 {
+		f.batchRP = rp
+	}
+
+	var pal []uint32
+	if len(f.palettes) != 0 {
+		pal = f.palettes[bank][:]
+	}
 
 	currentX := x
 
-	// Batch Processing Loop
+	// 4. Vertex Generation Loop
 	for _, c := range txt {
 		if c == ' ' {
 			currentX += xscl*float32(f.Size[0]) + xscl*float32(f.Spacing[0])
@@ -745,11 +802,15 @@ func (f *Fnt) DrawTextBatch(txt string, x, y, xscl, yscl, rxadd float32, rot Rot
 		}
 
 		spr := f.getCharSpr(c, bank, bt)
-		if spr == nil || spr.Tex == nil {
+		if spr == nil {
+			currentX += xscl*float32(f.Size[0]) + xscl*float32(f.Spacing[0])
+			continue
+		}
+		if spr.Tex == nil {
 			continue
 		}
 
-		// Handle mismatched color depth
+		// Palette Logic
 		currentPalSlice := pal
 		if len(f.palettes) != 0 && len(f.coldepth) > int(bank) &&
 			f.images[bt][c].img[0].coldepth != 32 &&
@@ -757,31 +818,23 @@ func (f *Fnt) DrawTextBatch(txt string, x, y, xscl, yscl, rxadd float32, rot Rot
 			currentPalSlice = f.images[bt][c].img[0].Pal[:]
 		}
 
-		// Cache palette if needed
-		currentPalTex := f.paltex
+		// Palette Texture Logic
+		var currentPalTex Texture
 		if spr.coldepth <= 8 {
 			if f.paltex == nil {
 				f.paltex = spr.CachePalette(currentPalSlice)
 			}
 			currentPalTex = f.paltex
-		} else {
-			// For 32-bit sprites, we might not use a palette texture
-			currentPalTex = nil
 		}
 
-		// OPTIMIZATION: Texture State Change Check
-		// If texture or palette changes, we must flush the current batch
-		if (lastTex != nil && spr.Tex != lastTex) || (lastTex != nil && currentPalTex != lastPal) {
-			if len(vertices) > 0 {
-				rp.tex = lastTex
-				rp.paltex = lastPal
-				RenderSpriteBatch(vertices, rp)
-				vertices = vertices[:0] // Reset slice length, keep capacity
-			}
+		// Batch Flushing Logic
+		// Note: We still pass 'rp' to FlushBatch because 'rp' represents the current text's specific state
+		if f.batchTex != nil && (spr.Tex != f.batchTex || currentPalTex != f.batchPal) {
+			f.FlushBatch(rp)
 		}
 
-		lastTex = spr.Tex
-		lastPal = currentPalTex
+		f.batchTex = spr.Tex
+		f.batchPal = currentPalTex
 
 		// Geometry Calculation
 		charX := currentX - xscl*float32(spr.Offset[0])
@@ -789,35 +842,35 @@ func (f *Fnt) DrawTextBatch(txt string, x, y, xscl, yscl, rxadd float32, rot Rot
 
 		width := float32(spr.Size[0]) * xscl * sys.widthScale
 		height := float32(spr.Size[1]) * yscl * sys.heightScale
-
 		screenX := charX * sys.widthScale
 		screenY := charY * sys.heightScale
 
-		// Coordinate Fix
 		glTopY := float32(sys.scrrect[3]) - screenY
 		glBottomY := glTopY - height
 
-		u1, v1 := spr.UV[0], spr.UV[1]
-		u2, v2 := spr.UV[2], spr.UV[3]
+		u1, v1, u2, v2 := spr.UV[0], spr.UV[1], spr.UV[2], spr.UV[3]
 
-		// Append Quad (2 Triangles)
-		vertices = append(vertices,
-			screenX, glBottomY, u1, v2, // BL
-			screenX+width, glBottomY, u2, v2, // BR
-			screenX, glTopY, u1, v1, // TL
+		// FIX: V2/SFF Fallback for zero UVs
+		if u1 == 0 && v1 == 0 && u2 == 0 && v2 == 0 {
+			u2, v2 = 1.0, 1.0
+		}
 
-			screenX, glTopY, u1, v1, // TL
-			screenX+width, glBottomY, u2, v2, // BR
-			screenX+width, glTopY, u2, v1) // TR
+		// Append to Persistent Buffer
+		f.batchVertices = append(f.batchVertices,
+			screenX, glBottomY, u1, v2,
+			screenX+width, glBottomY, u2, v2,
+			screenX, glTopY, u1, v1,
+			screenX, glTopY, u1, v1,
+			screenX+width, glBottomY, u2, v2,
+			screenX+width, glTopY, u2, v1,
+		)
 
 		currentX += float32(spr.Size[0])*xscl + xscl*float32(f.Spacing[0])
 	}
 
-	// Flush remaining vertices
-	if len(vertices) > 0 {
-		rp.tex = lastTex
-		rp.paltex = lastPal
-		RenderSpriteBatch(vertices, rp)
+	// 5. Auto-End if local
+	if localBatch {
+		f.EndBatch() // No arguments needed now
 	}
 }
 

@@ -336,6 +336,9 @@ type System struct {
 
 	// screenshot deferral
 	isTakingScreenshot bool
+
+	// Font List for Batch Rendering
+	fontBatchList []*Fnt
 }
 
 // Check if the application is running inside a macOS app bundle
@@ -467,7 +470,7 @@ func (s *System) init(w, h int32) *lua.LState {
 	}
 	s.clsnSpr = *newSprite()
 	s.clsnSpr.Size, s.clsnSpr.Pal = [...]uint16{1, 1}, make([]uint32, 256)
-	s.clsnSpr.SetPxl([]byte{0})
+	s.clsnSpr.SetPxl([]byte{0}, nil)
 	// Create a reusable white palette texture for shadows
 	whitepal := make([]uint32, 256)
 	for i := 1; i < 256; i++ {
@@ -3709,7 +3712,7 @@ func (s *Select) addChar(defLine string) {
 		LoadFile(&resolvedSpritePath, []string{sc.def, "", "data/"}, func(file string) error {
 			var selPal []int32
 			var err_sff error
-			sc.sff, selPal, err_sff = preloadSff(file, true, listSpr, false)
+			sc.sff, selPal, err_sff = preloadSff(file, true, listSpr, nil)
 			if err_sff != nil {
 				return fmt.Errorf("failed to preload SFF %s for %s: %w", file, sc.def, err_sff)
 			}
@@ -3954,7 +3957,7 @@ func (s *Select) AddStage(def string) error {
 		// preload portion of sff file
 		LoadFile(&spr, []string{def, "", "data/"}, func(file string) error {
 			var err error
-			ss.sff, _, err = preloadSff(file, false, listSpr, false)
+			ss.sff, _, err = preloadSff(file, false, listSpr, nil)
 			if err != nil {
 				panic(fmt.Errorf("failed to load %v: %v\nerror preloading %v", file, err, def))
 			}
