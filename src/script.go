@@ -1278,6 +1278,7 @@ func systemScriptInit(l *lua.LState) {
 			sys.errLog.Printf("failed to load %v (screenpack font): %v", filename, err)
 			fnt = newFnt()
 		}
+		sys.fontBatchList = append(sys.fontBatchList, fnt)
 		l.Push(newUserData(l, fnt))
 		return 1
 	})

@@ -86,6 +86,7 @@ type Fnt struct {
     batchTex      Texture   // Current texture for the active batch
     batchPal      Texture   // Current palette for the active batch
     isBatching    bool      // Are we currently in a manual batch block?
+	batchRP RenderParams // Store the "Master" params for this batch
 }
 
 func newFnt() *Fnt {
@@ -471,15 +472,16 @@ func (f *Fnt) BeginBatch() {
 	f.batchPal = nil
 }
 
-// EndBatch flushes whatever is remaining in the buffer to the GPU
-func (f *Fnt) EndBatch(rp RenderParams) {
-	if len(f.batchVertices) > 0 {
-		rp.tex = f.batchTex
-		rp.paltex = f.batchPal
-        // Note: rp.rot is for the whole string, but batchVertices handles per-char UV rotation
-		RenderSpriteBatch(f.batchVertices, rp)
-	}
-	f.isBatching = false
+// EndBatch flushes whatever is remaining in the buffer to the GPU using captured state
+func (f *Fnt) EndBatch() {
+    if len(f.batchVertices) > 0 {
+        // Use the captured parameters from the first text draw
+        rp := f.batchRP
+        rp.tex = f.batchTex
+        rp.paltex = f.batchPal
+        RenderSpriteBatch(f.batchVertices, rp)
+    }
+    f.isBatching = false
 }
 
 // FlushBatch forces a render of the current buffer (used when texture changes)
@@ -778,6 +780,13 @@ func (f *Fnt) DrawTextBatch(txt string, x, y, xscl, yscl, rxadd float32, rot Rot
 		f.BeginBatch()
 	}
 
+	// AUTO-CAPTURE STATE Logic
+	// If we are batching and this is the first draw (buffer empty),
+	// capture the current RenderParams as the "Master" state for the whole batch.
+	if f.isBatching && len(f.batchVertices) == 0 {
+		f.batchRP = rp
+	}
+
 	var pal []uint32
 	if len(f.palettes) != 0 {
 		pal = f.palettes[bank][:]
@@ -819,7 +828,7 @@ func (f *Fnt) DrawTextBatch(txt string, x, y, xscl, yscl, rxadd float32, rot Rot
 		}
 
 		// Batch Flushing Logic
-		// If the texture or palette changes, we MUST draw what we have so far
+		// Note: We still pass 'rp' to FlushBatch because 'rp' represents the current text's specific state
 		if f.batchTex != nil && (spr.Tex != f.batchTex || currentPalTex != f.batchPal) {
 			f.FlushBatch(rp)
 		}
@@ -841,8 +850,7 @@ func (f *Fnt) DrawTextBatch(txt string, x, y, xscl, yscl, rxadd float32, rot Rot
 
 		u1, v1, u2, v2 := spr.UV[0], spr.UV[1], spr.UV[2], spr.UV[3]
 
-		// FIX: Handle individual textures (V2/SFF without atlas) that have default zero UVs.
-		// If all UVs are 0, assume the sprite uses the full texture.
+		// FIX: V2/SFF Fallback for zero UVs
 		if u1 == 0 && v1 == 0 && u2 == 0 && v2 == 0 {
 			u2, v2 = 1.0, 1.0
 		}
@@ -862,7 +870,7 @@ func (f *Fnt) DrawTextBatch(txt string, x, y, xscl, yscl, rxadd float32, rot Rot
 
 	// 5. Auto-End if local
 	if localBatch {
-		f.EndBatch(rp)
+		f.EndBatch() // No arguments needed now
 	}
 }
 

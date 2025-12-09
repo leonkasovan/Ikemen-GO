@@ -336,6 +336,9 @@ type System struct {
 
 	// screenshot deferral
 	isTakingScreenshot bool
+
+	// Font List for Batch Rendering
+	fontBatchList []*Fnt
 }
 
 // Check if the application is running inside a macOS app bundle
