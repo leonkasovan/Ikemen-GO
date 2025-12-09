@@ -800,23 +800,44 @@ func (bgm *Bgm) Seek(positionSample int) {
 // Sound
 
 type Sound struct {
-	wavData []byte
-	format  beep.Format
-	length  int
+	soundData   []byte
+	format      beep.Format
+	length      int
+	soundFormat byte
 }
 
 func readSound(f io.ReadSeekCloser, size uint32) (*Sound, error) {
+	var soundFormat byte = 0
+	var s beep.StreamSeekCloser
+	var beepFormat beep.Format
+	var err error
+
 	if size < 128 {
 		return nil, fmt.Errorf("wav size is too small")
 	}
-	wavData := make([]byte, size)
-	if _, err := f.Read(wavData); err != nil {
+	soundData := make([]byte, size)
+	if _, err := f.Read(soundData); err != nil {
 		return nil, err
 	}
 	// Decode the sound at least once, so that we know the format is OK
-	s, wavfmt, err := wav.Decode(bytes.NewReader(wavData))
-	if err != nil {
-		return nil, err
+	s, beepFormat, err = wav.Decode(bytes.NewReader(soundData))
+	if err == nil {
+		soundFormat = 1
+	} else {
+		s, beepFormat, err = vorbis.Decode(io.NopCloser(bytes.NewReader(soundData)))
+		if err == nil {
+			soundFormat = 2
+		} else {
+			s, beepFormat, err = mp3.Decode(io.NopCloser(bytes.NewReader(soundData)))
+			if err == nil {
+				soundFormat = 3
+			} else {
+				s, beepFormat, err = flac.Decode(io.NopCloser(bytes.NewReader(soundData)))
+				if err == nil {
+					soundFormat = 4
+				}
+			}
+		}
 	}
 	// Check if the file can be fully played
 	// Run a decode test and catch any panics.
@@ -851,12 +872,26 @@ func readSound(f io.ReadSeekCloser, size uint32) (*Sound, error) {
 	if recovered != nil {
 		return nil, nil // If sound wasn't able to be fully played, we disable it to avoid engine freezing
 	}
-	return &Sound{wavData, wavfmt, s.Len()}, nil
+	return &Sound{soundData, beepFormat, s.Len(), soundFormat}, nil
 }
 
 func (s *Sound) GetStreamer() beep.StreamSeeker {
-	streamer, _, _ := wav.Decode(bytes.NewReader(s.wavData))
-	return streamer
+	switch s.soundFormat {
+	case 1:
+		streamer, _, _ := wav.Decode(bytes.NewReader(s.soundData))
+		return streamer
+	case 2:
+		streamer, _, _ := vorbis.Decode(io.NopCloser(bytes.NewReader(s.soundData)))
+		return streamer
+	case 3:
+		streamer, _, _ := mp3.Decode(io.NopCloser(bytes.NewReader(s.soundData)))
+		return streamer
+	case 4:
+		streamer, _, _ := flac.Decode(io.NopCloser(bytes.NewReader(s.soundData)))
+		return streamer
+	default:
+		return nil
+	}
 }
 
 // ------------------------------------------------------------------
