@@ -18,7 +18,11 @@ in vec3 g_fragPos;
 in vec4 g_fragPosLight;
 #endif
 
+#ifdef GL_ES
+uniform bool debugOutputColor;
+#else
 uniform bool debugOutputColor = false;
+#endif
 
 void main()
 {

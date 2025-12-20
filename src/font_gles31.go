@@ -1,18 +1,19 @@
 //go:build opengles31
+
 package main
 
 import (
 	"fmt"
-	"os"
-	"strings"
 	"image"
 	"image/draw"
 	"io"
 	"io/ioutil"
+	"os"
+	"strings"
 
-	gl "github.com/ikemen-engine/Ikemen-GO/packages/gl/v3.1/gles2"
 	"github.com/golang/freetype"
 	"github.com/golang/freetype/truetype"
+	gl "github.com/ikemen-engine/Ikemen-GO/packages/gl/v3.1/gles2"
 	"golang.org/x/image/font"
 	"golang.org/x/image/math/fixed"
 )
@@ -126,7 +127,7 @@ func (f *Font_GL) UpdateResolution(windowWidth int, windowHeight int) {
 }
 
 // Printf draws a string to the screen, takes a list of arguments like printf
-func (f *Font_GL) Printf(x, y float32, scale float32, align int32, blend bool, window [4]int32, fs string, argv ...interface{}) error {
+func (f *Font_GL) PrintTtf(x, y float32, scale float32, align int32, blend bool, window [4]int32, fs string, argv ...interface{}) error {
 
 	indices := []rune(fmt.Sprintf(fs, argv...))
 
