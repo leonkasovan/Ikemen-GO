@@ -732,12 +732,13 @@ func (s *Sprite) SetPxl(px []byte, atlas_8 *TextureAtlas) {
 	}
 	sys.mainThreadTask <- func() {
 		if s.Sff == nil {
-			// fmt.Printf("Sff null\n")
+			fmt.Printf("Sff null but has Sprite %vx%v\n", s.Size[0], s.Size[1])
 			return
 		}
 		if atlas_8 == nil { // No atlas, create individual texture
 			s.Tex = gfx.newTexture(int32(s.Size[0]), int32(s.Size[1]), 8, false)
 			s.Tex.SetData(px)
+			// fmt.Printf("Warning: No atlas, create individual texture %vx%v.\n", s.Size[0], s.Size[1])
 		} else { // Use atlas
 			ok := false
 			s.UV, ok = atlas_8.AddImage(int32(s.Size[0]), int32(s.Size[1]), px)
@@ -1320,7 +1321,7 @@ func removeSFFCache(filename string) {
 }
 
 func loadSff(filename string, char bool, atlas_8 *TextureAtlas) (*Sff, error) {
-	fmt.Printf("loadSff %v\n", filename)
+	fmt.Printf("loadSff %v: %v\n", filename, atlas_8)
 	// If this SFF is already in the cache, just return a copy
 	if cached, ok := SffCache[filename]; ok {
 		cached.refCount++
@@ -1341,8 +1342,8 @@ func loadSff(filename string, char bool, atlas_8 *TextureAtlas) (*Sff, error) {
 	read := func(x interface{}) error {
 		return binary.Read(f, binary.LittleEndian, x)
 	}
-	fmt.Printf("SFF Version: %d.%d.%d.%d\n", s.header.Ver0, s.header.Ver1, s.header.Ver2, s.header.Ver3)
-	fmt.Printf("NumberOfSprites: %v\nNumberOfPalettes: %v\n", s.header.NumberOfSprites, s.header.NumberOfPalettes)
+	// fmt.Printf("SFF Version: %d.%d.%d.%d\n", s.header.Ver0, s.header.Ver1, s.header.Ver2, s.header.Ver3)
+	// fmt.Printf("NumberOfSprites: %v\nNumberOfPalettes: %v\n", s.header.NumberOfSprites, s.header.NumberOfPalettes)
 	if s.header.Ver0 != 1 {
 		uniquePals := make(map[[2]uint16]int)
 		for i := 0; i < int(s.header.NumberOfPalettes); i++ {
@@ -1477,27 +1478,27 @@ func loadSff(filename string, char bool, atlas_8 *TextureAtlas) (*Sff, error) {
 			}
 		}
 	})
-	if atlas_8 != nil {
-		var defpal []uint32
-		if len(s.palList.palettes) > 0 {
-			defpal = s.palList.Get(0)
-		}
-		// Schedule atlas saving on the main thread so we capture the uploaded
-		// atlas contents after any queued AddImage() / SetData operations finish.
-		fmt.Printf("loadSff: scheduling delayed save of atlas_8.png (palette present=%t length=%d)", defpal != nil, len(defpal))
-		sys.mainThreadTask <- func() {
-			if atlas_8 == nil || atlas_8.texture == nil {
-				fmt.Printf("loadSff (delayed): atlas_8 or its texture is nil - cannot save atlas_8.png")
-				return
-			}
-			fmt.Printf("loadSff (delayed): performing SavePNG on atlas_8.png (texture valid=%t)", atlas_8.texture.IsValid())
-			if err := atlas_8.texture.SavePNG(filename+"_atlas_8.png", defpal); err != nil {
-				fmt.Printf("loadSff (delayed): SavePNG returned error: %v", err)
-			}
-		}
-	} else {
-		fmt.Printf("Atlas is empty for %v\n", filename)
-	}
+	// if atlas_8 != nil {
+	// var defpal []uint32
+	// if len(s.palList.palettes) > 0 {
+	// 	defpal = s.palList.Get(0)
+	// }
+	// Schedule atlas saving on the main thread so we capture the uploaded
+	// atlas contents after any queued AddImage() / SetData operations finish.
+	// fmt.Printf("loadSff: scheduling delayed save of atlas_8.png (palette present=%t length=%d)", defpal != nil, len(defpal))
+	// sys.mainThreadTask <- func() {
+	// 	if atlas_8 == nil || atlas_8.texture == nil {
+	// 		fmt.Printf("loadSff (delayed): atlas_8 or its texture is nil - cannot save atlas_8.png")
+	// 		return
+	// 	}
+	// 	fmt.Printf("loadSff (delayed): performing SavePNG on atlas_8.png (texture valid=%t)", atlas_8.texture.IsValid())
+	// 	if err := atlas_8.texture.SavePNG(filename+"_atlas_8.png", defpal); err != nil {
+	// 		fmt.Printf("loadSff (delayed): SavePNG returned error: %v", err)
+	// 	}
+	// }
+	// } else {
+	// 	fmt.Printf("Atlas is empty for %v\n", filename)
+	// }
 	return s, nil
 }
 

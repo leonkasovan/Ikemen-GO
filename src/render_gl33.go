@@ -378,8 +378,8 @@ func (t *Texture_GL) MapTextureSamplingParam(i TextureSamplingParam) int32 {
 	return SamplingParam[i]
 }
 func (t *Texture_GL) SavePNG(filename string, pal []uint32) error {
-	log.Printf("SavePNG: filename=%q width=%d height=%d depth=%d handle=%d",
-		filename, t.width, t.height, t.depth, t.handle)
+	// log.Printf("SavePNG: filename=%q width=%d height=%d depth=%d handle=%d",
+	// filename, t.width, t.height, t.depth, t.handle)
 
 	if !t.IsValid() {
 		log.Printf("SavePNG: texture is not valid (handle=%d, w=%d, h=%d)", t.handle, t.width, t.height)

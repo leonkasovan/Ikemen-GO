@@ -310,7 +310,7 @@ func main() {
 	}
 
 	// Check if "external" or "data/mugen.cfg" is missing
-	if !exists("external") || !exists("data/mugen.cfg") {
+	if !exists("external") && exists("data/mugen.cfg") {
 		err := extractEmbed(assetsZip)
 		if err != nil {
 			fmt.Printf("[main.go] Error extracting asset: %v\n", err)

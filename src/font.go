@@ -2,11 +2,11 @@ package main
 
 import (
 	"encoding/binary"
+	"fmt"
 	"math"
 	"os"
 	"regexp"
 	"strings"
-	"fmt"
 )
 
 type FontRenderer interface {
@@ -19,7 +19,7 @@ type FontRenderer interface {
 type Font interface {
 	SetColor(red float32, green float32, blue float32, alpha float32)
 	UpdateResolution(windowWidth int, windowHeight int)
-	Printf(x, y float32, scale float32, align int32, blend bool, window [4]int32, fs string, argv ...interface{}) error
+	PrintTtf(x, y float32, scale float32, align int32, blend bool, window [4]int32, fs string, argv ...interface{}) error
 	//renderGlyphBatch(batchChars []*character, indices []rune, vertices []float32)
 	Width(scale float32, fs string, argv ...interface{}) float32
 }
@@ -61,7 +61,7 @@ type FntCharImage struct {
 type TtfFont interface {
 	SetColor(red float32, green float32, blue float32, alpha float32)
 	Width(scale float32, fs string, argv ...interface{}) float32
-	Printf(x, y float32, scale float32, align int32, blend bool, window [4]int32, fs string, argv ...interface{}) error
+	PrintTtf(x, y float32, scale float32, align int32, blend bool, window [4]int32, fs string, argv ...interface{}) error
 	UpdateResolution(windowWidth int, windowHeight int)
 }
 
@@ -82,11 +82,11 @@ type Fnt struct {
 	atlas_8   *TextureAtlas
 
 	// Batch Rendering Fields
-    batchVertices []float32 // Persistent buffer to avoid allocation
-    batchTex      Texture   // Current texture for the active batch
-    batchPal      Texture   // Current palette for the active batch
-    isBatching    bool      // Are we currently in a manual batch block?
-	batchRP RenderParams // Store the "Master" params for this batch
+	batchVertices []float32    // Persistent buffer to avoid allocation
+	batchTex      Texture      // Current texture for the active batch
+	batchPal      Texture      // Current palette for the active batch
+	isBatching    bool         // Are we currently in a manual batch block?
+	batchRP       RenderParams // Store the "Master" params for this batch
 }
 
 func newFnt() *Fnt {
@@ -106,7 +106,7 @@ func loadFnt(filename string, height int32) (*Fnt, error) {
 }
 
 func loadFntV1(filename string) (*Fnt, error) {
-	fmt.Printf("loadFntV1 %v\n", filename)
+	// fmt.Printf("loadFntV1 %v\n", filename)
 	f := newFnt()
 	f.images[0] = make(map[rune]*FntCharImage)
 
@@ -186,7 +186,7 @@ func loadFntV1(filename string) (*Fnt, error) {
 	}
 
 	px = spr.RlePcxDecode(px)
-	fmt.Printf("loadFntV1: PCX %vx%v loaded\n", spr.Size[0], spr.Size[1])
+	// fmt.Printf("loadFntV1: PCX %vx%v loaded\n", spr.Size[0], spr.Size[1])
 
 	// Create Texture Atlas and Upload Texture to GPU
 	sys.mainThreadTask <- func() {
@@ -200,7 +200,7 @@ func loadFntV1(filename string) (*Fnt, error) {
 	if err := read(buf); err != nil {
 		return nil, err
 	}
-	fmt.Printf("Data:\n%v\n", string(buf))
+	// fmt.Printf("Data:\n%v\n", string(buf))
 	lines := SplitAndTrim(string(buf), "\n")
 	i := 0
 	mapflg, defflg := true, true
@@ -281,26 +281,26 @@ func loadFntV1(filename string) (*Fnt, error) {
 		copy(f.palettes[i][256-c:], spr.Pal[256-c*(i+1):256-c*i])
 	}
 
-	for cc, fci := range f.images[0] {
+	for _, fci := range f.images[0] {
 		// 1. ALLOCATE MEMORY (Synchronous)
 		fci.img = make([]Sprite, len(f.palettes))
 
 		// 2. CAPTURE VARIABLES (Critical for closure)
-		// Without this, the closure below will always use the 'fci' from the 
+		// Without this, the closure below will always use the 'fci' from the
 		// LAST iteration of the loop for every single task!
-		fci := fci 
-		cc := cc
+		fci := fci
+		// cc := cc
 
 		// 3. SCHEDULE TEXTURE ASSIGNMENT (Asynchronous / Main Thread)
 		sys.mainThreadTask <- func() {
 			// Setup Bank 0
 			fci.img[0].shareCopy(spr)
 			fci.img[0].Size[0] = fci.w
-			fci.img[0].UV = [4]float32{float32(fci.ofs) / float32(spr.Size[0]), 0.0, float32(fci.ofs + fci.w) / float32(spr.Size[0]), 1.0}
-			
+			fci.img[0].UV = [4]float32{float32(fci.ofs) / float32(spr.Size[0]), 0.0, float32(fci.ofs+fci.w) / float32(spr.Size[0]), 1.0}
+
 			// Use the atlas texture which was created in the previous mainThreadTask
 			fci.img[0].Tex = f.atlas_8.texture
-			fmt.Printf("cc=%v bank=0 Tex=%v\n", cc, fci.img[0].Tex)
+			// fmt.Printf("cc=%v bank=0 Tex=%v\n", cc, fci.img[0].Tex)
 
 			// Setup other banks (dependent on bank 0)
 			for i := 1; i < len(f.palettes); i++ {
@@ -308,7 +308,7 @@ func loadFntV1(filename string) (*Fnt, error) {
 				fci.img[i].Size[0] = fci.w
 				fci.img[i].UV = fci.img[0].UV
 				fci.img[i].Tex = fci.img[0].Tex // Copy the valid texture
-				fmt.Printf("cc=%v bank=%v Tex=%v\n", cc, i, fci.img[i].Tex)
+				// fmt.Printf("cc=%v bank=%v Tex=%v\n", cc, i, fci.img[i].Tex)
 			}
 		}
 
@@ -317,22 +317,23 @@ func loadFntV1(filename string) (*Fnt, error) {
 			fci.img[i].Offset[0], fci.img[i].Offset[1], fci.img[i].Pal = 0, 0, p[:]
 		}
 	}
-	
-	sys.mainThreadTask <- func() {
-		if f.atlas_8 != nil {
-			if err := f.atlas_8.texture.SavePNG(filename+"_atlas_8.png", f.palettes[0][:255]); err != nil {
-				fmt.Printf("loadFntv1: SavePNG returned error: %v\n", err)
-			} else {
-				fmt.Printf("loadFntv1: %v saved\n", filename+"_atlas_8.png")
-			}
-		} else {
-			fmt.Printf("Atlas is empty for %v\n", filename)
-		}
-	}
+
+	// sys.mainThreadTask <- func() {
+	// 	if f.atlas_8 != nil {
+	// 		if err := f.atlas_8.texture.SavePNG(filename+"_atlas_8.png", f.palettes[0][:255]); err != nil {
+	// 			fmt.Printf("loadFntv1: SavePNG returned error: %v\n", err)
+	// 		} else {
+	// 			fmt.Printf("loadFntv1: %v saved\n", filename+"_atlas_8.png")
+	// 		}
+	// 	} else {
+	// 		fmt.Printf("Atlas is empty for %v\n", filename)
+	// 	}
+	// }
 	return f, nil
 }
 
 func loadFntV2(filename string, height int32) (*Fnt, error) {
+	// fmt.Printf("loadFntV2 %v : Begin\n", filename)
 	f := newFnt()
 
 	content, err := LoadText(filename)
@@ -393,7 +394,14 @@ func loadDefInfo(f *Fnt, filename string, is IniSection, height int32) {
 		if f.Type == "truetype" {
 			LoadFntTtf(f, filename, is["file"], height)
 		} else {
-			LoadFntSff(f, filename, is["file"])
+			// Create Texture Atlas
+			// fmt.Printf("loadDefInfo %v : Creating Atlas %vx%v\n", filename, f.Size[0], f.Size[1])
+			sys.mainThreadTask <- func() {
+				// f.atlas_8 = CreateTextureAtlas(int32(f.Size[0]), int32(f.Size[1]), 8, false)
+				f.atlas_8 = CreateTextureAtlas(512, 512, 8, false)
+				// fmt.Printf("loadDefInfo %v : Atlas created %v\n", filename, f.atlas_8)
+				LoadFntSff(f, filename, is["file"])
+			}
 		}
 	}
 }
@@ -407,7 +415,7 @@ func LoadFntSff(f *Fnt, fontfile string, filename string) {
 	}
 
 	// FIX: Perform sprite extraction in the main thread task.
-	// This ensures we wait for any async texture operations (SetPxl) 
+	// This ensures we wait for any async texture operations (SetPxl)
 	// initiated by loadSff to complete before we copy the sprite data.
 	sys.mainThreadTask <- func() {
 		// Load sprites
@@ -474,24 +482,26 @@ func (f *Fnt) BeginBatch() {
 
 // EndBatch flushes whatever is remaining in the buffer to the GPU using captured state
 func (f *Fnt) EndBatch() {
-    if len(f.batchVertices) > 0 {
-        // Use the captured parameters from the first text draw
-        rp := f.batchRP
-        rp.tex = f.batchTex
-        rp.paltex = f.batchPal
-        RenderSpriteBatch(f.batchVertices, rp)
-    }
-    f.isBatching = false
+	if len(f.batchVertices) > 0 {
+		// fmt.Printf("EndBatch: %v\n", len(f.batchVertices)/24)
+		// Use the captured parameters from the first text draw
+		rp := f.batchRP
+		rp.tex = f.batchTex
+		rp.paltex = f.batchPal
+		RenderSpriteBatch(f.batchVertices, rp)
+	}
+	f.isBatching = false
 }
 
 // FlushBatch forces a render of the current buffer (used when texture changes)
 func (f *Fnt) FlushBatch(rp RenderParams) {
-    if len(f.batchVertices) > 0 {
-        rp.tex = f.batchTex
-        rp.paltex = f.batchPal
-        RenderSpriteBatch(f.batchVertices, rp)
-        f.batchVertices = f.batchVertices[:0]
-    }
+	if len(f.batchVertices) > 0 {
+		// fmt.Printf("FlushBatch: %v\n", len(f.batchVertices)/24)
+		rp.tex = f.batchTex
+		rp.paltex = f.batchPal
+		RenderSpriteBatch(f.batchVertices, rp)
+		f.batchVertices = f.batchVertices[:0]
+	}
 }
 
 // CharWidth returns the width that has a specified character
@@ -892,7 +902,7 @@ func (f *Fnt) DrawTtf(txt string, x, y, xscl, yscl float32, align int32,
 		(*window)[2], (*window)[3]}
 
 	f.ttf.SetColor(frgba[0], frgba[1], frgba[2], frgba[3])
-	f.ttf.Printf(x, y, (xscl+yscl)/2, align, blend, win, "%s", txt) //x, y, scale, align, blend, window, string, printf args
+	f.ttf.PrintTtf(x, y, (xscl+yscl)/2, align, blend, win, "%s", txt) //x, y, scale, align, blend, window, string, printf args
 }
 
 type TextSprite struct {

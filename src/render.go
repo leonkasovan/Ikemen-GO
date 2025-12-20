@@ -1,7 +1,6 @@
 package main
 
 import (
-	"container/list"
 	_ "embed"
 	"fmt"
 	"math"
@@ -763,6 +762,11 @@ func FillRect(rect [4]int32, color uint32, alpha [2]int32) {
 	renderWithBlending(render, TT_add, alpha, true, 0, nil, nil, nil, false)
 }
 
+type SkylineNode struct {
+	X int32
+	Y int32
+}
+
 type TextureAtlas struct {
 	texture Texture
 	width   int32
@@ -770,18 +774,26 @@ type TextureAtlas struct {
 	depth   int32
 	filter  bool
 	resize  bool
-	skyline *list.List //[][2]uint32
+	skyline []SkylineNode
 }
 
 func CreateTextureAtlas(width, height int32, depth int32, filter bool) *TextureAtlas {
-	ta := &TextureAtlas{width: width, height: height, texture: gfx.newTexture(width, height, depth, filter), depth: depth, filter: filter, skyline: list.New(), resize: false}
-	// Allocate backing storage for the atlas texture so subsequent TexSubImage2D
-	// calls from AddImage will succeed. SetData(nil) calls gl.TexImage2D with
-	// a nil pointer which creates an empty texture of the requested size.
+	ta := &TextureAtlas{
+		width:   width,
+		height:  height,
+		depth:   depth,
+		filter:  filter,
+		resize:  false, // Set to true if you want auto-resizing enabled by default
+		texture: gfx.newTexture(width, height, depth, filter),
+		// Initialize skyline with a single segment covering the full width at height 0
+		skyline: []SkylineNode{{X: 0, Y: 0}},
+	}
+
 	if ta.texture != nil {
+		// Allocate the GPU storage immediately
 		ta.texture.SetData(nil)
 	}
-	ta.skyline.PushBack([2]int32{0, 0})
+
 	return ta
 }
 func (ta *TextureAtlas) AddImage(width, height int32, data []byte) ([4]float32, bool) {
@@ -794,93 +806,160 @@ func (ta *TextureAtlas) AddImage(width, height int32, data []byte) ([4]float32, 
 			ta.Resize(width*2, height*2)
 		}
 	}
-	x, y, ok := ta.FindPlaceToInsert(width, height)
+	// 1. We find a place for (width + 2) and (height + 2)
+	padding := int32(1)
+	x, y, ok := ta.FindPlaceToInsert(width+padding*2, height+padding*2)
 	if !ok {
-		if ta.resize {
-			if ta.width != maxWidth && ta.height != maxWidth {
-				ta.Resize(ta.width*2, ta.height*2)
-			}
-			x, y, ok = ta.FindPlaceToInsert(width, height)
-		}
-		if !ok {
-			return [4]float32{}, false
-		}
+		return [4]float32{}, false
 	}
-	ta.texture.SetSubData(data, x, y, width, height)
-	return [4]float32{float32(x) / float32(ta.width), float32(y) / float32(ta.height), float32(x+width) / float32(ta.width), float32(y+height) / float32(ta.height)}, true
+
+	// 2. Upload the data at x+1, y+1 (skipping the padding)
+	ta.texture.SetSubData(data, x+padding, y+padding, width, height)
+
+	// 3. Return UVs that point ONLY to the actual image data
+	return [4]float32{
+		float32(x+padding) / float32(ta.width),
+		float32(y+padding) / float32(ta.height),
+		float32(x+padding+width) / float32(ta.width),
+		float32(y+padding+height) / float32(ta.height),
+	}, true
 }
 func (ta *TextureAtlas) FindPlaceToInsert(width, height int32) (int32, int32, bool) {
-	//leave 1px space
-	space := int32(1)
-	width += space * 2
-	height += space * 2
-	var bestX int32 = math.MaxInt32
+	// REMOVE the padding calculation here if you keep it in AddImage
+	// Or keep it here and pass raw width/height to this function.
+	paddedW := width
+	paddedH := height
+
 	var bestY int32 = math.MaxInt32
-	var bestItr *list.Element = nil
-	var bestItr2 *list.Element = nil
-	for itr := ta.skyline.Front(); itr != nil; itr = itr.Next() {
-		x := itr.Value.([2]int32)[0]
-		y := itr.Value.([2]int32)[1]
-		if width > ta.width-x {
-			break
-		}
-		if y >= bestY {
-			continue
-		}
-		xMax := x + width
-		var itr2 *list.Element
-		for itr2 = itr.Next(); itr2 != nil; itr2 = itr2.Next() {
-			x2 := itr2.Value.([2]int32)[0]
-			y2 := itr2.Value.([2]int32)[1]
-			if xMax <= x2 {
-				break
-			}
-			if y < y2 {
-				y = y2
+	var bestX int32 = math.MaxInt32
+	bestIndex := -1
+
+	for i := 0; i < len(ta.skyline); i++ {
+		y, ok := ta.fits(i, paddedW, paddedH)
+		if ok {
+			// Priority: Lowest Y, then Lowest X (Standard Bottom-Left fit)
+			if y+paddedH < bestY || (y+paddedH == bestY && ta.skyline[i].X < bestX) {
+				bestY = y
+				bestX = ta.skyline[i].X
+				bestIndex = i
 			}
 		}
-		if y >= bestY || height > ta.height-y {
-			continue
-		}
-		bestItr = itr
-		bestItr2 = itr2
-		bestX = x
-		bestY = y
 	}
-	if bestItr == nil {
+
+	if bestIndex == -1 {
 		return 0, 0, false
 	}
-	ta.skyline.InsertBefore([2]int32{bestX, bestY + height}, bestItr)
 
-	if bestItr2 == nil && bestX+width < ta.width {
-		ta.skyline.InsertBefore([2]int32{bestX + width, ta.skyline.Back().Value.([2]int32)[1]}, bestItr)
-	} else if bestItr2 != nil && bestX+width < bestItr2.Value.([2]int32)[0] {
-		ta.skyline.InsertBefore([2]int32{bestX + width, bestItr2.Prev().Value.([2]int32)[1]}, bestItr)
+	ta.updateSkyline(bestIndex, bestX, bestY, paddedW, paddedH)
+	return bestX, bestY, true // Return the raw X,Y of the slot
+}
+
+// fits checks if a rect of (w, h) fits starting at skyline index i
+func (ta *TextureAtlas) fits(index int, width, height int32) (int32, bool) {
+	x := ta.skyline[index].X
+	if x+width > ta.width {
+		return 0, false
 	}
-	itrNext := bestItr
-	for itr := bestItr; itr != bestItr2; itr = itrNext {
-		itrNext = itr.Next()
-		ta.skyline.Remove(itr)
+
+	var y int32 = ta.skyline[index].Y
+	for i := index; i < len(ta.skyline); i++ {
+		node := ta.skyline[i]
+		if node.X >= x+width {
+			break
+		}
+		if node.Y > y {
+			y = node.Y
+		}
+		if y+height > ta.height {
+			return 0, false
+		}
 	}
-	bestX += space
-	bestY += space
-	return bestX, bestY, true
+	return y, true
+}
+
+func (ta *TextureAtlas) updateSkyline(index int, x, y, width, height int32) {
+	// 1. Determine the height to the right of our new box BEFORE we delete anything
+	var lastY int32
+	for i := index; i < len(ta.skyline); i++ {
+		if ta.skyline[i].X <= x+width {
+			lastY = ta.skyline[i].Y
+		} else {
+			break
+		}
+	}
+
+	// 2. Insert the new node (the top-left corner of the new image)
+	newNode := SkylineNode{X: x, Y: y + height}
+	ta.skyline = append(ta.skyline[:index], append([]SkylineNode{newNode}, ta.skyline[index:]...)...)
+
+	// 3. Remove nodes covered by the new width
+	i := index + 1
+	for i < len(ta.skyline) {
+		if ta.skyline[i].X < x+width {
+			ta.skyline = append(ta.skyline[:i], ta.skyline[i+1:]...)
+		} else {
+			break
+		}
+	}
+
+	// 4. If there's a gap between the end of our rect and the next node,
+	// add a "bridge" node at the original height.
+	if x+width < ta.width {
+		if i >= len(ta.skyline) || ta.skyline[i].X > x+width {
+			bridgeNode := SkylineNode{X: x + width, Y: lastY}
+			ta.skyline = append(ta.skyline[:i], append([]SkylineNode{bridgeNode}, ta.skyline[i:]...)...)
+		}
+	}
+
+	ta.mergeSkyline()
+}
+
+// mergeSkyline combines adjacent segments with the same height
+func (ta *TextureAtlas) mergeSkyline() {
+	for i := 0; i < len(ta.skyline)-1; i++ {
+		if ta.skyline[i].Y == ta.skyline[i+1].Y {
+			ta.skyline = append(ta.skyline[:i+1], ta.skyline[i+2:]...)
+			i--
+		}
+	}
 }
 
 func (ta *TextureAtlas) Resize(width, height int32) {
 	if width < ta.width || height < ta.height {
-		fmt.Printf("New width=%v cannot be smaller than old width=%v OR\n", width, ta.width)
-		fmt.Printf("New height=%v cannot be smaller than old height=%v\n", height, ta.height)
-		panic("TextureAtlas.Resize")
+		// More descriptive error handling
+		panic(fmt.Sprintf(
+			"TextureAtlas.Resize: cannot shrink (current: %dx%d, requested: %dx%d)",
+			ta.width, ta.height, width, height,
+		))
 	}
-	if height < ta.height {
-		panic("New height cannot be smaller than old height")
+
+	// 1. Create the new, larger texture
+	newTex := gfx.newTexture(width, height, ta.depth, ta.filter)
+
+	// 2. Initialize the GPU memory for the new texture
+	// This prevents SetSubData from failing later
+	newTex.SetData(nil)
+
+	// 3. Copy the old texture data into the top-left of the new texture
+	// Assuming CopyData handles the internal glCopyTexSubImage2D or similar
+	newTex.CopyData(&ta.texture)
+
+	// 4. Update the Skyline
+	// If we expanded horizontally, we add a new flat segment
+	// starting at the old width, at height 0.
+	if width > ta.width {
+		ta.skyline = append(ta.skyline, SkylineNode{X: ta.width, Y: 0})
 	}
-	t := gfx.newTexture(width, height, ta.depth, ta.filter)
-	t.CopyData(&ta.texture)
-	ta.skyline.PushBack([2]int32{ta.width, 0})
+
+	// Note: If only height increased, we don't need a new node.
+	// The existing skyline segments simply have more "headroom"
+	// which the FindPlaceToInsert logic will naturally utilize.
+
+	// 5. Commit changes to the struct
 	ta.width = width
 	ta.height = height
-	ta.texture = t
-	return
+	ta.texture = newTex
+
+	// 6. Clean up the skyline (merging adjacent segments of same height)
+	ta.mergeSkyline()
 }
