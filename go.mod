@@ -15,6 +15,7 @@ require (
 	github.com/leonkasovan/gl v0.0.0-20250124141628-d79f807815dd
 	github.com/lukegb/dds v0.0.0-20190402175749-8b7170e64003
 	github.com/qmuntal/gltf v0.24.2
+	github.com/quasilyte/xm v0.0.0-20250906065055-b3d2d1ab2731
 	github.com/yuin/gopher-lua v1.1.0
 	golang.org/x/mobile v0.0.0-20221110043201-43a038452099
 	golang.org/x/text v0.20.0

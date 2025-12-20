@@ -1,14 +1,5 @@
 package main
 
-/*
-#cgo CFLAGS: -I../packages/xmp -DLIBXMP_STATIC -DLIBXMP_CORE_PLAYER
-#include "xmp.h"
-#include <stdlib.h>
-#include <string.h>
-#include <stdio.h>
-*/
-import "C"
-
 import (
 	"bytes"
 	"context"
@@ -17,20 +8,19 @@ import (
 	"io"
 	"math"
 	"os"
-	"runtime"
 	"sync"
-	"unsafe"
 
 	"github.com/gopxl/beep/v2"
 	"github.com/gopxl/beep/v2/effects"
-
 	"github.com/gopxl/beep/v2/flac"
 	"github.com/gopxl/beep/v2/midi"
 	"github.com/gopxl/beep/v2/mp3"
 	"github.com/gopxl/beep/v2/speaker"
 	"github.com/gopxl/beep/v2/vorbis"
 	"github.com/gopxl/beep/v2/wav"
-	_ "github.com/ikemen-engine/Ikemen-GO/packages/xmp"
+	"github.com/ikemen-engine/Ikemen-GO/packages/xmp"
+	"github.com/quasilyte/xm"
+	"github.com/quasilyte/xm/xmfile"
 )
 
 const (
@@ -40,144 +30,6 @@ const (
 	audioResampleQuality = 1
 	audioSoundFont       = "sound/soundfont.sf2" // default path for MIDI soundfont
 )
-
-// ------------------------------------------------------------------
-// xmStreamer wraps libxmp context for streaming
-type xmStreamer struct {
-	ctx        C.xmp_context
-	channels   int
-	sampleRate int
-	buffer     []int16
-	closed     bool
-	err        error
-
-	// runtime tracking
-	posFrames   int // frames already produced (a frame == one sample per channel)
-	totalFrames int // estimated total frames (from total_time)
-}
-
-// Stream fills the provided buffer with audio frames (Optimized version).
-func (x *xmStreamer) Stream(samples [][2]float64) (int, bool) {
-	if x.closed || x.err != nil {
-		return 0, false
-	}
-
-	frameCount := len(samples)
-	if frameCount*2 > len(x.buffer) {
-		frameCount = len(x.buffer) / 2
-	}
-
-	res := C.xmp_play_buffer(x.ctx, unsafe.Pointer(&x.buffer[0]), C.int(frameCount*2*2), 0)
-	if res < 0 {
-		x.err = Error("xmp playback ended or failed")
-		return 0, false
-	}
-
-	buf := x.buffer
-	const scale = 1.0 / 32768.0
-	for i := 0; i < frameCount; i++ {
-		j := i * 2
-		samples[i][0] = float64(buf[j]) * scale
-		samples[i][1] = float64(buf[j+1]) * scale
-	}
-	return frameCount, true
-}
-
-// Err returns the last error that occurred.
-func (x *xmStreamer) Err() error { return x.err }
-
-// Close releases all libxmp resources.
-func (x *xmStreamer) Close() error {
-	if x.closed {
-		return nil
-	}
-	x.closed = true
-	C.xmp_end_player(x.ctx)
-	C.xmp_release_module(x.ctx)
-	C.xmp_free_context(x.ctx)
-	return nil
-}
-
-func (x *xmStreamer) Position() int {
-	return 0
-}
-
-// Seek attempts to position to absolute frame p.
-// Beep's Seek uses sample-frame positions (frames == sample pairs).
-func (x *xmStreamer) Seek(p int) error {
-	return nil
-}
-
-func (x *xmStreamer) Len() int {
-	return x.totalFrames
-}
-
-// newXMStreamer initializes a libxmp context for a given XM file.
-func newXMStreamer(f *os.File) (*xmStreamer, error) {
-	ctx := C.xmp_create_context()
-	if ctx == nil {
-		return nil, Error("failed to create xmp context")
-	}
-
-	// Use libxmp’s native loader instead of in-memory parsing.
-	cpath := C.CString(f.Name())
-	defer C.free(unsafe.Pointer(cpath))
-
-	if C.xmp_load_module(ctx, cpath) != 0 {
-		C.xmp_free_context(ctx)
-		return nil, Error("failed to load XM module")
-	}
-
-	// Convert Go file to C FILE*
-	// mode := C.CString("rb")
-	// defer C.free(unsafe.Pointer(mode))
-	// cFileStream := C.fdopen(C.int(f.Fd()), mode)
-	// if cFileStream == nil {
-	//     C.xmp_free_context(ctx)
-	//     return nil, Error("fdopen failed")
-	// }
-
-	// if C.xmp_load_module_from_file(ctx, unsafe.Pointer(cFileStream), 0) != 0 {
-	// 	C.xmp_free_context(ctx)
-	// 	return nil, Error("failed to load XM module")
-	// }
-
-	var info C.struct_xmp_frame_info
-	C.xmp_get_frame_info(ctx, &info)
-
-	if C.xmp_start_player(ctx, audioFrequency, 0) != 0 {
-		C.xmp_release_module(ctx)
-		C.xmp_free_context(ctx)
-		return nil, Error("failed to start XM player")
-	}
-
-	s := &xmStreamer{
-		ctx:         ctx,
-		channels:    2,
-		sampleRate:  audioFrequency,
-		totalFrames: int(float64(info.total_time) * float64(audioFrequency) / 1000.0),
-		buffer:      make([]int16, audioOutLen*2), // 2048 stereo frames → lower memory
-	}
-	runtime.SetFinalizer(s, func(s *xmStreamer) { s.Close() })
-	return s, nil
-}
-
-func xmpDecode(f io.ReadSeekCloser) (beep.StreamSeekCloser, beep.Format, error) {
-	file, ok := f.(*os.File)
-	if !ok {
-		return nil, beep.Format{}, fmt.Errorf("xmpDecode: expected *os.File, got %T", f)
-	}
-	streamer, err := newXMStreamer(file)
-	if err != nil {
-		return nil, beep.Format{}, err
-	}
-	format := beep.Format{
-		SampleRate:  audioFrequency,
-		NumChannels: 2,
-		Precision:   2,
-	}
-	return streamer, format, nil
-}
 
 // ------------------------------------------------------------------
 // Normalizer
@@ -501,8 +353,8 @@ func (bgm *Bgm) Open(filename string, loop, bgmVolume, bgmLoopStart, bgmLoopEnd,
 			bgm.streamer, format, err = midi.Decode(f, sf, beep.SampleRate(int(sys.cfg.Sound.SampleRate)))
 			bgm.format = "midi"
 		}
-	} else if HasExtension(bgm.filename, ".xm") || HasExtension(bgm.filename, ".mod") || HasExtension(bgm.filename, ".it") || HasExtension(bgm.filename, ".s3m") {
-		bgm.streamer, format, err = xmpDecode(f)
+	} else if HasExtension(bgm.filename, ".xm") {
+		bgm.streamer, format, err = xmp.Decode(f)
 		bgm.format = "xmp"
 	} else {
 		err = Error(fmt.Sprintf("unsupported file extension: %v", bgm.filename))
@@ -1297,4 +1149,127 @@ func (s *SoundChannels) Tick() {
 			}
 		}
 	}
+}
+
+// ------------------------------------------------------------------
+// XMP Streamer Wrapper (quasilyte/xm)
+
+// XMStreamer adapts the quasilyte/xm library to be compatible with beep.StreamSeekCloser.
+type XMStreamer struct {
+	module *xmfile.Module
+	stream *xm.Stream
+	pcmBuf []byte // Temporary buffer for 16-bit PCM data
+	pos    int    // approximated frame position
+}
+
+// XMPDecode creates a streamer from a file interface using quasilyte/xm.
+// Compatible with beep.Decode.
+func XMPDecode(f io.ReadSeekCloser) (beep.StreamSeekCloser, beep.Format, error) {
+	// Read the entire file into memory as quasilyte/xm requires bytes
+	data, err := io.ReadAll(f)
+	if err != nil {
+		return nil, beep.Format{}, err
+	}
+
+	// Parse the XM module
+	parser := xmfile.NewParser(xmfile.ParserConfig{})
+	mod, err := parser.ParseFromBytes(data)
+	if err != nil {
+		return nil, beep.Format{}, err
+	}
+
+	// Create the audio stream
+	stream := xm.NewStream()
+	if err := stream.LoadModule(mod, xm.LoadModuleConfig{
+		BPM: 125, // Default BPM if not specified in module
+	}); err != nil {
+		return nil, beep.Format{}, err
+	}
+
+	// Enable looping by default for tracker music
+	stream.SetLooping(true)
+
+	// Create streamer wrapper
+	streamer := &XMStreamer{
+		module: mod,
+		stream: stream,
+		pcmBuf: make([]byte, 512*4), // 512 frames * 4 bytes per frame (stereo 16-bit)
+	}
+
+	format := beep.Format{
+		SampleRate:  beep.SampleRate(44100), // Standard rate for this library
+		NumChannels: 2,
+		Precision:   2,
+	}
+
+	return streamer, format, nil
+}
+
+// Stream fills the samples buffer with audio data.
+func (s *XMStreamer) Stream(samples [][2]float64) (int, bool) {
+	// Calculate how many bytes we need: num_frames * 2 channels * 2 bytes (16-bit)
+	bytesNeeded := len(samples) * 4
+
+	// Grow internal PCM buffer if the requested chunk is larger than usual
+	if cap(s.pcmBuf) < bytesNeeded {
+		s.pcmBuf = make([]byte, bytesNeeded)
+	}
+	s.pcmBuf = s.pcmBuf[:bytesNeeded]
+
+	// Read PCM data from the library's stream
+	nBytes, err := s.stream.Read(s.pcmBuf)
+	if err != nil && err != io.EOF {
+		return 0, false
+	}
+	if nBytes == 0 {
+		return 0, false
+	}
+
+	// Convert 16-bit Little Endian PCM to Beep's float64 format
+	framesRead := nBytes / 4
+	for i := 0; i < framesRead; i++ {
+		// Offset for the i-th frame (4 bytes per frame)
+		offset := i * 4
+
+		// Left Channel (Bytes 0-1)
+		leftPCM := int16(uint16(s.pcmBuf[offset]) | uint16(s.pcmBuf[offset+1])<<8)
+
+		// Right Channel (Bytes 2-3)
+		rightPCM := int16(uint16(s.pcmBuf[offset+2]) | uint16(s.pcmBuf[offset+3])<<8)
+
+		// Normalize to -1.0 .. +1.0
+		const scale = 1.0 / 32768.0
+		samples[i][0] = float64(leftPCM) * scale
+		samples[i][1] = float64(rightPCM) * scale
+	}
+
+	s.pos += framesRead
+	return framesRead, true
+}
+
+// Err returns no error for this streamer implementation.
+func (s *XMStreamer) Err() error {
+	return nil
+}
+
+// Close cleans up resources.
+func (s *XMStreamer) Close() error {
+	s.stream = nil
+	s.module = nil
+	return nil
+}
+
+// Len returns a very large number to indicate infinite looping to downstream wrappers.
+func (s *XMStreamer) Len() int {
+	return math.MaxInt32
+}
+
+// Position returns the current playback position (approximated).
+func (s *XMStreamer) Position() int {
+	return s.pos
+}
+
+// Seek is stubbed as tracker seeking is complex and not required for infinite looping BGM.
+func (s *XMStreamer) Seek(p int) error {
+	return nil
 }

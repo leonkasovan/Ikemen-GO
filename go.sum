@@ -53,6 +53,8 @@ github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINE
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/qmuntal/gltf v0.24.2 h1:Cy9gabbcuWl/LJb3EIFXQIiWZ1Jf2V8ZygtiLc7Piyg=
 github.com/qmuntal/gltf v0.24.2/go.mod h1:7FR0CRHoOehIgKTBVq/QVyvPn0i6tzp2AdIghb2bPg4=
+github.com/quasilyte/xm v0.0.0-20250906065055-b3d2d1ab2731 h1:kh8aoaJfTVHRqd8GjSkU46N8rqG7/BzV4CCa1KdCUJY=
+github.com/quasilyte/xm v0.0.0-20250906065055-b3d2d1ab2731/go.mod h1:NfR3uYC5yXgsGuSDHSXep+EiAPnNsa7/0jpWyGvRxng=
 github.com/samhocevar/go-meltysynth v0.0.0-20230403180939-aca4a036cb16 h1:slzh3BWJ6FyMM8gkDzDwHz+gjU4+82ldB6oPyYi82Ho=
 github.com/samhocevar/go-meltysynth v0.0.0-20230403180939-aca4a036cb16/go.mod h1:J+GU4sgu3oAPHCceoTIXNKzFHSybNhF/LyFkWZlqhvE=
 github.com/stretchr/testify v1.9.0 h1:HtqpIVDClZ4nwg75+f6Lvsy/wHu+3BoSGCbBAcpTsTg=
