@@ -43,7 +43,7 @@ endif
 
 all: $(DEFAULT_TARGET)
 
-win:
+win: $(ASSETS) $(SCREENPACK)
 	@echo "Building for Windows with $(TAGS)..."
 	CGO_ENABLED=1 GOEXPERIMENT=arenas GOOS=windows GOARCH=amd64 \
 	$(GO) build -tags=$(TAGS) -trimpath -v -ldflags "-s -w -H windowsgui" \
@@ -54,6 +54,15 @@ linux: $(ASSETS) $(SCREENPACK)
 	CGO_ENABLED=1 GOEXPERIMENT=arenas GOOS=linux \
 	$(GO) build -x -tags=$(TAGS) -trimpath -v -ldflags "-s -w" \
 	-o $(BIN_DIR)/ikemen_linux ./$(SRC_DIR)
+
+# ------------------------------
+# Tools targets
+# ------------------------------
+sdlGamepadMapper:
+	$(CC) -s -o bin/sdlGamepadMapper tool/sdlGamepadMapper.c `sdl2-config --cflags --libs`
+
+sndConverter:
+	$(CC) -s  -o bin/sndConverter tool/sndConverter.c -lsndfile
 
 # ------------------------------
 # Asset packaging
@@ -67,7 +76,7 @@ $(ASSETS): data/* external/* font/*
 
 $(SCREENPACK):
 	@echo "Downloading screenpack..."
-#	wget -nc -P $(SRC_DIR) https://github.com/leonkasovan/Ikemen-GO/releases/download/v1.0/screenpack.zip
+	wget -O $@ https://github.com/leonkasovan/Ikemen-GO/releases/download/v1.0/screenpack-dev-opengles.zip
 
 # ------------------------------
 # Utility targets
