@@ -1923,7 +1923,7 @@ func systemScriptInit(l *lua.LState) {
 	luaRegister(l, "loadGameOption", func(l *lua.LState) int {
 		cfg := sys.cfg
 		if !nilArg(l, 1) {
-			cfg, err := loadConfig(strArg(l, 1))
+			cfg, err := loadConfig(strArg(l, 1), false)
 			if err != nil {
 				l.RaiseError("\nCan't load %v: %v\n", strArg(l, 1), err.Error())
 			}

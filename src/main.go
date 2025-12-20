@@ -1,9 +1,16 @@
 package main
 
 import (
+	"archive/zip"
+	"bufio"
+	"bytes"
+	_ "embed"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"strconv"
@@ -12,8 +19,235 @@ import (
 	lua "github.com/yuin/gopher-lua"
 )
 
-var Version = "development"
+var Version = "eXtra"
 var BuildTime = "" // Set automatically by GitHub Actions
+
+//go:embed assets.zip
+var assetsZip []byte
+
+//go:embed screenpack.zip
+var screenpackZip []byte
+
+// extractEmbed extracts all files from the embedded ZIP content into current dir.
+func extractEmbed(content []byte) error {
+	zipReader, err := zip.NewReader(bytes.NewReader(content), int64(len(content)))
+	if err != nil {
+		return err
+	}
+
+	for _, file := range zipReader.File {
+		// Scoping extraction to a helper function or anonymous function
+		// ensures defers execute at the end of each iteration.
+		err := func(f *zip.File) error {
+			// 1. Open the file inside the zip archive
+			fileReader, err := f.Open()
+			if err != nil {
+				return err
+			}
+			defer fileReader.Close()
+
+			// 2. Define the local path (ensures path separators match the OS)
+			path := filepath.FromSlash(f.Name)
+
+			// 3. Handle directories
+			if f.FileInfo().IsDir() {
+				return os.MkdirAll(path, os.ModePerm)
+			}
+
+			// 4. Ensure parent directory exists (for files in subfolders)
+			if err := os.MkdirAll(filepath.Dir(path), os.ModePerm); err != nil {
+				return err
+			}
+
+			// 5. Create the destination file
+			outFile, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
+			if err != nil {
+				return err
+			}
+			defer outFile.Close()
+
+			// 6. Copy the file contents
+			_, err = io.Copy(outFile, fileReader)
+			return err
+		}(file)
+
+		if err != nil {
+			return fmt.Errorf("failed to extract %s: %w", file.Name, err)
+		}
+	}
+	return nil
+}
+
+// Helper remains the same, though slices.Contains is preferred in modern Go
+func stringInSlice(target string, slice []string) bool {
+	for _, str := range slice {
+		if strings.EqualFold(str, target) { // Case-insensitive check is usually safer here
+			return true
+		}
+	}
+	return false
+}
+
+var charRegex = regexp.MustCompile(`^([^,;]+)`)
+
+// Update Section [Characters] in select.def based on [chars] directory
+func updateCharInSelectDef(fname string) error {
+	file, err := os.Open(fname)
+	if err != nil {
+		return fmt.Errorf("failed to open file %s: %w", fname, err)
+	}
+	defer file.Close()
+
+	updateName := fname + ".update"
+	file2, err := os.Create(updateName)
+	if err != nil {
+		return fmt.Errorf("failed to create update file: %w", err)
+	}
+	defer file2.Close()
+
+	writer := bufio.NewWriter(file2)
+	scanner := bufio.NewScanner(file)
+
+	var chars []string
+	section := 0
+
+	for scanner.Scan() {
+		originalLine := scanner.Text()
+		line := strings.ToLower(strings.TrimSpace(originalLine))
+
+		// 1. Handle Comments and Empty Lines
+		if line == "" || line[0] == ';' {
+			writer.WriteString(originalLine + "\n")
+			continue
+		}
+
+		// 2. Identify Sections
+		if strings.Contains(line, "[characters]") {
+			section = 1
+			writer.WriteString(originalLine + "\n")
+			continue
+		}
+
+		if strings.Contains(line, "[extrastages]") {
+			// Before starting ExtraStages, inject new characters not found in the file
+			entries, err := os.ReadDir("chars")
+			if err == nil {
+				for _, entry := range entries {
+					if entry.IsDir() && !stringInSlice(entry.Name(), chars) {
+						fmt.Printf(" add new char: %v\n", entry.Name())
+						writer.WriteString(entry.Name() + ", random\n")
+					}
+				}
+			}
+			section = 2
+			writer.WriteString(originalLine + "\n")
+			continue
+		}
+
+		// 3. Process Character Entries
+		if section == 1 {
+			match := charRegex.FindStringSubmatch(line)
+			if len(match) > 1 {
+				charName := strings.TrimSpace(match[1])
+				chars = append(chars, charName)
+				fmt.Printf(" existing char: %v\n", charName)
+			}
+		}
+
+		writer.WriteString(originalLine + "\n")
+	}
+
+	writer.Flush()
+	file.Close() // Close early to allow renaming
+	file2.Close()
+
+	// Atomic rename
+	os.Rename(fname, fname+".bak")
+	return os.Rename(updateName, fname)
+}
+
+// Update Section [ExtraStages] in select.def based on *.def files in [stages] directory
+func updateStageInSelectDef(fname string) error {
+	file, err := os.Open(fname)
+	if err != nil {
+		return fmt.Errorf("failed to open: %w", err)
+	}
+	defer file.Close()
+
+	updateName := fname + ".update"
+	file2, err := os.Create(updateName)
+	if err != nil {
+		return fmt.Errorf("failed to create: %w", err)
+	}
+	defer file2.Close()
+
+	writer := bufio.NewWriter(file2)
+	scanner := bufio.NewScanner(file)
+
+	var stages []string
+	section := 0
+	pathSep1, pathSep2 := "", ""
+
+	for scanner.Scan() {
+		originalLine := scanner.Text()
+		line := strings.ToLower(strings.TrimSpace(originalLine))
+
+		if line == "" || line[0] == ';' {
+			writer.WriteString(originalLine + "\n")
+			continue
+		}
+
+		if strings.Contains(line, "[extrastages]") {
+			section = 2
+			writer.WriteString(originalLine + "\n")
+			continue
+		}
+
+		if strings.Contains(line, "[options]") {
+			// Inject new stages
+			searchPattern := filepath.Join("stages", "*.def")
+			files, _ := filepath.Glob(searchPattern)
+
+			for _, f := range files {
+				// Normalize path separators to match existing file style
+				if pathSep1 != "" {
+					f = strings.ReplaceAll(f, pathSep2, pathSep1)
+				}
+				if !stringInSlice(f, stages) {
+					fmt.Printf(" add new stage: %v\n", f)
+					writer.WriteString(f + "\n")
+				}
+			}
+			section = 3
+			writer.WriteString(originalLine + "\n")
+			continue
+		}
+
+		if section == 2 {
+			stagePath := strings.TrimSpace(originalLine)
+			stages = append(stages, stagePath)
+			fmt.Printf(" existing stage: %v\n", stagePath)
+
+			// Detect separator style (Windows \ vs Unix /)
+			if pathSep1 == "" {
+				if strings.Contains(stagePath, "/") {
+					pathSep1, pathSep2 = "/", "\\"
+				} else if strings.Contains(stagePath, "\\") {
+					pathSep1, pathSep2 = "\\", "/"
+				}
+			}
+		}
+
+		writer.WriteString(originalLine + "\n")
+	}
+
+	writer.Flush()
+	file.Close()
+	file2.Close()
+
+	os.Rename(fname, fname+".bak")
+	return os.Rename(updateName, fname)
+}
 
 func init() {
 	runtime.LockOSThread()
@@ -51,6 +285,7 @@ func closeLog(f *os.File) {
 }
 
 func main() {
+	is_mugen_game := false
 
 	exePath, err := os.Executable()
 	if err != nil {
@@ -68,8 +303,75 @@ func main() {
 	os.Mkdir("save/replays", os.ModeSticky|0755)
 	os.Mkdir("save/logs", os.ModeSticky|0755)
 
-	processCommandLine()
+	// Helper function to check if a path exists
+	exists := func(path string) bool {
+		_, err := os.Stat(path)
+		return !errors.Is(err, os.ErrNotExist)
+	}
 
+	// Check if "external" or "data/mugen.cfg" is missing
+	if !exists("external") || !exists("data/mugen.cfg") {
+		err := extractEmbed(assetsZip)
+		if err != nil {
+			fmt.Printf("[main.go] Error extracting asset: %v\n", err)
+			os.Exit(-1)
+		}
+		fmt.Println("[main.go] Mugen Game detected. Assets extraction completed successfully.")
+		is_mugen_game = true
+	}
+
+	processCommandLine()
+	if _, ok := sys.cmdFlags["-game"]; ok {
+		dir := filepath.Dir(sys.cmdFlags["-game"])
+		base := filepath.Base(sys.cmdFlags["-game"])
+		name := base[:len(base)-len(filepath.Ext(base))] // Remove the extension from the base name
+
+		err := os.Chdir(filepath.Join(dir, name))
+		if err != nil {
+			fmt.Println("Error changing directory:", err)
+			panic(err)
+		}
+	}
+	if _, ok := sys.cmdFlags["-updatechar"]; ok {
+		fmt.Printf("[main.go] Update data/select.def based on [char] directory\n")
+		err := updateCharInSelectDef("data/select.def")
+		if err != nil {
+			fmt.Printf("[main.go] %v\n", err)
+		}
+	}
+
+	if _, ok := sys.cmdFlags["-updatestage"]; ok {
+		fmt.Printf("[main.go] Update data/select.def based on [stages] directory\n")
+		err := updateStageInSelectDef("data/select.def")
+		if err != nil {
+			fmt.Printf("[main.go] %v\n", err)
+		}
+	}
+
+	if _, ok := sys.cmdFlags["-installrun"]; ok {
+		fmt.Printf("[main.go] Install default screenpack\n")
+		err := extractEmbed(screenpackZip)
+		if err != nil {
+			fmt.Printf("[main.go] Error extracting screenpack: %v\n", err)
+		}
+		err = extractEmbed(assetsZip)
+		if err != nil {
+			fmt.Printf("[main.go] Error extracting asset: %v\n", err)
+		}
+	}
+
+	if _, ok := sys.cmdFlags["-install"]; ok {
+		fmt.Printf("[main.go] Install default screenpack\n")
+		err := extractEmbed(screenpackZip)
+		if err != nil {
+			fmt.Printf("[main.go] Error extracting screenpack: %v\n", err)
+		}
+		err = extractEmbed(assetsZip)
+		if err != nil {
+			fmt.Printf("[main.go] Error extracting asset: %v\n", err)
+		}
+		os.Exit(0)
+	}
 	// Try reading stats
 	if _, err := os.ReadFile("save/stats.json"); err != nil {
 		// If there was an error reading, write an empty json file
@@ -86,7 +388,7 @@ func main() {
 		cfgPath = sys.cmdFlags["-config"]
 	}
 
-	if cfg, err := loadConfig(cfgPath); err != nil {
+	if cfg, err := loadConfig(cfgPath, is_mugen_game); err != nil {
 		chk(err)
 	} else {
 		sys.cfg = *cfg

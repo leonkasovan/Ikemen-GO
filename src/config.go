@@ -1,9 +1,14 @@
 package main
 
 import (
+	"bufio"
 	_ "embed" // Support for go:embed resources
+	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -226,49 +231,48 @@ type Config struct {
 	Joystick map[string]*KeysProperties `ini:"map:^(?i)Joystick_P[0-9]+$" lua:"Joystick"`
 }
 
-// Loads and parses the INI file into a Config struct.
-func loadConfig(def string) (*Config, error) {
-	// Define load options if needed
-	// https://github.com/go-ini/ini/blob/main/ini.go
+func exists(path string) bool {
+	_, err := os.Stat(path)
+	return !errors.Is(err, os.ErrNotExist)
+}
+
+// Pre-compile regex outside the loop for performance
+var (
+	reMotif      = regexp.MustCompile(`(?i)Motif\s*=\s*(\S+)`)
+	reStartStage = regexp.MustCompile(`(?i)StartStage\s*=\s*(.+)$`)
+	reWidth      = regexp.MustCompile(`(?i)GameWidth\s*=\s*(\d+)`)
+	reHeight     = regexp.MustCompile(`(?i)GameHeight\s*=\s*(\d+)`)
+)
+
+func loadConfig(def string, is_mugen_game bool) (*Config, error) {
 	options := ini.LoadOptions{
-		Insensitive: false,
-		//InsensitiveSections: true,
-		//InsensitiveKeys: true,
+		Insensitive:             false,
 		IgnoreInlineComment:     false,
 		SkipUnrecognizableLines: true,
-		//AllowBooleanKeys: true,
-		AllowShadows: false,
-		//AllowNestedValues: true,
-		UnparseableSections:        []string{},
-		AllowPythonMultilineValues: false,
-		//KeyValueDelimiters: "=:",
-		//KeyValueDelimiterOnWrite: "=",
-		//ChildSectionDelimiter: ".",
-		//AllowNonUniqueSections: true,
-		//AllowDuplicateShadowValues: true,
+		AllowShadows:            false,
+		UnparseableSections:     []string{},
 	}
 
-	// Choose default config source: prefer physical file, else embedded bytes.
+	// Choose default config source
 	var defaultSrc interface{}
+	// Using os.Stat logic or your custom FileExist
 	if fp := FileExist("resources/defaultConfig.ini"); len(fp) != 0 {
 		defaultSrc = fp
 	} else {
-		defaultSrc = defaultConfig
+		defaultSrc = defaultConfig // Assuming this is a []byte
 	}
-	// Load the INI file(s)
+
 	var iniFile *ini.File
 	var err error
 	if fp := FileExist(def); len(fp) == 0 {
 		iniFile, err = ini.LoadSources(options, defaultSrc)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read data: %v", err)
-		}
 	} else {
 		iniFile, err = ini.LoadSources(options, defaultSrc, def)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read data: %v", err)
-		}
 	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to read data: %v", err)
+	}
+
 	var c Config
 	c.Def = def
 	c.initStruct()
@@ -276,21 +280,15 @@ func loadConfig(def string) (*Config, error) {
 	// Iterate through all sections
 	for _, section := range iniFile.Sections() {
 		sectionName := section.Name()
-
-		// Skip the default section
 		if sectionName == ini.DEFAULT_SECTION {
 			continue
 		}
 
-		// Always include the section name as the first part of the key
 		for _, key := range section.Keys() {
 			keyName := key.Name()
-			values := key.ValueWithShadows() // Retrieve all shadowed values
-
-			for _, value := range values {
-				// Replace spaces with underscores in section and key names before parsing.
+			for _, value := range key.ValueWithShadows() {
+				// Clean key name for internal mapping
 				fullKey := strings.ReplaceAll(sectionName, " ", "_") + "." + strings.ReplaceAll(keyName, " ", "_")
-
 				keyParts := parseQueryPath(fullKey)
 				if err := assignField(&c, keyParts, value); err != nil {
 					fmt.Printf("Warning: Failed to assign key [%s]: %v\n", fullKey, err)
@@ -301,6 +299,60 @@ func loadConfig(def string) (*Config, error) {
 
 	c.IniFile = iniFile
 	c.normalize()
+
+	// Import Mugen setting
+	if is_mugen_game {
+		fmt.Printf("[config.go] import data/mugen.cfg\n")
+		// FIX: Use os.Open instead of os.OpenRead
+		file, err := os.Open("data/mugen.cfg")
+		if err != nil {
+			fmt.Printf("[config.go] Error loading data/mugen.cfg: %v\n", err)
+		} else {
+			defer file.Close()
+			scanner := bufio.NewScanner(file)
+			for scanner.Scan() {
+				line := strings.TrimSpace(scanner.Text())
+				if len(line) < 1 || line[0] == ';' {
+					continue
+				}
+
+				if res := reMotif.FindStringSubmatch(line); res != nil {
+					path := res[1]
+					if !exists(path) {
+						c.Config.Motif = "data/system.def"
+					} else {
+						c.Config.Motif = path
+					}
+					c.SetValueUpdate("Config.Motif", c.Config.Motif)
+				} else if res := reStartStage.FindStringSubmatch(line); res != nil {
+					path := res[1]
+					if !exists(path) {
+						c.Debug.StartStage = ""
+					} else {
+						c.Debug.StartStage = path
+					}
+					c.SetValueUpdate("Debug.StartStage", c.Debug.StartStage)
+				} else if res := reWidth.FindStringSubmatch(line); res != nil {
+					// FIX: Use strconv.Atoi
+					val, _ := strconv.Atoi(res[1])
+					c.Video.GameWidth = int32(val)
+					c.SetValueUpdate("Video.GameWidth", c.Video.GameWidth)
+				} else if res := reHeight.FindStringSubmatch(line); res != nil {
+					val, _ := strconv.Atoi(res[1])
+					c.Video.GameHeight = int32(val)
+					c.SetValueUpdate("Video.GameHeight", c.Video.GameHeight)
+				}
+			}
+		}
+	}
+
+	// Import config.json if it exists
+	if exists("save") && exists("save/config.json") && !exists("save/config.ini") {
+		if err := importIkemenConfig("save/config.json", &c); err != nil {
+			fmt.Printf("[config.go] Error importing config.json: %v\n", err)
+		}
+	}
+
 	c.sysSet()
 	c.Save(def)
 	return &c, nil
@@ -448,4 +500,109 @@ func (c *Config) SetValueUpdate(query string, value interface{}) error {
 // Save writes the current IniFile to disk, preserving comments and syntax.
 func (c *Config) Save(file string) error {
 	return SaveINI(c.IniFile, file)
+}
+
+func importIkemenConfig(jsonPath string, c *Config) error {
+	// FIX: Use standard os.Open
+	jsonFile, err := os.Open(jsonPath)
+	if err != nil {
+		return fmt.Errorf("cannot open %s: %v", jsonPath, err)
+	}
+	defer jsonFile.Close()
+
+	// Decode the JSON data into a map
+	var result map[string]interface{}
+	decoder := json.NewDecoder(jsonFile)
+	if err := decoder.Decode(&result); err != nil {
+		return fmt.Errorf("error decoding JSON: %v", err)
+	}
+
+	// Helper to handle string defaults with FileExist
+	getString := func(key string, fallback string) string {
+		if val, ok := result[key].(string); ok {
+			if path := FileExist(val); path != "" {
+				return path
+			}
+		}
+		return fallback
+	}
+
+	// Motif
+	c.Config.Motif = getString("Motif", "data/system.def")
+	c.SetValueUpdate("Config.Motif", c.Config.Motif)
+	fmt.Printf("[config.go] Import Motif=%v\n", c.Config.Motif)
+
+	// CommonAir
+	if v, ok := result["CommonAir"].(string); ok {
+		c.Common.Air["air"] = []string{v}
+		c.SetValueUpdate("Common.Air", c.Common.Air["air"])
+		fmt.Printf("[config.go] Import Common.Air=%v\n", c.Common.Air["air"])
+	}
+
+	// CommonCmd
+	if v, ok := result["CommonCmd"].(string); ok {
+		c.Common.Cmd["cmd"] = []string{v}
+		c.SetValueUpdate("Common.Cmd", c.Common.Cmd["cmd"])
+		fmt.Printf("[config.go] Import Common.Cmd=%v\n", c.Common.Cmd["cmd"])
+	}
+
+	// CommonConst
+	if v, ok := result["CommonConst"].(string); ok {
+		c.Common.Const["const"] = []string{v}
+		c.SetValueUpdate("Common.Const", c.Common.Const["const"])
+		fmt.Printf("[config.go] Import Common.Const=%v\n", c.Common.Const["const"])
+	}
+
+	// CommonStates (Array of string)
+	if vlist, ok := result["CommonStates"].([]interface{}); ok {
+		states := make([]string, 0, len(vlist))
+		for _, item := range vlist {
+			if s, ok := item.(string); ok {
+				states = append(states, s)
+			}
+		}
+		c.Common.States["states"] = states
+		c.SetValueUpdate("Common.States", c.Common.States["states"])
+		fmt.Printf("[config.go] Import Common.States=%v\n", c.Common.States["states"])
+	}
+
+	// Video Dimensions
+	if vfloat, ok := result["GameWidth"].(float64); ok {
+		c.Video.GameWidth = int32(vfloat)
+	} else {
+		c.Video.GameWidth = 640
+	}
+	c.SetValueUpdate("Video.GameWidth", c.Video.GameWidth)
+
+	if vfloat, ok := result["GameHeight"].(float64); ok {
+		c.Video.GameHeight = int32(vfloat)
+	} else {
+		c.Video.GameHeight = 480
+	}
+	c.SetValueUpdate("Video.GameHeight", c.Video.GameHeight)
+
+	// Debug and System
+	c.Debug.Font = getString("DebugFont", "f-6x9.fnt")
+	c.SetValueUpdate("Debug.Font", c.Debug.Font)
+
+	c.Debug.StartStage = getString("StartStage", "")
+	c.SetValueUpdate("Debug.StartStage", c.Debug.StartStage)
+
+	c.Config.System = getString("System", "external/script/main.lua")
+	c.SetValueUpdate("Config.System", c.Config.System)
+
+	// WindowIcon (Array of string)
+	if vlist, ok := result["WindowIcon"].([]interface{}); ok {
+		icons := make([]string, 0, len(vlist))
+		for _, item := range vlist {
+			if s, ok := item.(string); ok {
+				icons = append(icons, s)
+			}
+		}
+		c.Config.WindowIcon = icons
+		c.SetValueUpdate("Config.WindowIcon", c.Config.WindowIcon)
+		fmt.Printf("[config.go] Import Config.WindowIcon=%v\n", c.Config.WindowIcon)
+	}
+
+	return nil
 }
