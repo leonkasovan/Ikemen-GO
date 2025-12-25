@@ -4194,6 +4194,14 @@ type Lifebar struct {
 	fnt_scale  float32
 	fx_limit   int
 	textsprite []*TextSprite
+	atlas_8   *TextureAtlas
+
+	// Batch Rendering Fields
+	batchVertices []float32    // Persistent buffer to avoid allocation
+	batchTex      Texture      // Current texture for the active batch
+	batchPal      Texture      // Current palette for the active batch
+	isBatching    bool         // Are we currently in a manual batch block?
+	batchRP       RenderParams // Store the "Master" params for this batch
 }
 
 func loadLifebar(def string) (*Lifebar, error) {
@@ -4265,6 +4273,9 @@ func loadLifebar(def string) (*Lifebar, error) {
 	ffx := newFightFx()
 	ffx.isGlobal = true
 
+	sys.runMainThreadTask()
+	l.atlas_8 = CreateTextureAtlas(1024, 1024, 8, false)
+
 	for i < len(lines) {
 		is, name, subname := ReadIniSection(lines, &i)
 		switch name {
@@ -4282,7 +4293,7 @@ func loadLifebar(def string) (*Lifebar, error) {
 				filesflg = false
 				if is.LoadFile("sff", []string{def, sys.motifDir, "", "data/"},
 					func(filename string) error {
-						s, err := loadSff(filename, false, nil)
+						s, err := loadSff(filename, false, l.atlas_8)
 						if err != nil {
 							return err
 						}
@@ -4304,7 +4315,7 @@ func loadLifebar(def string) (*Lifebar, error) {
 				}
 				if is.LoadFile("fightfx.sff", []string{def, sys.motifDir, "", "data/"},
 					func(filename string) error {
-						s, err := loadSff(filename, false, nil)
+						s, err := loadSff(filename, false, l.atlas_8)
 						if err != nil {
 							return err
 						}

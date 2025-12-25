@@ -850,6 +850,7 @@ func (a *Animation) Draw(window *[4]int32, x, y, xcs, ycs, xs, xbs, ys,
 		fLength:        fLength * sys.heightScale,
 		xOffset:        xoff * sys.widthScale,
 		yOffset:        yoff * sys.heightScale,
+		uv:             a.spr.UV,
 	}
 
 	RenderSprite(rp)
@@ -949,14 +950,6 @@ func (a *Animation) ShadowDraw(window *[4]int32, x, y, xscl, yscl, vscl, rxadd f
 		rp.blendAlpha = [2]int32{255, 255}
 		RenderSprite(rp)
 	}
-
-	// This method would draw color and intensity in a single pass, but it's less accurate
-	// Another disadvantage of this method is that the double pass allows a wider range of color/intensity combinations
-	//if intensity > 0 || color != 0 {
-	//	rp.blendMode = TT_sub
-	//	rp.blendAlpha = [2]int32{intensity, 255 - intensity}
-	//	RenderSprite(rp)
-	//}
 }
 
 type AnimationTable map[int32]*Animation
