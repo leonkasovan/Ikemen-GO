@@ -201,11 +201,16 @@ func (cr *ClsnRect) Add(clsn [][4]float32, x, y, xs, ys, angle float32) {
 }
 
 func (cr ClsnRect) draw(blendAlpha [2]int32) {
-	paltex := PaletteToTexture(sys.clsnSpr.Pal)
+	// CHANGED: Use CachePalette instead of PaletteToTexture.
+	// This reuses the existing texture on the sprite (sys.clsnSpr.PalTex)
+	// instead of creating a new texture object every frame.
+	paltex := sys.clsnSpr.CachePalette(sys.clsnSpr.Pal)
+
 	for _, c := range cr {
 		params := RenderParams{
 			tex:            sys.clsnSpr.Tex,
 			paltex:         paltex,
+			PalIndex:       0, // CHANGED: Explicitly use Layer 0 of the array
 			size:           sys.clsnSpr.Size,
 			x:              -c[0] * sys.widthScale,
 			y:              -c[1] * sys.heightScale,
@@ -3724,12 +3729,18 @@ func (c *Char) load(def string) error {
 		gi.sff = newSff()
 	}
 	gi.palettedata = newPaldata()
-	gi.palettedata.palList = PaletteList{
-		palettes:   append([][]uint32{}, gi.sff.palList.palettes...),
-		paletteMap: append([]int{}, gi.sff.palList.paletteMap...),
-		PalTable:   make(map[[2]uint16]int),
-		numcols:    make(map[[2]uint16]int),
-		PalTex:     append([]Texture{}, gi.sff.palList.PalTex...),
+	// Initialize the PaletteList (creates Texture Array, clears maps)
+	gi.palettedata.palList.init()
+	// Copy palettes from SFF to the local palette data
+	// SetSource handles resizing arrays and uploading to the GPU Texture Array
+	for i, p := range gi.sff.palList.palettes {
+		gi.palettedata.palList.SetSource(i, p)
+	}
+
+	// Copy paletteMap (SetSource creates a default 1:1 map, overwrite if SFF differs)
+	if len(gi.sff.palList.paletteMap) > 0 {
+		gi.palettedata.palList.paletteMap = make([]int, len(gi.sff.palList.paletteMap))
+		copy(gi.palettedata.palList.paletteMap, gi.sff.palList.paletteMap)
 	}
 	for key, value := range gi.sff.palList.PalTable {
 		gi.palettedata.palList.PalTable[key] = value
@@ -3844,14 +3855,7 @@ func (c *Char) loadPalette() {
 					}
 					pal.exists = true
 					gi.palInfo[i] = pal
-					// Palette Texture Generation
-					if len(gi.palettedata.palList.PalTex) <= i {
-						newLen := i + 1
-						newSlice := make([]Texture, newLen)
-						copy(newSlice, gi.palettedata.palList.PalTex)
-						gi.palettedata.palList.PalTex = newSlice
-					}
-					gi.palettedata.palList.PalTex[i] = PaletteToTexture(pl)
+					gi.palettedata.palList.SetSource(i, pl)
 					tmp = i + 1
 				}
 			} else if f != nil {
@@ -3876,13 +3880,10 @@ func (c *Char) loadPalette() {
 		}
 		if gi.sff.header.NumberOfPalettes > 0 {
 			numPals := int(gi.sff.header.NumberOfPalettes)
-			if len(gi.palettedata.palList.PalTex) < numPals {
-				gi.palettedata.palList.PalTex = make([]Texture, numPals)
-			}
 			for i := 0; i < numPals; i++ {
 				pal := gi.sff.palList.Get(i)
 				if pal != nil {
-					gi.palettedata.palList.PalTex[i] = PaletteToTexture(pal)
+					gi.palettedata.palList.SetSource(i, pal)
 				}
 			}
 		}

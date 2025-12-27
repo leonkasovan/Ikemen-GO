@@ -1718,15 +1718,23 @@ func (fa *LifeBarFace) draw(layerno int16, ref int, far *LifeBarFace) {
 			sys.cgi[ref].palettedata.palList.SwapPalMap(&refChar.getPalfx().remap)
 		}
 
-		// Get texture
+		// --- CHANGED START ---
+		// Texture Array Logic
+		var palLayer float32 = 0
 		if far.face.coldepth <= 8 {
+			// Clear legacy slice
 			far.face.Pal = nil
-			if far.face.PalTex != nil {
-				far.face.PalTex = far.face.GetPalTex(&sys.cgi[ref].palettedata.palList)
-			} else {
-				far.face.Pal = far.face.GetPal(&sys.cgi[ref].palettedata.palList)
-			}
+			
+			// Get the character's palette list
+			pl := &sys.cgi[ref].palettedata.palList
+			
+			// Assign the global Array Texture to the sprite
+			far.face.PalTex = pl.ArrayTexture
+			
+			// Calculate the specific layer for this sprite's palette index
+			palLayer = pl.GetLayer(int(far.face.palidx))
 		}
+		// --- CHANGED END ---
 
 		// Revert palette maps to initial state
 		if far.palshare {
@@ -1743,9 +1751,10 @@ func (fa *LifeBarFace) draw(layerno int16, ref int, far *LifeBarFace) {
 			sys.brightness = 1.0
 		}
 
+		// --- CHANGED: Pass palLayer to DrawFaceSprite ---
 		// Draw the actual face sprite
 		fa.face_lay.DrawFaceSprite((float32(fa.pos[0])+sys.lifebarOffsetX)*sys.lifebarScale, float32(fa.pos[1])*sys.lifebarScale, layerno,
-			far.face, pfx, sys.cgi[ref].portraitscale*sys.lifebarPortraitScale, &fa.face_lay.window)
+			far.face, pfx, sys.cgi[ref].portraitscale*sys.lifebarPortraitScale, &fa.face_lay.window, palLayer)
 
 		// Draw KO layer
 		if !refChar.alive() {
@@ -1778,9 +1787,13 @@ func (fa *LifeBarFace) draw(layerno int16, ref int, far *LifeBarFace) {
 				fa.teammate_bg0.Draw((x + sys.lifebarOffsetX), y, layerno, sys.lifebarScale)
 				fa.teammate_bg1.Draw((x + sys.lifebarOffsetX), y, layerno, sys.lifebarScale)
 				fa.teammate_bg2.Draw((x + sys.lifebarOffsetX), y, layerno, sys.lifebarScale)
-				// Draw face
+				
+				// --- CHANGED: Pass 0 (or calculated layer) for teammates ---
+				// Note: If teammates use 8-bit sprites, you might need to calculate their layer 
+				// similar to the main face logic above using their specific PaletteList.
 				fa.teammate_face_lay.DrawFaceSprite((x+sys.lifebarOffsetX)*sys.lifebarScale, y*sys.lifebarScale, layerno, far.teammate_face[i], nil,
-					far.teammate_scale[i]*sys.lifebarPortraitScale, &fa.teammate_face_lay.window)
+					far.teammate_scale[i]*sys.lifebarPortraitScale, &fa.teammate_face_lay.window, 0)
+				
 				// Draw KO layer
 				if i < fa.numko {
 					fa.teammate_ko.Draw((x + sys.lifebarOffsetX), y, layerno, sys.lifebarScale)

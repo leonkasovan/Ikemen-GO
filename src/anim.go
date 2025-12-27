@@ -697,32 +697,30 @@ func (a *Animation) alphaToBlend() (blendMode TransType, blendAlpha [2]int32) {
 	return
 }
 
-func (a *Animation) pal(pfx *PalFX) (p []uint32, plt Texture) {
+func (a *Animation) pal(pfx *PalFX) (p []uint32, plt Texture, layer float32) {
+	var list *PaletteList
 	if a.palettedata != nil {
-		// Apply temporary palette remap if provided
-		if pfx != nil && len(pfx.remap) > 0 {
-			a.palettedata.SwapPalMap(&pfx.remap)
-		}
-
-		// Get palette colors and texture
-		p = a.spr.GetPal(a.palettedata)
-		plt = a.spr.GetPalTex(a.palettedata)
-
-		// Restore original palette mapping
-		if pfx != nil && len(pfx.remap) > 0 {
-			a.palettedata.SwapPalMap(&pfx.remap)
-		}
+		list = a.palettedata
 	} else {
-		if pfx != nil && len(pfx.remap) > 0 {
-			a.sff.palList.SwapPalMap(&pfx.remap)
-		}
+		list = &a.sff.palList
+	}
 
-		p = a.spr.GetPal(&a.sff.palList)
-		plt = a.spr.GetPalTex(&a.sff.palList)
+	// Apply temporary palette remap if provided
+	if pfx != nil && len(pfx.remap) > 0 {
+		list.SwapPalMap(&pfx.remap)
+	}
 
-		if pfx != nil && len(pfx.remap) > 0 {
-			a.sff.palList.SwapPalMap(&pfx.remap)
-		}
+	// Get palette colors
+	p = a.spr.GetPal(list)
+	
+	// Get the shared Array Texture
+	plt = list.ArrayTexture
+	// Get the specific layer index for this sprite's palette
+	layer = list.GetLayer(int(a.spr.palidx))
+
+	// Restore original palette mapping
+	if pfx != nil && len(pfx.remap) > 0 {
+		list.SwapPalMap(&pfx.remap)
 	}
 
 	return
@@ -815,17 +813,22 @@ func (a *Animation) Draw(window *[4]int32, x, y, xcs, ycs, xs, xbs, ys,
 	blendMode, blendAlpha := a.alphaToBlend()
 
 	var paltex Texture
+	var palLayer float32
 	if !a.isVideo {
 		var pal []uint32
-		pal, paltex = a.pal(pfx)
+		pal, paltex, palLayer = a.pal(pfx)
+		// Fallback for non-array textures (dynamic palettes) if needed
+		// Note: This might break batching if it triggers.
 		if a.spr.coldepth <= 8 && paltex == nil {
 			paltex = a.spr.CachePalette(pal)
+			palLayer = 0 // Standard textures use index 0
 		}
 	}
 
 	rp := RenderParams{
 		tex:            a.spr.Tex,
 		paltex:         paltex,
+		PalIndex:       palLayer,
 		size:           a.spr.Size,
 		x:              x * sys.widthScale,
 		y:              y * sys.heightScale,
@@ -878,6 +881,7 @@ func (a *Animation) ShadowDraw(window *[4]int32, x, y, xscl, yscl, vscl, rxadd f
 	rp := RenderParams{
 		tex:            a.spr.Tex,
 		paltex:         nil,
+		PalIndex:       0, // Default to Layer 0
 		size:           a.spr.Size,
 		x:              AbsF(xscl*h) * float32(a.spr.Offset[0]) * sys.widthScale,
 		y:              AbsF(yscl*v) * float32(a.spr.Offset[1]) * sys.heightScale,
@@ -904,42 +908,23 @@ func (a *Animation) ShadowDraw(window *[4]int32, x, y, xscl, yscl, vscl, rxadd f
 		yOffset:        yoff,
 	}
 
-	// TODO: This is redundant now that rp.tint is used to colorise the shadow
-	//if a.spr.coldepth <= 8 {
-	//	var pal [256]uint32
-	//	if color != 0 || alpha > 0 {
-	//		paltemp := a.spr.paltemp
-	//		if len(paltemp) == 0 {
-	//			if a.palettedata != nil {
-	//				paltemp = a.spr.GetPal(a.palettedata)
-	//			} else {
-	//				paltemp = a.spr.GetPal(&a.sff.palList)
-	//			}
-	//		}
-	//		for i := range pal {
-	//			// Skip transparent colors
-	//			if len(paltemp) > i && paltemp[i] != 0 {
-	//				pal[i] = color | 0xff000000
-	//			}
-	//		}
-	//	}
-	//	rp.paltex = PaletteToTexture(pal[:])
-	//}
-
+	// Handle Palette Logic for Shadows
 	if a.spr.coldepth <= 8 && (color != 0 || intensity > 0) {
 		if a.sff.header.Ver0 == 2 && a.sff.header.Ver2 == 1 {
-			pal, _ := a.pal(pfx)
-			if a.spr.PalTex == nil {
-				a.spr.PalTex = a.spr.CachePalette(pal)
-			}
-			rp.paltex = a.spr.PalTex
+			// CHANGED: Use the shared ArrayTexture directly for SFFv2
+			// This improves batching by avoiding CachePalette/NewTexture overhead
+			_, plt, layer := a.pal(pfx)
+			rp.paltex = plt
+			rp.PalIndex = layer
 		} else {
+			// Legacy/Standard case: Use white palette for silhouette
+			// sys.whitePalTex MUST be a 1-layer Texture Array now
 			rp.paltex = sys.whitePalTex
+			rp.PalIndex = 0
 		}
 	}
 
 	// Draw shadow with one pass for intensity and another for color
-	// Drawing twice is a bit wasteful, but results are the most accurate to Mugen
 	if intensity > 0 {
 		rp.blendMode = TT_add
 		rp.blendAlpha = [2]int32{intensity, 255 - intensity}
@@ -1685,22 +1670,35 @@ func CopyAnim(a *Anim) *Anim {
 	}
 	srcSff := a.anim.sff
 	copySff := newSff()
+	
 	// Copy header and palette info
 	copySff.header = srcSff.header
 	copySff.palList.palettes = srcSff.palList.palettes
+	
 	// Independent paletteMap copy
 	copySff.palList.paletteMap = make([]int, len(srcSff.palList.paletteMap))
 	copy(copySff.palList.paletteMap, srcSff.palList.paletteMap)
 
 	copySff.palList.PalTable = srcSff.palList.PalTable
 	copySff.palList.numcols = srcSff.palList.numcols
-	copySff.palList.PalTex = srcSff.palList.PalTex
+	
+	// Share the GPU Array Texture
+	copySff.palList.ArrayTexture = srcSff.palList.ArrayTexture
+	
+	// Deep copy the slot tracking slices to allow independent state
+	copySff.palList.LayerSlots = make([]int, len(srcSff.palList.LayerSlots))
+	copy(copySff.palList.LayerSlots, srcSff.palList.LayerSlots)
+
+	copySff.palList.FreeLayers = make([]int, len(srcSff.palList.FreeLayers))
+	copy(copySff.palList.FreeLayers, srcSff.palList.FreeLayers)
+
 	// Serialize frames for NewAnim
 	var frameAnims strings.Builder
 	for _, f := range a.anim.frames {
 		frameAnims.WriteString(fmt.Sprintf("%d,%d,%d,%d,%d\n",
 			f.Group, f.Number, f.Xoffset, f.Yoffset, f.Time))
 	}
+	
 	// Create new animation using copied SFF
 	newAnim := NewAnim(copySff, frameAnims.String())
 	newAnim.window = a.window
@@ -1709,7 +1707,8 @@ func CopyAnim(a *Anim) *Anim {
 	newAnim.xscl = a.xscl
 	newAnim.yscl = a.yscl
 	newAnim.palfx = a.palfx
-	// Copy current animation state (timing, loop, interpolation, etc.)
+	
+	// Copy current animation state
 	newAnim.anim.looptime = a.anim.looptime
 	newAnim.anim.loopstart = a.anim.loopstart
 	newAnim.anim.curtime = a.anim.curtime
@@ -1718,10 +1717,11 @@ func CopyAnim(a *Anim) *Anim {
 	newAnim.anim.frames = a.anim.frames
 	newAnim.anim.interpolate_blend_srcalpha = a.anim.interpolate_blend_srcalpha
 	newAnim.anim.interpolate_scale = a.anim.interpolate_scale
+	
 	// Copy all valid sprites safely
 	for _, c := range a.anim.frames {
 		if c.Group < 0 || c.Number < 0 {
-			continue // skip empty frames
+			continue
 		}
 		key := [...]uint16{uint16(c.Group), uint16(c.Number)}
 		src, ok := srcSff.sprites[key]
@@ -1733,7 +1733,6 @@ func CopyAnim(a *Anim) *Anim {
 		dst.Tex = src.Tex
 		dst.palidx = src.palidx
 		dst.coldepth = src.coldepth
-		// Copy arrays (if not slices, this is fine as-is)
 		dst.Offset = src.Offset
 		dst.Size = src.Size
 

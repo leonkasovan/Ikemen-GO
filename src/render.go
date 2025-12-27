@@ -9,6 +9,7 @@ import (
 )
 
 type Texture interface {
+	SetPaletteLayer(data []byte, layer int32)
 	SetData(data []byte)
 	SetSubData(data []byte, x, y, width, height int32)
 	SetDataG(data []byte, mag, min, ws, wt TextureSamplingParam)
@@ -45,6 +46,7 @@ type Renderer interface {
 
 	newTexture(width, height, depth int32, filter bool) (t Texture)
 	newPaletteTexture() (t Texture)
+	newPaletteTextureArray(layers int32) (t Texture) 
 	newModelTexture(width, height, depth int32, filter bool) (t Texture)
 	newDataTexture(width, height int32) (t Texture)
 	newHDRTexture(width, height int32) (t Texture)
@@ -204,6 +206,7 @@ type RenderParams struct {
 	xOffset        float32
 	yOffset        float32
 	uv             [4]float32 // Optional atlas UV rect u1,v1,u2,v2
+	PalIndex       float32
 }
 
 func (rp *RenderParams) IsValid() bool {
@@ -211,14 +214,14 @@ func (rp *RenderParams) IsValid() bool {
 		IsFinite(rp.x+rp.y+rp.xts+rp.xbs+rp.ys+rp.vs+rp.rxadd+rp.rot.angle+rp.rcx+rp.rcy)
 }
 
-func drawQuads(modelview mgl.Mat4, x1, y1, x2, y2, x3, y3, x4, y4 float32) {
+func drawQuads(modelview mgl.Mat4, x1, y1, x2, y2, x3, y3, x4, y4 float32, palIndex float32) {
 	gfx.SetUniformMatrix("modelview", modelview[:])
 	gfx.SetUniformF("x1x2x4x3", x1, x2, x4, x3) // this uniform is optional
 	gfx.SetVertexData(
-		x2, y2, 1, 1,
-		x3, y3, 1, 0,
-		x1, y1, 0, 1,
-		x4, y4, 0, 0,
+		x2, y2, 1, 1, palIndex,
+		x3, y3, 1, 0, palIndex,
+		x1, y1, 0, 1, palIndex,
+		x4, y4, 0, 0, palIndex,
 	)
 
 	gfx.RenderQuad()
@@ -347,7 +350,7 @@ func renderSpriteHTile(modelview mgl.Mat4, x1, y1, x2, y2, x3, y3, x4, y4, dy, w
 			mat = mat.Mul4(mgl.Translate3D(-(rp.rcx + float32(n)*botdist), -(rp.rcy + dy), 0))
 		}
 
-		drawQuads(mat, x1d, y1, x2d, y2, x3d, y3, x4d, y4)
+		drawQuads(mat, x1d, y1, x2d, y2, x3d, y3, x4d, y4, rp.PalIndex)
 	}
 }
 
@@ -383,7 +386,7 @@ func renderSpriteQuad(modelview mgl.Mat4, rp RenderParams) {
 		modelview = applyRotation(modelview, rp)
 		modelview = modelview.Mul4(mgl.Translate3D(-rp.rcx, -rp.rcy, 0))
 
-		drawQuads(modelview, x1, y1, x2, y2, x3, y3, x4, y4)
+		drawQuads(modelview, x1, y1, x2, y2, x3, y3, x4, y4, rp.PalIndex)
 		return
 	}
 	if rp.tile.yflag == 1 && rp.xbs != 0 {
@@ -609,7 +612,7 @@ func RenderSpriteBatch(vertices []float32, rp RenderParams) {
 		// gl.VertexAttribPointerWithOffset(uint32(loc), 2, gl.FLOAT, false, 16, 8)
 
 		// Draw all triangles
-		gfx.RenderQuadBatch(int32(len(vertices) / 4))
+		gfx.RenderQuadBatch(int32(len(vertices) / 5))
 
 		// Clean up
 		// gl.DisableVertexAttribArray(uint32(r.spriteShader.a["position"]))
@@ -732,6 +735,8 @@ func renderWithBlending(
 	}
 }
 
+// [src/render.go]
+
 func FillRect(rect [4]int32, color uint32, alpha [2]int32) {
 	r := float32(color>>16&0xff) / 255
 	g := float32(color>>8&0xff) / 255
@@ -745,12 +750,15 @@ func FillRect(rect [4]int32, color uint32, alpha [2]int32) {
 
 	render := func(eq BlendEquation, src, dst BlendFunc, a float32) {
 		gfx.SetPipeline(eq, src, dst)
+		
+		// CHANGED: Added 5th float (0) for PalIndex to match Vertex Stride (20 bytes)
 		gfx.SetVertexData(
-			x2, y2, 1, 1,
-			x2, y1, 1, 0,
-			x1, y2, 0, 1,
-			x1, y1, 0, 0,
+			x2, y2, 1, 1, 0,
+			x2, y1, 1, 0, 0,
+			x1, y2, 0, 1, 0,
+			x1, y1, 0, 0, 0,
 		)
+		
 		gfx.SetUniformMatrix("modelview", modelview[:])
 		gfx.SetUniformMatrix("projection", proj[:])
 		gfx.SetUniformI("isFlat", 1)

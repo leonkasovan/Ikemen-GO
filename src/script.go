@@ -726,23 +726,37 @@ func systemScriptInit(l *lua.LState) {
 				if int(lua.LVAsNumber(key))%2 == 1 {
 					group = uint16(lua.LVAsNumber(value))
 				} else {
-					sprite := sys.cgi[pn-1].sff.getOwnPalSprite(group, uint16(lua.LVAsNumber(value)), &sys.cgi[pn-1].palettedata.palList)
+					// Shortcut to the PaletteList
+					pl := &sys.cgi[pn-1].palettedata.palList
+
+					sprite := sys.cgi[pn-1].sff.getOwnPalSprite(group, uint16(lua.LVAsNumber(value)), pl)
 					if fspr := sprite; fspr != nil {
 						pfx := sys.chars[pn-1][0].getPalfx()
-						sys.cgi[pn-1].palettedata.palList.SwapPalMap(&pfx.remap)
-						fspr.Pal = nil
-						fspr.Pal = fspr.GetPal(&sys.cgi[pn-1].palettedata.palList)
-						sys.cgi[pn-1].palettedata.palList.SwapPalMap(&pfx.remap)
+
+						// 1. Swap Palette Map to apply character's current remap (e.g. blue color)
+						pl.SwapPalMap(&pfx.remap)
+
+						// 2. Texture Array Logic
+						var palLayer float32 = 0
+						if fspr.coldepth <= 8 {
+							// Assign the shared Array Texture
+							fspr.PalTex = pl.ArrayTexture
+							// Calculate the specific layer using the remapped index
+							palLayer = pl.GetLayer(int(fspr.palidx))
+						}
+
+						// 3. Restore Palette Map
+						pl.SwapPalMap(&pfx.remap)
+
 						x := (float32(numArg(l, 3)) + sys.lifebarOffsetX) * sys.lifebarScale
 						y := (float32(numArg(l, 4)) + sys.lifebarOffsetY) * sys.lifebarScale
 						scale := [...]float32{float32(numArg(l, 5)), float32(numArg(l, 6))}
 						facing := int8(numArg(l, 7))
 						fscale := sys.chars[pn-1][0].localscl
-						if sprite.coldepth <= 8 && sprite.PalTex == nil {
-							sprite.CachePalette(sprite.Pal)
-						}
+
+						// 4. Draw with the calculated palLayer
 						sprite.Draw(x, y, scale[0]*float32(facing)*fscale, scale[1]*fscale, 0,
-							Rotation{0, 0, 0}, pfx, window)
+							Rotation{0, 0, 0}, pfx, window, palLayer) // Added palLayer argument
 						ok = true
 					}
 				}

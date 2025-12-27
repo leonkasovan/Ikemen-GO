@@ -385,7 +385,11 @@ type PaletteList struct {
 	paletteMap []int
 	PalTable   map[[2]uint16]int
 	numcols    map[[2]uint16]int
-	PalTex     []Texture
+
+	// CHANGED: Texture Array Management
+	ArrayTexture Texture // Single handle for the GL_TEXTURE_2D_ARRAY
+	LayerSlots   []int   // Maps logical palette index (i) -> Physical GPU Array Layer
+	FreeLayers   []int   // Stack of available (empty) layers for reuse
 }
 
 func (pl *PaletteList) init() {
@@ -393,10 +397,26 @@ func (pl *PaletteList) init() {
 	pl.paletteMap = nil
 	pl.PalTable = make(map[[2]uint16]int)
 	pl.numcols = make(map[[2]uint16]int)
-	pl.PalTex = nil
+	
+	// Initialize Texture Array logic
+	// Note: Requires active GL context. If init() runs before window creation, 
+	// check ArrayTexture == nil in SetSource and initialize lazily.
+	// CHANGED: Defer Texture Creation to the Main Thread.
+	// This prevents crashing when init() is called from a background loader.
+	sys.mainThreadTask <- func() {
+		pl.ArrayTexture = gfx.newPaletteTextureArray(int32(sys.cfg.Config.PaletteMax))
+	}
+	pl.LayerSlots = nil
+	
+	// Fill FreeLayers with all available indices (e.g., 255 down to 0)
+	pl.FreeLayers = make([]int, 0, sys.cfg.Config.PaletteMax)
+	for i := sys.cfg.Config.PaletteMax - 1; i >= 0; i-- {
+		pl.FreeLayers = append(pl.FreeLayers, i)
+	}
 }
 
 func (pl *PaletteList) SetSource(i int, p []uint32) {
+	// 1. Manage PaletteMap (Remapping)
 	if i < len(pl.paletteMap) {
 		pl.paletteMap[i] = i
 	} else {
@@ -405,6 +425,8 @@ func (pl *PaletteList) SetSource(i int, p []uint32) {
 		}
 		pl.paletteMap = append(pl.paletteMap, i)
 	}
+
+	// 2. Manage Palettes (CPU Data)
 	if i < len(pl.palettes) {
 		pl.palettes[i] = p
 	} else {
@@ -412,7 +434,43 @@ func (pl *PaletteList) SetSource(i int, p []uint32) {
 			pl.palettes = append(pl.palettes, nil)
 		}
 		pl.palettes = append(pl.palettes, p)
-		pl.PalTex = append(pl.PalTex, nil)
+	}
+
+	// 3. Manage LayerSlots (GPU Index Mapping)
+	if i >= len(pl.LayerSlots) {
+		oldLen := len(pl.LayerSlots)
+		targetLen := i + 1
+		newSlots := make([]int, targetLen)
+		copy(newSlots, pl.LayerSlots)
+		pl.LayerSlots = newSlots
+		for j := oldLen; j < targetLen; j++ {
+			pl.LayerSlots[j] = -1
+		}
+	}
+
+	// 4. Upload to Texture Array (Thread Safe)
+	if p != nil {
+		layer := pl.LayerSlots[i]
+		if layer == -1 {
+			if len(pl.FreeLayers) > 0 {
+				layer = pl.FreeLayers[len(pl.FreeLayers)-1]
+				pl.FreeLayers = pl.FreeLayers[:len(pl.FreeLayers)-1]
+				pl.LayerSlots[i] = layer
+			} else {
+				return
+			}
+		}
+
+		// CHANGED: Wrap OpenGL call in mainThreadTask
+		// We capture 'p' (which is referenced by pl.palettes, so it won't be GC'd)
+		// and 'layer' to use in the closure.
+		sys.mainThreadTask <- func() {
+			if len(p) > 0 {
+				// unsafe.Slice requires the "unsafe" package to be imported
+				byteData := unsafe.Slice((*byte)(unsafe.Pointer(&p[0])), len(p)*4)
+				pl.ArrayTexture.SetPaletteLayer(byteData, int32(layer))
+			}
+		}
 	}
 }
 
@@ -423,7 +481,32 @@ func (pl *PaletteList) NewPal() (i int, p []uint32) {
 }
 
 func (pl *PaletteList) Get(i int) []uint32 {
-	return pl.palettes[pl.paletteMap[i]]
+	if i >= 0 && i < len(pl.paletteMap) {
+		return pl.palettes[pl.paletteMap[i]]
+	}
+	return nil
+}
+
+// NEW: Helper to get the actual GPU layer index for rendering
+// This handles the remapping logic (paletteMap) automatically.
+func (pl *PaletteList) GetLayer(i int) float32 {
+	if i < 0 || i >= len(pl.paletteMap) {
+		return 0 // Return default layer 0 if out of bounds
+	}
+	// 1. Get the remapped index
+	remappedIndex := pl.paletteMap[i]
+	
+	// 2. Check bounds of LayerSlots
+	if remappedIndex < 0 || remappedIndex >= len(pl.LayerSlots) {
+		return 0
+	}
+
+	// 3. Return the physical GPU layer
+	layer := pl.LayerSlots[remappedIndex]
+	if layer == -1 {
+		return 0 // Not uploaded yet
+	}
+	return float32(layer)
 }
 
 func (pl *PaletteList) Remap(source int, destination int) {
@@ -450,19 +533,25 @@ func (pl *PaletteList) SwapPalMap(palMap *[]int) bool {
 	return true
 }
 
-func PaletteToTexture(pal []uint32) Texture {
-	tx := gfx.newPaletteTexture()
+// func PaletteToTexture(pal []uint32) Texture {
+// 	// CHANGED: Use NewPaletteTextureArray(1) instead of newPaletteTexture()
+// 	// This creates a Texture Array with Depth=1, compatible with 'sampler2DArray'.
+// 	tx := gfx.newPaletteTextureArray(1)
 
-	// Safely handle invalid palettes
-	if len(pal) == 0 {
-		sys.errLog.Printf("Invalid palette texture. Defaulting to none")
-		tx.SetData(nil)
-		return tx
-	} else {
-		tx.SetData(unsafe.Slice((*byte)(unsafe.Pointer(&pal[0])), len(pal)*4))
-		return tx
-	}
-}
+// 	// Safely handle invalid palettes
+// 	if len(pal) == 0 {
+// 		sys.errLog.Printf("Invalid palette texture. Defaulting to none")
+// 		// No data to upload, just return the empty array texture
+// 		return tx
+// 	}
+
+// 	// CHANGED: Use UploadPaletteLayer (Layer 0) instead of SetData.
+// 	// SetData usually defaults to GL_TEXTURE_2D, which would fail here.
+// 	byteData := unsafe.Slice((*byte)(unsafe.Pointer(&pal[0])), len(pal)*4)
+// 	tx.SetPaletteLayer(byteData, 0)
+
+// 	return tx
+// }
 
 type SffHeader struct {
 	Ver0, Ver1, Ver2, Ver3   byte
@@ -569,132 +658,6 @@ func newSprite() *Sprite {
 	return &Sprite{palidx: -1, UV: [4]float32{0, 0, 0, 0}}
 }
 
-/*
-	func loadFromSff(filename string, g, n int16) (*Sprite, error) {
-		s := newSprite()
-		f, err := os.Open(filename)
-		if err != nil {
-			return nil, err
-		}
-		defer func() { chk(f.Close()) }()
-		h := &SffHeader{}
-		var lofs, tofs uint32
-		if err := h.Read(f, &lofs, &tofs); err != nil {
-			return nil, err
-		}
-		var shofs, xofs, size uint32 = h.FirstSpriteHeaderOffset, 0, 0
-		var indexOfPrevious uint16
-		pl := &PaletteList{}
-		pl.init()
-		foo := func() error {
-			switch h.Ver0 {
-			case 1:
-				if err := s.readHeader(f, &xofs, &size, &indexOfPrevious); err != nil {
-					return err
-				}
-			case 2:
-				if err := s.readHeaderV2(f, &xofs, &size,
-					lofs, tofs, &indexOfPrevious); err != nil {
-					return err
-				}
-			}
-			return nil
-		}
-		var dummy *Sprite
-		var newSubHeaderOffset []uint32
-		newSubHeaderOffset = append(newSubHeaderOffset, shofs)
-		i := 0
-		for ; i < int(h.NumberOfSprites); i++ {
-			newSubHeaderOffset = append(newSubHeaderOffset, shofs)
-			f.Seek(int64(shofs), 0)
-			if err := foo(); err != nil {
-				return nil, err
-			}
-			if s.palidx < 0 || s.Group == g && s.Number == n {
-				ip := len(newSubHeaderOffset)
-				for size == 0 {
-					if int(indexOfPrevious) >= ip {
-						return nil, Error("link is invalid")
-					}
-					ip = int(indexOfPrevious)
-					if h.Ver0 == 1 {
-						shofs = newSubHeaderOffset[ip]
-					} else {
-						shofs = h.FirstSpriteHeaderOffset + uint32(ip)*28
-					}
-					f.Seek(int64(shofs), 0)
-					if err := foo(); err != nil {
-						return nil, err
-					}
-				}
-				switch h.Ver0 {
-				case 1:
-					if err := s.read(f, h, int64(shofs+32), size, xofs, dummy,
-						pl, false); err != nil {
-						return nil, err
-					}
-				case 2:
-					if err := s.readV2(f, int64(xofs), size); err != nil {
-						return nil, err
-					}
-				}
-				if s.Group == g && s.Number == n {
-					break
-				}
-				dummy = &Sprite{palidx: s.palidx}
-			}
-			if h.Ver0 == 1 {
-				shofs = xofs
-			} else {
-				shofs += 28
-			}
-		}
-		if i == int(h.NumberOfSprites) {
-			return nil, Error(fmt.Sprintf("Sprite not found: %v, %v", g, n))
-		}
-		if h.Ver0 == 1 {
-			s.Pal = pl.Get(s.palidx)
-			s.palidx = -1
-			return s, nil
-		}
-		if s.coldepth <= 8 {
-			read := func(x interface{}) error {
-				return binary.Read(f, binary.LittleEndian, x)
-			}
-			size = 0
-			indexOfPrevious = uint16(s.palidx)
-			ip := indexOfPrevious + 1
-			for size == 0 && ip != indexOfPrevious {
-				ip = indexOfPrevious
-				shofs = h.FirstPaletteHeaderOffset + uint32(ip)*16
-				f.Seek(int64(shofs)+6, 0)
-				if err := read(&indexOfPrevious); err != nil {
-					return nil, err
-				}
-				if err := read(&xofs); err != nil {
-					return nil, err
-				}
-				if err := read(&size); err != nil {
-					return nil, err
-				}
-			}
-			f.Seek(int64(lofs+xofs), 0)
-			s.Pal = make([]uint32, 256)
-			var rgba [4]byte
-			for i := 0; i < int(size)/4 && i < len(s.Pal); i++ {
-				if err := read(rgba[:]); err != nil {
-					return nil, err
-				}
-				if h.Ver2 == 0 {
-					rgba[3] = 255
-				}
-				s.Pal[i] = uint32(rgba[3])<<24 | uint32(rgba[2])<<16 | uint32(rgba[1])<<8 | uint32(rgba[0])
-			}
-			s.palidx = -1
-		}
-		return s, nil
-	}
-*/
 func (s *Sprite) shareCopy(src *Sprite) {
 	s.Pal = src.Pal
 	s.Tex = src.Tex
@@ -714,14 +677,15 @@ func (s *Sprite) GetPal(pl *PaletteList) []uint32 {
 	return pl.Get(int(s.palidx)) //pl.palettes[pl.paletteMap[int(s.palidx)]]
 }
 
+// Replace the existing GetPalTex function with this one
 func (s *Sprite) GetPalTex(pl *PaletteList) Texture {
-	if s.coldepth > 8 {
+	if pl == nil {
 		return nil
 	}
-	if s.palidx < 0 || int(s.palidx) >= len(pl.paletteMap) {
-		s.palidx = 0
-	}
-	return pl.PalTex[pl.paletteMap[int(s.palidx)]]
+	// CHANGED: Return the shared Array Texture.
+	// The specific layer index is retrieved via pl.GetLayer(s.palidx)
+	// which is handled in the renderer (anim.go).
+	return pl.ArrayTexture
 }
 
 func (s *Sprite) SetPxl(px []byte, atlas_8 *TextureAtlas) {
@@ -1210,30 +1174,27 @@ func (s *Sprite) readV2(f io.ReadSeeker, offset int64, datasize uint32, atlas_8 
 // This saves a lot of palette operations when the same player has many sprites on screen
 func (s *Sprite) CachePalette(pal []uint32) Texture {
 	// 1. Fast Path: Hardware-optimized comparison
-	// slices.Equal uses SIMD (vectorization) for extremely fast comparison.
 	if s.PalTex != nil && slices.Equal(s.paltemp, pal) {
 		return s.PalTex
 	}
 
 	// 2. Prepare Data (Zero-Copy)
-	// Create a byte slice view directly from the uint32 slice header.
 	byteData := unsafe.Slice((*byte)(unsafe.Pointer(&pal[0])), len(pal)*4)
 
 	// 3. GPU Optimization: VRAM Reuse
-	if s.PalTex != nil {
-		// REUSE: Upload new pixels to the EXISTING texture handle.
-		// This avoids the expensive overhead of destroying/creating OpenGL textures.
-		s.PalTex.SetData(byteData)
-	} else {
-		// CREATE: Only allocate a new texture handle once.
-		s.PalTex = gfx.newPaletteTexture()
-		if len(pal) > 0 {
-			s.PalTex.SetData(byteData)
-		}
+	if s.PalTex == nil {
+		// CHANGED: Create a 1-layer Texture Array
+		// The shader expects 'sampler2DArray', so we cannot use a standard 2D texture anymore.
+		s.PalTex = gfx.newPaletteTextureArray(1)
+	}
+
+	// CHANGED: Use UploadPaletteLayer (Layer 0) instead of SetData
+	// SetData defaults to GL_TEXTURE_2D, which would fail or bind incorrectly.
+	if len(pal) > 0 {
+		s.PalTex.SetPaletteLayer(byteData, 0)
 	}
 
 	// 4. Memory Optimization: Buffer Reuse
-	// Re-use the underlying array of s.paltemp to avoid allocating new CPU memory.
 	if cap(s.paltemp) < len(pal) {
 		s.paltemp = make([]uint32, len(pal))
 	}
@@ -1243,7 +1204,7 @@ func (s *Sprite) CachePalette(pal []uint32) Texture {
 	return s.PalTex
 }
 
-func (s *Sprite) Draw(x, y, xscale, yscale float32, rxadd float32, rot Rotation, fx *PalFX, window *[4]int32) {
+func (s *Sprite) Draw(x, y, xscale, yscale float32, rxadd float32, rot Rotation, fx *PalFX, window *[4]int32, palIndex float32) {
 	x += float32(sys.gameWidth-320)/2 - xscale*float32(s.Offset[0])
 	y += float32(sys.gameHeight-240) - yscale*float32(s.Offset[1])
 	var rcx, rcy float32
@@ -1264,6 +1225,7 @@ func (s *Sprite) Draw(x, y, xscale, yscale float32, rxadd float32, rot Rotation,
 	rp := RenderParams{
 		tex:            s.Tex,
 		paltex:         s.PalTex,
+		PalIndex:       palIndex,
 		size:           s.Size,
 		x:              -x * sys.widthScale,
 		y:              -y * sys.heightScale,

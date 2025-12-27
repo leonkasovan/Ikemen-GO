@@ -476,8 +476,10 @@ func (s *System) init(w, h int32) *lua.LState {
 	for i := 1; i < 256; i++ {
 		whitepal[i] = 0xffffffff // White (and full alpha)
 	}
-	s.whitePalTex = gfx.newPaletteTexture()
-	s.whitePalTex.SetData(pal32ToBytes(whitepal))
+	// s.whitePalTex = gfx.newPaletteTexture()
+	// s.whitePalTex.SetData(pal32ToBytes(whitepal))
+	sys.whitePalTex = gfx.newPaletteTextureArray(1)
+	sys.whitePalTex.SetPaletteLayer(pal32ToBytes(whitepal), 0)
 
 	systemScriptInit(l)
 	s.shortcutScripts = make(map[ShortcutKey]*ShortcutScript)

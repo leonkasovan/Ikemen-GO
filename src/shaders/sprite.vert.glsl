@@ -4,9 +4,11 @@ mat4 modelview, projection;
 };
 layout(location = 0) in vec2 position;
 layout(location = 1) in vec2 uv;
+layout(location = 2) in float palIndex;
 layout(location = 2) uniform vec4 uvRect;
 layout(location = 3) uniform int useUV;
 layout(location = 0) out vec2 texcoord;
+layout(location = 1) flat out float v_PalIndex;
 #else
 #if __VERSION__ >= 130
 #define COMPAT_VARYING out
@@ -22,9 +24,11 @@ uniform mat4 modelview, projection;
 
 COMPAT_ATTRIBUTE vec2 position;
 COMPAT_ATTRIBUTE vec2 uv;
+COMPAT_ATTRIBUTE float palIndex;
 uniform vec4 uvRect;
 uniform int useUV;
 COMPAT_VARYING vec2 texcoord;
+flat COMPAT_VARYING float v_PalIndex;
 #endif
 
 void main(void) {
@@ -34,6 +38,7 @@ void main(void) {
 	} else {
 		texcoord = uv;
 	}
+	v_PalIndex = palIndex;
 	gl_Position = projection * (modelview * vec4(position, 0.0, 1.0));
 	#if __VERSION__ >= 450
 	gl_Position.y = -gl_Position.y;

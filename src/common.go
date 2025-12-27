@@ -1027,25 +1027,37 @@ func (l *Layout) Read(pre string, is IniSection) {
 	}
 }
 
-func (l *Layout) DrawFaceSprite(x, y float32, ln int16, s *Sprite, fx *PalFX, fscale float32, window *[4]int32) {
+func (l *Layout) DrawFaceSprite(x, y float32, ln int16, s *Sprite, fx *PalFX, fscale float32, window *[4]int32, palIndex float32) {
 	if l.layerno == ln && s != nil {
-		// TODO: test "phantom pixel"
+		// "Phantom pixel" correction for flipped fonts/lifebars
 		if l.facing < 0 {
 			x += sys.lifebar.fnt_scale * sys.lifebarScale
 		}
 		if l.vfacing < 0 {
 			y += sys.lifebar.fnt_scale * sys.lifebarScale
 		}
+
+		// Ensure texture validity (Legacy fallback, though Texture Arrays usually handle this in lifebar.go)
 		if s.coldepth <= 8 && s.PalTex == nil {
 			s.PalTex = s.CachePalette(s.Pal)
 		}
+
 		// Xshear offset correction
 		xshear := -l.xshear
 		xsoffset := xshear * (float32(s.Offset[1]) * l.scale[1] * fscale)
 
-		s.Draw(x+l.offset[0]*sys.lifebarScale-xsoffset, y+l.offset[1]*sys.lifebarScale,
-			l.scale[0]*float32(l.facing)*fscale, l.scale[1]*float32(l.vfacing)*fscale,
-			xshear, Rotation{l.angle, 0, 0}, fx, window)
+		// Delegate to Sprite.Draw, passing the palIndex
+		s.Draw(
+			x+l.offset[0]*sys.lifebarScale-xsoffset, // X Position
+			y+l.offset[1]*sys.lifebarScale,          // Y Position
+			l.scale[0]*float32(l.facing)*fscale,     // X Scale
+			l.scale[1]*float32(l.vfacing)*fscale,    // Y Scale
+			xshear,                   // RX Add (Shear)
+			Rotation{l.angle, 0, 0},  // Rotation
+			fx,                       // Palette Effects
+			window,                   // Clipping Window
+			palIndex,                 // CHANGED: Pass the Palette Index (Layer)
+		)
 	}
 }
 

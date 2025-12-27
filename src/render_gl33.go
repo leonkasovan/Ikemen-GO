@@ -181,6 +181,27 @@ func (r *Renderer_GL) newPaletteTexture() Texture {
 	return r.newTexture(256, 1, 32, false)
 }
 
+func (r *Renderer_GL) newPaletteTextureArray(layers int32) (t Texture) {
+    var h uint32
+    gl.ActiveTexture(gl.TEXTURE0)
+    gl.GenTextures(1, &h)
+    t = &Texture_GL{256, 1, layers, false, h} // Width 256, Height 1
+
+    gl.BindTexture(gl.TEXTURE_2D_ARRAY, h)
+    // Allocate storage for all layers (GL_RGBA8)
+    gl.TexImage3D(gl.TEXTURE_2D_ARRAY, 0, gl.RGBA8, 256, 1, layers, 0, gl.RGBA, gl.UNSIGNED_BYTE, nil)
+
+    gl.TexParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+    gl.TexParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+    gl.TexParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+    gl.TexParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+
+    runtime.SetFinalizer(t, func(t *Texture_GL) {
+        sys.mainThreadTask <- func() { gl.DeleteTextures(1, &t.handle) }
+    })
+    return
+}
+
 func (r *Renderer_GL) newModelTexture(width, height, depth int32, filter bool) Texture {
 	return r.newTexture(width, height, depth, filter)
 }
@@ -246,6 +267,15 @@ func (r *Renderer_GL) newCubeMapTexture(widthHeight int32, mipmap bool, lowestMi
 	gl.TexParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
 	gl.TexParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
 	return
+}
+
+func (t *Texture_GL) SetPaletteLayer(data []byte, layer int32) {
+	gl.BindTexture(gl.TEXTURE_2D_ARRAY, t.handle)
+    gl.PixelStorei(gl.UNPACK_ALIGNMENT, 1)
+
+    // Upload to specific Z-slice (layer)
+    // x=0, y=0, z=layer, w=256, h=1, d=1
+    gl.TexSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, layer, 256, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, unsafe.Pointer(&data[0]))
 }
 
 // Bind a texture and upload texel data to it
@@ -863,7 +893,7 @@ func (r *Renderer_GL) Init() {
 
 	// Sprite shader
 	r.spriteShader, _ = r.newShaderProgram(vertShader, fragShader, "", "Main Shader", true)
-	r.spriteShader.RegisterAttributes("position", "uv")
+	r.spriteShader.RegisterAttributes("position", "uv", "palIndex")
 	r.spriteShader.RegisterUniforms("modelview", "projection", "x1x2x4x3",
 		"alpha", "tint", "mask", "neg", "gray", "add", "mult", "isFlat", "isRgba", "isTrapez", "hue", "uvRect", "useUV")
 	r.spriteShader.RegisterTextures("pal", "tex")
@@ -1272,28 +1302,38 @@ func (r *Renderer_GL) SetPipeline(eq BlendEquation, src, dst BlendFunc) {
 
 	// Must bind buffer before enabling attributes
 	gl.BindBuffer(gl.ARRAY_BUFFER, r.vertexBuffer)
-	loc := r.spriteShader.a["position"]
+	const stride = 20 // 5 floats * 4 bytes
+	loc := r.spriteShader.a["position"] // Position (Offset 0)
 	gl.EnableVertexAttribArray(uint32(loc))
-	gl.VertexAttribPointerWithOffset(uint32(loc), 2, gl.FLOAT, false, 16, 0)
-	loc = r.spriteShader.a["uv"]
+	gl.VertexAttribPointerWithOffset(uint32(loc), 2, gl.FLOAT, false, stride, 0)
+	loc = r.spriteShader.a["uv"] // UV (Offset 8)
 	gl.EnableVertexAttribArray(uint32(loc))
-	gl.VertexAttribPointerWithOffset(uint32(loc), 2, gl.FLOAT, false, 16, 8)
+	gl.VertexAttribPointerWithOffset(uint32(loc), 2, gl.FLOAT, false, stride, 8)
+    loc = r.spriteShader.a["palIndex"] // PalIndex (Offset 16)
+    gl.EnableVertexAttribArray(uint32(loc))
+    gl.VertexAttribPointerWithOffset(uint32(loc), 1, gl.FLOAT, false, stride, 16)
 }
 
 func (r *Renderer_GL) SetPipelineBatch() {
 	gl.BindBuffer(gl.ARRAY_BUFFER, r.vertexBufferBatch)
-	loc := r.spriteShader.a["position"]
+	const stride = 20 // 5 floats * 4 bytes
+	loc := r.spriteShader.a["position"] 
 	gl.EnableVertexAttribArray(uint32(loc))
-	gl.VertexAttribPointerWithOffset(uint32(loc), 2, gl.FLOAT, false, 16, 0)
+	gl.VertexAttribPointerWithOffset(uint32(loc), 2, gl.FLOAT, false, stride, 0)
 	loc = r.spriteShader.a["uv"]
 	gl.EnableVertexAttribArray(uint32(loc))
-	gl.VertexAttribPointerWithOffset(uint32(loc), 2, gl.FLOAT, false, 16, 8)
+	gl.VertexAttribPointerWithOffset(uint32(loc), 2, gl.FLOAT, false, stride, 8)
+	loc = r.spriteShader.a["palIndex"]
+	gl.EnableVertexAttribArray(uint32(loc))
+	gl.VertexAttribPointerWithOffset(uint32(loc), 1, gl.FLOAT, false, stride, 16)
 }
 
 func (r *Renderer_GL) ReleasePipeline() {
 	loc := r.spriteShader.a["position"]
 	gl.DisableVertexAttribArray(uint32(loc))
 	loc = r.spriteShader.a["uv"]
+	gl.DisableVertexAttribArray(uint32(loc))
+	loc = r.spriteShader.a["palIndex"]
 	gl.DisableVertexAttribArray(uint32(loc))
 	gl.Disable(gl.BLEND)
 }
@@ -1758,10 +1798,21 @@ func (r *Renderer_GL) SetUniformMatrix(name string, value []float32) {
 }
 
 func (r *Renderer_GL) SetTexture(name string, tex Texture) {
+	if tex == nil || !tex.IsValid() {
+		fmt.Printf("Renderer_GL.SetTexture %v is empty or invalid\n", name)
+		return
+	}
 	t := tex.(*Texture_GL)
 	loc, unit := r.spriteShader.u[name], r.spriteShader.t[name]
 	gl.ActiveTexture((uint32(gl.TEXTURE0 + unit)))
-	gl.BindTexture(gl.TEXTURE_2D, t.handle)
+	// If the shader uniform is "pal" OR it has depth > 1, treat as array.
+	// This covers both multi-layer palettes and single-layer (depth=1) palettes created via CachePalette.
+    if name == "pal" || (t.depth > 1 && t.height == 1) {
+         // Heuristic for Palette Array: height=1, depth=NumLayers
+         gl.BindTexture(gl.TEXTURE_2D_ARRAY, t.handle)
+    } else {
+         gl.BindTexture(gl.TEXTURE_2D, t.handle)
+    }
 	gl.Uniform1i(loc, int32(unit))
 }
 

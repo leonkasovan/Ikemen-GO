@@ -488,6 +488,7 @@ func (f *Fnt) EndBatch() {
 		rp := f.batchRP
 		rp.tex = f.batchTex
 		rp.paltex = f.batchPal
+		rp.PalIndex = 0 // CHANGED: Default palette index 0 for fonts
 		RenderSpriteBatch(f.batchVertices, rp)
 	}
 	f.isBatching = false
@@ -499,6 +500,7 @@ func (f *Fnt) FlushBatch(rp RenderParams) {
 		// fmt.Printf("FlushBatch: %v\n", len(f.batchVertices)/24)
 		rp.tex = f.batchTex
 		rp.paltex = f.batchPal
+		rp.PalIndex = 0 // CHANGED: Default palette index 0 for fonts
 		RenderSpriteBatch(f.batchVertices, rp)
 		f.batchVertices = f.batchVertices[:0]
 	}
@@ -591,6 +593,7 @@ func (f *Fnt) drawChar(
 	// Update only the render parameters that change between each character
 	rp.tex = spr.Tex
 	rp.paltex = f.paltex
+	rp.PalIndex = 0 // CHANGED: Default palette index
 	rp.size = spr.Size
 	rp.x = -x * sys.widthScale
 	rp.y = -y * sys.heightScale
@@ -679,6 +682,7 @@ func (f *Fnt) DrawText(txt string, x, y, xscl, yscl, rxadd float32, rot Rotation
 	rp := RenderParams{
 		tex:            nil,
 		paltex:         nil,
+		PalIndex:       0, // CHANGED: Default palette index
 		size:           [2]uint16{0, 0},
 		x:              0,
 		y:              0,
@@ -758,6 +762,7 @@ func (f *Fnt) DrawTextBatch(txt string, x, y, xscl, yscl, rxadd float32, rot Rot
 	rp := RenderParams{
 		tex:            nil,
 		paltex:         nil,
+		PalIndex:       0, // CHANGED: Default palette index
 		size:           [2]uint16{0, 0},
 		x:              0,
 		y:              0,
@@ -866,13 +871,14 @@ func (f *Fnt) DrawTextBatch(txt string, x, y, xscl, yscl, rxadd float32, rot Rot
 		}
 
 		// Append to Persistent Buffer
+		// CHANGED: Added 5th float (0) for Palette Index to match the new vertex stride
 		f.batchVertices = append(f.batchVertices,
-			screenX, glBottomY, u1, v2,
-			screenX+width, glBottomY, u2, v2,
-			screenX, glTopY, u1, v1,
-			screenX, glTopY, u1, v1,
-			screenX+width, glBottomY, u2, v2,
-			screenX+width, glTopY, u2, v1,
+			screenX, glBottomY, u1, v2, 0,
+			screenX+width, glBottomY, u2, v2, 0,
+			screenX, glTopY, u1, v1, 0,
+			screenX, glTopY, u1, v1, 0,
+			screenX+width, glBottomY, u2, v2, 0,
+			screenX+width, glTopY, u2, v1, 0,
 		)
 
 		currentX += float32(spr.Size[0])*xscl + xscl*float32(f.Spacing[0])
