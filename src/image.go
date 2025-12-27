@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"strings"
 	"unsafe"
+	"slices"
 )
 
 type TransType int32
@@ -1208,22 +1209,37 @@ func (s *Sprite) readV2(f io.ReadSeeker, offset int64, datasize uint32, atlas_8 
 // Compare current palette to previous one and reuse if possible
 // This saves a lot of palette operations when the same player has many sprites on screen
 func (s *Sprite) CachePalette(pal []uint32) Texture {
-	hasPalette := true
-	if s.PalTex == nil || len(pal) != len(s.paltemp) {
-		hasPalette = false
+	// 1. Fast Path: Hardware-optimized comparison
+	// slices.Equal uses SIMD (vectorization) for extremely fast comparison.
+	if s.PalTex != nil && slices.Equal(s.paltemp, pal) {
+		return s.PalTex
+	}
+
+	// 2. Prepare Data (Zero-Copy)
+	// Create a byte slice view directly from the uint32 slice header.
+	byteData := unsafe.Slice((*byte)(unsafe.Pointer(&pal[0])), len(pal)*4)
+
+	// 3. GPU Optimization: VRAM Reuse
+	if s.PalTex != nil {
+		// REUSE: Upload new pixels to the EXISTING texture handle.
+		// This avoids the expensive overhead of destroying/creating OpenGL textures.
+		s.PalTex.SetData(byteData)
 	} else {
-		for i := range pal {
-			if pal[i] != s.paltemp[i] {
-				hasPalette = false
-				break
-			}
+		// CREATE: Only allocate a new texture handle once.
+		s.PalTex = gfx.newPaletteTexture()
+		if len(pal) > 0 {
+			s.PalTex.SetData(byteData)
 		}
 	}
-	// If cached texture is invalid, generate a new one and cache it
-	if !hasPalette {
-		s.PalTex = PaletteToTexture(pal)
-		s.paltemp = append([]uint32{}, pal...)
+
+	// 4. Memory Optimization: Buffer Reuse
+	// Re-use the underlying array of s.paltemp to avoid allocating new CPU memory.
+	if cap(s.paltemp) < len(pal) {
+		s.paltemp = make([]uint32, len(pal))
 	}
+	s.paltemp = s.paltemp[:len(pal)]
+	copy(s.paltemp, pal)
+
 	return s.PalTex
 }
 
