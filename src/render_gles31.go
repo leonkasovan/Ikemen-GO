@@ -1,4 +1,5 @@
 //go:build opengles31
+
 // This is almost identical to render_gles.go except it uses a VAO
 // for GLES 3.1 which is the minimum version that runs on modern
 // macOS (Intel and ARM). Work adapted from assemblaj/fantasma
@@ -9,16 +10,16 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"image"
+	clr "image/color" // Alias as clr to match your GL33 code
+	"image/png"
 	"math"
+	"os"
 	"runtime"
 	"unsafe"
-	"image"
-    clr "image/color" // Alias as clr to match your GL33 code
-    "image/png"
-    "os"
 
-	gl "github.com/ikemen-engine/Ikemen-GO/packages/gl/v3.1/gles2"
 	mgl "github.com/go-gl/mathgl/mgl32"
+	gl "github.com/ikemen-engine/Ikemen-GO/packages/gl/v3.1/gles2"
 	"golang.org/x/mobile/exp/f32"
 )
 
@@ -87,10 +88,10 @@ func (s *ShaderProgram_GL) RegisterTextures(names ...string) {
 func (r *Renderer_GL) compileShader(shaderType uint32, src string) (shader uint32, err error) {
 	shader = gl.CreateShader(shaderType)
 	// fmt.Println(src)
-	if (shaderType == gl.GEOMETRY_SHADER_EXT) {
+	if shaderType == gl.GEOMETRY_SHADER_EXT {
 		src = "#version 310 es\n#extension GL_EXT_geometry_shader : require\nprecision mediump float;\n" + src + "\x00"
 	} else {
-		src = "#version 310 es\nprecision mediump float;\n" + src + "\x00"
+		src = "#version 310 es\nprecision mediump float;\nprecision mediump sampler2DArray;\n" + src + "\x00"
 	}
 	s, _ := gl.Strs(src)
 	var l int32 = int32(len(src) - 1)
@@ -183,6 +184,27 @@ func (r *Renderer_GL) newPaletteTexture() Texture {
 	return r.newTexture(256, 1, 32, false)
 }
 
+func (r *Renderer_GL) newPaletteTextureArray(layers int32) (t Texture) {
+	var h uint32
+	gl.ActiveTexture(gl.TEXTURE0)
+	gl.GenTextures(1, &h)
+	t = &Texture_GL{256, 1, layers, false, h} // Width 256, Height 1
+
+	gl.BindTexture(gl.TEXTURE_2D_ARRAY, h)
+	// Allocate storage for all layers (GL_RGBA8)
+	gl.TexImage3D(gl.TEXTURE_2D_ARRAY, 0, gl.RGBA8, 256, 1, layers, 0, gl.RGBA, gl.UNSIGNED_BYTE, nil)
+
+	gl.TexParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+	gl.TexParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+	gl.TexParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+	gl.TexParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+
+	runtime.SetFinalizer(t, func(t *Texture_GL) {
+		sys.mainThreadTask <- func() { gl.DeleteTextures(1, &t.handle) }
+	})
+	return
+}
+
 func (r *Renderer_GL) newModelTexture(width, height, depth int32, filter bool) Texture {
 	return r.newTexture(width, height, depth, filter)
 }
@@ -248,6 +270,15 @@ func (r *Renderer_GL) newCubeMapTexture(widthHeight int32, mipmap bool, lowestMi
 	gl.TexParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
 	gl.TexParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
 	return
+}
+
+func (t *Texture_GL) SetPaletteLayer(data []byte, layer int32) {
+	gl.BindTexture(gl.TEXTURE_2D_ARRAY, t.handle)
+	gl.PixelStorei(gl.UNPACK_ALIGNMENT, 1)
+
+	// Upload to specific Z-slice (layer)
+	// x=0, y=0, z=layer, w=256, h=1, d=1
+	gl.TexSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, layer, 256, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, unsafe.Pointer(&data[0]))
 }
 
 // Bind a texture and upload texel data to it
@@ -354,7 +385,7 @@ func (t *Texture_GL) CopyData(src *Texture) {
 	// Check status before blitting
 	if gl.CheckFramebufferStatus(gl.READ_FRAMEBUFFER) == gl.FRAMEBUFFER_COMPLETE &&
 		gl.CheckFramebufferStatus(gl.DRAW_FRAMEBUFFER) == gl.FRAMEBUFFER_COMPLETE {
-		
+
 		gl.BlitFramebuffer(0, 0, t.width, t.height,
 			0, 0, t.width, t.height,
 			gl.COLOR_BUFFER_BIT, gl.NEAREST)
@@ -383,11 +414,11 @@ func (t *Texture_GL) GetHeight() int32 {
 
 func (t *Texture_GL) MapInternalFormat(i int32) uint32 {
 	var InternalFormatLUT = map[int32]uint32{
-		8:   gl.RED,        // single-channel (Red)
-		24:  gl.RGB,      // 8 bits per RGB channel
-		32:  gl.RGBA,     // 8 bits per RGBA channel
-		96:  gl.RGB32F,    // 32-bit float per RGB channel
-		128: gl.RGBA32F,   // 32-bit float per RGBA channel
+		8:   gl.RED,     // single-channel (Red)
+		24:  gl.RGB,     // 8 bits per RGB channel
+		32:  gl.RGBA,    // 8 bits per RGBA channel
+		96:  gl.RGB32F,  // 32-bit float per RGB channel
+		128: gl.RGBA32F, // 32-bit float per RGBA channel
 	}
 
 	return InternalFormatLUT[i]
@@ -548,7 +579,7 @@ func (t *Texture_GL) SavePNG(filename string, pal []uint32) error {
 		return err
 	}
 	defer f.Close()
-	
+
 	// Create NRGBA image
 	normalImg := image.NewNRGBA(image.Rect(0, 0, int(t.width), int(t.height)))
 	// Note: glReadPixels returns data from bottom-left. Standard PNG is top-left.
@@ -684,12 +715,14 @@ func (r *Renderer_GL) InitModelShader() error {
 // Creates the default shaders, the framebuffer and enables MSAA.
 func (r *Renderer_GL) Init() {
 	if err := gl.Init(sys.GetProcAddress()); err != nil {
-    	fmt.Println("gl.Init() failed:", err)
+		fmt.Println("gl.Init() failed:", err)
 	} else {
 		fmt.Println("gl.Init() success:")
 	}
-	sys.errLog.Printf("Using %v (%v)",
-		gl.GoStr(gl.GetString(gl.VERSION)), gl.GoStr(gl.GetString(gl.RENDERER)))
+	fmt.Printf("Real GL Version: %v\n", gl.GoStr(gl.GetString(gl.VERSION)))
+	fmt.Printf("Real GLSL Version: %v\n", gl.GoStr(gl.GetString(gl.SHADING_LANGUAGE_VERSION)))
+	fmt.Printf("Real GL Renderer: %v\n", gl.GoStr(gl.GetString(gl.RENDERER)))
+	fmt.Printf("Real GL Vendor: %v\n", gl.GoStr(gl.GetString(gl.VENDOR)))
 
 	// Query max samples and clamp requested msaa
 	var maxSamples int32
@@ -727,7 +760,7 @@ func (r *Renderer_GL) Init() {
 
 	// Sprite shader
 	r.spriteShader, _ = r.newShaderProgram(vertShader, fragShader, "", "Main Shader", true)
-	r.spriteShader.RegisterAttributes("position", "uv")
+	r.spriteShader.RegisterAttributes("position", "uv", "palIndex")
 	r.spriteShader.RegisterUniforms("modelview", "projection", "x1x2x4x3",
 		"alpha", "tint", "mask", "neg", "gray", "add", "mult", "isFlat", "isRgba", "isTrapez", "hue", "uvRect", "useUV")
 	r.spriteShader.RegisterTextures("pal", "tex")
@@ -1129,28 +1162,38 @@ func (r *Renderer_GL) SetPipeline(eq BlendEquation, src, dst BlendFunc) {
 
 	// Must bind buffer before enabling attributes
 	gl.BindBuffer(gl.ARRAY_BUFFER, r.vertexBuffer)
-	loc := r.spriteShader.a["position"]
+	const stride = 20                   // 5 floats * 4 bytes
+	loc := r.spriteShader.a["position"] // Position (Offset 0)
 	gl.EnableVertexAttribArray(uint32(loc))
-	gl.VertexAttribPointerWithOffset(uint32(loc), 2, gl.FLOAT, false, 16, 0)
-	loc = r.spriteShader.a["uv"]
+	gl.VertexAttribPointerWithOffset(uint32(loc), 2, gl.FLOAT, false, stride, 0)
+	loc = r.spriteShader.a["uv"] // UV (Offset 8)
 	gl.EnableVertexAttribArray(uint32(loc))
-	gl.VertexAttribPointerWithOffset(uint32(loc), 2, gl.FLOAT, false, 16, 8)
+	gl.VertexAttribPointerWithOffset(uint32(loc), 2, gl.FLOAT, false, stride, 8)
+	loc = r.spriteShader.a["palIndex"] // PalIndex (Offset 16)
+	gl.EnableVertexAttribArray(uint32(loc))
+	gl.VertexAttribPointerWithOffset(uint32(loc), 1, gl.FLOAT, false, stride, 16)
 }
 
 func (r *Renderer_GL) SetPipelineBatch() {
 	gl.BindBuffer(gl.ARRAY_BUFFER, r.vertexBufferBatch)
+	const stride = 20 // 5 floats * 4 bytes
 	loc := r.spriteShader.a["position"]
 	gl.EnableVertexAttribArray(uint32(loc))
-	gl.VertexAttribPointerWithOffset(uint32(loc), 2, gl.FLOAT, false, 16, 0)
+	gl.VertexAttribPointerWithOffset(uint32(loc), 2, gl.FLOAT, false, stride, 0)
 	loc = r.spriteShader.a["uv"]
 	gl.EnableVertexAttribArray(uint32(loc))
-	gl.VertexAttribPointerWithOffset(uint32(loc), 2, gl.FLOAT, false, 16, 8)
+	gl.VertexAttribPointerWithOffset(uint32(loc), 2, gl.FLOAT, false, stride, 8)
+	loc = r.spriteShader.a["palIndex"]
+	gl.EnableVertexAttribArray(uint32(loc))
+	gl.VertexAttribPointerWithOffset(uint32(loc), 1, gl.FLOAT, false, stride, 16)
 }
 
 func (r *Renderer_GL) ReleasePipeline() {
 	loc := r.spriteShader.a["position"]
 	gl.DisableVertexAttribArray(uint32(loc))
 	loc = r.spriteShader.a["uv"]
+	gl.DisableVertexAttribArray(uint32(loc))
+	loc = r.spriteShader.a["palIndex"]
 	gl.DisableVertexAttribArray(uint32(loc))
 	gl.Disable(gl.BLEND)
 }
@@ -1581,10 +1624,21 @@ func (r *Renderer_GL) SetUniformMatrix(name string, value []float32) {
 }
 
 func (r *Renderer_GL) SetTexture(name string, tex Texture) {
+	if tex == nil || !tex.IsValid() {
+		fmt.Printf("Renderer_GL.SetTexture %v is empty or invalid\n", name)
+		return
+	}
 	t := tex.(*Texture_GL)
 	loc, unit := r.spriteShader.u[name], r.spriteShader.t[name]
 	gl.ActiveTexture((uint32(gl.TEXTURE0 + unit)))
-	gl.BindTexture(gl.TEXTURE_2D, t.handle)
+	// If the shader uniform is "pal" OR it has depth > 1, treat as array.
+	// This covers both multi-layer palettes and single-layer (depth=1) palettes created via CachePalette.
+	if name == "pal" || (t.depth > 1 && t.height == 1) {
+		// Heuristic for Palette Array: height=1, depth=NumLayers
+		gl.BindTexture(gl.TEXTURE_2D_ARRAY, t.handle)
+	} else {
+		gl.BindTexture(gl.TEXTURE_2D, t.handle)
+	}
 	gl.Uniform1i(loc, int32(unit))
 }
 
