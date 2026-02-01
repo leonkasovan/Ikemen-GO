@@ -1735,21 +1735,6 @@ func (s *System) restoreAllVolume() {
 	}
 }
 
-func (s *System) clearMatchSound() {
-	s.stopAllCharSound()
-	// Quiesce stage videos so no background decoding continues while mixer is empty,
-	// and mark them as detached so SetPlaying(true) can re-attach next frame.
-	if s.stage != nil {
-		for _, b := range s.stage.bg {
-			if b != nil && b._type == BG_Video {
-				b.video.SetPlaying(false)
-				b.video.SetVisible(false)
-				b.video.MixerCleared()
-			}
-		}
-	}
-}
-
 func (s *System) clearAllSound() {
 	s.soundChannels.StopAll()
 	s.soundMixer.Clear()

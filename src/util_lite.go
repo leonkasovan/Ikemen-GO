@@ -1,4 +1,4 @@
-//go:build !raw && !android && !lite
+//go:build lite
 
 package main
 
@@ -8,7 +8,6 @@ import (
 	"os"
 
 	findfont "github.com/flopp/go-findfont"
-	"github.com/sqweek/dialog"
 )
 
 // Log writer implementation
@@ -18,11 +17,11 @@ func NewLogWriter() io.Writer {
 
 // Message box implementation
 func ShowInfoDialog(message, title string) {
-	dialog.Message(message).Title(title).Info()
+	print(title + "\n\n" + message)
 }
 
 func ShowErrorDialog(message string) {
-	dialog.Message(message).Title("I.K.E.M.E.N Error").Error()
+	print("I.K.E.M.E.N Error\n\n" + message)
 }
 
 // TTF font loading
@@ -61,16 +60,8 @@ func selectRenderer(cfgVal string) (Renderer, FontRenderer) {
 	var gfx Renderer
 	var gfxFont FontRenderer
 	// Now we proceed to init the render.
-	if cfgVal == "Vulkan 1.3" {
-		gfx = &Renderer_VK{}
-		gfxFont = &FontRenderer_VK{}
-	} else if cfgVal == "OpenGL 2.1" {
-		gfx = &Renderer_GL21{}
-		gfxFont = &FontRenderer_GL21{}
-	} else {
-		gfx = &Renderer_GL32{}
-		gfxFont = &FontRenderer_GL32{}
-	}
+	gfx = &Renderer_GL32{}
+	gfxFont = &FontRenderer_GL32{}
 
 	return gfx, gfxFont
 }
