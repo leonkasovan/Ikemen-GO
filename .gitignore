@@ -70,12 +70,9 @@ build/android-apk/
 
 # Binaries
 build/android-deps/
-build/libxmp-src/
-build/sdl2-src/
-build/ffmpeg-src/
-build/ffmpeg/
 build/delaylib/
 build/winres/
+build/output/
 
 # macOS bundle by local make
 /I.K.E.M.E.N-Go.app/
@@ -84,4 +81,7 @@ build/winres/
 *.syso
 *.exe
 *.dll
+*.zip
+*.o
+*.a
 external/script/version

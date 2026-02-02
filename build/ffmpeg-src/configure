@@ -5709,50 +5709,6 @@ esac
 if [ "arget_os" = "windows_nt" ]; then
 	target_os="mingw64"
 fi 
-#override target_os(using uname) in w64devkit
-if [ "arget_os" = "windows_nt" ]; then
-	target_os="mingw64"
-fi 
-#override target_os(using uname) in w64devkit
-if [ "arget_os" = "windows_nt" ]; then
-	target_os="mingw64"
-#override target_os(using uname) in w64devkit
-if [ "arget_os" = "windows_nt" ]; then
-	target_os="mingw64"
-fi 
-#override target_os(using uname) in w64devkit
-if [ "arget_os" = "windows_nt" ]; then
-	target_os="mingw64"
-fi 
-#override target_os(using uname) in w64devkit
-if [ "arget_os" = "windows_nt" ]; then
-	target_os="mingw64"
-fi 
-#override target_os(using uname) in w64devkit
-if [ "arget_os" = "windows_nt" ]; then
-	target_os="mingw64"
-fi 
-#override target_os(using uname) in w64devkit
-if [ "arget_os" = "windows_nt" ]; then
-	target_os="mingw64"
-fi 
-#override target_os(using uname) in w64devkit
-if [ "arget_os" = "windows_nt" ]; then
-	target_os="mingw64"
-fi 
-#override target_os(using uname) in w64devkit
-if [ "arget_os" = "windows_nt" ]; then
-	target_os="mingw64"
-fi 
-fi 
-#override target_os(using uname) in w64devkit
-if [ "arget_os" = "windows_nt" ]; then
-	target_os="mingw64"
-fi 
-#override target_os(using uname) in w64devkit
-if [ "arget_os" = "windows_nt" ]; then
-	target_os="mingw64"
-fi 
 # OS specific
 case $target_os in
     aix)

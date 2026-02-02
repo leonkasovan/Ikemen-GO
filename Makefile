@@ -1,5 +1,5 @@
 # =============================================================================
-# Ikemen GO Integrated Makefile (V14 - Fixed Linker Order)
+# Ikemen GO Integrated Makefile (V16 - Fixed Target Variables & Optimized)
 # =============================================================================
 
 # --- Configuration & Defaults ---
@@ -35,10 +35,7 @@ endif
 ifeq ($(RAW_ARCH),aarch64)
     GOARCH_DETECT := arm64
 endif
-ifeq ($(RAW_ARCH),i686)
-    GOARCH_DETECT := 386
-endif
-ifeq ($(RAW_ARCH),i386)
+ifneq (,$(filter i686 i386,$(RAW_ARCH)))
     GOARCH_DETECT := 386
 endif
 
@@ -47,8 +44,6 @@ HOST_OS := unknown
 EXE_EXT :=
 GO_TAGS :=
 CGO_LDFLAGS_EXTRA :=
-
-# Default Output Directory
 EXE_OUTPUT_DIR := bin
 
 # Detect Linux
@@ -107,28 +102,37 @@ endif
 
 # PKG_CONFIG_PATH for locating FFmpeg/XMP pkg-config files
 export PKG_CONFIG_PATH := $(BUILD_PREFIX)/lib/pkgconfig
+export GOEXPERIMENT := arenas
 
 # Go Source Files
 GO_SRCS := $(shell find $(SRC_DIR) -name "*.go" 2>/dev/null)
 
-# Windows Resource Object (for RC file compilation)
+# Windows Resource Object
 ifeq ($(HOST_OS),windows)
     GO_SRCS += src/rsrc_windows.syso
 endif
 
-# Required packages for full build (lite build overrides with sdl2 only)
+# Required packages (Full build)
 REQ_PKGS := libavformat libavcodec libavutil libswscale libswresample libavfilter sdl2
 
-# Build flags (computed at build time after FFmpeg/XMP are built)
-# Note: PKG_CFLAGS and PKG_LIBS are computed in the build rule to ensure dependencies exist
 ifeq ($(HOST_OS),windows)
 	EXTRA_LIBS := -static -lmingw32 -lmingwex -lkernel32 -luser32 -lgdi32 -lwinmm -limm32 -lole32 -loleaut32 -lversion -luuid -ladvapi32 -lshell32 -lsetupapi
 endif
 
 export CGO_ENABLED := 1
-export GOEXPERIMENT := arenas
-
 LD_FLAGS := -s -w -X 'main.Version=$(APP_VERSION)' -X 'main.BuildTime=$(APP_BUILDTIME)'
+
+# --- Build Command Definition ---
+# Using a canned sequence to ensure target-specific variables are correctly expanded
+define BUILD_GO
+	@export PKG_CFLAGS="$$($(PKG_CONFIG) --cflags $(REQ_PKGS) 2>/dev/null)" && \
+	export PKG_LIBS="$$($(PKG_CONFIG) --libs --static $(REQ_PKGS) 2>/dev/null) $(EXTRA_LIBS) $(EXTRA_PKG_LIBS)" && \
+	export CGO_CFLAGS="$$PKG_CFLAGS" && \
+	export CGO_LDFLAGS="$$PKG_LIBS $(CGO_LDFLAGS_EXTRA)" && \
+	echo "==> Building $(BIN_NAME) for $(GOOS)/$(GOARCH)..." && \
+	echo "  -> Tags:   $(GO_TAGS)" && \
+	$(GO) build -trimpath -v -tags "$(GO_TAGS)" -ldflags "$(LD_FLAGS)" -o $(EXE_OUTPUT_DIR)/$(BIN_NAME) ./src
+endef
 
 # --- Targets ---
 .PHONY: all clean ffmpeg xmp appbundle windows-resources build-core full lite
@@ -142,45 +146,25 @@ build-core: windows-resources $(EXE_OUTPUT_DIR)/$(BIN_NAME)
 # Lite build: only requires SDL2, no FFmpeg/XMP dependencies
 lite: GO_TAGS += lite
 lite: REQ_PKGS = sdl2
+lite: EXTRA_PKG_LIBS = -static
 lite: windows-resources $(GO_SRCS)
-	@export PKG_CFLAGS="$$($(PKG_CONFIG) --cflags $(REQ_PKGS) 2>/dev/null)" && \
-	export PKG_LIBS="$$($(PKG_CONFIG) --libs --static $(REQ_PKGS) 2>/dev/null) -static" && \
-	export CGO_CFLAGS="$$PKG_CFLAGS" && \
-	export CGO_LDFLAGS="$$PKG_LIBS" && \
-	echo "==> Source code changed. Building lite version of $(BIN_NAME) ..." && \
-	$(GO) build -trimpath -v -tags "$(GO_TAGS)" -ldflags "$(LD_FLAGS)" -o $(EXE_OUTPUT_DIR)/$(BIN_NAME) ./src
+	$(BUILD_GO)
 
 # The REAL Build Rule
 $(EXE_OUTPUT_DIR)/$(BIN_NAME): $(GO_SRCS) ffmpeg xmp
-	@export PKG_CFLAGS="$$($(PKG_CONFIG) --cflags $(REQ_PKGS) 2>/dev/null)" && \
-	export PKG_LIBS="$$($(PKG_CONFIG) --libs --static $(REQ_PKGS) 2>/dev/null) $(EXTRA_LIBS)" && \
-	export CGO_CFLAGS="$$PKG_CFLAGS" && \
-	export CGO_LDFLAGS="$$PKG_LIBS" && \
-	echo "==> BUILD INFO:" && \
-	echo "  -> Detected OS:  $(OS_DETECT)" && \
-	echo "  -> Target OS:    $(GOOS)" && \
-	echo "  -> Target Arch:  $(GOARCH)" && \
-	echo "  -> Go Tags:      $(GO_TAGS)" && \
-	echo "  -> CGO_CFLAGS:   $$CGO_CFLAGS" && \
-	echo "  -> CGO_LDFLAGS:  $$CGO_LDFLAGS" && \
-	echo "  PKG_CONFIG_PATH: $(PKG_CONFIG_PATH)" && \
-	echo "==> Source code changed. Rebuilding $(BIN_NAME)..." && \
-	$(GO) build -trimpath -v -tags "$(GO_TAGS)" -ldflags "$(LD_FLAGS)" -o $(EXE_OUTPUT_DIR)/$(BIN_NAME) ./src
+	$(BUILD_GO)
 
 # FFmpeg Build
-ffmpeg: $(BUILD_PREFIX)/lib/libavformat.a $(BUILD_PREFIX)/lib/libavcodec.a $(BUILD_PREFIX)/lib/libavutil.a $(BUILD_PREFIX)/lib/libswscale.a $(BUILD_PREFIX)/lib/libswresample.a $(BUILD_PREFIX)/lib/libavfilter.a
+FFMPEG_LIBS := $(addprefix $(BUILD_PREFIX)/lib/,libavformat.a libavcodec.a libavutil.a libswscale.a libswresample.a libavfilter.a)
 
-$(BUILD_PREFIX)/lib/libavformat.a $(BUILD_PREFIX)/lib/libavcodec.a $(BUILD_PREFIX)/lib/libavutil.a $(BUILD_PREFIX)/lib/libswscale.a $(BUILD_PREFIX)/lib/libswresample.a $(BUILD_PREFIX)/lib/libavfilter.a:
-	if [ ! -d "$(BUILD_DIR)/ffmpeg-src" ]; then \
+ffmpeg: $(FFMPEG_LIBS)
+
+$(FFMPEG_LIBS):
+	@if [ ! -d "$(BUILD_DIR)/ffmpeg-src" ]; then \
 		echo "==> Cloning FFmpeg source code..."; \
 		mkdir -p $(BUILD_DIR); \
 		git clone --depth=1 -b $(FFMPEG_REV) https://github.com/FFmpeg/FFmpeg.git $(BUILD_DIR)/ffmpeg-src; \
 	fi
-	@sed -i.bak '5719i\
-	#override target_os(using uname) in w64devkit\
-	if [ "$target_os" = "windows_nt" ]; then\
-		target_os="mingw64"\
-	fi ' build/ffmpeg-src/configure
 	@echo "==> Building FFmpeg locally..."
 	cd $(BUILD_DIR)/ffmpeg-src && \
 	./configure --prefix=$(BUILD_PREFIX) \
@@ -194,7 +178,7 @@ $(BUILD_PREFIX)/lib/libavformat.a $(BUILD_PREFIX)/lib/libavcodec.a $(BUILD_PREFI
          --enable-demuxer=matroska,webm \
          --enable-decoder=vp8,vp9,opus,vorbis \
          --enable-parser=vp8,vp9,opus,vorbis && \
-	make -j$$(nproc || echo 2) && \
+	make -j$(shell nproc || echo 2) && \
 	make install
 
 # XMP Static Library Build
@@ -203,74 +187,72 @@ xmp: $(BUILD_PREFIX)/lib/libxmp.a
 $(BUILD_PREFIX)/lib/libxmp.a:
 	@echo "==> Building XMP locally..."
 	cd $(BUILD_DIR)/xmp-src && \
-	make -j$$(nproc) && \
+	make -j$(shell nproc || echo 2) && \
 	make install
 
 # Windows: Resources & Manifest
-windows-resources:
 ifeq ($(HOST_OS),windows)
-	@$(MAKE) build/winres/Ikemen_GO.rc
-	@$(MAKE) src/rsrc_windows.syso
+windows-resources: src/rsrc_windows.syso
+else
+windows-resources:
 endif
 
 # Generate Windows Resource Files
 build/winres/Ikemen_GO.rc: build/winres/Ikemen_GO.exe.manifest
 	@echo "==> Generating Windows RC file..."
-	@echo '#include <windows.h>' > build/winres/Ikemen_GO.rc
-	@echo '#include <winver.h>' >> build/winres/Ikemen_GO.rc
-	@echo '1 ICON "Ikemen_Cylia_V2.ico"' >> build/winres/Ikemen_GO.rc
-	@echo '1 RT_MANIFEST "Ikemen_GO.exe.manifest"' >> build/winres/Ikemen_GO.rc
-	@echo 'VS_VERSION_INFO VERSIONINFO' >> build/winres/Ikemen_GO.rc
-	@echo 'FILEVERSION 1,0,0,0' >> build/winres/Ikemen_GO.rc
-	@echo 'PRODUCTVERSION 1,0,0,0' >> build/winres/Ikemen_GO.rc
-	@echo 'FILEFLAGSMASK 0x3fL' >> build/winres/Ikemen_GO.rc
-	@echo 'FILEFLAGS 0x0L' >> build/winres/Ikemen_GO.rc
-	@echo 'FILEOS 0x4L' >> build/winres/Ikemen_GO.rc
-	@echo 'FILETYPE 0x1L' >> build/winres/Ikemen_GO.rc
-	@echo 'FILESUBTYPE 0x0L' >> build/winres/Ikemen_GO.rc
-	@echo 'BEGIN' >> build/winres/Ikemen_GO.rc
-	@echo '    BLOCK "StringFileInfo"' >> build/winres/Ikemen_GO.rc
-	@echo '    BEGIN' >> build/winres/Ikemen_GO.rc
-	@echo '        BLOCK "040904B0"' >> build/winres/Ikemen_GO.rc
-	@echo '        BEGIN' >> build/winres/Ikemen_GO.rc
-	@echo '            VALUE "CompanyName", "Ikemen GO\\0"' >> build/winres/Ikemen_GO.rc
-	@echo '            VALUE "FileDescription", "Ikemen GO\\0"' >> build/winres/Ikemen_GO.rc
-	@echo '            VALUE "FileVersion", "$(APP_VERSION)\\0"' >> build/winres/Ikemen_GO.rc
-	@echo '            VALUE "ProductName", "Ikemen GO\\0"' >> build/winres/Ikemen_GO.rc
-	@echo '            VALUE "ProductVersion", "$(APP_VERSION)\\0"' >> build/winres/Ikemen_GO.rc
-	@echo '            VALUE "OriginalFilename", "Ikemen_GO.exe\\0"' >> build/winres/Ikemen_GO.rc
-	@echo '            VALUE "InternalName", "Ikemen_GO\\0"' >> build/winres/Ikemen_GO.rc
-	@echo '            VALUE "BuildDate", "$(APP_BUILDTIME)\\0"' >> build/winres/Ikemen_GO.rc
-	@echo '            VALUE "LegalCopyright", "$(APP_COPYRIGHT)\\0"' >> build/winres/Ikemen_GO.rc
-	@echo '        END' >> build/winres/Ikemen_GO.rc
-	@echo '    END' >> build/winres/Ikemen_GO.rc
-	@echo '    BLOCK "VarFileInfo"' >> build/winres/Ikemen_GO.rc
-	@echo '    BEGIN' >> build/winres/Ikemen_GO.rc
-	@echo '        VALUE "Translation", 0x0409, 1200' >> build/winres/Ikemen_GO.rc
-	@echo '    END' >> build/winres/Ikemen_GO.rc
-	@echo 'END' >> build/winres/Ikemen_GO.rc
+	@echo '#include <windows.h>' > $@
+	@echo '#include <winver.h>' >> $@
+	@echo '1 ICON "Ikemen_Cylia_V2.ico"' >> $@
+	@echo '1 RT_MANIFEST "Ikemen_GO.exe.manifest"' >> $@
+	@echo 'VS_VERSION_INFO VERSIONINFO' >> $@
+	@echo 'FILEVERSION 1,0,0,0' >> $@
+	@echo 'PRODUCTVERSION 1,0,0,0' >> $@
+	@echo 'FILEFLAGSMASK 0x3fL' >> $@
+	@echo 'FILEFLAGS 0x0L' >> $@
+	@echo 'FILEOS 0x4L' >> $@
+	@echo 'FILETYPE 0x1L' >> $@
+	@echo 'FILESUBTYPE 0x0L' >> $@
+	@echo 'BEGIN' >> $@
+	@echo '    BLOCK "StringFileInfo"' >> $@
+	@echo '    BEGIN' >> $@
+	@echo '        BLOCK "040904B0"' >> $@
+	@echo '        BEGIN' >> $@
+	@echo '            VALUE "CompanyName", "Ikemen GO\\0"' >> $@
+	@echo '            VALUE "FileDescription", "Ikemen GO\\0"' >> $@
+	@echo '            VALUE "FileVersion", "$(APP_VERSION)\\0"' >> $@
+	@echo '            VALUE "ProductName", "Ikemen GO\\0"' >> $@
+	@echo '            VALUE "ProductVersion", "$(APP_VERSION)\\0"' >> $@
+	@echo '            VALUE "OriginalFilename", "Ikemen_GO.exe\\0"' >> $@
+	@echo '            VALUE "InternalName", "Ikemen_GO\\0"' >> $@
+	@echo '            VALUE "BuildDate", "$(APP_BUILDTIME)\\0"' >> $@
+	@echo '            VALUE "LegalCopyright", "$(APP_COPYRIGHT)\\0"' >> $@
+	@echo '        END' >> $@
+	@echo '    END' >> $@
+	@echo '    BLOCK "VarFileInfo"' >> $@
+	@echo '    BEGIN' >> $@
+	@echo '        VALUE "Translation", 0x0409, 1200' >> $@
+	@echo '    END' >> $@
+	@echo 'END' >> $@
 
 build/winres/Ikemen_GO.exe.manifest:
 	@echo "==> Generating Windows manifest..."
 	@mkdir -p build/winres
-	@echo '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' > build/winres/Ikemen_GO.exe.manifest
-	@echo '<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">' >> build/winres/Ikemen_GO.exe.manifest
-	@echo '  <assemblyIdentity type="win32" name="Ikemen_GO" version="1.0.0.0" processorArchitecture="$(ASM_ARCH)"/>' >> build/winres/Ikemen_GO.exe.manifest
-	@echo '  <dependency>' >> build/winres/Ikemen_GO.exe.manifest
-	@echo '    <dependentAssembly>' >> build/winres/Ikemen_GO.exe.manifest
-	@echo '      <assemblyIdentity type="win32" name="Microsoft.Windows.Common-Controls"' >> build/winres/Ikemen_GO.exe.manifest
-	@echo '        version="6.0.0.0" processorArchitecture="*" publicKeyToken="6595b64144ccf1df" language="*"/>' >> build/winres/Ikemen_GO.exe.manifest
-	@echo '    </dependentAssembly>' >> build/winres/Ikemen_GO.exe.manifest
-	@echo '  </dependency>' >> build/winres/Ikemen_GO.exe.manifest
-	@echo '</assembly>' >> build/winres/Ikemen_GO.exe.manifest
+	@echo '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' > $@
+	@echo '<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">' >> $@
+	@echo '  <assemblyIdentity type="win32" name="Ikemen_GO" version="1.0.0.0" processorArchitecture="$(ASM_ARCH)"/>' >> $@
+	@echo '  <dependency>' >> $@
+	@echo '    <dependentAssembly>' >> $@
+	@echo '      <assemblyIdentity type="win32" name="Microsoft.Windows.Common-Controls"' >> $@
+	@echo '        version="6.0.0.0" processorArchitecture="*" publicKeyToken="6595b64144ccf1df" language="*"/>' >> $@
+	@echo '    </dependentAssembly>' >> $@
+	@echo '  </dependency>' >> $@
+	@echo '</assembly>' >> $@
 
 src/rsrc_windows.syso: build/winres/Ikemen_GO.rc
 	@echo "==> Compiling Windows resources..."
-	@windres -I build/winres -I external/icons -i build/winres/Ikemen_GO.rc -O coff -o src/rsrc_windows.syso
+	@windres -I build/winres -I external/icons -i build/winres/Ikemen_GO.rc -O coff -o $@
 
 # Full Distribution
-# SCREENPACK_URL := https://github.com/ikemen-engine/Ikemen_GO-Elecbyte-Screenpack/archive/refs/heads/master.zip
-# SCREENPACK_URL := https://github.com/ikemen-engine/Ikemen_GO-Elecbyte-Screenpack/archive/09ea703.zip
 SCREENPACK_URL := https://github.com/ikemen-engine/Ikemen_GO-Elecbyte-Screenpack/archive/60d0b51.zip
 SCREENPACK_ZIP := screenpack.zip
 
@@ -281,7 +263,7 @@ $(SCREENPACK_ZIP):
 full: build-core $(SCREENPACK_ZIP)
 	@echo "==> Assembling full Ikemen app..."
 	@rm -rf dist
-	@mkdir -p dist
+	@mkdir -p dist/tmp_extract
 	@echo " -> Extracting Screenpack..."
 	@unzip -q $(SCREENPACK_ZIP) -d dist/tmp_extract
 	@cp -rf dist/tmp_extract/*/* dist/
