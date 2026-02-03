@@ -253,7 +253,8 @@ src/rsrc_windows.syso: build/winres/Ikemen_GO.rc
 	@windres -I build/winres -I external/icons -i build/winres/Ikemen_GO.rc -O coff -o $@
 
 # Full Distribution
-SCREENPACK_URL := https://github.com/ikemen-engine/Ikemen_GO-Elecbyte-Screenpack/archive/60d0b51.zip
+SCREENPACK_URL := https://github.com/ikemen-engine/Ikemen_GO-Elecbyte-Screenpack/archive/47bf675.zip
+# SCREENPACK_URL := https://github.com/ikemen-engine/Ikemen_GO-Elecbyte-Screenpack/archive/60d0b51.zip
 SCREENPACK_ZIP := screenpack.zip
 
 $(SCREENPACK_ZIP):

@@ -322,10 +322,11 @@ int process_snd_file(const char* input_path, Options opts) {
         fseek(out, 0, SEEK_END);
         long outSize = ftell(out);
         double totalRatio = (double)outSize / (double)inSize * 100.0;
-        // print original size vs new size
-        printf("\t-> Original Size: %lu bytes, Converted Size: %lu bytes \t-> Overall Ratio: %.1f%%\n",
-               (unsigned long)inSize, (unsigned long)outSize, totalRatio);
         printf("\t-> Converted: %d, Skipped: %d\n\n", count_converted, count_skipped);
+        // print original size vs new size
+        printf("\t-> Original Size: %lu bytes\n\t-> Converted Size: %lu bytes\n\t-> Overall Ratio: %.1f%%\n",
+               (unsigned long)inSize, (unsigned long)outSize, totalRatio);
+        
     // }
 
     fclose(in);
