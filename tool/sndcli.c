@@ -3,6 +3,9 @@
 #include <stdint.h>
 #include <string.h>
 #include <sndfile.h>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <libgen.h>
 
 // ---- SND headers (Preserved from original) ----
 #pragma pack(push, 1)
@@ -186,44 +189,73 @@ void print_all_supported_formats(void) {
 //   MAIN REBUILDER
 // =============================================================
 
-int main(int argc, char** argv) {
+typedef struct {
+    const char* workdir;
+    double threshold;
+    int recursive;
+    int verbose;
+} Options;
 
-	print_all_supported_formats();
-
-    if (argc < 4) {
-        printf("Usage: %s <mode> input.snd output.snd\n", argv[0]);
-        printf("Modes:\n");
-        printf("  --ogg    (Vorbis)\n");
-        return 1;
+// Process a single SND file
+int process_snd_file(const char* input_path, Options opts) {
+    // Generate output filename: z.<basename> in the same directory as input
+    char output_path[512];
+    char* full_path = strdup(input_path);
+    
+    // Find the last directory separator
+    char* last_sep = strrchr(full_path, '/');
+    if (!last_sep) last_sep = strrchr(full_path, '\\');
+    
+    char* basename;
+    char dir_path[512];
+    
+    if (!last_sep) {
+        // File in current directory
+        basename = full_path;
+        strcpy(dir_path, ".");
+    } else {
+        // Extract directory and basename
+        basename = last_sep + 1;
+        *last_sep = '\0';
+        strcpy(dir_path, full_path);
     }
-
-    enum { MODE_MP3, MODE_OGG, MODE_FLAC, MODE_ADPCM } mode;
-    const char* modeName = "";
-
-    if (strcmp(argv[1], "--ogg") == 0)   { mode = MODE_OGG; modeName = "OGG"; }
-    else {
-        fprintf(stderr, "Unknown mode: %s\n", argv[1]);
-        return 1;
+    
+    // skip if basename already starts with 'z.'
+    if (strncmp(basename, "z.", 2) == 0) {
+        free(full_path);
+        return 0;
     }
+    
+    // Output goes to the same directory as input
+    snprintf(output_path, sizeof(output_path), "%s/z.%s", dir_path, basename);
+    free(full_path);
 
-    FILE* in = fopen(argv[2], "rb");
-    FILE* out = fopen(argv[3], "wb");
+    FILE* in = fopen(input_path, "rb");
+    FILE* out = fopen(output_path, "wb");
     if (!in || !out) {
         perror("File error");
-        return 1;
+        if (in) fclose(in);
+        if (out) fclose(out);
+        return 0;
     }
 
     Header hdr;
     fread(&hdr, sizeof(hdr), 1, in);
     if (memcmp(hdr.signature, "ElecbyteSnd", 11) != 0) {
-        fprintf(stderr, "Not a valid M.U.G.E.N SND file\n");
-        fclose(in); fclose(out);
-        return 1;
+        fprintf(stderr, "Not a valid M.U.G.E.N SND file: %s\n", input_path);
+        fclose(in);
+        fclose(out);
+        return 0;
     }
     fwrite(&hdr, sizeof(hdr), 1, out);
 
+    // if (opts.verbose) {
+        printf("Processing: %s -> %s\n", input_path, output_path);
+    // }
+
     fseek(in, hdr.oFirst, SEEK_SET);
     uint32_t nextOffset = hdr.oFirst;
+    int count_converted = 0, count_skipped = 0;
 
     for (uint32_t i = 0; i < hdr.cSounds; i++) {
         fseek(in, nextOffset, SEEK_SET);
@@ -231,35 +263,51 @@ int main(int argc, char** argv) {
         fread(&sub, sizeof(sub), 1, in);
 
         unsigned char* wavData = malloc(sub.cbSubfile);
-        if (!wavData) { fprintf(stderr, "Memory allocation error\n"); break; }
+        if (!wavData) {
+            fprintf(stderr, "Memory allocation error\n");
+            break;
+        }
 
         fread(wavData, sub.cbSubfile, 1, in);
 
         size_t newSize = 0;
         unsigned char* newData = NULL;
 
-        // Route to appropriate wrapper
-        switch (mode) {
-            case MODE_OGG:    newData = wav_to_ogg(wavData, sub.cbSubfile, &newSize); break;
-            default: break;
-        }
+        // Convert to OGG
+        newData = wav_to_ogg(wavData, sub.cbSubfile, &newSize);
 
         long curPos = ftell(out);
         SubfileHeader newSub;
         newSub.nGroup = sub.nGroup;
         newSub.nIndex = sub.nIndex;
-        // If conversion failed (or was skipped due to GSM restrictions), use original data
-        newSub.cbSubfile = newData ? newSize : sub.cbSubfile;
+        
+        // Compression ratio threshold check
+        int useConverted = 0;
+        double ratio = 1.0;
+        if (newData && newSize > 0) {
+            ratio = (double)newSize / (double)sub.cbSubfile;
+            if (ratio <= opts.threshold) {
+                useConverted = 1;
+                count_converted++;
+            } else {
+                count_skipped++;
+            }
+        } else {
+            count_skipped++;
+        }
+        
+        newSub.cbSubfile = useConverted ? newSize : sub.cbSubfile;
         newSub.oNext = curPos + sizeof(SubfileHeader) + newSub.cbSubfile;
 
         fwrite(&newSub, sizeof(newSub), 1, out);
-        fwrite(newData ? newData : wavData, newSub.cbSubfile, 1, out);
-
-        printf("Sound %u/%u (Grp %u, Idx %u): %lu -> %lu bytes [%s]%s\n",
-               i + 1, hdr.cSounds, sub.nGroup, sub.nIndex,
-               (unsigned long)sub.cbSubfile, (unsigned long)newSub.cbSubfile,
-               newData ? modeName : "RAW (Skipped)",
-               newData ? "" : " !");
+        fwrite(useConverted ? newData : wavData, newSub.cbSubfile, 1, out);
+        
+        if (opts.verbose) {
+            printf("  [%u,%u]: %lu -> %lu bytes (%.1f%%)%s\n",
+               sub.nGroup, sub.nIndex,
+               (unsigned long)sub.cbSubfile, (unsigned long)newSize, ratio * 100,
+               useConverted ? " [converted]" : " [skipped]");
+        }
 
         free(wavData);
         if (newData) free(newData);
@@ -267,8 +315,108 @@ int main(int argc, char** argv) {
         nextOffset = sub.oNext;
     }
 
+    // if (opts.verbose) {
+        // Get file size ratio
+        fseek(in, 0, SEEK_END);
+        long inSize = ftell(in);
+        fseek(out, 0, SEEK_END);
+        long outSize = ftell(out);
+        double totalRatio = (double)outSize / (double)inSize * 100.0;
+        // print original size vs new size
+        printf("\t-> Original Size: %lu bytes, Converted Size: %lu bytes \t-> Overall Ratio: %.1f%%\n",
+               (unsigned long)inSize, (unsigned long)outSize, totalRatio);
+        printf("\t-> Converted: %d, Skipped: %d\n\n", count_converted, count_skipped);
+    // }
+
     fclose(in);
     fclose(out);
-    printf("Rebuilt %s successfully.\n", argv[3]);
+
+    return 1;
+}
+
+// Recursively scan directory for *.snd files
+void scan_directory(const char* path, Options opts) {
+    DIR* dir = opendir(path);
+    if (!dir) {
+        perror("opendir");
+        return;
+    }
+
+    struct dirent* entry;
+    while ((entry = readdir(dir)) != NULL) {
+        if (entry->d_name[0] == '.') continue;
+
+        char full_path[512];
+        snprintf(full_path, sizeof(full_path), "%s/%s", path, entry->d_name);
+
+        struct stat st;
+        if (stat(full_path, &st) == -1) continue;
+
+        if (S_ISDIR(st.st_mode)) {
+            if (opts.recursive) {
+                scan_directory(full_path, opts);
+            }
+        } else if (S_ISREG(st.st_mode)) {
+            // Check if file ends with .snd
+            int len = strlen(entry->d_name);
+            if (len > 4 && strcmp(entry->d_name + len - 4, ".snd") == 0) {
+                process_snd_file(full_path, opts);
+            }
+        }
+    }
+
+    closedir(dir);
+}
+
+int main(int argc, char** argv) {
+    if (argc < 2) {
+        printf("Usage: %s <workdir> [options]\n", argv[0]);
+        printf("Options:\n");
+        printf("  -t <ratio>   Compression ratio threshold (default: 0.30 = 30%%)\n");
+        printf("  -r           Recursive directory scan\n");
+        printf("  -i           Verbose information\n");
+        printf("\nExample: %s ./data -t 0.50 -r -i\n", argv[0]);
+        return 1;
+    }
+
+    Options opts = {
+        .workdir = argv[1],
+        .threshold = 0.30,
+        .recursive = 0,
+        .verbose = 0
+    };
+
+    // Parse command-line options
+    for (int i = 2; i < argc; i++) {
+        if (strcmp(argv[i], "-r") == 0) {
+            opts.recursive = 1;
+        } else if (strcmp(argv[i], "-i") == 0) {
+            opts.verbose = 1;
+        } else if (strcmp(argv[i], "-t") == 0 && i + 1 < argc) {
+            opts.threshold = atof(argv[++i]);
+        }
+    }
+
+    // Verify working directory exists
+    struct stat st;
+    if (stat(opts.workdir, &st) == -1 || !S_ISDIR(st.st_mode)) {
+        fprintf(stderr, "Error: Invalid working directory: %s\n", opts.workdir);
+        return 1;
+    }
+
+    if (opts.verbose) {
+        printf("=== SND Converter ===\n");
+        printf("Working directory: %s\n", opts.workdir);
+        printf("Compression threshold: %.0f%%\n", opts.threshold * 100);
+        printf("Recursive: %s\n", opts.recursive ? "Yes" : "No");
+        printf("====================\n\n");
+    }
+
+    scan_directory(opts.workdir, opts);
+
+    // if (opts.verbose) {
+        printf("Done!\n");
+    // }
+
     return 0;
 }

@@ -7,36 +7,44 @@ TARGET := sndcli
 SRC := sndcli.c
 
 CFLAGS ?= -O2 -Wall -Wextra -std=c11
+LDFLAGS ?= -static
 
-# Detect MinGW and set up paths
-ifeq ($(OS),Windows_NT)
-    # Windows environment
-    MINGW_PREFIX ?= $(shell which gcc | xargs dirname | xargs dirname)
-    export PKG_CONFIG_PATH := $(MINGW_PREFIX)/lib/pkgconfig:$(PKG_CONFIG_PATH)
-endif
+# Detect MinGW prefix
+MINGW_PREFIX ?= $(shell which gcc | xargs dirname | xargs dirname)
 
-# Try pkg-config for static libsndfile
+# CFLAGS from pkg-config (for include paths)
 SND_CFLAGS := $(shell $(PKG_CONFIG) --cflags sndfile 2>/dev/null)
-SND_LIBS_STATIC := $(shell $(PKG_CONFIG) --libs --static sndfile 2>/dev/null)
 
-# If pkg-config fails, use fallback hardcoded MinGW paths
+# Fallback if pkg-config fails
 ifeq ($(SND_CFLAGS),)
-    MINGW_PREFIX ?= $(shell which gcc | xargs dirname | xargs dirname)
-    SND_CFLAGS := -I$(MINGW_PREFIX)/include
-    SND_LIBS_STATIC := -L$(MINGW_PREFIX)/lib -lsndfile
+    SND_CFLAGS := -I$(MINGW_PREFIX)/include -I$(MINGW_PREFIX)/include/opus
 endif
 
-SND_LIBS := $(if $(SND_LIBS_STATIC),$(SND_LIBS_STATIC),$(shell $(PKG_CONFIG) --libs sndfile 2>/dev/null))
+# Direct static library linking (true static build)
+STATIC_LIBS := \
+	-L$(MINGW_PREFIX)/lib \
+	-lsndfile \
+	-lFLAC \
+	-lvorbisenc \
+	-lvorbisfile \
+	-lvorbis \
+	-logg \
+	-lopus \
+	-lmpg123 \
+	-lmp3lame
 
-# Common libs often required for static libsndfile builds
-EXTRA_LIBS := -lm -lpthread
+# System libraries (must use -l flags)
+SYS_LIBS := -lm -lssp -lshlwapi
 
 all: $(TARGET)
 
 $(TARGET): $(SRC)
-	$(CC) $(CFLAGS) $(SND_CFLAGS) -o $@ $^ $(SND_LIBS) $(EXTRA_LIBS)
+	$(CC) $(CFLAGS) $(LDFLAGS) $(SND_CFLAGS) -o $@ $^ $(STATIC_LIBS) $(SYS_LIBS)
 
 clean:
-	rm -f $(TARGET)
+	rm -f $(TARGET) $(TARGET).exe
+
+install: all
+	cp $(TARGET) D:/w64devkit/bin
 
 .PHONY: all clean

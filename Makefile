@@ -272,6 +272,8 @@ full: build-core $(SCREENPACK_ZIP)
 	@cp -rf data external font dist/
 	@echo " -> Copying Engine Binaries..."
 	@cp $(EXE_OUTPUT_DIR)/$(BIN_NAME) dist/
+	@echo " -> Copying Tools..."
+	@find tool -maxdepth 1 -name "*.exe" -type f -exec cp {} dist/ \;
 	@echo " -> Zipping IkemenGoFull.zip..."
 	@rm -f IkemenGoFull.zip
 	@cd dist && zip -r -q ../IkemenGoFull.zip .

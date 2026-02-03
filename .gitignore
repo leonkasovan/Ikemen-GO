@@ -6,6 +6,7 @@ vendor/*
 *.log
 *.cmd
 *.bat
+*.snd
 /*.sh
 !build/**/*.sh
 *.png

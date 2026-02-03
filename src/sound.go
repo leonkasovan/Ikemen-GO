@@ -487,6 +487,15 @@ func readSound(f io.ReadSeekCloser, size uint32) (*Sound, error) {
 			soundFormat = 2
 		}	
 	}
+	// print sound format
+	// soundFormatLabel := "unknown"
+	// if soundFormat == 1 {
+	// 	soundFormatLabel = "wav"
+	// } else if soundFormat == 2 {
+	// 	soundFormatLabel = "ogg"
+	// }
+	// fmt.Printf("%s\n", soundFormatLabel)
+
 	// Check if the file can be fully played
 	// Run a decode test and catch any panics.
 	var recovered interface{}
@@ -612,6 +621,7 @@ func LoadSndFiltered(filename string, keepItem func([2]int32) bool, max uint32) 
 		if keepItem(num) {
 			_, ok := s.table[num]
 			if !ok {
+				// fmt.Printf("%v [%v,%v] size=%v ", filename, num[0], num[1], subFileLength)
 				tmp, err := readSound(f, subFileLength)
 				if err != nil {
 					sys.errLog.Printf("%v sound %v,%v can't be read: %v\n", filename, num[0], num[1], err)
