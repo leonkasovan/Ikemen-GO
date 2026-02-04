@@ -1,3 +1,9 @@
+// =============================================================
+//   SND Converter Tool
+//   Converts WAV sounds in M.U.G.E.N SND files to compressed formats
+//   using libsndfile.
+//   install libsndfile: pacman -S mingw64/mingw-w64-x86_64-libsndfile
+// =============================================================
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -322,9 +328,9 @@ int process_snd_file(const char* input_path, Options opts) {
         fseek(out, 0, SEEK_END);
         long outSize = ftell(out);
         double totalRatio = (double)outSize / (double)inSize * 100.0;
-        printf("\t-> Converted: %d, Skipped: %d\n\n", count_converted, count_skipped);
+        printf("\t-> Converted: %d, Skipped: %d\n", count_converted, count_skipped);
         // print original size vs new size
-        printf("\t-> Original Size: %lu bytes\n\t-> Converted Size: %lu bytes\n\t-> Overall Ratio: %.1f%%\n",
+        printf("\t-> Original Size: %lu bytes\n\t-> Converted Size: %lu bytes\n\t-> Overall Ratio: %.1f%%\n\n",
                (unsigned long)inSize, (unsigned long)outSize, totalRatio);
         
     // }
@@ -405,13 +411,13 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    if (opts.verbose) {
+    // if (opts.verbose) {
         printf("=== SND Converter ===\n");
         printf("Working directory: %s\n", opts.workdir);
-        printf("Compression threshold: %.0f%%\n", opts.threshold * 100);
+        printf("Compression ratio threshold: %.0f%%\n", opts.threshold * 100);
         printf("Recursive: %s\n", opts.recursive ? "Yes" : "No");
         printf("====================\n\n");
-    }
+    // }
 
     scan_directory(opts.workdir, opts);
 
