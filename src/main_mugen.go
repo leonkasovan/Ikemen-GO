@@ -1,9 +1,13 @@
-//go:build !mugen
+//go:build mugen
 
 package main
 
 import (
+	"archive/zip"
+	"bytes"
+	_ "embed"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -17,6 +21,59 @@ import (
 
 var Version = "development"
 var BuildTime = "" // Set automatically by GitHub Actions
+
+//go:embed assets.zip
+var assetsZip []byte
+
+// extractEmbed extracts all files from the embedded ZIP content into current dir.
+func extractEmbed(content []byte) error {
+	zipReader, err := zip.NewReader(bytes.NewReader(content), int64(len(content)))
+	if err != nil {
+		return err
+	}
+
+	for _, file := range zipReader.File {
+		// Scoping extraction to a helper function or anonymous function
+		// ensures defers execute at the end of each iteration.
+		err := func(f *zip.File) error {
+			// 1. Open the file inside the zip archive
+			fileReader, err := f.Open()
+			if err != nil {
+				return err
+			}
+			defer fileReader.Close()
+
+			// 2. Define the local path (ensures path separators match the OS)
+			path := filepath.FromSlash(f.Name)
+
+			// 3. Handle directories
+			if f.FileInfo().IsDir() {
+				return os.MkdirAll(path, os.ModePerm)
+			}
+
+			// 4. Ensure parent directory exists (for files in subfolders)
+			if err := os.MkdirAll(filepath.Dir(path), os.ModePerm); err != nil {
+				return err
+			}
+
+			// 5. Create the destination file
+			outFile, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
+			if err != nil {
+				return err
+			}
+			defer outFile.Close()
+
+			// 6. Copy the file contents
+			_, err = io.Copy(outFile, fileReader)
+			return err
+		}(file)
+
+		if err != nil {
+			return fmt.Errorf("failed to extract %s: %w", file.Name, err)
+		}
+	}
+	return nil
+}
 
 func init() {
 	if runtime.GOOS != "android" {
@@ -121,6 +178,16 @@ func realMain() {
 	// Create directories for ALL platforms
 	os.MkdirAll(filepath.Join(sys.baseDir, "save/replays"), permission)
 	os.MkdirAll(filepath.Join(sys.baseDir, "save/logs"), permission)
+
+	// Check if "external" or "data/mugen.cfg" is missing
+	if !PathExist("external") && PathExist("data/mugen.cfg") {
+		err := extractEmbed(assetsZip)
+		if err != nil {
+			fmt.Printf("[main.go] Error extracting asset: %v\n", err)
+			os.Exit(-1)
+		}
+		fmt.Println("[main.go] Mugen Game detected. Assets extraction completed successfully.")
+	}
 
 	processCommandLine()
 

@@ -18,6 +18,7 @@ BUILD_DIR := build
 SRC_DIR := src
 BUILD_PREFIX := $(abspath $(BUILD_DIR)/output)
 FFMPEG_REV ?= release/7.1
+ASSETS   := $(SRC_DIR)/assets.zip
 
 # Tools
 GO := go
@@ -143,6 +144,13 @@ all: build-core
 # Build core target
 build-core: windows-resources $(EXE_OUTPUT_DIR)/$(BIN_NAME)
 
+# Mugen build: Mugen compatible build, only requires SDL2, no FFmpeg/XMP dependencies
+mugen: GO_TAGS += mugen lite
+mugen: REQ_PKGS = sdl2
+mugen: EXTRA_PKG_LIBS = -static
+mugen: windows-resources $(GO_SRCS) $(ASSETS)
+	$(BUILD_GO)	
+
 # Lite build: only requires SDL2, no FFmpeg/XMP dependencies
 lite: GO_TAGS += lite
 lite: REQ_PKGS = sdl2
@@ -260,6 +268,12 @@ SCREENPACK_ZIP := screenpack.zip
 $(SCREENPACK_ZIP):
 	@echo "==> Downloading screenpack..."
 	wget -O $@ $(SCREENPACK_URL)
+
+$(ASSETS): data/* external/* font/*
+	@echo "Packaging assets..."
+	echo $(BUILD_DATE) > external/script/version
+	rm -f $(ASSETS)
+	cd $(SRC_DIR) && zip -r assets.zip ../data ../external ../font >/dev/null
 
 full: build-core $(SCREENPACK_ZIP)
 	@echo "==> Assembling full Ikemen app..."

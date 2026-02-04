@@ -3,6 +3,7 @@ package main
 import (
 	"archive/zip"
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -562,6 +563,11 @@ func FileExist(filename string) string {
 		}
 	}
 	return ""
+}
+
+func PathExist(path string) bool {
+	_, err := os.Stat(path)
+	return !errors.Is(err, os.ErrNotExist)
 }
 
 // SearchFile searches for 'file' in 'dirs'.

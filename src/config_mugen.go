@@ -1,11 +1,14 @@
-//go:build !mugen
+//go:build mugen
 
 package main
 
 import (
+	"bufio"
 	_ "embed" // Support for go:embed resources
 	"fmt"
+	"os"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -322,6 +325,61 @@ func loadConfig(def string) (*Config, error) {
 
 	c.IniFile = iniFile
 	c.normalize()
+
+	// Import Mugen setting
+	if PathExist("data/mugen.cfg") {
+		// Pre-compile regex outside the loop for performance
+		var (
+			reMotif      = regexp.MustCompile(`(?i)Motif\s*=\s*(\S+)`)
+			reStartStage = regexp.MustCompile(`(?i)StartStage\s*=\s*(.+)$`)
+			reWidth      = regexp.MustCompile(`(?i)GameWidth\s*=\s*(\d+)`)
+			reHeight     = regexp.MustCompile(`(?i)GameHeight\s*=\s*(\d+)`)
+		)
+
+		fmt.Printf("[config.go] import data/mugen.cfg\n")
+		// FIX: Use os.Open instead of os.OpenRead
+		file, err := os.Open("data/mugen.cfg")
+		if err != nil {
+			fmt.Printf("[config.go] Error loading data/mugen.cfg: %v\n", err)
+		} else {
+			defer file.Close()
+			scanner := bufio.NewScanner(file)
+			for scanner.Scan() {
+				line := strings.TrimSpace(scanner.Text())
+				if len(line) < 1 || line[0] == ';' {
+					continue
+				}
+
+				if res := reMotif.FindStringSubmatch(line); res != nil {
+					path := res[1]
+					if !PathExist(path) {
+						c.Config.Motif = "data/system.def"
+					} else {
+						c.Config.Motif = path
+					}
+					c.SetValueUpdate("Config.Motif", c.Config.Motif)
+				} else if res := reStartStage.FindStringSubmatch(line); res != nil {
+					path := res[1]
+					if !PathExist(path) {
+						c.Debug.StartStage = ""
+					} else {
+						c.Debug.StartStage = path
+					}
+					c.SetValueUpdate("Debug.StartStage", c.Debug.StartStage)
+				} else if res := reWidth.FindStringSubmatch(line); res != nil {
+					// FIX: Use strconv.Atoi
+					val, _ := strconv.Atoi(res[1])
+					c.Video.GameWidth = int32(val)
+					c.SetValueUpdate("Video.GameWidth", c.Video.GameWidth)
+				} else if res := reHeight.FindStringSubmatch(line); res != nil {
+					val, _ := strconv.Atoi(res[1])
+					c.Video.GameHeight = int32(val)
+					c.SetValueUpdate("Video.GameHeight", c.Video.GameHeight)
+				}
+			}
+		}
+	}
+
 	c.sysSet()
 	c.Save(def)
 	return &c, nil
