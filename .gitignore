@@ -24,7 +24,6 @@ resources/*
 ScreenpackLicense.txt
 chars/*
 data/big/*
-data/*
 !data/action.zss
 !data/common.air
 !data/common.cmd
@@ -38,6 +37,10 @@ data/*
 !data/system.zss
 !data/tag.zss
 !data/training.zss
+!data/gofx/gofx.air
+!data/gofx/gofx.def
+!data/gofx/gofx.sff
+!data/gofx/gofx.snd
 font/*
 !font/Open_Sans/
 !font/debug.def
@@ -45,6 +48,7 @@ font/*
 !font/default-3x5-bold.sff
 !font/default-3x5.def
 !font/default-3x5.sff
+!font/Open_Sans.def
 stages/*
 sound/*
 debug/*
