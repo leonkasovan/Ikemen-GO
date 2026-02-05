@@ -160,6 +160,7 @@ type Config struct {
 		StartStage          string  `ini:"StartStage"`
 		ForceStageZoomout   float32 `ini:"ForceStageZoomout"`
 		ForceStageZoomin    float32 `ini:"ForceStageZoomin"`
+		ForceStageAutoZoom  bool    `ini:"ForceStageAutoZoom"`
 		KeepSpritesOnReload bool    `ini:"KeepSpritesOnReload"`
 		MacOSUseCommandKey  bool    `ini:"MacOSUseCommandKey"`
 		SpeedTest           int     `ini:"SpeedTest"`
@@ -326,8 +327,10 @@ func loadConfig(def string) (*Config, error) {
 	c.IniFile = iniFile
 	c.normalize()
 
-	// Import Mugen setting
-	if PathExist("data/mugen.cfg") {
+	// Import Mugen setting if default setting (save/config.ini) is not exists
+	// It will generate save/config.ini based on data/mugen.cfg
+	// It will update fight.def by adding localcoord based on data/mugen.cfg
+	if !PathExist(def) && PathExist("data/mugen.cfg") {
 		// Pre-compile regex outside the loop for performance
 		var (
 			reMotif      = regexp.MustCompile(`(?i)Motif\s*=\s*(\S+)`)
@@ -336,8 +339,7 @@ func loadConfig(def string) (*Config, error) {
 			reHeight     = regexp.MustCompile(`(?i)GameHeight\s*=\s*(\d+)`)
 		)
 
-		fmt.Printf("[config.go] import data/mugen.cfg\n")
-		// FIX: Use os.Open instead of os.OpenRead
+		fmt.Printf("Importing data/mugen.cfg ...\n")
 		file, err := os.Open("data/mugen.cfg")
 		if err != nil {
 			fmt.Printf("[config.go] Error loading data/mugen.cfg: %v\n", err)
@@ -378,11 +380,74 @@ func loadConfig(def string) (*Config, error) {
 				}
 			}
 		}
+		fmt.Printf("Generating save/config.ini ...\n")
+		fmt.Printf("Patching data/fight.ini ...\n")
+		// get fight.def path location from system.def (c.Config.Motif)
+		fightdefPath := getFightDefPath(c.Config.Motif)
+		// Update fight.def localcoord based on mugen.cfg
+		patchFightDefLocalcoord(fightdefPath, c.Video.GameWidth, c.Video.GameHeight)
 	}
 
 	c.sysSet()
 	c.Save(def)
 	return &c, nil
+}
+
+func getFightDefPath(systemDefPath string) string {
+	if !PathExist(systemDefPath) {
+		fmt.Printf("[config.go] system.def not found at %v, cannot get fight.def path\n", systemDefPath)
+		return ""
+	}
+
+	content, err := os.ReadFile(systemDefPath)
+	if err != nil {
+		fmt.Printf("[config.go] Error reading %v: %v\n", systemDefPath, err)
+		return ""
+	}
+
+	scanner := bufio.NewScanner(strings.NewReader(string(content)))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		// fight = fight.def
+		if strings.HasPrefix(strings.ToLower(line), "fight") && strings.Contains(line, "=") {
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				fightdefPath := strings.TrimSpace(parts[1])
+				return fightdefPath
+			}
+		}
+	}
+	fmt.Printf("[config.go] fightdef not found in %v\n", systemDefPath)
+	return ""
+}
+
+func patchFightDefLocalcoord(fightdefPath string, width int32, height int32) {
+	if !PathExist(fightdefPath) {
+		fmt.Printf("[config.go] fight.def not found at %v, skipping localcoord patch\n", fightdefPath)
+		return
+	}
+
+	content, err := os.ReadFile(fightdefPath)
+	if err != nil {
+		fmt.Printf("[config.go] Error reading %v: %v\n", fightdefPath, err)
+		return
+	}
+
+	if strings.Contains(strings.ToLower(string(content)), "localcoord") {
+		return // Already has localcoord, nothing to do
+	}
+
+	// Backup old file
+	if err := os.Rename(fightdefPath, fightdefPath+".bak"); err != nil {
+		fmt.Printf("[config.go] Error creating backup for %v: %v\n", fightdefPath, err)
+		return
+	}
+
+	// Create new fight.def with localcoord
+	newContent := fmt.Sprintf("[Info]\nlocalcoord = %v,%v\n%s", width, height, content)
+	if err := os.WriteFile(fightdefPath, []byte(newContent), 0644); err != nil {
+		fmt.Printf("[config.go] Error writing %v: %v\n", fightdefPath, err)
+	}
 }
 
 // Initialize struct
