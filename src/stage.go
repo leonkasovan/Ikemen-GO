@@ -743,7 +743,12 @@ func loadStage(def string, maindef bool) (*Stage, error) {
 		if strings.ToLower(anchor) == "bottom" {
 			s.stageCamera.zoomanchor = true
 		}
-		sec[0].ReadBool("autozoom", &s.stageCamera.autoZoom)
+
+		autoZoomExisted := sec[0].ReadBool("autozoom", &s.stageCamera.autoZoom)
+		if sys.cfg.Debug.ForceStageAutoZoom && !autoZoomExisted &&
+			(s.stageCamera.zoomin == 1 || sys.cfg.Debug.ForceStageZoomin > 0) && (s.stageCamera.zoomout == 1 || sys.cfg.Debug.ForceStageZoomout > 0) {
+			s.stageCamera.autoZoom = true
+		}
 
 		if s.stageCamera.autoZoom {
 			if s.stageCamera.zoomin == 1 {

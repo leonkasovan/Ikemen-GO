@@ -489,7 +489,7 @@ func (cm *CharMovement) init() {
 	cm.stand.friction_threshold = 2.0
 	cm.crouch.friction = 0.82
 	cm.crouch.friction_threshold = 0.0
-	cm.air.gethit.groundlevel = 10.0
+	cm.air.gethit.groundlevel = 25.0
 	cm.air.gethit.groundrecover.ground.threshold = -20.0
 	cm.air.gethit.groundrecover.groundlevel = 10.0
 	cm.air.gethit.airrecover.threshold = -1.0
@@ -10809,6 +10809,38 @@ func (c *Char) hitResultCheck(getter *Char, proj *Projectile) (hitResult int32) 
 		}
 	}
 
+	if getter.hoverIdx < 0 {
+		// HitOnce drops all targets except the current one
+		if !isProjectile && hd.hitonce > 0 {
+			c.targetDrop(-1, getter.id, true)
+		}
+
+		// Juggle points inheriting
+		if c.helperIndex != 0 && c.inheritJuggle != 0 {
+			// Update parent's or root's target list and juggle points
+			sendJuggle := func(origin *Char) {
+				origin.addTarget(getter.id)
+				jg := origin.gi().data.airjuggle
+				for _, v := range getter.ghv.targetedBy {
+					if len(v) >= 2 && (v[0] == origin.id || v[0] == c.id) && v[1] < jg {
+						jg = v[1]
+					}
+				}
+				getter.ghv.dropPlayerId(origin.id)
+				getter.ghv.targetedBy = append(getter.ghv.targetedBy, [...]int32{origin.id, jg - c.juggle})
+			}
+			if c.inheritJuggle == 1 && c.parent(false) != nil {
+				sendJuggle(c.parent(false))
+			} else if c.inheritJuggle == 2 && c.root(false) != nil {
+				sendJuggle(c.root(false))
+			}
+		}
+
+		// Add players to each other's lists
+		c.addTarget(getter.id)
+		getter.ghv.addId(c.id, c.gi().data.airjuggle)
+	}
+
 	// If not setting GetHitVars then the rest is skipped
 	if !ghvset {
 		return
@@ -10837,36 +10869,6 @@ func (c *Char) hitResultCheck(getter *Char, proj *Projectile) (hitResult int32) 
 		invertXvel(byf)
 		return
 	}
-
-	// HitOnce drops all targets except the current one
-	if !isProjectile && hd.hitonce > 0 {
-		c.targetDrop(-1, getter.id, true)
-	}
-
-	// Juggle points inheriting
-	if c.helperIndex != 0 && c.inheritJuggle != 0 {
-		// Update parent's or root's target list and juggle points
-		sendJuggle := func(origin *Char) {
-			origin.addTarget(getter.id)
-			jg := origin.gi().data.airjuggle
-			for _, v := range getter.ghv.targetedBy {
-				if len(v) >= 2 && (v[0] == origin.id || v[0] == c.id) && v[1] < jg {
-					jg = v[1]
-				}
-			}
-			getter.ghv.dropPlayerId(origin.id)
-			getter.ghv.targetedBy = append(getter.ghv.targetedBy, [...]int32{origin.id, jg - c.juggle})
-		}
-		if c.inheritJuggle == 1 && c.parent(false) != nil {
-			sendJuggle(c.parent(false))
-		} else if c.inheritJuggle == 2 && c.root(false) != nil {
-			sendJuggle(c.root(false))
-		}
-	}
-
-	// Add players to each other's lists
-	c.addTarget(getter.id)
-	getter.ghv.addId(c.id, c.gi().data.airjuggle)
 
 	// On hit, reversal or type None
 	if Abs(hitResult) == 1 {
