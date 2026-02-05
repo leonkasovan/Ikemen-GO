@@ -148,8 +148,9 @@ build-core: windows-resources $(EXE_OUTPUT_DIR)/$(BIN_NAME)
 mugen: GO_TAGS += mugen lite
 mugen: REQ_PKGS = sdl2
 mugen: EXTRA_PKG_LIBS = -static
+mugen: BIN_NAME = Mugen_GO$(EXE_EXT)
 mugen: windows-resources $(GO_SRCS) $(ASSETS)
-	$(BUILD_GO)	
+	$(BUILD_GO)
 
 # Lite build: only requires SDL2, no FFmpeg/XMP dependencies
 lite: GO_TAGS += lite
@@ -273,7 +274,7 @@ $(ASSETS): data/* external/* font/*
 	@echo "Packaging assets..."
 	echo $(BUILD_DATE) > external/script/version
 	rm -f $(ASSETS)
-	cd $(SRC_DIR) && zip -r assets.zip ../data ../external ../font >/dev/null
+	zip -r $(ASSETS) data external font
 
 full: build-core $(SCREENPACK_ZIP)
 	@echo "==> Assembling full Ikemen app..."
