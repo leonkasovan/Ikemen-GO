@@ -7,17 +7,20 @@ import (
 	_ "embed" // Support for go:embed resources
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
-	"path/filepath"
 
 	"gopkg.in/ini.v1"
 )
 
 //go:embed resources/defaultConfig.ini
 var defaultConfig []byte
+
+//go:embed resources/defaultMugenMotif.ini
+var defaultMotif []byte
 
 type AIrampProperties struct {
 	Start [2]int32 `ini:"start"`
@@ -310,12 +313,12 @@ func loadConfig(def string) (*Config, error) {
 				keyName := key.Name()
 				value, dup := iniFirstValue(key)
 				if dup > 0 {
-					fmt.Printf("Warning: Duplicate key [%s] %s (%d duplicate(s) ignored)\n", sectionName, keyName, dup)
+					fmt.Printf("[config_mugen.go] Warning: Duplicate key [%s] %s (%d duplicate(s) ignored)\n", sectionName, keyName, dup)
 				}
 				fullKey := strings.ReplaceAll(sectionName, " ", "_") + "." + strings.ReplaceAll(keyName, " ", "_")
 				keyParts := parseQueryPath(fullKey)
 				if err := assignField(&c, keyParts, value, def); err != nil {
-					fmt.Printf("Warning: Failed to assign key [%s]: %v\n", fullKey, err)
+					fmt.Printf("[config_mugen.go] Warning: Failed to assign key [%s]: %v\n", fullKey, err)
 				}
 			}
 		}
@@ -336,11 +339,11 @@ func loadConfig(def string) (*Config, error) {
 		var (
 			reMotif      = regexp.MustCompile(`(?i)Motif\s*=\s*(\S+)`)
 			reStartStage = regexp.MustCompile(`(?i)StartStage\s*=\s*(.+)$`)
-			reWidth      = regexp.MustCompile(`(?i)GameWidth\s*=\s*(\d+)`)
-			reHeight     = regexp.MustCompile(`(?i)GameHeight\s*=\s*(\d+)`)
+			reWidth      = regexp.MustCompile(`(?i)^(?:Game)?Width\s*=\s*(\d+)\s*(?:;.*)?$`)
+			reHeight     = regexp.MustCompile(`(?i)^(?:Game)?Height\s*=\s*(\d+)\s*(?:;.*)?$`)
 		)
 
-		fmt.Printf("Importing data/mugen.cfg into save/config.ini ...\n")
+		fmt.Printf("[config_mugen.go] Importing data/mugen.cfg into save/config.ini ...\n")
 		file, err := os.Open("data/mugen.cfg")
 		if err != nil {
 			fmt.Printf("[config_mugen.go] Error loading data/mugen.cfg: %v\n", err)
@@ -358,6 +361,7 @@ func loadConfig(def string) (*Config, error) {
 					if !PathExist(path) {
 						c.Config.Motif = "data/system.def"
 					} else {
+						fmt.Printf("[config_mugen.go] Motif path: %v\n", path)
 						c.Config.Motif = path
 					}
 					c.SetValueUpdate("Config.Motif", c.Config.Motif)
@@ -366,6 +370,7 @@ func loadConfig(def string) (*Config, error) {
 					if !PathExist(path) {
 						c.Debug.StartStage = ""
 					} else {
+						fmt.Printf("[config_mugen.go] Start stage: %v\n", path)
 						c.Debug.StartStage = path
 					}
 					c.SetValueUpdate("Debug.StartStage", c.Debug.StartStage)
@@ -374,27 +379,37 @@ func loadConfig(def string) (*Config, error) {
 					val, _ := strconv.Atoi(res[1])
 					c.Video.GameWidth = int32(val)
 					c.SetValueUpdate("Video.GameWidth", c.Video.GameWidth)
+					fmt.Printf("[config_mugen.go] Video.GameWidth: %v\n", res[1])
 				} else if res := reHeight.FindStringSubmatch(line); res != nil {
 					val, _ := strconv.Atoi(res[1])
 					c.Video.GameHeight = int32(val)
 					c.SetValueUpdate("Video.GameHeight", c.Video.GameHeight)
+					fmt.Printf("[config_mugen.go] Video.GameHeight: %v\n", res[1])
 				}
 			}
 		}
-		
+
 		// get default motif's directory
 		motifDir := filepath.Dir(c.Config.Motif)
-		
+
 		// get fight.def path location from system.def (c.Config.Motif)
 		fightdefPath := getFightDefPath(c.Config.Motif)
+		fmt.Printf("[config_mugen.go] fight.def path from system.def: %v\n", fightdefPath)
+		fightdefFullPath := FileExist(fightdefPath)
+		fmt.Printf("[config_mugen.go] fight.def resolved path: %v\n", fightdefFullPath)
 
 		// If fightdefPath is relative, make it relative to motifDir
-		if fightdefPath != "" && !filepath.IsAbs(fightdefPath) {
-			fightdefPath = filepath.Join(motifDir, fightdefPath)
+		if fightdefFullPath == "" {
+			fightdefFullPath = filepath.Join(motifDir, fightdefPath)
+			fmt.Printf("[config_mugen.go] [%v]+[%v] = %v\n", motifDir, fightdefPath, fightdefFullPath)
+			if !PathExist(fightdefFullPath) {
+				fmt.Printf("[config_mugen.go] fight.def not found at %v, cannot patch localcoord\n", fightdefFullPath)
+				fightdefFullPath = ""
+			}
 		}
 
-		// Update fight.def localcoord based on mugen.cfg
-		patchFightDefLocalcoord(fightdefPath, c.Video.GameWidth, c.Video.GameHeight)
+		// Update fight.def localcoord based on motif's localcoord
+		patchFightDefLocalcoord(fightdefFullPath, c.Config.Motif)
 	}
 
 	c.sysSet()
@@ -435,20 +450,44 @@ func getFightDefPath(systemDefPath string) string {
 	return ""
 }
 
-func patchFightDefLocalcoord(fightdefPath string, width int32, height int32) {
-	fmt.Printf("Patching %v with localcoord %v,%v ...\n", fightdefPath, width, height)
+// Update fight.def localcoord based on motif's localcoord
+func patchFightDefLocalcoord(fightdefPath string, motifPath string) {
+	// Read motif to get localcoord
+	content, err := os.ReadFile(motifPath)
+	if err != nil {
+		fmt.Printf("[config_mugen.go] Error patching %v based on %v's localcoord: %v\n", fightdefPath, motifPath, err)
+		return
+	}
+
+	var localcoord_str string
+	scanner := bufio.NewScanner(strings.NewReader(string(content)))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.Contains(strings.ToLower(line), "localcoord") {
+			localcoord_str = line
+			break
+		}
+	}
+
+	if localcoord_str == "" {
+		fmt.Printf("[config_mugen.go] localcoord not found in motif %v, skipping patch\n", motifPath)
+		return
+	}
+
+	fmt.Printf("[config_mugen.go] Patching %v with %v\n", fightdefPath, localcoord_str)
 	if !PathExist(fightdefPath) {
 		fmt.Printf("[config_mugen.go] fight.def not found at %v, skipping localcoord patch\n", fightdefPath)
 		return
 	}
 
-	content, err := os.ReadFile(fightdefPath)
+	content, err = os.ReadFile(fightdefPath)
 	if err != nil {
 		fmt.Printf("[config_mugen.go] Error reading %v: %v\n", fightdefPath, err)
 		return
 	}
 
 	if strings.Contains(strings.ToLower(string(content)), "localcoord") {
+		fmt.Printf("[config_mugen.go] %v already has localcoord, skipping patch\n", fightdefPath)
 		return // Already has localcoord, nothing to do
 	}
 
@@ -459,7 +498,7 @@ func patchFightDefLocalcoord(fightdefPath string, width int32, height int32) {
 	}
 
 	// Create new fight.def with localcoord
-	newContent := fmt.Sprintf("[Info]\nlocalcoord = %v,%v\n%s", width, height, content)
+	newContent := fmt.Sprintf("[Info]\n%v\n%s", localcoord_str, content)
 	if err := os.WriteFile(fightdefPath, []byte(newContent), 0644); err != nil {
 		fmt.Printf("[config_mugen.go] Error writing %v: %v\n", fightdefPath, err)
 	}

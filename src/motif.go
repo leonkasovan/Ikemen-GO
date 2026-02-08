@@ -19,9 +19,6 @@ import (
 	"github.com/tidwall/sjson"
 )
 
-//go:embed resources/defaultMotif.ini
-var defaultMotif []byte
-
 // Motif parsing flow:
 // 1. A Motif struct is created, all maps are initialized and `default` struct tags
 //    are applied via applyDefaultsToValue, so every field has a well-defined base.
@@ -1521,6 +1518,7 @@ func loadMotif(def string) (*Motif, error) {
 		sys.motif.resolvePath()
 		def = sys.motif.Def
 	}
+	fmt.Printf("Loading motif from %v\n", def)
 	// Define load options if needed
 	// https://github.com/go-ini/ini/blob/main/ini.go
 	baseOptions := ini.LoadOptions{
@@ -1784,7 +1782,7 @@ func loadMotif(def string) (*Motif, error) {
 				}
 
 				if err := assignField(&m, keyParts, value, def); err != nil {
-					fmt.Printf("Warning: Failed to assign key [%s.%s]: %v\n", sectionName, keyName, err)
+					fmt.Printf("[motif.go] Warning: Failed to assign key [%s.%s]: %v\n", sectionName, keyName, err)
 				}
 			}
 		}

@@ -15,6 +15,9 @@ import (
 //go:embed resources/defaultConfig.ini
 var defaultConfig []byte
 
+//go:embed resources/defaultMotif.ini
+var defaultMotif []byte
+
 type AIrampProperties struct {
 	Start [2]int32 `ini:"start"`
 	End   [2]int32 `ini:"end"`
@@ -306,12 +309,12 @@ func loadConfig(def string) (*Config, error) {
 				keyName := key.Name()
 				value, dup := iniFirstValue(key)
 				if dup > 0 {
-					fmt.Printf("Warning: Duplicate key [%s] %s (%d duplicate(s) ignored)\n", sectionName, keyName, dup)
+					fmt.Printf("[config.go] Warning: Duplicate key [%s] %s (%d duplicate(s) ignored)\n", sectionName, keyName, dup)
 				}
 				fullKey := strings.ReplaceAll(sectionName, " ", "_") + "." + strings.ReplaceAll(keyName, " ", "_")
 				keyParts := parseQueryPath(fullKey)
 				if err := assignField(&c, keyParts, value, def); err != nil {
-					fmt.Printf("Warning: Failed to assign key [%s]: %v\n", fullKey, err)
+					fmt.Printf("[config.go] Warning: Failed to assign key [%s]: %v\n", fullKey, err)
 				}
 			}
 		}

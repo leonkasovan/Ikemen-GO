@@ -151,6 +151,7 @@ mugen: EXTRA_PKG_LIBS = -static
 mugen: BIN_NAME = Mugen_GO$(EXE_EXT)
 mugen: windows-resources $(GO_SRCS) $(ASSETS)
 	$(BUILD_GO)
+	cp $(EXE_OUTPUT_DIR)/$(BIN_NAME) 'F:\PortableApps\Mugen Ikemen\JLTF2\$(BIN_NAME)'
 
 # Lite build: only requires SDL2, no FFmpeg/XMP dependencies
 lite: GO_TAGS += lite
