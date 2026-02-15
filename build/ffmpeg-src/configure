@@ -5706,9 +5706,9 @@ case "$arch" in
 esac
 
 #override target_os(using uname) in w64devkit
-if [ "arget_os" = "windows_nt" ]; then
+if [ "$target_os" = "windows_nt" ]; then
 	target_os="mingw64"
-fi 
+fi
 # OS specific
 case $target_os in
     aix)

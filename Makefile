@@ -12,6 +12,7 @@ APP_BUILDTIME ?= $(shell date '+%Y.%m.%d')
 COPY_START_YEAR ?= 2016
 BUILD_YEAR := $(shell echo $(APP_BUILDTIME) | cut -d. -f1)
 APP_COPYRIGHT := (c) $(COPY_START_YEAR)-$(BUILD_YEAR) Ikemen GO team (MIT)
+WINDOWS_SDL2_SYSTEM ?= 1
 
 # Output Directories
 BUILD_DIR := build
@@ -79,7 +80,9 @@ ifneq (,$(findstring MINGW,$(OS_DETECT))$(findstring MSYS,$(OS_DETECT))$(findstr
     export GOARCH := $(GOARCH_DETECT)
     EXE_OUTPUT_DIR := .
     EXE_EXT := .exe
-	GO_TAGS += static
+	ifeq ($(WINDOWS_SDL2_SYSTEM),0)
+		GO_TAGS += static
+	endif
 endif
 
 # Manual Override
