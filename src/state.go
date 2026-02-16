@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/veandco/go-sdl2/sdl"
+	"github.com/ikemen-engine/Ikemen-GO/packages/go-sdl2/sdl"
 	lua "github.com/yuin/gopher-lua"
 )
 

@@ -17,8 +17,8 @@ import (
 	"unsafe"
 
 	mgl "github.com/go-gl/mathgl/mgl32"
-	gl "github.com/leonkasovan/gl/v3.2/gles2"
-	"github.com/veandco/go-sdl2/sdl"
+	gl "github.com/ikemen-engine/Ikemen-GO/packages/gl/v3.2/gles2"
+	"github.com/ikemen-engine/Ikemen-GO/packages/go-sdl2/sdl"
 	"golang.org/x/mobile/exp/f32"
 )
 
