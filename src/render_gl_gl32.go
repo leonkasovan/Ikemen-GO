@@ -15,7 +15,7 @@ import (
 	"runtime"
 	"unsafe"
 
-	gl "github.com/go-gl/gl/v3.2-core/gl"
+	"github.com/ikemen-engine/Ikemen-GO/packages/gl/v3.2-core/gl"
 	mgl "github.com/go-gl/mathgl/mgl32"
 	"github.com/ikemen-engine/Ikemen-GO/packages/go-sdl2/sdl"
 	"golang.org/x/mobile/exp/f32"
