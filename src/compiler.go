@@ -4721,6 +4721,8 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_runlast))
 		case "sizepushonly":
 			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_sizepushonly))
+		case "nodestroyself":
+			out.appendI64Op(OC_ex_isassertedchar, int64(ASF_nodestroyself))
 		// Ikemen global flags
 		case "camerafreeze":
 			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_camerafreeze))
@@ -4859,6 +4861,8 @@ func (c *Compiler) expValue(out *BytecodeExp, in *string,
 			out.append(OC_ex_movehitvar_playerid)
 		case "playerno":
 			out.append(OC_ex_movehitvar_playerno)
+		case "power":
+			out.append(OC_ex_movehitvar_power)
 		case "sparkx":
 			out.append(OC_ex_movehitvar_spark_x)
 		case "sparky":

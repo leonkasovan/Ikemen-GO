@@ -657,6 +657,7 @@ const (
 	OC_ex_movehitvar_overridden
 	OC_ex_movehitvar_playerid
 	OC_ex_movehitvar_playerno
+	OC_ex_movehitvar_power
 	OC_ex_movehitvar_spark_x
 	OC_ex_movehitvar_spark_y
 	OC_ex_movehitvar_uniqhit
@@ -2395,7 +2396,7 @@ func (be BytecodeExp) run_const(c *Char, i *int, oc *Char) {
 			p3.gi().nameLow == sys.stringPool[sys.workingState.playerNo].List[*(*int32)(unsafe.Pointer(&be[*i]))])
 		*i += 4
 	case OC_const_p4name:
-		p4 := sys.charList.enemyNear(c, 1, true, false)
+		p4 := sys.charList.enemyNear(c, 1, true)
 		sys.bcStack.PushB(p4 != nil &&
 			p4.gi().nameLow == sys.stringPool[sys.workingState.playerNo].List[*(*int32)(unsafe.Pointer(&be[*i]))])
 		*i += 4
@@ -2405,7 +2406,7 @@ func (be BytecodeExp) run_const(c *Char, i *int, oc *Char) {
 			p5.gi().nameLow == sys.stringPool[sys.workingState.playerNo].List[*(*int32)(unsafe.Pointer(&be[*i]))])
 		*i += 4
 	case OC_const_p6name:
-		p6 := sys.charList.enemyNear(c, 2, true, false)
+		p6 := sys.charList.enemyNear(c, 2, true)
 		sys.bcStack.PushB(p6 != nil &&
 			p6.gi().nameLow == sys.stringPool[sys.workingState.playerNo].List[*(*int32)(unsafe.Pointer(&be[*i]))])
 		*i += 4
@@ -2415,7 +2416,7 @@ func (be BytecodeExp) run_const(c *Char, i *int, oc *Char) {
 			p7.gi().nameLow == sys.stringPool[sys.workingState.playerNo].List[*(*int32)(unsafe.Pointer(&be[*i]))])
 		*i += 4
 	case OC_const_p8name:
-		p8 := sys.charList.enemyNear(c, 3, true, false)
+		p8 := sys.charList.enemyNear(c, 3, true)
 		sys.bcStack.PushB(p8 != nil &&
 			p8.gi().nameLow == sys.stringPool[sys.workingState.playerNo].List[*(*int32)(unsafe.Pointer(&be[*i]))])
 		*i += 4
@@ -3098,6 +3099,8 @@ func (be BytecodeExp) run_ex(c *Char, i *int, oc *Char) {
 		sys.bcStack.PushB(c.mhv.frame)
 	case OC_ex_movehitvar_playerid:
 		sys.bcStack.PushI(c.mhv.playerid)
+	case OC_ex_movehitvar_power:
+		sys.bcStack.PushI(c.mhv.power)
 	case OC_ex_movehitvar_overridden:
 		sys.bcStack.PushB(c.mhv.overridden)
 	case OC_ex_movehitvar_playerno:
@@ -5780,14 +5783,8 @@ func (sc explod) Run(c *Char, _ []int32) bool {
 			}
 		case explod_supermovetime:
 			e.supermovetime = exp[0].evalI(c)
-			if e.supermovetime >= 0 {
-				e.supermovetime = Max(e.supermovetime, e.supermovetime+1)
-			}
 		case explod_pausemovetime:
 			e.pausemovetime = exp[0].evalI(c)
-			if e.pausemovetime >= 0 {
-				e.pausemovetime = Max(e.pausemovetime, e.pausemovetime+1)
-			}
 		case explod_sprpriority:
 			e.sprpriority = exp[0].evalI(c)
 		case explod_layerno:
@@ -9757,6 +9754,7 @@ type playerPush StateControllerBase
 const (
 	playerPush_value byte = iota
 	playerPush_priority
+	playerPush_affectteam
 	playerPush_redirectid
 )
 
@@ -9776,6 +9774,8 @@ func (sc playerPush) Run(c *Char, _ []int32) bool {
 			}
 		case playerPush_priority:
 			crun.pushPriority = exp[0].evalI(c)
+		case playerPush_affectteam:
+			crun.pushAffectTeam = exp[0].evalI(c)
 		}
 		return true
 	})
@@ -11434,11 +11434,24 @@ const (
 	matchRestart_p6def
 	matchRestart_p7def
 	matchRestart_p8def
+	matchRestart_preserveVars
+	matchRestart_p1pal
+	matchRestart_p2pal
+	matchRestart_p3pal
+	matchRestart_p4pal
+	matchRestart_p5pal
+	matchRestart_p6pal
+	matchRestart_p7pal
+	matchRestart_p8pal
+	matchRestart_resetMatch
 )
 
 func (sc matchRestart) Run(c *Char, _ []int32) bool {
 	var s string
 	reloadFlag := false
+	for i := range sys.reloadPreserveVars {
+		sys.reloadPreserveVars[i] = false
+	}
 	StateControllerBase(sc).run(c, func(paramID byte, exp []BytecodeExp) bool {
 		switch paramID {
 		case matchRestart_reload:
@@ -11477,16 +11490,47 @@ func (sc matchRestart) Run(c *Char, _ []int32) bool {
 		case matchRestart_p8def:
 			s = string(*(*[]byte)(unsafe.Pointer(&exp[0])))
 			sys.sel.cdefOverwrite[7] = SearchFile(s, []string{c.gi().def})
+		case matchRestart_preserveVars:
+			for i, p := range exp {
+				if i < len(sys.reloadPreserveVars) {
+					sys.reloadPreserveVars[i] = p.evalB(c)
+				}
+			}
+		case matchRestart_p1pal:
+			sys.sel.palOverwrite[0] = int(exp[0].evalI(c))
+		case matchRestart_p2pal:
+			sys.sel.palOverwrite[1] = int(exp[0].evalI(c))
+		case matchRestart_p3pal:
+			sys.sel.palOverwrite[2] = int(exp[0].evalI(c))
+		case matchRestart_p4pal:
+			sys.sel.palOverwrite[3] = int(exp[0].evalI(c))
+		case matchRestart_p5pal:
+			sys.sel.palOverwrite[4] = int(exp[0].evalI(c))
+		case matchRestart_p6pal:
+			sys.sel.palOverwrite[5] = int(exp[0].evalI(c))
+		case matchRestart_p7pal:
+			sys.sel.palOverwrite[6] = int(exp[0].evalI(c))
+		case matchRestart_p8pal:
+			sys.sel.palOverwrite[7] = int(exp[0].evalI(c))
+		case matchRestart_resetMatch:
+			if exp[0].evalB(c) {
+				sys.matchResetFlg = true
+			}
 		}
 		return true
 	})
 	if sys.netConnection == nil && sys.replayFile == nil {
 		if reloadFlag {
 			sys.reloadFlg = true
-		} else {
+		} else if !sys.matchResetFlg {
 			sys.roundResetFlg = true
 			sys.roundResetMatchStart = true
 		}
+	}
+	if !sys.reloadFlg {
+		sys.sel.cdefOverwrite = make(map[int]string)
+		sys.sel.palOverwrite = make(map[int]int)
+		sys.sel.sdefOverwrite = ""
 	}
 	return false
 }

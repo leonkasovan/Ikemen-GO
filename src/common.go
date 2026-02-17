@@ -1608,9 +1608,13 @@ func SliceDelete[T any](slice []T, i int) []T {
 // Nils out all elements and returns a zero-length slice while preserving the underlying capacity
 // This is better than plain [:0] because we ensure data from previous characters is GC'd
 func PointerSliceReset[T any](slice []*T) []*T {
+	// Recover the whole capacity so we can deep clean it
+	slice = slice[:cap(slice)]
+	// Clear everything
 	for i := range slice {
 		slice[i] = nil
 	}
+	// Shrink back to zero length
 	return slice[:0]
 }
 

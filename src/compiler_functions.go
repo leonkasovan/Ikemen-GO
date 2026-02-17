@@ -277,6 +277,8 @@ func (c *Compiler) assertSpecial(is IniSection, sc *StateControllerBase, _ int8)
 				sc.add(assertSpecial_flag, sc.i64ToExp(int64(ASF_runlast)))
 			case "sizepushonly":
 				sc.add(assertSpecial_flag, sc.i64ToExp(int64(ASF_sizepushonly)))
+			case "nodestroyself":
+				sc.add(assertSpecial_flag, sc.i64ToExp(int64(ASF_nodestroyself)))
 			// Ikemen global flags
 			case "camerafreeze":
 				sc.add(assertSpecial_flag_g, sc.i64ToExp(int64(GSF_camerafreeze)))
@@ -3507,6 +3509,27 @@ func (c *Compiler) playerPush(is IniSection, sc *StateControllerBase, _ int8) (S
 		}); err != nil {
 			return err
 		}
+		if err := c.stateParam(is, "affectteam", false, func(data string) error {
+			any = true
+			if len(data) == 0 {
+				return Error("affectteam not specified")
+			}
+			var at int32
+			switch strings.ToUpper(data)[0] {
+			case 'E':
+				at = 1
+			case 'F':
+				at = -1
+			case 'B':
+				at = 0
+			default:
+				return Error("Invalid affectteam: " + data)
+			}
+			sc.add(playerPush_affectteam, sc.iToExp(at))
+			return nil
+		}); err != nil {
+			return err
+		}
 		if !any {
 			return Error("Must specify at least one PlayerPush parameter")
 		}
@@ -4929,6 +4952,54 @@ func (c *Compiler) matchRestart(is IniSection, sc *StateControllerBase, _ int8) 
 			sc.add(matchRestart_p8def, sc.beToExp(BytecodeExp(data[1:len(data)-1])))
 			return nil
 		}); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "preservevars",
+			matchRestart_preserveVars, VT_Bool, MaxPlayerNo, false); err != nil {
+			return err
+		}
+		if err := c.stateParam(is, "p1palette", false, func(data string) error {
+			return c.scAdd(sc, matchRestart_p1pal, data, VT_Int, 1)
+		}); err != nil {
+			return err
+		}
+		if err := c.stateParam(is, "p2palette", false, func(data string) error {
+			return c.scAdd(sc, matchRestart_p2pal, data, VT_Int, 1)
+		}); err != nil {
+			return err
+		}
+		if err := c.stateParam(is, "p3palette", false, func(data string) error {
+			return c.scAdd(sc, matchRestart_p3pal, data, VT_Int, 1)
+		}); err != nil {
+			return err
+		}
+		if err := c.stateParam(is, "p4palette", false, func(data string) error {
+			return c.scAdd(sc, matchRestart_p4pal, data, VT_Int, 1)
+		}); err != nil {
+			return err
+		}
+		if err := c.stateParam(is, "p5palette", false, func(data string) error {
+			return c.scAdd(sc, matchRestart_p5pal, data, VT_Int, 1)
+		}); err != nil {
+			return err
+		}
+		if err := c.stateParam(is, "p6palette", false, func(data string) error {
+			return c.scAdd(sc, matchRestart_p6pal, data, VT_Int, 1)
+		}); err != nil {
+			return err
+		}
+		if err := c.stateParam(is, "p7palette", false, func(data string) error {
+			return c.scAdd(sc, matchRestart_p7pal, data, VT_Int, 1)
+		}); err != nil {
+			return err
+		}
+		if err := c.stateParam(is, "p8palette", false, func(data string) error {
+			return c.scAdd(sc, matchRestart_p8pal, data, VT_Int, 1)
+		}); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "resetmatch",
+			matchRestart_resetMatch, VT_Bool, 1, false); err != nil {
 			return err
 		}
 		return nil
