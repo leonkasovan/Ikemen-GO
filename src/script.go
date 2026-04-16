@@ -7250,6 +7250,7 @@ func systemScriptInit(l *lua.LState) {
 		sys.soundChannels.Play(s, g, n, 100, 0.0, 0, 0, 0)
 		return 0
 	})
+	registerHTTPLib(l)
 }
 
 // Trigger redirection (equivalents of CNS/ZSS trigger redirections)
