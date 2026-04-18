@@ -2255,8 +2255,8 @@ func (c *Compiler) hitDefSub(is IniSection, sc *StateControllerBase) error {
 		hitDef_crouch_friction, VT_Float, 1, false); err != nil {
 		return err
 	}
-	if err := c.paramValue(is, sc, "missonreversaldef",
-		hitDef_missonreversaldef, VT_Bool, 1, false); err != nil {
+	if err := c.paramValue(is, sc, "ignorereversaldef",
+		hitDef_ignorereversaldef, VT_Bool, 1, false); err != nil {
 		return err
 	}
 

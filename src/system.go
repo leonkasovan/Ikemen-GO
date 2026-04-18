@@ -2473,7 +2473,6 @@ func (s *System) action() {
 		// Z axis player limits
 		s.zmin = s.stage.topbound * s.stage.localscl
 		s.zmax = s.stage.botbound * s.stage.localscl
-		s.allPalFX.step()
 		//s.bgPalFX.step()
 		s.envShake.next()
 		if s.envcol_time > 0 {
@@ -2507,6 +2506,8 @@ func (s *System) action() {
 			s.specialFlag = (s.specialFlag&GSF_nokoslow | s.specialFlag&GSF_timerfreeze)
 		}
 		s.charList.action()
+		s.allPalFX.step()
+		s.bgPalFX.step()
 		s.nomusic = s.gsf(GSF_nomusic) && !sys.postMatchFlg
 	}
 
@@ -3638,9 +3639,7 @@ func (s *System) runMatch() (reload bool) {
 		}
 
 		// TODO: These probably ought to be in action() as well
-		s.bgPalFX.step()
 		s.stage.action()
-
 		// Update game state
 		s.action()
 

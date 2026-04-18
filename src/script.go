@@ -9678,7 +9678,7 @@ func triggerFunctions(l *lua.LState) {
 			case "supermovetime":
 				lv = lua.LNumber(p.supermovetime)
 			case "teamside":
-				lv = lua.LNumber(p.hitdef.teamside)
+				lv = lua.LNumber(p.hitdef.teamside + 1)
 			case "time":
 				lv = lua.LNumber(p.time)
 			case "vel x":

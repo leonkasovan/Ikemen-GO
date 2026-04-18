@@ -681,7 +681,7 @@ type HitDef struct {
 	StandFriction              float32
 	CrouchFriction             float32
 	KeepState                  bool
-	MissOnReversalDef          int32
+	IgnoreReversalDef          int32
 }
 
 func (hd *HitDef) reset(c *Char, proj *Projectile) {
@@ -806,7 +806,7 @@ func (hd *HitDef) reset(c *Char, proj *Projectile) {
 		StandFriction:       float32(math.NaN()),
 		CrouchFriction:      float32(math.NaN()),
 		KeepState:           false,
-		MissOnReversalDef:   0,
+		IgnoreReversalDef:   0,
 
 		reversal_guardflag:     IErr,
 		reversal_guardflag_not: IErr,
@@ -10151,7 +10151,7 @@ func (c *Char) attrCheck(getter *Char, ghd *HitDef, gstyp StateType) bool {
 
 	// ReversalDef vs HitDef attributes check
 	if ghd.reversal_attr > 0 {
-		if c.hitdef.MissOnReversalDef > 0 {
+		if c.hitdef.IgnoreReversalDef > 0 {
 			return false
 		}
 		// Check HitDef validity
@@ -11730,13 +11730,17 @@ func (c *Char) track() {
 			charleft := c.interPos[0]*c.localscl + edgeleft*c.localscl
 			charright := c.interPos[0]*c.localscl + edgeright*c.localscl
 			canmove := c.acttmp > 0 && !c.csf(CSF_posfreeze) && (c.bindTime == 0 || math.IsNaN(float64(c.bindPos[0])))
-
+			bindToCharacter := sys.playerID(c.bindToId)
 			if charleft < sys.cam.leftest {
 				sys.cam.leftest = charleft
 				if canmove {
 					sys.cam.leftestvel = c.vel[0] * c.localscl * c.facing
 				} else {
-					sys.cam.leftestvel = 0
+					if bindToCharacter != nil {
+						sys.cam.leftestvel = bindToCharacter.vel[0] * bindToCharacter.localscl * bindToCharacter.facing
+					} else {
+						sys.cam.leftestvel = 0
+					}
 				}
 			}
 			if charright > sys.cam.rightest {
@@ -11744,7 +11748,11 @@ func (c *Char) track() {
 				if canmove {
 					sys.cam.rightestvel = c.vel[0] * c.localscl * c.facing
 				} else {
-					sys.cam.rightestvel = 0
+					if bindToCharacter != nil {
+						sys.cam.rightestvel = bindToCharacter.vel[0] * bindToCharacter.localscl * bindToCharacter.facing
+					} else {
+						sys.cam.rightestvel = 0
+					}
 				}
 			}
 		}

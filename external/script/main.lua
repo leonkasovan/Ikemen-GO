@@ -1513,6 +1513,15 @@ else
 	main.background = 'titlebgdef'
 end
 
+local function enterSyncedNetplayMenu()
+	main.f_clearShuffleTables()
+	math.randomseed(getRandom())
+	main.f_menuSnap(motif[main.group])
+	main.f_menuItemBgAnimReset(motif[main.group])
+	main.f_fadeReset('fadein', motif[main.group])
+	main.menu.submenu.server.loop()
+end
+
 function main.f_default()
 	main.aiRamp = false --if AI ramping should be active
 	main.charparam = { --which select.def charparam should be used
@@ -1881,12 +1890,7 @@ main.t_itemname = {
 		sndPlay(motif.Snd, doneSnd[1], doneSnd[2])
 		if main.f_connect(gameOption('Netplay.IP.' .. t[item].displayname), t[item].displayname) then
 			if synchronize() then
-				main.f_clearShuffleTables()
-				math.randomseed(getRandom())
-				main.f_menuSnap(motif[main.group])
-				main.f_menuItemBgAnimReset(motif[main.group])
-				main.f_fadeReset('fadein', motif[main.group])
-				main.menu.submenu.server.loop()
+				enterSyncedNetplayMenu()
 			end
 			replayStop()
 			exitNetPlay()
@@ -1901,12 +1905,7 @@ main.t_itemname = {
 		sndPlay(motif.Snd, doneSnd[1], doneSnd[2])
 		if main.f_connect("", gameOption('Netplay.ListenPort')) then
 			if synchronize() then
-				main.f_clearShuffleTables()
-				math.randomseed(getRandom())
-				main.f_menuSnap(motif[main.group])
-				main.f_menuItemBgAnimReset(motif[main.group])
-				main.f_fadeReset('fadein', motif[main.group])
-				main.menu.submenu.server.loop()
+				enterSyncedNetplayMenu()
 			end
 			replayStop()
 			exitNetPlay()
@@ -2766,9 +2765,7 @@ function main.f_replay()
 		elseif getInput(-1, motif[main.group].menu.done.key) then
 			sndPlay(motif.Snd, motif[main.group].cursor.done.snd.default[1], motif[main.group].cursor.done.snd.default[2])
 			if enterReplay(t[item].itemname) and synchronize() then
-				main.f_clearShuffleTables()
-				math.randomseed(getRandom())
-				main.menu.submenu.server.loop()
+				enterSyncedNetplayMenu()
 			end
 			replayStop()
 			exitNetPlay()
@@ -2821,10 +2818,8 @@ function main.f_unlock(permanent)
 				panicError("\nmain.t_unlockLua." .. group .. "[" .. k .. "]\n" ..
 					"Invalid Lua code: \n" .. v .. "\n" .. tostring(err) .. "\n")
 			end
-			print('return ' .. v)
 			setfenv(func, env)
 			local bool = func()
-			print(bool)
 			if type(bool) == 'boolean' then
 				if group == 'chars' then
 					if main.f_unlockChar(k, bool, false) then

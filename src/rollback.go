@@ -220,9 +220,7 @@ func (rs *RollbackSystem) simulateFrame(s *System) bool {
 		return false
 	}
 
-	s.bgPalFX.step()
 	s.stage.action()
-
 	// If frame is ready to tick and not paused
 	//sys.stage.action()
 

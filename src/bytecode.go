@@ -3970,7 +3970,7 @@ func (be BytecodeExp) run_ex2(c *Char, i *int, oc *Char) {
 			case OC_ex2_projvar_supermovetime:
 				sys.bcStack.PushI(p.supermovetime)
 			case OC_ex2_projvar_teamside:
-				sys.bcStack.PushI(int32(p.hitdef.teamside))
+				sys.bcStack.PushI(int32(p.hitdef.teamside) + 1)
 			case OC_ex2_projvar_time:
 				sys.bcStack.PushI(p.time)
 			case OC_ex2_projvar_vel_x:
@@ -7305,7 +7305,7 @@ const (
 	hitDef_stand_friction
 	hitDef_crouch_friction
 	hitDef_keepstate
-	hitDef_missonreversaldef
+	hitDef_ignorereversaldef
 	hitDef_last = iota + afterImage_last + 1 - 1
 	hitDef_redirectid
 )
@@ -7683,8 +7683,8 @@ func (sc hitDef) runSub(c *Char, hd *HitDef, paramID byte, exp []BytecodeExp) {
 		hd.CrouchFriction = exp[0].evalF(c)
 	case hitDef_keepstate:
 		hd.KeepState = exp[0].evalB(c)
-	case hitDef_missonreversaldef:
-		hd.MissOnReversalDef = Btoi(exp[0].evalB(c))
+	case hitDef_ignorereversaldef:
+		hd.IgnoreReversalDef = Btoi(exp[0].evalB(c))
 	default:
 		if isPalFXParam(paramID) {
 			palFX(sc).runSub(c, &hd.palfx, paramID, exp)
