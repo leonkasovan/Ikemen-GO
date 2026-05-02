@@ -30,7 +30,14 @@ type Renderer interface {
 	IsModelEnabled() bool
 	IsShadowEnabled() bool
 
-	SetPipeline()
+	//SetPipeline()
+	LoadCustomSpriteShader(shaderName string, shaderData []byte) uint32
+	UnloadCustomSpriteShader(shaderName string)
+	SetSpritePipeline(shaderName string)
+	SetCustomUniforms(params [16]float32)
+	NeedsGrabPass() bool
+	ResolveBackBuffer() Texture
+
 	EnableBlending(eq BlendEquation, src, dst BlendFunc)
 	DisableBlending()
 
@@ -208,6 +215,8 @@ type RenderParams struct {
 	fLength        float32 // Focal length
 	xOffset        float32
 	yOffset        float32
+	shader         string
+	shaderParams   [16]float32
 }
 
 func (rp *RenderParams) IsValid() bool {
@@ -289,6 +298,107 @@ func applyProjection(modelview mgl.Mat4, rp RenderParams, n int, botdist, dy flo
 	return modelview
 }
 
+// Applies shear matrix before rotation
+func applyShear(modelview mgl.Mat4, rxadd, width float32) mgl.Mat4 {
+	if rxadd == 0 {
+		return modelview
+	}
+	shearMatrix := mgl.Mat4{
+		1, 0, 0, 0,
+		rxadd, 1, 0, 0,
+		0, 0, 1, 0,
+		0, 0, 0, 1,
+	}
+	modelview = modelview.Mul4(shearMatrix)
+	return modelview.Mul4(mgl.Translate3D(rxadd*width, 0, 0))
+}
+
+// Applies the sprite rotation path to a truetype glyph quad
+func transformTextQuad(x1, y1, x2, y2, x3, y3, x4, y4, rxadd float32,
+	rot Rotation, projectionMode int32, fLength, rcx, rcy float32) (float32, float32, float32, float32, float32, float32, float32, float32) {
+	if rot.IsZero() && rxadd == 0 {
+		return x1, y1, x2, y2, x3, y3, x4, y4
+	}
+
+	sx, sy := sys.widthScale, sys.heightScale
+	if sx == 0 {
+		sx = 1
+	}
+	if sy == 0 {
+		sy = 1
+	}
+	screenH := float32(sys.scrrect[3])
+
+	toSpriteSpace := func(x, y float32) (float32, float32) {
+		return x * sx, -y * sy
+	}
+	toTextSpace := func(x, y float32) (float32, float32) {
+		return x / sx, (screenH - y) / sy
+	}
+	transformPoint := func(modelview mgl.Mat4, x, y float32) (float32, float32) {
+		v := modelview.Mul4x1(mgl.Vec4{x, y, 0, 1})
+		if v.W() != 0 {
+			invW := 1 / v.W()
+			return v.X() * invW, v.Y() * invW
+		}
+		return v.X(), v.Y()
+	}
+
+	// truetype quads use top-left coordinates but sprite transforms expect bottom-left ones
+	blx, bly := toSpriteSpace(x3, y3)
+	brx, bry := toSpriteSpace(x4, y4)
+	trx, try := toSpriteSpace(x1, y1)
+	tlx, tly := toSpriteSpace(x2, y2)
+
+	rp := RenderParams{
+		size:           [2]uint16{1, 1},
+		tile:           notiling,
+		xts:            trx - tlx,
+		xbs:            brx - blx,
+		ys:             try - bry,
+		vs:             1,
+		rxadd:          rxadd,
+		xas:            1,
+		yas:            1,
+		rot:            rot,
+		rcx:            rcx * sx,
+		rcy:            -rcy * sy,
+		projectionMode: projectionMode,
+		fLength:        fLength,
+	}
+
+	if !rp.rot.IsZero() {
+		modelview := mgl.Translate3D(0, screenH, 0)
+		modelview = applyProjection(modelview, rp, 0, 1, 0)
+		modelview = applyShear(modelview, rp.rxadd, rp.ys)
+		modelview = applyRotation(modelview, rp)
+		modelview = modelview.Mul4(mgl.Translate3D(-rp.rcx, -rp.rcy, 0))
+
+		blx, bly = transformPoint(modelview, blx, bly)
+		brx, bry = transformPoint(modelview, brx, bry)
+		trx, try = transformPoint(modelview, trx, try)
+		tlx, tly = transformPoint(modelview, tlx, tly)
+	} else {
+		if rp.rxadd != 0 {
+			// Match the unrotated sprite path by shifting the bottom edge
+			blx += rp.rxadd * rp.ys
+			brx = blx + rp.xbs
+		}
+		// Sprite rendering translates quads into screen space before drawQuads
+		bly += screenH
+		bry += screenH
+		try += screenH
+		tly += screenH
+	}
+
+	x1, y1 = toTextSpace(trx, try)
+	x2, y2 = toTextSpace(tlx, tly)
+	x3, y3 = toTextSpace(blx, bly)
+	x4, y4 = toTextSpace(brx, bry)
+
+	return x1, y1, x2, y2, x3, y3, x4, y4
+}
+
 // Render a quad with optional horizontal tiling
 func renderSpriteHTile(modelview mgl.Mat4, x1, y1, x2, y2, x3, y3, x4, y4, dy, width float32, rp RenderParams) {
 	//            p3
@@ -367,7 +477,6 @@ func renderSpriteQuad(modelview mgl.Mat4, rp RenderParams) {
 	//	pers = Abs(rp.xbs) / Abs(rp.xts)
 	//}
 	if !rp.rot.IsZero() && rp.tile.xflag == 0 && rp.tile.yflag == 0 {
-
 		if rp.vs != 1 {
 			y1 = rp.rcy + ((rp.y - rp.ys*float32(rp.size[1])) - rp.rcy)
 			y2 = y1
@@ -375,15 +484,7 @@ func renderSpriteQuad(modelview mgl.Mat4, rp RenderParams) {
 			y4 = y3
 		}
 		modelview = applyProjection(modelview, rp, 0, 1, 0)
-		// Apply shear matrix before rotation
-		shearMatrix := mgl.Mat4{
-			1, 0, 0, 0,
-			rp.rxadd, 1, 0, 0,
-			0, 0, 1, 0,
-			0, 0, 0, 1}
-		modelview = modelview.Mul4(shearMatrix)
-		modelview = modelview.Mul4(mgl.Translate3D(rp.rxadd*rp.ys*float32(rp.size[1]), 0, 0))
-
+		modelview = applyShear(modelview, rp.rxadd, rp.ys*float32(rp.size[1]))
 		modelview = applyRotation(modelview, rp)
 		modelview = modelview.Mul4(mgl.Translate3D(-rp.rcx, -rp.rcy, 0))
 
@@ -516,7 +617,8 @@ func RenderSprite(rp RenderParams) {
 
 	// Heavy state change
 	// Because renderWithBlending() sometimes needs 2 passes, we'll do most of the setup outside of render()
-	gfx.SetPipeline()
+	gfx.SetSpritePipeline(rp.shader)
+
 	gfx.EnableScissor(rp.window[0], rp.window[1], rp.window[2], rp.window[3])
 
 	// Static uniforms
@@ -535,6 +637,26 @@ func RenderSprite(rp RenderParams) {
 		gfx.SetUniformI("isRgba", 0)
 	}
 
+	if rp.shader != "" {
+		var timeSec float32
+		if sys.middleOfMatch() {
+			timeSec = float32(sys.gameTime())
+		} else {
+			timeSec = float32(sys.frameCounter)
+		}
+		gfx.SetUniformF("iTime", timeSec/60.0)
+		gfx.SetUniformF("iResolution", float32(sys.scrrect[2]), float32(sys.scrrect[3]))
+		aspectRatio := sys.getCurrentAspect() / sys.getFightAspect()
+		gfx.SetUniformF("aspectRatio", aspectRatio)
+
+		if gfx.NeedsGrabPass() {
+			grabTex := gfx.ResolveBackBuffer()
+			if grabTex != nil {
+				gfx.SetTexture("bgl_RenderedTexture", grabTex)
+			}
+		}
+		gfx.SetCustomUniforms(rp.shaderParams)
+	}
 	// Texture binding
 	gfx.SetTexture("tex", rp.tex)
 	if rp.paltex != nil {
@@ -689,7 +811,7 @@ func FillRect(rect [4]int32, color uint32, alpha [2]int32, fx *PalFX) {
 	x2, y2 := float32(rect[0]+rect[2]), -float32(rect[1]+rect[3])
 
 	// Prepare the heavy state
-	gfx.SetPipeline()
+	gfx.SetSpritePipeline("")
 
 	// Set geometry
 	gfx.SetVertexData(

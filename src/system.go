@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"image"
 	"io"
+
 	//"log"
 	"math"
 	"os"
@@ -63,7 +64,7 @@ type SystemStateVars struct {
 	envcol_time int32
 
 	scrrect                 [4]int32
-	gameWidth, gameHeight   int32
+	gameWidth, gameHeight   float32
 	widthScale, heightScale float32
 	gameEnd, frameSkip      bool
 	paused, frameStepFlag   bool
@@ -220,6 +221,7 @@ type System struct {
 	debugLastID         int32
 	soundMixer          *beep.Mixer
 	bgm                 Bgm
+	pauseVolumeApplied  bool
 	soundChannels       SoundChannels // System sounds. Lifebars etc
 	charSoundChannels   [MaxPlayerNo]SoundChannels
 	allPalFX            *PalFX
@@ -301,6 +303,7 @@ type System struct {
 	listLFunc          []*lua.LFunction
 	reloadPreserveVars [MaxPlayerNo]bool
 	charVarsBackup     map[int]CharVarBackup
+	shaderRefCount     map[string]int
 
 	statePool       GameStatePool
 	commandLists    []*CommandList
@@ -348,6 +351,11 @@ type System struct {
 	// Must live on System because rollback temporarily steals sys.netConnection.
 	netplayOverride SessionConfigOverride
 	sessionWarning  string
+}
+
+type drawAspectState struct {
+	gameWidth, gameHeight   float32
+	widthScale, heightScale float32
 }
 
 // Check if the application is running inside a macOS app bundle
@@ -479,6 +487,7 @@ func (s *System) init(w, h int32) *lua.LState {
 
 	systemScriptInit(l)
 	s.shortcutScripts = make(map[ShortcutKey]*ShortcutScript)
+	s.shaderRefCount = make(map[string]int)
 	if runtime.GOOS != "android" {
 		// So now that we have a window we add an icon.
 		if len(s.cfg.Config.WindowIcon) > 0 {
@@ -608,17 +617,17 @@ func (s *System) setGameSize(w, h int32) {
 
 	if screenAspect > targetAspect {
 		// Screen is wider than 4:3 - scale based on height
-		s.gameWidth = int32(float32(baseHeight) * screenAspect)
-		s.gameHeight = baseHeight
+		s.gameWidth = float32(baseHeight) * screenAspect
+		s.gameHeight = float32(baseHeight)
 	} else {
 		// Screen is taller than 4:3 - scale based on width
-		s.gameWidth = baseWidth
-		s.gameHeight = int32(float32(baseWidth) / screenAspect)
+		s.gameWidth = float32(baseWidth)
+		s.gameHeight = float32(baseWidth) / screenAspect
 	}
 
 	// Update scale
-	s.widthScale = float32(s.scrrect[2]) / float32(s.gameWidth)
-	s.heightScale = float32(s.scrrect[3]) / float32(s.gameHeight)
+	s.widthScale = float32(s.scrrect[2]) / s.gameWidth
+	s.heightScale = float32(s.scrrect[3]) / s.gameHeight
 }
 
 // Change aspect ratio at match start
@@ -654,12 +663,59 @@ func (s *System) applyFightAspect() {
 
 	// Compute new game dimensions while maintaining the same base height
 	gameWidth := baseHeight * aspectGame
-	s.gameWidth = int32(gameWidth)
-	s.gameHeight = int32(baseHeight)
+	s.gameWidth = gameWidth
+	s.gameHeight = baseHeight
 
 	// Scale to fit current screen size
 	s.widthScale = float32(s.scrrect[2]) / float32(s.gameWidth)
 	s.heightScale = float32(s.scrrect[3]) / float32(s.gameHeight)
+}
+
+func (s *System) captureAspectState() drawAspectState {
+	return drawAspectState{
+		gameWidth:   s.gameWidth,
+		gameHeight:  s.gameHeight,
+		widthScale:  s.widthScale,
+		heightScale: s.heightScale,
+	}
+}
+
+func (s *System) restoreAspectState(st drawAspectState) {
+	s.gameWidth = st.gameWidth
+	s.gameHeight = st.gameHeight
+	s.widthScale = st.widthScale
+	s.heightScale = st.heightScale
+}
+
+func (s *System) wrapDrawWithAspectState(fn func()) func() {
+	if fn == nil {
+		return nil
+	}
+	st := s.captureAspectState()
+	return func() {
+		prev := s.captureAspectState()
+		s.restoreAspectState(st)
+		defer s.restoreAspectState(prev)
+		fn()
+	}
+}
+
+func (s *System) shouldPersistMotifAspect() bool {
+	return s.cfg.Video.KeepAspect && !s.skipMotifScaling()
+}
+
+func (s *System) enterMotifAspect() {
+	if !s.shouldPersistMotifAspect() {
+		return
+	}
+	s.setGameSize(s.scrrect[2], s.scrrect[3])
+}
+
+func (s *System) leaveMotifAspect() {
+	if !s.shouldPersistMotifAspect() {
+		return
+	}
+	s.applyFightAspect()
 }
 
 func (s *System) eventUpdate() bool {
@@ -871,18 +927,34 @@ func (s *System) tickSound() {
 	// Always pause if noMusic flag set, pause master volume is 0, or freqmul is 0.
 	s.bgm.SetPaused(s.nomusic || (s.paused && s.cfg.Sound.PauseMasterVolume == 0) || (s.bgm.freqmul == 0))
 
-	// Set BGM volume if paused
-	if s.paused && s.bgm.volRestore == 0 {
-		s.bgm.volRestore = s.bgm.bgmVolume
-		s.bgm.bgmVolume = int(s.cfg.Sound.PauseMasterVolume * s.bgm.bgmVolume / 100.0)
-		s.bgm.UpdateVolume()
+	if s.paused {
+		// Apply BGM pause volume once per pause, even when the original BGM volume is 0.
+		// volRestore cannot be used as the latch because 0 is a valid volume.
+		if !s.bgm.pauseVolumeApplied {
+			s.bgm.volRestore = s.bgm.bgmVolume
+			s.bgm.bgmVolume = int(s.cfg.Sound.PauseMasterVolume * s.bgm.bgmVolume / 100.0)
+			s.bgm.UpdateVolume()
+			s.bgm.pauseVolumeApplied = true
+		}
+
+		// Run every paused tick so sounds started while paused are also softened.
+		s.pauseVolumeApplied = true
 		s.softenAllSound()
-	} else if !s.paused && s.bgm.volRestore > 0 {
-		// Restore all volume
+	} else if s.pauseVolumeApplied || s.bgm.pauseVolumeApplied {
+		s.restorePauseVolume()
+	}
+}
+
+func (s *System) restorePauseVolume() {
+	if s.bgm.pauseVolumeApplied {
 		s.bgm.bgmVolume = s.bgm.volRestore
 		s.bgm.volRestore = 0
+		s.bgm.pauseVolumeApplied = false
 		s.bgm.UpdateVolume()
+	}
+	if s.pauseVolumeApplied {
 		s.restoreAllVolume()
+		s.pauseVolumeApplied = false
 	}
 }
 
@@ -1689,12 +1761,14 @@ func (s *System) luaQueuePreDraw(fn func()) {
 	if fn == nil {
 		return
 	}
+	fn = s.wrapDrawWithAspectState(fn)
 	s.luaDrawPreOps = append(s.luaDrawPreOps, fn)
 }
 func (s *System) luaQueueLayerDraw(layer int, fn func()) {
 	if fn == nil {
 		return
 	}
+	fn = s.wrapDrawWithAspectState(fn)
 	// Negative layers behave like a "pre" pass (e.g. clearColor).
 	if layer < 0 {
 		s.luaQueuePreDraw(fn)
@@ -1990,10 +2064,11 @@ func (s *System) softenAllSound() {
 			ch := &s.charSoundChannels[i][j]
 
 			// Temporarily store the volume so it can be recalled later.
-			if ch.IsPlaying() && ch.sfx != nil && ch.ctrl != nil {
+			if ch.IsPlaying() && ch.sfx != nil && ch.ctrl != nil && !ch.pauseVolumeApplied {
 				ch.volResume = ch.sfx.volume
 				softVolume := ch.sfx.volume * (float32(s.cfg.Sound.PauseMasterVolume) / 100.0)
 				ch.SetVolume(softVolume)
+				ch.pauseVolumeApplied = true
 
 				// Pause if pause master volume is 0
 				if s.cfg.Sound.PauseMasterVolume == 0 {
@@ -2011,8 +2086,9 @@ func (s *System) restoreAllVolume() {
 			ch := &s.charSoundChannels[i][j]
 
 			// Restore the volume we had.
-			if ch.sfx != nil && ch.ctrl != nil {
+			if ch.sfx != nil && ch.ctrl != nil && ch.pauseVolumeApplied {
 				ch.SetVolume(ch.volResume)
+				ch.pauseVolumeApplied = false
 
 				// Unpause only those whose freqmul > 0
 				if ch.ctrl.Paused && ch.sfx.freqmul > 0 {
@@ -2075,6 +2151,7 @@ func (s *System) clearPlayerAssets(pn int, forceDestroy bool) {
 
 func (s *System) resetRoundState() {
 	s.roundBackup.Restore()
+	newMatchMusic := s.round == 1 && !s.roundResetFlg
 
 	if s.sel.gameParams.PersistRounds && !s.roundResetFlg {
 		s.persistRoundCount++
@@ -2082,6 +2159,7 @@ func (s *System) resetRoundState() {
 
 	s.resetFrameTime()
 
+	s.restorePauseVolume()
 	s.paused = false
 	s.introSkipCall = false
 	s.roundResetFlg = false
@@ -2158,6 +2236,11 @@ func (s *System) resetRoundState() {
 		s.stage.reset()
 	}
 	s.cam.ResetZoomdelay()
+	if newMatchMusic {
+		s.stage.music.ClearSelection()
+		s.stage.si().music.ClearSelection()
+		s.sel.music.ClearSelection()
+	}
 
 	// Reset characters
 	for i, p := range s.chars {
@@ -2188,6 +2271,9 @@ func (s *System) resetRoundState() {
 		}
 		s.cgi[i].clearPCTime()
 
+		if newMatchMusic {
+			p[0].si().music.ClearSelection()
+		}
 		// Reset music map
 		s.cgi[i].music = make(Music)
 		// Append stage def file music parameters
@@ -2906,7 +2992,8 @@ func (s *System) stepRoundState() {
 	// Post round
 	if s.roundEnded() || s.roundEndDecision() {
 		rs4t := -s.fightScreen.round.over_waittime
-		fadeoutStart := rs4t - 2 - s.fightScreen.round.overTime() + s.fightScreen.round.fadeOut.time
+		fadeOutDuration := s.fightScreen.round.fadeOut.duration()
+		fadeoutStart := rs4t - 2 - s.fightScreen.round.overTime() + fadeOutDuration
 		matchEndDialoguePending := s.matchEndDialoguePending()
 
 		s.intro--
@@ -3728,7 +3815,7 @@ func (s *System) SetupCharRoundStart() {
 			}
 
 			// Apply life options
-			lmax *= p[0].ocd().lifeRatio * s.cfg.Options.Life / 100
+			lmax *= s.cfg.Options.Life / 100
 
 			// Adjust life by team mode
 			if p[0].teamside != -1 {
@@ -3748,9 +3835,9 @@ func (s *System) SetupCharRoundStart() {
 							if len(s.chars[j]) > 0 {
 								var charLm float32
 								if s.chars[j][0].ocd().lifeMax > 0 {
-									charLm = float32(s.chars[j][0].ocd().lifeMax) * s.chars[j][0].ocd().lifeRatio * s.cfg.Options.Life / 100
+									charLm = float32(s.chars[j][0].ocd().lifeMax) * s.cfg.Options.Life / 100
 								} else {
-									charLm = float32(s.chars[j][0].gi().data.life) * s.chars[j][0].ocd().lifeRatio * s.cfg.Options.Life / 100
+									charLm = float32(s.chars[j][0].gi().data.life) * s.cfg.Options.Life / 100
 								}
 								totalTeamLife += charLm
 								teamSize++
@@ -4088,7 +4175,6 @@ type SelectChar struct {
 	intro         string
 	ending        string
 	arcadepath    string
-	ratiopath     string
 	movelist      string
 	pal           []int32
 	pal_defaults  []int32
@@ -4317,7 +4403,7 @@ func (s *Select) AddChar(def string) *SelectChar {
 			}
 		}
 
-		foundDiskPath := SearchFile(charDefPathGuess, []string{"chars/", "data/", ""})
+		foundDiskPath := SearchFile(charDefPathGuess, []string{"", "data/"}, "chars/")
 		if foundDiskPath == "" || !strings.HasSuffix(strings.ToLower(foundDiskPath), ".def") {
 			return useDummy("DEF not found")
 		}
@@ -4337,37 +4423,6 @@ func (s *Select) AddChar(def string) *SelectChar {
 		}
 		// Print full message if it's an actual read error
 		return useDummy("DEF read error: " + err.Error())
-	}
-
-	resolvePathRelativeToDef := func(pathInDefFile string) string {
-		isZipDef, zipArchiveOfDef, defSubPathInZip := IsZipPath(sc.def)
-		pathInDefFile = filepath.ToSlash(pathInDefFile)
-
-		if filepath.IsAbs(pathInDefFile) {
-			return pathInDefFile
-		}
-
-		// Check if pathInDefFile itself looks like a zip-internal path.
-		if isZipRel, _, _ := IsZipPath(pathInDefFile); isZipRel {
-			return pathInDefFile // Assume it's a correct logical path
-		}
-
-		isEngineRootRelative := strings.HasPrefix(pathInDefFile, "data/") ||
-			strings.HasPrefix(pathInDefFile, "font/") ||
-			strings.HasPrefix(pathInDefFile, "stages/")
-
-		if isZipDef {
-			if isEngineRootRelative {
-				return pathInDefFile
-			}
-			baseDirWithinZip := filepath.ToSlash(filepath.Dir(defSubPathInZip))
-			if baseDirWithinZip == "." || baseDirWithinZip == "" { // .def is at zip root
-				return filepath.ToSlash(filepath.Join(zipArchiveOfDef, pathInDefFile))
-			}
-			return filepath.ToSlash(filepath.Join(zipArchiveOfDef, baseDirWithinZip, pathInDefFile))
-		}
-
-		return pathInDefFile
 	}
 
 	var cns_orig, sprite_orig, anim_orig, movelist_orig string
@@ -4467,7 +4522,6 @@ func (s *Select) AddChar(def string) *SelectChar {
 				sc.intro, _, _ = isec.getText("intro.storyboard")
 				sc.ending, _, _ = isec.getText("ending.storyboard")
 				sc.arcadepath, _, _ = isec.getText("arcadepath")
-				sc.ratiopath, _, _ = isec.getText("ratiopath")
 			}
 		}
 	}
@@ -4478,7 +4532,7 @@ func (s *Select) AddChar(def string) *SelectChar {
 	}
 
 	tempSff := newSff()
-	LoadFile(&cns_orig, []string{sc.def, "", "data/"}, func(filename string) error {
+	LoadFile(&cns_orig, []string{sc.def, "", "data/"}, "", func(filename string) error {
 		str, err := LoadText(filename)
 		if err != nil {
 			return err
@@ -4501,8 +4555,7 @@ func (s *Select) AddChar(def string) *SelectChar {
 	})
 	// preload animations
 	if len(anim_orig) > 0 {
-		resolvedAnimPath := resolvePathRelativeToDef(anim_orig)
-		LoadFile(&resolvedAnimPath, []string{sc.def}, func(filename string) error {
+		LoadFile(&anim_orig, []string{sc.def, "", "data/"}, "", func(filename string) error {
 			str, err := LoadText(filename) // LoadText is zip-aware
 			if err != nil {
 				return err
@@ -4530,8 +4583,7 @@ func (s *Select) AddChar(def string) *SelectChar {
 		fp = sprite_orig
 	}
 	if len(fp) > 0 {
-		resolvedSpritePath := resolvePathRelativeToDef(fp)
-		LoadFile(&resolvedSpritePath, []string{sc.def, "", "data/"}, func(file string) error {
+		LoadFile(&fp, []string{sc.def, "", "data/"}, "", func(file string) error {
 			var selPal []int32
 			var err_sff error
 			sc.sff, selPal, err_sff = preloadSff(file, true, listSpr)
@@ -4587,9 +4639,8 @@ func (s *Select) AddChar(def string) *SelectChar {
 	}
 	// read movelist
 	if len(movelist_orig) > 0 {
-		resolvedMovelistPath := resolvePathRelativeToDef(movelist_orig)
 		// Movelist is text, can be loaded now
-		LoadFile(&resolvedMovelistPath, []string{sc.def, "", "data/"}, func(filename string) error {
+		LoadFile(&movelist_orig, []string{sc.def, "", "data/"}, "", func(filename string) error {
 			sc.movelist, _ = LoadText(filename)
 			return nil
 		})
@@ -4656,7 +4707,7 @@ func (s *Select) AddStage(def string) (*SelectStage, error) {
 		if !strings.HasSuffix(strings.ToLower(def), ".def") {
 			def += ".def"
 		}
-		if err := LoadFile(&def, []string{"stages/", "data/", ""}, func(file string) error {
+		if err := LoadFile(&def, []string{"", "data/"}, "stages/", func(file string) error {
 			finalDefPath = file
 			return nil
 		}); err != nil {
@@ -4667,7 +4718,7 @@ func (s *Select) AddStage(def string) (*SelectStage, error) {
 
 	var lines []string
 	var err error
-	if err = LoadFile(&finalDefPath, nil, func(file string) error {
+	if err = LoadFile(&finalDefPath, nil, "", func(file string) error {
 		var str string
 		str, err = LoadText(file)
 		if err != nil {
@@ -4721,7 +4772,7 @@ func (s *Select) AddStage(def string) (*SelectStage, error) {
 						key += fmt.Sprint(idx + 1) // attachedchar2, attachedchar3, attachedchar4
 					}
 
-					if err := isec.LoadFile(key, []string{def, "", sys.motif.Def, "data/"}, func(filename string) error {
+					if err := isec.LoadFile(key, []string{finalDefPath, "", "data/"}, "chars/", func(filename string) error {
 						// Ensure slice has correct length
 						for len(ss.attachedchardef) <= idx {
 							ss.attachedchardef = append(ss.attachedchardef, "")
@@ -4781,7 +4832,7 @@ func (s *Select) AddStage(def string) (*SelectStage, error) {
 			}
 		}
 		// preload portion of sff file
-		LoadFile(&spr, []string{def, "", "data/"}, func(file string) error {
+		LoadFile(&spr, []string{finalDefPath, "", "data/"}, "", func(file string) error {
 			var err error
 			ss.sff, _, err = preloadSff(file, false, listSpr)
 			if err != nil {
@@ -4969,7 +5020,7 @@ func (l *Loader) loadCharacter(pn int, attached bool) int {
 				break
 			}
 		}
-		if prefixToDecrement && !ffx.isGlobal {
+		if prefixToDecrement && ffx.isCharFX {
 			if ffx.refCount > 0 {
 				ffx.refCount--
 			}
@@ -4984,6 +5035,10 @@ func (l *Loader) loadCharacter(pn int, attached bool) int {
 
 	if sameChar {
 		p = sys.chars[pn][0]
+
+		// Restore values that ModifyPlayer may have mutated.
+		// TODO: Should ModifyPlayer persist or not across matches?
+		p.resetModifyPlayer()
 
 		// Prepare success message
 		if attached {
@@ -5068,6 +5123,11 @@ func (l *Loader) loadCharacter(pn int, attached bool) int {
 	}
 	sys.cgi[pn].palno = int32(selectPalno)
 
+	// Apply per-launch map overrides prepared from Lua/loadStart.
+	if !attached {
+		p.applyMapOverrides()
+	}
+
 	// Prepare fight screen portraits and names for Turns mode
 	if !attached {
 		if pn < len(sys.fightScreen.faces[sys.tmode[pn&1]]) && sys.tmode[pn&1] == TM_Turns && sys.round == 1 {
@@ -5078,7 +5138,8 @@ func (l *Loader) loadCharacter(pn int, attached bool) int {
 	}
 
 	// Flag "existed" just in case
-	sys.chars[pn][0].ocd().existed = true
+	// Update: This is Lua's responsibility. Enabling this flag made duplicate Turns characters misbehave
+	//sys.chars[pn][0].ocd().existed = true
 
 	return 1
 }
@@ -5264,11 +5325,19 @@ func (l *Loader) load() {
 	sys.fightScreen.setScale()
 	//sys.motif.setMotifScale()
 
+	// Load any config-driven Common FX not already cached. External modules may
+	// append to Common.Fx before a match; once loaded, non-char FX are kept.
+	if err := loadCommonFightFx(sys.fightScreen.def, false); err != nil {
+		l.err = err
+		l.state = LS_Error
+		return
+	}
+
 	/*
 		// This should now be handled by loadSff()
 		sys.loadMutex.Lock()
 		for prefix, ffx := range sys.ffx {
-			if ffx.isGlobal {
+			if !ffx.isCharFX {
 				continue
 			}
 			if ffx.refCount <= 0 {
@@ -5342,6 +5411,7 @@ func (l *Loader) load() {
 			return
 		}
 	}
+	sys.cleanCustomShaders()
 
 	// Flag loading state as complete
 	l.state = LS_Complete
@@ -5592,4 +5662,32 @@ func (s *System) restoreCharVars(c *Char) {
 	}
 
 	delete(s.charVarsBackup, c.playerNo)
+}
+
+func (s *System) cleanCustomShaders() {
+	activeShaders := make(map[string]bool)
+	for i := 0; i < len(s.cgi); i++ {
+		for _, sName := range s.cgi[i].customShaders {
+			activeShaders[sName] = true
+		}
+	}
+
+	for sName, count := range s.shaderRefCount {
+		if activeShaders[sName] {
+			s.shaderRefCount[sName] = 3
+		} else {
+			count--
+			if count <= 0 {
+				s.mainThreadTask <- func(name string) func() {
+					return func() {
+						gfx.UnloadCustomSpriteShader(name)
+					}
+				}(sName)
+
+				delete(s.shaderRefCount, sName)
+			} else {
+				s.shaderRefCount[sName] = count
+			}
+		}
+	}
 }

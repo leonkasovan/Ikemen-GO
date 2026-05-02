@@ -71,7 +71,7 @@ type FightFx struct {
 	fx_scale   float32
 	localcoord [2]int32
 	refCount   int
-	isGlobal   bool
+	isCharFX   bool
 }
 
 func newFightFx() *FightFx {
@@ -82,7 +82,26 @@ func newFightFx() *FightFx {
 	}
 }
 
-func loadFightFx(def string, isGlobal bool, isMainThread bool) error {
+func loadCommonFightFx(def string, isMainThread bool) error {
+	for _, key := range SortedKeys(sys.cfg.Common.Fx) {
+		for _, v := range sys.cfg.Common.Fx[key] {
+			if err := LoadFile(&v, []string{def, sys.motif.Def, "", "data/"}, "",
+				func(filename string) error {
+					for _, ffx := range sys.ffx {
+						if ffx != nil && !ffx.isCharFX && ffx.fileName == filename {
+							return nil
+						}
+					}
+					return loadFightFx(filename, false, isMainThread)
+				}); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func loadFightFx(def string, isCharFX bool, isMainThread bool) error {
 	str, err := LoadText(def)
 	if err != nil {
 		return err
@@ -113,19 +132,23 @@ func loadFightFx(def string, isGlobal bool, isMainThread bool) error {
 				if _, ok := triggerMap[prefix]; ok {
 					return Error(fmt.Sprintf("The %s prefix conflicts with an existing trigger name and cannot be used", strings.ToUpper(prefix)))
 				}
-				// Check if prefix is valid but already in use
-				// TODO: This shouldn't print a warning when just reloading everything
-				for used := range sys.ffx {
-					if prefix == used {
-						sys.appendToConsole(fmt.Sprintf("Duplicate common FX prefix found or reloaded: %s in %s", strings.ToUpper(prefix), def))
-					}
-				}
 				if ffx, ok := sys.ffx[prefix]; ok {
-					// Global FX are always enabled. Character FX increase the count
-					if !isGlobal {
+					// Char FX are the only refcounted FX. Everything else is cached once loaded and kept around.
+					if isCharFX && ffx.isCharFX {
 						if ffx.refCount < 8 {
 							ffx.refCount += 1 + int((sys.numSimul[0]+sys.numSimul[1])/2)
 						}
+					}
+					// If the same file later appears in Common.Fx, promote it to
+					// cached non-char FX instead of letting refcount cleanup remove it.
+					if !isCharFX && ffx.fileName == def {
+						ffx.isCharFX = false
+						ffx.refCount = 99999
+					}
+					if ffx.fileName != def {
+						sys.appendToConsole(fmt.Sprintf(
+							"Duplicate FightFX prefix found: %s already loaded from %s, ignoring %s",
+							strings.ToUpper(prefix), ffx.fileName, def))
 					}
 					return nil
 				}
@@ -136,7 +159,7 @@ func loadFightFx(def string, isGlobal bool, isMainThread bool) error {
 			// Read files section
 			if files {
 				files = false
-				if is.LoadFile("sff", []string{def, sys.motif.Def, "", "data/"},
+				if is.LoadFile("sff", []string{def, sys.motif.Def, "", "data/"}, "",
 					func(filename string) error {
 						s, err := loadSff(filename, false, isMainThread, false)
 						if err != nil {
@@ -147,7 +170,7 @@ func loadFightFx(def string, isGlobal bool, isMainThread bool) error {
 					}); err != nil {
 					return err
 				}
-				if is.LoadFile("air", []string{def, sys.motif.Def, "", "data/"},
+				if is.LoadFile("air", []string{def, sys.motif.Def, "", "data/"}, "",
 					func(filename string) error {
 						str, err := LoadText(filename)
 						if err != nil {
@@ -159,7 +182,7 @@ func loadFightFx(def string, isGlobal bool, isMainThread bool) error {
 					}); err != nil {
 					return err
 				}
-				if is.LoadFile("snd", []string{def, sys.motif.Def, "", "data/"},
+				if is.LoadFile("snd", []string{def, sys.motif.Def, "", "data/"}, "",
 					func(filename string) error {
 						ffx.snd, err = LoadSnd(filename)
 						return err
@@ -181,11 +204,11 @@ func loadFightFx(def string, isGlobal bool, isMainThread bool) error {
 	//	sys.ffxPrefixes = append(sys.ffxPrefixes, prefix)
 	//}
 	ffx.fileName = def
-	ffx.isGlobal = isGlobal
-	if isGlobal {
-		ffx.refCount = 99999
-	} else {
+	ffx.isCharFX = isCharFX
+	if isCharFX {
 		ffx.refCount = 3 + int(sys.numSimul[0]+sys.numSimul[1])
+	} else {
+		ffx.refCount = 99999
 	}
 	sys.ffx[prefix] = ffx
 	return nil
@@ -490,7 +513,8 @@ func readLifeBar(pre string, is IniSection, sff *Sff, at AnimationTable, f map[i
 		lb.red_value[k] = v
 	}
 
-	// Other fields
+	// TODO: These probably didn't have player prefixes for the sake of making parameters less redundant
+	// With the addition of player operators we could deprecate these forms now and use prefixes as well
 	is.ReadBool("mid.shift", &lb.mid_shift)
 	is.ReadBool("mid.freeze", &lb.mid_freeze)
 	is.ReadI32("mid.delay", &lb.mid_delay)
@@ -3127,7 +3151,7 @@ func readFightScreenRound(is IniSection,
 }
 
 func (ro *FightScreenRound) overTime() int32 {
-	return Max(ro.over_time, ro.fadeOut.time)
+	return Max(ro.over_time, ro.fadeOut.duration())
 }
 
 // Check is sys.intro timer should step
@@ -3878,51 +3902,6 @@ func (ro *FightScreenRound) draw(layerno int16, f map[int]*Fnt) {
 	}
 }
 
-type FightScreenRatio struct {
-	pos  [2]int32
-	icon [4]AnimLayout
-	bg   AnimLayout
-	top  AnimLayout
-}
-
-func newFightScreenRatio() *FightScreenRatio {
-	return &FightScreenRatio{}
-}
-
-func readFightScreenRatio(pre string, is IniSection,
-	sff *Sff, at AnimationTable) *FightScreenRatio {
-	ra := newFightScreenRatio()
-	is.ReadI32(pre+"pos", &ra.pos[0], &ra.pos[1])
-	ra.icon[0] = ReadAnimLayout(pre+"level1.", is, sff, at, 0)
-	ra.icon[1] = ReadAnimLayout(pre+"level2.", is, sff, at, 0)
-	ra.icon[2] = ReadAnimLayout(pre+"level3.", is, sff, at, 0)
-	ra.icon[3] = ReadAnimLayout(pre+"level4.", is, sff, at, 0)
-	ra.bg = ReadAnimLayout(pre+"bg.", is, sff, at, 0)
-	return ra
-}
-
-func (ra *FightScreenRatio) step(num int32) {
-	ra.icon[num].Action()
-	ra.bg.Action()
-}
-
-func (ra *FightScreenRatio) reset() {
-	for i := range ra.icon {
-		ra.icon[i].Reset()
-	}
-	ra.bg.Reset()
-}
-
-func (ra *FightScreenRatio) bgDraw(layerno int16) {
-	ra.bg.Draw(float32(ra.pos[0])+sys.fightScreen.offsetX, float32(ra.pos[1]), layerno, sys.fightScreen.scale)
-}
-
-func (ra *FightScreenRatio) draw(layerno int16, num int32) {
-	ra.icon[num].Draw(float32(ra.pos[0])+sys.fightScreen.offsetX,
-		float32(ra.pos[1]), layerno, sys.fightScreen.scale)
-	ra.top.Draw(float32(ra.pos[0])+sys.fightScreen.offsetX, float32(ra.pos[1]), layerno, sys.fightScreen.scale)
-}
-
 type FightScreenTimer struct {
 	pos     [2]int32
 	text    FSText
@@ -4382,7 +4361,6 @@ type FightScreen struct {
 	combos        [2]*FightScreenCombo
 	actions       [2]*FightScreenAction
 	round         *FightScreenRound
-	ratios        [2]*FightScreenRatio
 	timer         *FightScreenTimer // For Time Attack and such
 	scores        [2]*FightScreenScore
 	match         *FightScreenMatch
@@ -4454,9 +4432,9 @@ func loadFightScreen(def string) (*FightScreen, error) {
 		"[tag_4p stunbar]": 7, "[tag face]": 3, "[simul_3p face]": 4,
 		"[simul_4p face]": 5, "[tag_3p face]": 6, "[tag_4p face]": 7,
 		"[tag name]": 3, "[simul_3p name]": 4, "[simul_4p name]": 5,
-		"[tag_3p name]": 6, "[tag_4p name]": 7, "[action]": -1, "[ratio]": -1,
-		"[timer]": -1, "[score]": -1, "[match]": -1, "[ailevel]": -1,
-		"[wincount]": -1, "[mode]": -1,
+		"[tag_3p name]": 6, "[tag_4p name]": 7, "[action]": -1, "[timer]": -1,
+		"[score]": -1, "[match]": -1, "[ailevel]": -1, "[wincount]": -1,
+		"[mode]": -1,
 	}
 	strc := strings.ToLower(strings.TrimSpace(str))
 	for k := range fs.missing {
@@ -4491,26 +4469,23 @@ func loadFightScreen(def string) (*FightScreen, error) {
 	sys.fightScreen.scale = fs.scale
 	sys.fightScreen.portraitScale = fs.portraitScale
 
-	// Load Common FX first
-	for _, key := range SortedKeys(sys.cfg.Common.Fx) {
-		for _, v := range sys.cfg.Common.Fx[key] {
-			if err := LoadFile(&v, []string{def, sys.motif.Def, "", "data/"}, func(filename string) error {
-				if err := loadFightFx(filename, true, true); err != nil {
-					return err
-				}
-				return nil
-			}); err != nil {
-				return nil, err
-			}
-		}
-	}
-
 	// Prepare fight screen FightFX
 	ffx := newFightFx()
-	ffx.isGlobal = true
 
 	for lnidx < len(lines) {
 		is, name, subname := ReadIniSection(lines, &lnidx)
+
+		// Helper to return only the parameters for a given player number
+		resolvedSection := func(prefixBase string, n int) IniSection {
+			// Legacy versions cannot use prefix operators ('*' and '|')
+			// Update: The odds of an operator being found in a legacy fight screen are extremely slim, so we won't limit it for now
+			//if fs.ikemenver[0] == 0 && fs.ikemenver[1] == 0 { // Not "sys.fightScreen" yet
+			//	return is
+			//}
+			targetPrefix := fmt.Sprintf("%s%v.", prefixBase, n)
+			return resolveLifebarPrefixOperators(is, targetPrefix, prefixBase)
+		}
+
 		switch name {
 		case "info":
 			fs.name, _, _ = is.getText("name")
@@ -4534,7 +4509,7 @@ func loadFightScreen(def string) (*FightScreen, error) {
 		case "files":
 			if filesflg {
 				filesflg = false
-				if is.LoadFile("sff", []string{def, sys.motif.Def, "", "data/"},
+				if is.LoadFile("sff", []string{def, sys.motif.Def, "", "data/"}, "",
 					func(filename string) error {
 						s, err := loadSff(filename, false, true, false)
 						if err != nil {
@@ -4545,7 +4520,7 @@ func loadFightScreen(def string) (*FightScreen, error) {
 					}); err != nil {
 					return nil, err
 				}
-				if is.LoadFile("snd", []string{def, sys.motif.Def, "", "data/"},
+				if is.LoadFile("snd", []string{def, sys.motif.Def, "", "data/"}, "",
 					func(filename string) error {
 						s, err := LoadSnd(filename)
 						if err != nil {
@@ -4556,7 +4531,7 @@ func loadFightScreen(def string) (*FightScreen, error) {
 					}); err != nil {
 					return nil, err
 				}
-				if is.LoadFile("fightfx.sff", []string{def, sys.motif.Def, "", "data/"},
+				if is.LoadFile("fightfx.sff", []string{def, sys.motif.Def, "", "data/"}, "",
 					func(filename string) error {
 						s, err := loadSff(filename, false, true, false)
 						if err != nil {
@@ -4567,7 +4542,7 @@ func loadFightScreen(def string) (*FightScreen, error) {
 					}); err != nil {
 					return nil, err
 				}
-				if is.LoadFile("fightfx.air", []string{def, sys.motif.Def, "", "data/"},
+				if is.LoadFile("fightfx.air", []string{def, sys.motif.Def, "", "data/"}, "",
 					func(filename string) error {
 						str, err := LoadText(filename)
 						if err != nil {
@@ -4579,7 +4554,7 @@ func loadFightScreen(def string) (*FightScreen, error) {
 					}); err != nil {
 					return nil, err
 				}
-				if is.LoadFile("common.snd", []string{def, sys.motif.Def, "", "data/"},
+				if is.LoadFile("common.snd", []string{def, sys.motif.Def, "", "data/"}, "",
 					func(filename string) error {
 						ffx.snd, err = LoadSnd(filename)
 						return err
@@ -4587,9 +4562,9 @@ func loadFightScreen(def string) (*FightScreen, error) {
 					return nil, err
 				}
 				for i := 1; i <= fs.fx_limit; i++ {
-					if err := is.LoadFile(fmt.Sprintf("fx%v", i), []string{def, sys.motif.Def, "", "data/"},
+					if err := is.LoadFile(fmt.Sprintf("fx%v", i), []string{def, sys.motif.Def, "", "data/"}, "",
 						func(filename string) error {
-							if err := loadFightFx(filename, true, true); err != nil {
+							if err := loadFightFx(filename, false, true); err != nil {
 								return err
 							}
 							return nil
@@ -4636,7 +4611,7 @@ func loadFightScreen(def string) (*FightScreen, error) {
 					if len(spec.path) == 0 {
 						continue
 					}
-					_ = LoadFile(&spec.path, []string{def, sys.motif.Def, "", "data/", "font/"},
+					_ = LoadFile(&spec.path, []string{def, sys.motif.Def, "", "data/"}, "font/",
 						func(filename string) error {
 							h := int32(-1)
 							if spec.height != 0 {
@@ -4657,90 +4632,90 @@ func loadFightScreen(def string) (*FightScreen, error) {
 			is.ReadF32("scale", &ffx.fx_scale)
 		case "lifebar":
 			if fs.lifeBars[0][0] == nil {
-				fs.lifeBars[0][0] = readLifeBar("p1.", is, fs.sff, fs.animTable, fs.fnt)
+				fs.lifeBars[0][0] = readLifeBar("p1.", resolvedSection("p", 1), fs.sff, fs.animTable, fs.fnt)
 			}
 			if fs.lifeBars[0][1] == nil {
-				fs.lifeBars[0][1] = readLifeBar("p2.", is, fs.sff, fs.animTable, fs.fnt)
+				fs.lifeBars[0][1] = readLifeBar("p2.", resolvedSection("p", 2), fs.sff, fs.animTable, fs.fnt)
 			}
 		case "powerbar":
 			if fs.powerBars[0][0] == nil {
-				fs.powerBars[0][0] = readPowerBar("p1.", is, fs.sff, fs.animTable, fs.fnt)
+				fs.powerBars[0][0] = readPowerBar("p1.", resolvedSection("p", 1), fs.sff, fs.animTable, fs.fnt)
 			}
 			if fs.powerBars[0][1] == nil {
-				fs.powerBars[0][1] = readPowerBar("p2.", is, fs.sff, fs.animTable, fs.fnt)
+				fs.powerBars[0][1] = readPowerBar("p2.", resolvedSection("p", 2), fs.sff, fs.animTable, fs.fnt)
 			}
 		case "guardbar":
 			if fs.guardBars[0][0] == nil {
-				fs.guardBars[0][0] = readGuardBar("p1.", is, fs.sff, fs.animTable, fs.fnt)
+				fs.guardBars[0][0] = readGuardBar("p1.", resolvedSection("p", 1), fs.sff, fs.animTable, fs.fnt)
 			}
 			if fs.guardBars[0][1] == nil {
-				fs.guardBars[0][1] = readGuardBar("p2.", is, fs.sff, fs.animTable, fs.fnt)
+				fs.guardBars[0][1] = readGuardBar("p2.", resolvedSection("p", 2), fs.sff, fs.animTable, fs.fnt)
 			}
 		case "stunbar":
 			if fs.stunBars[0][0] == nil {
-				fs.stunBars[0][0] = readStunBar("p1.", is, fs.sff, fs.animTable, fs.fnt)
+				fs.stunBars[0][0] = readStunBar("p1.", resolvedSection("p", 1), fs.sff, fs.animTable, fs.fnt)
 			}
 			if fs.stunBars[0][1] == nil {
-				fs.stunBars[0][1] = readStunBar("p2.", is, fs.sff, fs.animTable, fs.fnt)
+				fs.stunBars[0][1] = readStunBar("p2.", resolvedSection("p", 2), fs.sff, fs.animTable, fs.fnt)
 			}
 		case "face":
 			if fs.faces[0][0] == nil {
-				fs.faces[0][0] = readFightScreenFace("p1.", is, fs.sff, fs.animTable)
+				fs.faces[0][0] = readFightScreenFace("p1.", resolvedSection("p", 1), fs.sff, fs.animTable)
 			}
 			if fs.faces[0][1] == nil {
-				fs.faces[0][1] = readFightScreenFace("p2.", is, fs.sff, fs.animTable)
+				fs.faces[0][1] = readFightScreenFace("p2.", resolvedSection("p", 2), fs.sff, fs.animTable)
 			}
 		case "name":
 			if fs.names[0][0] == nil {
-				fs.names[0][0] = readFightScreenName("p1.", is, fs.sff, fs.animTable, fs.fnt)
+				fs.names[0][0] = readFightScreenName("p1.", resolvedSection("p", 1), fs.sff, fs.animTable, fs.fnt)
 			}
 			if fs.names[0][1] == nil {
-				fs.names[0][1] = readFightScreenName("p2.", is, fs.sff, fs.animTable, fs.fnt)
+				fs.names[0][1] = readFightScreenName("p2.", resolvedSection("p", 2), fs.sff, fs.animTable, fs.fnt)
 			}
 		case "turns ":
 			subname = strings.ToLower(subname)
 			switch {
 			case len(subname) >= 7 && subname[:7] == "lifebar":
 				if fs.lifeBars[2][0] == nil {
-					fs.lifeBars[2][0] = readLifeBar("p1.", is, fs.sff, fs.animTable, fs.fnt)
+					fs.lifeBars[2][0] = readLifeBar("p1.", resolvedSection("p", 1), fs.sff, fs.animTable, fs.fnt)
 				}
 				if fs.lifeBars[2][1] == nil {
-					fs.lifeBars[2][1] = readLifeBar("p2.", is, fs.sff, fs.animTable, fs.fnt)
+					fs.lifeBars[2][1] = readLifeBar("p2.", resolvedSection("p", 2), fs.sff, fs.animTable, fs.fnt)
 				}
 			case len(subname) >= 8 && subname[:8] == "powerbar":
 				if fs.powerBars[2][0] == nil {
-					fs.powerBars[2][0] = readPowerBar("p1.", is, fs.sff, fs.animTable, fs.fnt)
+					fs.powerBars[2][0] = readPowerBar("p1.", resolvedSection("p", 1), fs.sff, fs.animTable, fs.fnt)
 				}
 				if fs.powerBars[2][1] == nil {
-					fs.powerBars[2][1] = readPowerBar("p2.", is, fs.sff, fs.animTable, fs.fnt)
+					fs.powerBars[2][1] = readPowerBar("p2.", resolvedSection("p", 2), fs.sff, fs.animTable, fs.fnt)
 				}
 			case len(subname) >= 8 && subname[:8] == "guardbar":
 				if fs.guardBars[2][0] == nil {
-					fs.guardBars[2][0] = readGuardBar("p1.", is, fs.sff, fs.animTable, fs.fnt)
+					fs.guardBars[2][0] = readGuardBar("p1.", resolvedSection("p", 1), fs.sff, fs.animTable, fs.fnt)
 				}
 				if fs.guardBars[2][1] == nil {
-					fs.guardBars[2][1] = readGuardBar("p2.", is, fs.sff, fs.animTable, fs.fnt)
+					fs.guardBars[2][1] = readGuardBar("p2.", resolvedSection("p", 2), fs.sff, fs.animTable, fs.fnt)
 				}
 			case len(subname) >= 7 && subname[:7] == "stunbar":
 				if fs.stunBars[2][0] == nil {
-					fs.stunBars[2][0] = readStunBar("p1.", is, fs.sff, fs.animTable, fs.fnt)
+					fs.stunBars[2][0] = readStunBar("p1.", resolvedSection("p", 1), fs.sff, fs.animTable, fs.fnt)
 				}
 				if fs.stunBars[2][1] == nil {
-					fs.stunBars[2][1] = readStunBar("p2.", is, fs.sff, fs.animTable, fs.fnt)
+					fs.stunBars[2][1] = readStunBar("p2.", resolvedSection("p", 2), fs.sff, fs.animTable, fs.fnt)
 				}
 			case len(subname) >= 4 && subname[:4] == "face":
 				if fs.faces[2][0] == nil {
-					fs.faces[2][0] = readFightScreenFace("p1.", is, fs.sff, fs.animTable)
+					fs.faces[2][0] = readFightScreenFace("p1.", resolvedSection("p", 1), fs.sff, fs.animTable)
 				}
 				if fs.faces[2][1] == nil {
-					fs.faces[2][1] = readFightScreenFace("p2.", is, fs.sff, fs.animTable)
+					fs.faces[2][1] = readFightScreenFace("p2.", resolvedSection("p", 2), fs.sff, fs.animTable)
 				}
 			case len(subname) >= 4 && subname[:4] == "name":
 				if fs.names[2][0] == nil {
-					fs.names[2][0] = readFightScreenName("p1.", is, fs.sff, fs.animTable, fs.fnt)
+					fs.names[2][0] = readFightScreenName("p1.", resolvedSection("p", 1), fs.sff, fs.animTable, fs.fnt)
 				}
 				if fs.names[2][1] == nil {
-					fs.names[2][1] = readFightScreenName("p2.", is, fs.sff, fs.animTable, fs.fnt)
+					fs.names[2][1] = readFightScreenName("p2.", resolvedSection("p", 2), fs.sff, fs.animTable, fs.fnt)
 				}
 			}
 		case "simul ", "simul_3p ", "simul_4p ", "tag ", "tag_3p ", "tag_4p ":
@@ -4761,210 +4736,211 @@ func loadFightScreen(def string) (*FightScreen, error) {
 			switch {
 			case len(subname) >= 7 && subname[:7] == "lifebar":
 				if fs.lifeBars[i][0] == nil {
-					fs.lifeBars[i][0] = readLifeBar("p1.", is, fs.sff, fs.animTable, fs.fnt)
+					fs.lifeBars[i][0] = readLifeBar("p1.", resolvedSection("p", 1), fs.sff, fs.animTable, fs.fnt)
 				}
 				if fs.lifeBars[i][1] == nil {
-					fs.lifeBars[i][1] = readLifeBar("p2.", is, fs.sff, fs.animTable, fs.fnt)
+					fs.lifeBars[i][1] = readLifeBar("p2.", resolvedSection("p", 2), fs.sff, fs.animTable, fs.fnt)
 				}
 				if fs.lifeBars[i][2] == nil {
-					fs.lifeBars[i][2] = readLifeBar("p3.", is, fs.sff, fs.animTable, fs.fnt)
+					fs.lifeBars[i][2] = readLifeBar("p3.", resolvedSection("p", 3), fs.sff, fs.animTable, fs.fnt)
 				}
 				if fs.lifeBars[i][3] == nil {
-					fs.lifeBars[i][3] = readLifeBar("p4.", is, fs.sff, fs.animTable, fs.fnt)
+					fs.lifeBars[i][3] = readLifeBar("p4.", resolvedSection("p", 4), fs.sff, fs.animTable, fs.fnt)
 				}
 				if fs.lifeBars[i][4] == nil {
-					fs.lifeBars[i][4] = readLifeBar("p5.", is, fs.sff, fs.animTable, fs.fnt)
+					fs.lifeBars[i][4] = readLifeBar("p5.", resolvedSection("p", 5), fs.sff, fs.animTable, fs.fnt)
 				}
 				if fs.lifeBars[i][5] == nil {
-					fs.lifeBars[i][5] = readLifeBar("p6.", is, fs.sff, fs.animTable, fs.fnt)
+					fs.lifeBars[i][5] = readLifeBar("p6.", resolvedSection("p", 6), fs.sff, fs.animTable, fs.fnt)
 				}
 				if i != 4 && i != 6 {
 					if fs.lifeBars[i][6] == nil {
-						fs.lifeBars[i][6] = readLifeBar("p7.", is, fs.sff, fs.animTable, fs.fnt)
+						fs.lifeBars[i][6] = readLifeBar("p7.", resolvedSection("p", 7), fs.sff, fs.animTable, fs.fnt)
 					}
 					if fs.lifeBars[i][7] == nil {
-						fs.lifeBars[i][7] = readLifeBar("p8.", is, fs.sff, fs.animTable, fs.fnt)
+						fs.lifeBars[i][7] = readLifeBar("p8.", resolvedSection("p", 8), fs.sff, fs.animTable, fs.fnt)
 					}
 				}
 			case len(subname) >= 8 && subname[:8] == "powerbar":
 				if fs.powerBars[i][0] == nil {
-					fs.powerBars[i][0] = readPowerBar("p1.", is, fs.sff, fs.animTable, fs.fnt)
+					fs.powerBars[i][0] = readPowerBar("p1.", resolvedSection("p", 1), fs.sff, fs.animTable, fs.fnt)
 				}
 				if fs.powerBars[i][1] == nil {
-					fs.powerBars[i][1] = readPowerBar("p2.", is, fs.sff, fs.animTable, fs.fnt)
+					fs.powerBars[i][1] = readPowerBar("p2.", resolvedSection("p", 2), fs.sff, fs.animTable, fs.fnt)
 				}
 				if fs.powerBars[i][2] == nil {
-					fs.powerBars[i][2] = readPowerBar("p3.", is, fs.sff, fs.animTable, fs.fnt)
+					fs.powerBars[i][2] = readPowerBar("p3.", resolvedSection("p", 3), fs.sff, fs.animTable, fs.fnt)
 				}
 				if fs.powerBars[i][3] == nil {
-					fs.powerBars[i][3] = readPowerBar("p4.", is, fs.sff, fs.animTable, fs.fnt)
+					fs.powerBars[i][3] = readPowerBar("p4.", resolvedSection("p", 4), fs.sff, fs.animTable, fs.fnt)
 				}
 				if fs.powerBars[i][4] == nil {
-					fs.powerBars[i][4] = readPowerBar("p5.", is, fs.sff, fs.animTable, fs.fnt)
+					fs.powerBars[i][4] = readPowerBar("p5.", resolvedSection("p", 5), fs.sff, fs.animTable, fs.fnt)
 				}
 				if fs.powerBars[i][5] == nil {
-					fs.powerBars[i][5] = readPowerBar("p6.", is, fs.sff, fs.animTable, fs.fnt)
+					fs.powerBars[i][5] = readPowerBar("p6.", resolvedSection("p", 6), fs.sff, fs.animTable, fs.fnt)
 				}
 				if i != 4 && i != 6 {
 					if fs.powerBars[i][6] == nil {
-						fs.powerBars[i][6] = readPowerBar("p7.", is, fs.sff, fs.animTable, fs.fnt)
+						fs.powerBars[i][6] = readPowerBar("p7.", resolvedSection("p", 7), fs.sff, fs.animTable, fs.fnt)
 					}
 					if fs.powerBars[i][7] == nil {
-						fs.powerBars[i][7] = readPowerBar("p8.", is, fs.sff, fs.animTable, fs.fnt)
+						fs.powerBars[i][7] = readPowerBar("p8.", resolvedSection("p", 8), fs.sff, fs.animTable, fs.fnt)
 					}
 				}
 			case len(subname) >= 8 && subname[:8] == "guardbar":
 				if fs.guardBars[i][0] == nil {
-					fs.guardBars[i][0] = readGuardBar("p1.", is, fs.sff, fs.animTable, fs.fnt)
+					fs.guardBars[i][0] = readGuardBar("p1.", resolvedSection("p", 1), fs.sff, fs.animTable, fs.fnt)
 				}
 				if fs.guardBars[i][1] == nil {
-					fs.guardBars[i][1] = readGuardBar("p2.", is, fs.sff, fs.animTable, fs.fnt)
+					fs.guardBars[i][1] = readGuardBar("p2.", resolvedSection("p", 2), fs.sff, fs.animTable, fs.fnt)
 				}
 				if fs.guardBars[i][2] == nil {
-					fs.guardBars[i][2] = readGuardBar("p3.", is, fs.sff, fs.animTable, fs.fnt)
+					fs.guardBars[i][2] = readGuardBar("p3.", resolvedSection("p", 3), fs.sff, fs.animTable, fs.fnt)
 				}
 				if fs.guardBars[i][3] == nil {
-					fs.guardBars[i][3] = readGuardBar("p4.", is, fs.sff, fs.animTable, fs.fnt)
+					fs.guardBars[i][3] = readGuardBar("p4.", resolvedSection("p", 4), fs.sff, fs.animTable, fs.fnt)
 				}
 				if fs.guardBars[i][4] == nil {
-					fs.guardBars[i][4] = readGuardBar("p5.", is, fs.sff, fs.animTable, fs.fnt)
+					fs.guardBars[i][4] = readGuardBar("p5.", resolvedSection("p", 5), fs.sff, fs.animTable, fs.fnt)
 				}
 				if fs.guardBars[i][5] == nil {
-					fs.guardBars[i][5] = readGuardBar("p6.", is, fs.sff, fs.animTable, fs.fnt)
+					fs.guardBars[i][5] = readGuardBar("p6.", resolvedSection("p", 6), fs.sff, fs.animTable, fs.fnt)
 				}
 				if i != 4 && i != 6 {
 					if fs.guardBars[i][6] == nil {
-						fs.guardBars[i][6] = readGuardBar("p7.", is, fs.sff, fs.animTable, fs.fnt)
+						fs.guardBars[i][6] = readGuardBar("p7.", resolvedSection("p", 7), fs.sff, fs.animTable, fs.fnt)
 					}
 					if fs.guardBars[i][7] == nil {
-						fs.guardBars[i][7] = readGuardBar("p8.", is, fs.sff, fs.animTable, fs.fnt)
+						fs.guardBars[i][7] = readGuardBar("p8.", resolvedSection("p", 8), fs.sff, fs.animTable, fs.fnt)
 					}
 				}
 			case len(subname) >= 7 && subname[:7] == "stunbar":
 				if fs.stunBars[i][0] == nil {
-					fs.stunBars[i][0] = readStunBar("p1.", is, fs.sff, fs.animTable, fs.fnt)
+					fs.stunBars[i][0] = readStunBar("p1.", resolvedSection("p", 1), fs.sff, fs.animTable, fs.fnt)
 				}
 				if fs.stunBars[i][1] == nil {
-					fs.stunBars[i][1] = readStunBar("p2.", is, fs.sff, fs.animTable, fs.fnt)
+					fs.stunBars[i][1] = readStunBar("p2.", resolvedSection("p", 2), fs.sff, fs.animTable, fs.fnt)
 				}
 				if fs.stunBars[i][2] == nil {
-					fs.stunBars[i][2] = readStunBar("p3.", is, fs.sff, fs.animTable, fs.fnt)
+					fs.stunBars[i][2] = readStunBar("p3.", resolvedSection("p", 3), fs.sff, fs.animTable, fs.fnt)
 				}
 				if fs.stunBars[i][3] == nil {
-					fs.stunBars[i][3] = readStunBar("p4.", is, fs.sff, fs.animTable, fs.fnt)
+					fs.stunBars[i][3] = readStunBar("p4.", resolvedSection("p", 4), fs.sff, fs.animTable, fs.fnt)
 				}
 				if fs.stunBars[i][4] == nil {
-					fs.stunBars[i][4] = readStunBar("p5.", is, fs.sff, fs.animTable, fs.fnt)
+					fs.stunBars[i][4] = readStunBar("p5.", resolvedSection("p", 5), fs.sff, fs.animTable, fs.fnt)
 				}
 				if fs.stunBars[i][5] == nil {
-					fs.stunBars[i][5] = readStunBar("p6.", is, fs.sff, fs.animTable, fs.fnt)
+					fs.stunBars[i][5] = readStunBar("p6.", resolvedSection("p", 6), fs.sff, fs.animTable, fs.fnt)
 				}
 				if i != 4 && i != 6 {
 					if fs.stunBars[i][6] == nil {
-						fs.stunBars[i][6] = readStunBar("p7.", is, fs.sff, fs.animTable, fs.fnt)
+						fs.stunBars[i][6] = readStunBar("p7.", resolvedSection("p", 7), fs.sff, fs.animTable, fs.fnt)
 					}
 					if fs.stunBars[i][7] == nil {
-						fs.stunBars[i][7] = readStunBar("p8.", is, fs.sff, fs.animTable, fs.fnt)
+						fs.stunBars[i][7] = readStunBar("p8.", resolvedSection("p", 8), fs.sff, fs.animTable, fs.fnt)
 					}
 				}
 			case len(subname) >= 4 && subname[:4] == "face":
 				if fs.faces[i][0] == nil {
-					fs.faces[i][0] = readFightScreenFace("p1.", is, fs.sff, fs.animTable)
+					fs.faces[i][0] = readFightScreenFace("p1.", resolvedSection("p", 1), fs.sff, fs.animTable)
 				}
 				if fs.faces[i][1] == nil {
-					fs.faces[i][1] = readFightScreenFace("p2.", is, fs.sff, fs.animTable)
+					fs.faces[i][1] = readFightScreenFace("p2.", resolvedSection("p", 2), fs.sff, fs.animTable)
 				}
 				if fs.faces[i][2] == nil {
-					fs.faces[i][2] = readFightScreenFace("p3.", is, fs.sff, fs.animTable)
+					fs.faces[i][2] = readFightScreenFace("p3.", resolvedSection("p", 3), fs.sff, fs.animTable)
 				}
 				if fs.faces[i][3] == nil {
-					fs.faces[i][3] = readFightScreenFace("p4.", is, fs.sff, fs.animTable)
+					fs.faces[i][3] = readFightScreenFace("p4.", resolvedSection("p", 4), fs.sff, fs.animTable)
 				}
 				if fs.faces[i][4] == nil {
-					fs.faces[i][4] = readFightScreenFace("p5.", is, fs.sff, fs.animTable)
+					fs.faces[i][4] = readFightScreenFace("p5.", resolvedSection("p", 5), fs.sff, fs.animTable)
 				}
 				if fs.faces[i][5] == nil {
-					fs.faces[i][5] = readFightScreenFace("p6.", is, fs.sff, fs.animTable)
+					fs.faces[i][5] = readFightScreenFace("p6.", resolvedSection("p", 6), fs.sff, fs.animTable)
 				}
 				if i != 4 && i != 6 {
 					if fs.faces[i][6] == nil {
-						fs.faces[i][6] = readFightScreenFace("p7.", is, fs.sff, fs.animTable)
+						fs.faces[i][6] = readFightScreenFace("p7.", resolvedSection("p", 7), fs.sff, fs.animTable)
 					}
 					if fs.faces[i][7] == nil {
-						fs.faces[i][7] = readFightScreenFace("p8.", is, fs.sff, fs.animTable)
+						fs.faces[i][7] = readFightScreenFace("p8.", resolvedSection("p", 8), fs.sff, fs.animTable)
 					}
 				}
 			case len(subname) >= 4 && subname[:4] == "name":
 				if fs.names[i][0] == nil {
-					fs.names[i][0] = readFightScreenName("p1.", is, fs.sff, fs.animTable, fs.fnt)
+					fs.names[i][0] = readFightScreenName("p1.", resolvedSection("p", 1), fs.sff, fs.animTable, fs.fnt)
 				}
 				if fs.names[i][1] == nil {
-					fs.names[i][1] = readFightScreenName("p2.", is, fs.sff, fs.animTable, fs.fnt)
+					fs.names[i][1] = readFightScreenName("p2.", resolvedSection("p", 2), fs.sff, fs.animTable, fs.fnt)
 				}
 				if fs.names[i][2] == nil {
-					fs.names[i][2] = readFightScreenName("p3.", is, fs.sff, fs.animTable, fs.fnt)
+					fs.names[i][2] = readFightScreenName("p3.", resolvedSection("p", 3), fs.sff, fs.animTable, fs.fnt)
 				}
 				if fs.names[i][3] == nil {
-					fs.names[i][3] = readFightScreenName("p4.", is, fs.sff, fs.animTable, fs.fnt)
+					fs.names[i][3] = readFightScreenName("p4.", resolvedSection("p", 4), fs.sff, fs.animTable, fs.fnt)
 				}
 				if fs.names[i][4] == nil {
-					fs.names[i][4] = readFightScreenName("p5.", is, fs.sff, fs.animTable, fs.fnt)
+					fs.names[i][4] = readFightScreenName("p5.", resolvedSection("p", 5), fs.sff, fs.animTable, fs.fnt)
 				}
 				if fs.names[i][5] == nil {
-					fs.names[i][5] = readFightScreenName("p6.", is, fs.sff, fs.animTable, fs.fnt)
+					fs.names[i][5] = readFightScreenName("p6.", resolvedSection("p", 6), fs.sff, fs.animTable, fs.fnt)
 				}
 				if i != 4 && i != 6 {
 					if fs.names[i][6] == nil {
-						fs.names[i][6] = readFightScreenName("p7.", is, fs.sff, fs.animTable, fs.fnt)
+						fs.names[i][6] = readFightScreenName("p7.", resolvedSection("p", 7), fs.sff, fs.animTable, fs.fnt)
 					}
 					if fs.names[i][7] == nil {
-						fs.names[i][7] = readFightScreenName("p8.", is, fs.sff, fs.animTable, fs.fnt)
+						fs.names[i][7] = readFightScreenName("p8.", resolvedSection("p", 8), fs.sff, fs.animTable, fs.fnt)
 					}
 				}
 			}
 		case "winicon":
 			if fs.winIcons[0] == nil {
-				fs.winIcons[0] = readFightScreenWinIcon("p1.", is, fs.sff, fs.animTable, fs.fnt)
+				fs.winIcons[0] = readFightScreenWinIcon("p1.", resolvedSection("p", 1), fs.sff, fs.animTable, fs.fnt)
 			}
 			if fs.winIcons[1] == nil {
-				fs.winIcons[1] = readFightScreenWinIcon("p2.", is, fs.sff, fs.animTable, fs.fnt)
+				fs.winIcons[1] = readFightScreenWinIcon("p2.", resolvedSection("p", 2), fs.sff, fs.animTable, fs.fnt)
 			}
 		case "time":
 			if fs.time == nil {
 				fs.time = readFightScreenTime(is, fs.sff, fs.animTable, fs.fnt)
 			}
 		case "combo":
-			if fs.combos[0] == nil {
-				if _, ok := is["team1.pos"]; ok {
-					fs.combos[0] = readFightScreenCombo("team1.", is, fs.sff, fs.animTable, fs.fnt, 0)
-				} else {
-					fs.combos[0] = readFightScreenCombo("", is, fs.sff, fs.animTable, fs.fnt, 0)
+			for team := 0; team < 2; team++ {
+				if fs.combos[team] != nil {
+					continue
 				}
-			}
-			if fs.combos[1] == nil {
-				if _, ok := is["team2.pos"]; ok {
-					fs.combos[1] = readFightScreenCombo("team2.", is, fs.sff, fs.animTable, fs.fnt, 1)
+
+				teamNum := team + 1
+				teamPrefix := fmt.Sprintf("team%v.", teamNum)
+
+				if sys.fightScreen.ikemenver[0] == 0 && sys.fightScreen.ikemenver[1] == 0 {
+					// Check if "teamX.pos" exists to determine whether or not to use "teamX" prefixes
+					// Mugen works slightly different and apparently checks whether "pos" or "team1.pos" is found first in order to determine what syntax to use
+					// Such prefixes were only added in Mugen 1.0, hence it running this check
+					if _, ok := is[teamPrefix+"pos"]; ok {
+						fs.combos[team] = readFightScreenCombo(teamPrefix, is, fs.sff, fs.animTable, fs.fnt, team)
+					} else {
+						fs.combos[team] = readFightScreenCombo("", is, fs.sff, fs.animTable, fs.fnt, team)
+					}
 				} else {
-					fs.combos[1] = readFightScreenCombo("", is, fs.sff, fs.animTable, fs.fnt, 1)
+					// In Ikemen version we just read them like other prefixed sections
+					fs.combos[team] = readFightScreenCombo(teamPrefix, resolvedSection("team", teamNum), fs.sff, fs.animTable, fs.fnt, team)
 				}
 			}
 		case "action":
 			if fs.actions[0] == nil {
-				fs.actions[0] = readFightScreenAction("team1.", is, fs.fnt)
+				fs.actions[0] = readFightScreenAction("team1.", resolvedSection("team", 1), fs.fnt)
 			}
 			if fs.actions[1] == nil {
-				fs.actions[1] = readFightScreenAction("team2.", is, fs.fnt)
+				fs.actions[1] = readFightScreenAction("team2.", resolvedSection("team", 2), fs.fnt)
 			}
 		case "round":
 			if fs.round == nil {
 				fs.round = readFightScreenRound(is, fs.sff, fs.animTable, fs.snd, fs.fnt)
-			}
-		case "ratio":
-			if fs.ratios[0] == nil {
-				fs.ratios[0] = readFightScreenRatio("p1.", is, fs.sff, fs.animTable)
-			}
-			if fs.ratios[1] == nil {
-				fs.ratios[1] = readFightScreenRatio("p2.", is, fs.sff, fs.animTable)
 			}
 		case "timer":
 			if fs.timer == nil {
@@ -4972,10 +4948,10 @@ func loadFightScreen(def string) (*FightScreen, error) {
 			}
 		case "score":
 			if fs.scores[0] == nil {
-				fs.scores[0] = readFightScreenScore("p1.", is, fs.sff, fs.animTable, fs.fnt)
+				fs.scores[0] = readFightScreenScore("p1.", resolvedSection("p", 1), fs.sff, fs.animTable, fs.fnt)
 			}
 			if fs.scores[1] == nil {
-				fs.scores[1] = readFightScreenScore("p2.", is, fs.sff, fs.animTable, fs.fnt)
+				fs.scores[1] = readFightScreenScore("p2.", resolvedSection("p", 2), fs.sff, fs.animTable, fs.fnt)
 			}
 		case "match":
 			if fs.match == nil {
@@ -4983,17 +4959,17 @@ func loadFightScreen(def string) (*FightScreen, error) {
 			}
 		case "ailevel":
 			if fs.aiLevels[0] == nil {
-				fs.aiLevels[0] = readFightScreenAiLevel("p1.", is, fs.sff, fs.animTable, fs.fnt)
+				fs.aiLevels[0] = readFightScreenAiLevel("p1.", resolvedSection("p", 1), fs.sff, fs.animTable, fs.fnt)
 			}
 			if fs.aiLevels[1] == nil {
-				fs.aiLevels[1] = readFightScreenAiLevel("p2.", is, fs.sff, fs.animTable, fs.fnt)
+				fs.aiLevels[1] = readFightScreenAiLevel("p2.", resolvedSection("p", 2), fs.sff, fs.animTable, fs.fnt)
 			}
 		case "wincount":
 			if fs.winCounts[0] == nil {
-				fs.winCounts[0] = readFightScreenWinCount("p1.", is, fs.sff, fs.animTable, fs.fnt)
+				fs.winCounts[0] = readFightScreenWinCount("p1.", resolvedSection("p", 1), fs.sff, fs.animTable, fs.fnt)
 			}
 			if fs.winCounts[1] == nil {
-				fs.winCounts[1] = readFightScreenWinCount("p2.", is, fs.sff, fs.animTable, fs.fnt)
+				fs.winCounts[1] = readFightScreenWinCount("p2.", resolvedSection("p", 2), fs.sff, fs.animTable, fs.fnt)
 			}
 		case "mode":
 			if fs.modes == nil {
@@ -5209,15 +5185,6 @@ func (fs *FightScreen) step() {
 	for i := range fs.actions {
 		fs.actions[i].step(fs.teamOrder[i][0])
 	}
-	// Ratio
-	for ti, tm := range sys.tmode {
-		if tm == TM_Turns {
-			rl := sys.chars[ti][0].ocd().ratioLevel
-			if rl > 0 {
-				fs.ratios[ti].step(rl - 1)
-			}
-		}
-	}
 	// Timer
 	fs.timer.step()
 	// Score
@@ -5324,9 +5291,6 @@ func (fs *FightScreen) reset() {
 		fs.actions[i].reset(fs.teamOrder[i][0])
 	}
 	fs.round.reset()
-	for i := range fs.ratios {
-		fs.ratios[i].reset()
-	}
 	fs.timer.reset()
 	for i := range fs.scores {
 		fs.scores[i].reset()
@@ -5493,17 +5457,6 @@ func (fs *FightScreen) draw(layerno int16) {
 				}
 			}
 
-			// Ratio
-			for i := 0; i < len(sys.tmode); i++ {
-				if sys.tmode[i] == TM_Turns {
-					rl := sys.chars[i][0].ocd().ratioLevel
-					if rl > 0 && !sys.chars[i][0].asf(ASF_nofacedisplay) {
-						fs.ratios[i].bgDraw(layerno)
-						fs.ratios[i].draw(layerno, rl-1)
-					}
-				}
-			}
-
 			// Time
 			fs.time.bgDraw(layerno)
 			fs.time.draw(layerno, fs.fnt)
@@ -5592,7 +5545,7 @@ func readMotifFightFromDef(def string) string {
 	tmp := def
 	var fight string
 	// Use existing path resolution logic.
-	_ = LoadFile(&tmp, []string{tmp, "", "data/"}, func(filename string) error {
+	_ = LoadFile(&tmp, []string{tmp, "", "data/"}, "", func(filename string) error {
 		if filename == "" {
 			return nil
 		}
@@ -5637,7 +5590,7 @@ func (fs *FightScreen) resolvePath() {
 	if v == "" {
 		v = "fight.def"
 	}
-	resolved := SearchFile(v, []string{"", filepath.ToSlash(filepath.Dir(sys.motif.Def)) + "/", "data/"})
+	resolved := SearchFile(v, []string{sys.motif.Def, "", "data/"})
 	if FileExist(resolved) != "" {
 		fs.def = filepath.ToSlash(resolved)
 		return
@@ -5755,4 +5708,15 @@ func (fs *FightScreen) appendAction(c *Char, msg *FSMsg, s_ffx, a_ffx string, sn
 
 	// Insert new message
 	teammsg.messages = insertFSMsg(teammsg.messages, msg, index)
+}
+
+// We track the combo separately from each player's received hits
+// So that if partners take turns doing hits to different enemies the combo still adds up
+// Only some games do this so we don't strictly need to do it. But it is also harmless. Maybe make it an option
+// TODO: Combo damage should probably also stack like this, either way
+func (fs *FightScreen) addComboHits(side int, n int32) {
+	if side < 0 || side >= len(fs.combos) {
+		return
+	}
+	fs.combos[side].trueHits += n
 }

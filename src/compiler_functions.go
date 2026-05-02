@@ -96,7 +96,7 @@ func (c *Compiler) hitBySub(is IniSection, sc *StateControllerBase, sctrlName st
 		if c.zssMode {
 			return Error("Cannot mix old and new " + sctrlName + " syntaxes")
 		} else {
-			sys.appendToConsole("WARNING: " + sys.cgi[c.playerNo].nameLow + fmt.Sprintf(": Cannot mix old and new: "+sctrlName+" in state %v ", c.stateNo))
+			sys.appendToConsole("WARNING: " + sys.cgi[c.playerNo].name + fmt.Sprintf(": Cannot mix old and new: "+sctrlName+" in state %v ", c.stateNo))
 		}
 	}
 
@@ -662,7 +662,7 @@ func (c *Compiler) helper(is IniSection, sc *StateControllerBase, _ int8) (State
 				if c.zssMode {
 					return Error("Helper name not enclosed in \"")
 				}
-				sys.appendToConsole("WARNING: " + sys.cgi[c.playerNo].nameLow + fmt.Sprintf(": Helper name not enclosed in \" : in state %v ", c.stateNo))
+				sys.appendToConsole("WARNING: " + sys.cgi[c.playerNo].name + fmt.Sprintf(": Helper name not enclosed in \" : in state %v ", c.stateNo))
 				return nil
 			}
 			sc.add(helper_name, sc.beToExp(BytecodeExp(data[1:len(data)-1])))
@@ -893,6 +893,9 @@ func (c *Compiler) explodSub(is IniSection,
 		explod_syncid, VT_Int, 1, false); err != nil {
 		return err
 	}
+	if err := c.shaderSub(is, sc, explod_shader, explod_shaderparam); err != nil {
+		return err
+	}
 	if err := c.paramValue(is, sc, "bindid",
 		explod_bindid, VT_Int, 1, false); err != nil {
 		return err
@@ -945,7 +948,11 @@ func (c *Compiler) explodSub(is IniSection,
 		explod_removeonchangestate, VT_Bool, 1, false); err != nil {
 		return err
 	}
-	if err := c.paramTrans(is, sc, "", explod_trans, true); err != nil {
+	if err := c.paramValue(is, sc, "hideonpausemenu",
+		explod_hideonpausemenu, VT_Bool, 1, false); err != nil {
+		return err
+	}
+	if err := c.paramTrans(is, sc, "", explod_trans); err != nil {
 		return err
 	}
 	if err := c.palFXSub(is, sc, "palfx."); err != nil {
@@ -1576,7 +1583,7 @@ func (c *Compiler) afterImageSub(is IniSection,
 		afterImage_redirectid, VT_Int, 1, false); err != nil {
 		return err
 	}
-	if err := c.paramTrans(is, sc, prefix, afterImage_trans, true); err != nil {
+	if err := c.paramTrans(is, sc, prefix, afterImage_trans); err != nil {
 		return err
 	}
 	if err := c.paramValue(is, sc, prefix+"time",
@@ -2523,6 +2530,9 @@ func (c *Compiler) projectileSub(is IniSection, sc *StateControllerBase, ihp int
 	if err := c.afterImageSub(is, sc, ihp, "afterimage."); err != nil {
 		return err
 	}
+	if err := c.shaderSub(is, sc, projectile_shader, projectile_shaderparam); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -2638,7 +2648,7 @@ func (c *Compiler) varSetOlderSub(is IniSection, sc *StateControllerBase, alread
 			if c.zssMode || !sys.ignoreMostErrors {
 				return Error(msg)
 			}
-			sys.appendToConsole("WARNING: " + sys.cgi[c.playerNo].nameLow + ": " + msg)
+			sys.appendToConsole("WARNING: " + sys.cgi[c.playerNo].name + ": " + msg)
 		}
 		hasIndex = true
 		index = data
@@ -2665,7 +2675,7 @@ func (c *Compiler) varSetOlderSub(is IniSection, sc *StateControllerBase, alread
 		if c.zssMode || !sys.ignoreMostErrors {
 			return false, Error(msg)
 		}
-		sys.appendToConsole("WARNING: " + sys.cgi[c.playerNo].nameLow + ": " + msg)
+		sys.appendToConsole("WARNING: " + sys.cgi[c.playerNo].name + ": " + msg)
 		return true, nil
 	}
 
@@ -2783,7 +2793,7 @@ func (c *Compiler) varSetSub(is IniSection, sc *StateControllerBase, scType int3
 			if c.zssMode || !sys.ignoreMostErrors {
 				return Error(msg)
 			}
-			sys.appendToConsole("WARNING: " + sys.cgi[c.playerNo].nameLow + ": " + msg)
+			sys.appendToConsole("WARNING: " + sys.cgi[c.playerNo].name + ": " + msg)
 			break
 		}
 
@@ -3495,7 +3505,7 @@ func (c *Compiler) trans(is IniSection, sc *StateControllerBase, _ int8) (StateC
 			trans_redirectid, VT_Int, 1, false); err != nil {
 			return err
 		}
-		if err := c.paramTrans(is, sc, "", trans_trans, false); err != nil {
+		if err := c.paramTrans(is, sc, "", trans_trans); err != nil {
 			return err
 		}
 		return nil
@@ -5534,7 +5544,21 @@ func (c *Compiler) scoreAdd(is IniSection, sc *StateControllerBase, _ int8) (Sta
 	})
 	return *ret, err
 }
-
+func (c *Compiler) shaderSet(is IniSection, sc *StateControllerBase, _ int8) (StateController, error) {
+	ret, err := (*shaderSet)(sc), c.stateSec(is, func() error {
+		if err := c.paramValue(is, sc, "redirectid", shaderSet_redirectid, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.paramValue(is, sc, "time", shaderSet_time, VT_Int, 1, false); err != nil {
+			return err
+		}
+		if err := c.shaderSub(is, sc, shaderSet_shader, shaderSet_shaderparam); err != nil {
+			return err
+		}
+		return nil
+	})
+	return *ret, err
+}
 func (c *Compiler) storyboard(is IniSection, sc *StateControllerBase, _ int8) (StateController, error) {
 	ret, err := (*storyboard)(sc), c.stateSec(is, func() error {
 		if err := c.stateParam(is, "path", false, func(data string) error {
@@ -6900,7 +6924,7 @@ func (c *Compiler) modifyStageBG(is IniSection, sc *StateControllerBase, _ int8)
 		if _, ok := is["trans"]; ok { // Check if "trans" exists, since you can't set "any" from within paramTrans
 			any = true
 		}
-		if err := c.paramTrans(is, sc, "", modifyStageBG_trans, false); err != nil {
+		if err := c.paramTrans(is, sc, "", modifyStageBG_trans); err != nil {
 			return err
 		}
 		if err := c.stateParam(is, "angle", false, func(data string) error {
@@ -6959,6 +6983,55 @@ func (c *Compiler) modifyStageBG(is IniSection, sc *StateControllerBase, _ int8)
 	})
 	sys.cgi[c.playerNo].canMutateStage = true
 	return *ret, err
+}
+func (c *Compiler) shaderSub(is IniSection, sc *StateControllerBase, shaderOpCode, paramOpCode byte) error {
+	if err := c.stateParam(is, "shader", false, func(data string) error {
+		if len(data) < 2 || data[0] != '"' || data[len(data)-1] != '"' {
+			return Error("Shader name not enclosed in \"")
+		}
+		shaderName := strings.ToLower(data[1 : len(data)-1])
+		sc.add(shaderOpCode, sc.beToExp(BytecodeExp(shaderName)))
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	var shaderParams []BytecodeExp
+	var paramIndices []int
+	for k, v := range is {
+		if strings.HasPrefix(strings.ToLower(k), "shaderparam.p") {
+			numStr := k[len("shaderparam.p"):]
+			idx, err := strconv.Atoi(numStr)
+			if err != nil || idx < 0 || idx > 15 {
+				return Error("Invalid shader parameter: " + k + " (must be p0 to p15)")
+			}
+
+			valStr := v
+			be, err := c.argExpression(&valStr, VT_Float)
+			if err != nil {
+				return err
+			}
+
+			paramIndices = append(paramIndices, idx)
+			shaderParams = append(shaderParams, be)
+			delete(is, k)
+		}
+	}
+
+	if len(shaderParams) > 0 {
+		var beCount BytecodeExp
+		beCount.appendValue(BytecodeInt(int32(len(shaderParams))))
+
+		allParams := []BytecodeExp{beCount}
+		for i, idx := range paramIndices {
+			var beIdx BytecodeExp
+			beIdx.appendValue(BytecodeInt(int32(idx)))
+			allParams = append(allParams, beIdx, shaderParams[i])
+		}
+		sc.add(paramOpCode, allParams)
+	}
+
+	return nil
 }
 
 func (c *Compiler) shiftInput(is IniSection, sc *StateControllerBase, _ int8) (StateController, error) {
