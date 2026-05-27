@@ -68,7 +68,7 @@ func newStageCamera() *stageCamera {
 	return &stageCamera{verticalfollow: 0.2, tensionvel: 1, tension: 50,
 		cuthigh: 0, cutlow: math.MinInt32,
 		localcoord: [2]int32{320, 240},
-		localscl:   float32(sys.gameWidth / 320),
+		localscl:   sys.gameWidth / 320,
 		topz:       0, botz: 0, ztopscale: 1, zbotscale: 1, depthtoscreen: 1,
 		startzoom: 1, zoomin: 1, zoomout: 1,
 		ytensionenable: false, tensionhigh: 0, tensionlow: 0,
@@ -135,14 +135,14 @@ func (c *Camera) Reset() {
 		c.aspectcorrection = Min(0, (float32(c.localcoord[1])*c.localscl-float32(sys.gameHeight))+Min((float32(sys.gameHeight)-float32(c.localcoord[1])*c.localscl)/2, float32(c.overdrawlow)*c.localscl))
 	} else if float32(c.localcoord[1])*c.localscl-float32(sys.gameHeight) > 0 {
 		if c.cuthigh+c.cutlow <= 0 {
-			c.aspectcorrection = float32(Ceil(float32(c.localcoord[1])*c.localscl) - sys.gameHeight)
+			c.aspectcorrection = float32(Ceil(float32(c.localcoord[1])*c.localscl)) - sys.gameHeight
 		} else {
-			diff := Ceil(float32(c.localcoord[1])*c.localscl) - sys.gameHeight
-			tmp := Ceil(float32(c.cuthigh)*c.localscl) * diff / (Ceil(float32(c.cuthigh)*c.localscl) + Ceil(float32(c.cutlow)*c.localscl))
-			if diff-tmp <= c.cutlow {
+			diff := float32(Ceil(float32(c.localcoord[1])*c.localscl)) - sys.gameHeight
+			tmp := float32(Ceil(float32(c.cuthigh)*c.localscl)) * diff / float32((Ceil(float32(c.cuthigh)*c.localscl) + Ceil(float32(c.cutlow)*c.localscl)))
+			if diff-tmp <= float32(c.cutlow) {
 				c.aspectcorrection = float32(tmp)
 			} else {
-				c.aspectcorrection = float32(diff - Ceil(float32(c.cutlow)*c.localscl))
+				c.aspectcorrection = float32(diff - float32(Ceil(float32(c.cutlow)*c.localscl)))
 			}
 		}
 
@@ -285,15 +285,7 @@ func (c *Camera) action(x, y, scale float32, pause bool) (newX, newY, newScale f
 		newY = y / scale
 		switch c.View {
 		case Fighting_View:
-			leftestDiff := float32(0.0)
-			rightestDiff := float32(0.0)
-			if c.leftest != math.MaxFloat32 {
-				leftestDiff = c.leftest - c.prevLeftest
-			}
 
-			if c.rightest != -math.MaxFloat32 {
-				rightestDiff = c.rightest - c.prevRightest
-			}
 			c.SaveRestoreTracking()
 
 			if c.lowestcap {
@@ -454,10 +446,10 @@ func (c *Camera) action(x, y, scale float32, pause bool) (newX, newY, newScale f
 					} else {
 						newLeft -= diff * logicScale * c.tensionvel
 					}
-					if newLeft-oldLeft > 0 && newLeft-oldLeft < Max(c.rightestvel, rightestDiff) {
-						newLeft = Min(oldLeft+Max(c.rightestvel, rightestDiff), targetLeft)
-					} else if newLeft-oldLeft < 0 && newLeft-oldLeft > Min(c.leftestvel, leftestDiff) {
-						newLeft = Max(oldLeft+Min(c.leftestvel, leftestDiff), targetLeft)
+					if newLeft-oldLeft > 0 && newLeft-oldLeft < c.rightestvel {
+						newLeft = Min(oldLeft+c.rightestvel, targetLeft)
+					} else if newLeft-oldLeft < 0 && newLeft-oldLeft > c.leftestvel {
+						newLeft = Max(oldLeft+c.leftestvel, targetLeft)
 					}
 
 					if Abs(diffRight) <= diff*logicScale*c.tensionvel {
@@ -467,10 +459,10 @@ func (c *Camera) action(x, y, scale float32, pause bool) (newX, newY, newScale f
 					} else {
 						newRight -= diff * logicScale * c.tensionvel
 					}
-					if newRight-oldRight > 0 && newRight-oldRight < Max(c.rightestvel, rightestDiff) {
-						newRight = Min(oldRight+Max(c.rightestvel, rightestDiff), targetRight)
-					} else if newRight-oldRight < 0 && newRight-oldRight > Min(c.leftestvel, leftestDiff) {
-						newRight = Max(oldRight+Min(c.leftestvel, leftestDiff), targetRight)
+					if newRight-oldRight > 0 && newRight-oldRight < c.rightestvel {
+						newRight = Min(oldRight+c.rightestvel, targetRight)
+					} else if newRight-oldRight < 0 && newRight-oldRight > c.leftestvel {
+						newRight = Max(oldRight+c.leftestvel, targetRight)
 					}
 				}
 			} else {

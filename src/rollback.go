@@ -53,6 +53,11 @@ func (rs *RollbackSystem) hijackRunMatch(s *System) bool {
 			panic(err)
 		}
 
+		// Desync/disconnect callbacks may request a session abort outside the normal input path.
+		if s.esc {
+			break
+		}
+
 		// Sync speculative inputs and run a speculative frame
 		running = rs.runFrame(s)
 
@@ -62,7 +67,7 @@ func (rs *RollbackSystem) hijackRunMatch(s *System) bool {
 
 		rs.session.next = rs.session.now + 1000/60
 
-		if !running {
+		if s.esc || !running {
 			break
 		}
 
@@ -71,7 +76,7 @@ func (rs *RollbackSystem) hijackRunMatch(s *System) bool {
 		//rs.session.loopTimer.usToWaitThisLoop()
 		running = s.update()
 
-		if !running {
+		if s.esc || !running {
 			break
 		}
 	}
@@ -151,6 +156,10 @@ func (rs *RollbackSystem) runFrame(s *System) bool {
 	var buffer []byte
 	var ggpoerr error
 
+	if s.esc {
+		return false
+	}
+
 	if rs.session.syncTest && rs.session.netTime == 0 {
 		if rs.session.config.DesyncTestAI {
 			buffer = getAIInputs(0)
@@ -201,7 +210,7 @@ func (rs *RollbackSystem) runFrame(s *System) bool {
 			if err != nil {
 				panic(err)
 			}
-			if !keepRunning {
+			if s.esc || !keepRunning {
 				return false
 			}
 		}
@@ -219,12 +228,6 @@ func (rs *RollbackSystem) simulateFrame(s *System) bool {
 	if !sys.runNextRound() {
 		return false
 	}
-
-	s.bgPalFX.step()
-	s.stage.action()
-
-	// If frame is ready to tick and not paused
-	//sys.stage.action()
 
 	// Update game state
 	s.action()
@@ -266,26 +269,6 @@ func (rs *RollbackSystem) updateEvents(s *System) bool {
 		return false
 	}
 	return true
-}
-
-func (rs *RollbackSystem) updateCamera(s *System) {
-	if !s.frameSkip {
-		scl := s.cam.Scale / s.cam.BaseScale()
-		if s.enableZoomtime > 0 {
-			if !s.debugPaused() {
-				s.zoomPosXLag += ((s.zoomPos[0] - s.zoomPosXLag) * (1 - s.zoomlag))
-				s.zoomPosYLag += ((s.zoomPos[1] - s.zoomPosYLag) * (1 - s.zoomlag))
-				s.drawScale = s.drawScale / (s.drawScale + (s.zoomScale*scl-s.drawScale)*s.zoomlag) * s.zoomScale * scl
-			}
-		} else {
-			s.zoomlag = 0
-			s.zoomPosXLag = 0
-			s.zoomPosYLag = 0
-			s.zoomScale = 1
-			s.zoomPos = [2]float32{0, 0}
-			s.drawScale = s.cam.Scale
-		}
-	}
 }
 
 func getAIInputs(player int) []byte {
@@ -758,7 +741,9 @@ func (r *RollbackSession) OnEvent(info *ggpo.Event) {
 		fmt.Println("EventCodeDisconnectedFromPeer")
 		sys.endMatch = true
 		r.SaveReplay()
-		sys.sessionWarning = fmt.Sprintf(sys.motif.WarningInfo.Text.Text["disconnect"], int(info.Player))
+		if sys.sessionWarning == "" {
+			sys.sessionWarning = fmt.Sprintf(sys.motif.WarningInfo.Text.Text["disconnect"], int(info.Player))
+		}
 	case ggpo.EventCodeTimeSync:
 		fmt.Printf("EventCodeTimeSync: FramesAhead %f TimeSyncPeriodInFrames: %d\n", info.FramesAhead, info.TimeSyncPeriodInFrames)
 		r.loopTimer.OnGGPOTimeSyncEvent(info.FramesAhead)
@@ -767,7 +752,8 @@ func (r *RollbackSession) OnEvent(info *ggpo.Event) {
 			r.log.saveLogs()
 		}
 		fmt.Println("EventCodeDesync")
-		sys.endMatch = true
+		log.Printf("Rollback desync detected")
+		sys.esc = true
 		r.SaveReplay()
 		sys.sessionWarning = sys.motif.WarningInfo.Text.Text["desync"]
 	case ggpo.EventCodeConnectionInterrupted:

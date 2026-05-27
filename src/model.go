@@ -362,9 +362,9 @@ func loadEnvironment(filepath string) (*Environment, error) {
 	env.GGXTexture = &GLTFTexture{}
 	env.GGXLUT = &GLTFTexture{}
 	if hdrImg, ok := img.(hdr.Image); ok {
-		size := img.Bounds().Max.X * img.Bounds().Max.Y * 3
-		data := make([]float32, size, size)
 		bounds := img.Bounds()
+		size := bounds.Max.X * bounds.Max.Y * 3
+		data := make([]float32, 0, size)
 		for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 			for x := bounds.Min.X; x < bounds.Max.X; x++ {
 				color := hdrImg.HDRAt(x, y)
@@ -380,7 +380,7 @@ func loadEnvironment(filepath string) (*Environment, error) {
 				return
 			}
 			lowestMipLevel := int32(4)
-			env.hdrTexture.tex = gfx.newHDRTexture(int32(img.Bounds().Max.X), int32(img.Bounds().Max.Y))
+			env.hdrTexture.tex = gfx.newHDRTexture(int32(bounds.Max.X), int32(bounds.Max.Y))
 
 			env.hdrTexture.tex.SetPixelData(data)
 			env.cubeMapTexture.tex = gfx.newCubeMapTexture(256, true, 0)
@@ -472,7 +472,7 @@ func loadglTFModel(filepath string) (*Model, error) {
 					buffer = bytes.NewBuffer(decodedData)
 				}
 			} else {
-				if err := LoadFile(&img.URI, []string{filepath, "", sys.motif.Def, "data/"}, func(filename string) error {
+				if err := LoadFile(&img.URI, []string{filepath, sys.motif.Def, "", "data/"}, "", func(filename string) error {
 					// Use OpenFile which respects the virtual file system (zip)
 					f, err := OpenFile(filename)
 					if err != nil {
@@ -1907,7 +1907,7 @@ func drawNode(mdl *Model, scene *Scene, layerNumber int, defaultLayerNumber int,
 		mat := mdl.materials[*p.materialIndex]
 		if ((mat.alphaMode != AlphaModeBlend && n.trans == TransNone) && drawBlended) ||
 			((mat.alphaMode == AlphaModeBlend || n.trans != TransNone) && !drawBlended) {
-			return
+			continue
 		}
 		color := mdl.materials[*p.materialIndex].baseColorFactor.getValue().([4]float32)
 		meshOutline := n.meshOutline.getValue().(float32)
@@ -2018,11 +2018,11 @@ func drawNodeShadow(mdl *Model, scene *Scene, n *Node, camOffset [3]float32, dra
 		mat := mdl.materials[*p.materialIndex]
 		if ((mat.alphaMode != AlphaModeBlend && n.trans == TransNone) && drawBlended) ||
 			((mat.alphaMode == AlphaModeBlend || n.trans != TransNone) && !drawBlended) {
-			return
+			continue
 		}
 		color := mdl.materials[*p.materialIndex].baseColorFactor.getValue().([4]float32)
 		if color[3] == 0 && mat.alphaMode == AlphaModeBlend {
-			return
+			continue
 		}
 		gfx.setShadowMapPipeline(mdl.materials[*p.materialIndex].doubleSided, reverseCull, p.useUV, p.useNormal, p.useTangent, p.useVertexColor, p.useJoint0, p.useJoint1, p.numVertices, p.vertexBufferOffset)
 

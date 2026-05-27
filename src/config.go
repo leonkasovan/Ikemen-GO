@@ -99,28 +99,6 @@ type Config struct {
 				Bonus float32 `ini:"Bonus" sync:"host"`
 			} `ini:"Recovery"`
 		} `ini:"Turns"`
-		Ratio struct {
-			Recovery struct {
-				Base  float32 `ini:"Base" sync:"host"`
-				Bonus float32 `ini:"Bonus" sync:"host"`
-			} `ini:"Recovery"`
-			Level1 struct {
-				Attack float32 `ini:"Attack" sync:"host"`
-				Life   float32 `ini:"Life" sync:"host"`
-			} `ini:"Level1"`
-			Level2 struct {
-				Attack float32 `ini:"Attack" sync:"host"`
-				Life   float32 `ini:"Life" sync:"host"`
-			} `ini:"Level2"`
-			Level3 struct {
-				Attack float32 `ini:"Attack" sync:"host"`
-				Life   float32 `ini:"Life" sync:"host"`
-			} `ini:"Level3"`
-			Level4 struct {
-				Attack float32 `ini:"Attack" sync:"host"`
-				Life   float32 `ini:"Life" sync:"host"`
-			} `ini:"Level4"`
-		} `ini:"Ratio"`
 	} `ini:"Options"`
 	Config struct {
 		Motif             string   `ini:"Motif" sync:"strict"`
@@ -185,18 +163,19 @@ type Config struct {
 		EnableModelShadow       bool     `ini:"EnableModelShadow"`
 	} `ini:"Video"`
 	Sound struct {
-		SampleRate        int32   `ini:"SampleRate"`
-		SoundFont         string  `ini:"SoundFont"`
-		StereoEffects     bool    `ini:"StereoEffects"`
-		PanningRange      float32 `ini:"PanningRange"`
-		WavChannels       int32   `ini:"WavChannels"`
-		MasterVolume      int     `ini:"MasterVolume"`
-		PauseMasterVolume int     `ini:"PauseMasterVolume"`
-		WavVolume         int     `ini:"WavVolume"`
-		BGMVolume         int     `ini:"BGMVolume"`
-		BGMRAMBuffer      bool    `ini:"BGMRAMBuffer"`
-		MaxBGMVolume      int     `ini:"MaxBGMVolume"`
-		AudioDucking      bool    `ini:"AudioDucking"`
+		SampleRate           int32   `ini:"SampleRate"`
+		SoundFont            string  `ini:"SoundFont"`
+		StereoEffects        bool    `ini:"StereoEffects"`
+		PanningRange         float32 `ini:"PanningRange"`
+		WavChannels          int32   `ini:"WavChannels"`
+		MasterVolume         int     `ini:"MasterVolume"`
+		PauseMasterVolume    int     `ini:"PauseMasterVolume"`
+		WavVolume            int     `ini:"WavVolume"`
+		BGMVolume            int     `ini:"BGMVolume"`
+		BGMRAMBuffer         bool    `ini:"BGMRAMBuffer"`
+		MaxBGMVolume         int     `ini:"MaxBGMVolume"`
+		AudioDucking         bool    `ini:"AudioDucking"`
+		AudioResampleQuality int     `ini:"AudioResampleQuality"`
 	} `ini:"Sound"`
 	Arcade struct {
 		AI struct {
@@ -211,9 +190,6 @@ type Config struct {
 		Team struct {
 			AIramp AIrampProperties `ini:"AIramp"`
 		} `ini:"team"`
-		Ratio struct {
-			AIramp AIrampProperties `ini:"AIramp"`
-		} `ini:"ratio"`
 		Survival struct {
 			AIramp AIrampProperties `ini:"AIramp"`
 		} `ini:"survival"`
@@ -378,6 +354,7 @@ func (c *Config) normalize() {
 	c.SetValueUpdate("Input.SOCDResolution", int(Clamp(int32(c.Input.SOCDResolution), 0, 4)))
 	c.SetValueUpdate("Input.UiRepeatDelay", int(Max(int32(c.Input.UiRepeatDelay), 0)))
 	c.SetValueUpdate("Input.UiRepeatRate", int(Max(int32(c.Input.UiRepeatRate), 1)))
+	c.SetValueUpdate("Sound.AudioResampleQuality", Clamp(c.Sound.AudioResampleQuality, 1, 16))
 	c.SetValueUpdate("Sound.MaxBGMVolume", int(Clamp(int32(c.Sound.MaxBGMVolume), 100, 250)))
 	c.SetValueUpdate("Sound.PanningRange", Clamp(c.Sound.PanningRange, 0, 100))
 	c.SetValueUpdate("Sound.PauseMasterVolume", int(Clamp(int32(c.Sound.PauseMasterVolume), 0, 100)))
@@ -394,15 +371,15 @@ func (c *Config) normalize() {
 func (c *Config) sysSet() {
 	if _, ok := sys.cmdFlags["-width"]; ok {
 		var w, _ = strconv.ParseInt(sys.cmdFlags["-width"], 10, 32)
-		sys.gameWidth = int32(w)
+		sys.gameWidth = float32(int32(w))
 	} else {
-		sys.gameWidth = c.Video.GameWidth
+		sys.gameWidth = float32(c.Video.GameWidth)
 	}
 	if _, ok := sys.cmdFlags["-height"]; ok {
 		var h, _ = strconv.ParseInt(sys.cmdFlags["-height"], 10, 32)
-		sys.gameHeight = int32(h)
+		sys.gameHeight = float32(int32(h))
 	} else {
-		sys.gameHeight = c.Video.GameHeight
+		sys.gameHeight = float32(c.Video.GameHeight)
 	}
 	sys.msaa = c.Video.MSAA
 	stoki := func(key string) int {

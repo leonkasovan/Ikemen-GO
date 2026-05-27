@@ -205,7 +205,7 @@ func readBackGround(is IniSection, link *backGround,
 			bg.video = &bgVideo{}
 		}
 		path := is["path"]
-		LoadFile(&path, []string{def, "", sys.motif.Def, "data/", "video/"}, func(filename string) error {
+		LoadFile(&path, []string{def, "", "data/"}, "video/", func(filename string) error {
 			path = filename
 			return nil
 		})
@@ -639,7 +639,7 @@ func (bg backGround) draw(pos [2]float32, drawscl, bgscl, stglscl float32,
 	rect := bg.startrect
 
 	startrect0 := float32(rect[0]) - (pos[0])/stgscl[0]*bg.windowdelta[0] +
-		(float32(sys.gameWidth)/2/sclx - float32(bg.notmaskwindow)*(float32(sys.gameWidth)/2)*(1/lscl[0]))
+		(sys.gameWidth/2/sclx - float32(bg.notmaskwindow)*(sys.gameWidth/2)*(1/lscl[0]))
 	startrect0 *= sys.widthScale * wscl[0]
 	if !isStage && wscl[0] == 1 {
 		// Screenpacks X coordinates start from left edge of screen
@@ -703,14 +703,14 @@ func (bg backGround) draw(pos [2]float32, drawscl, bgscl, stglscl float32,
 		// Choose render origin: top-left for screenpack/storyboard videos, center for everything else
 		var rcx float32
 		if bg._type != BG_Video || isStage {
-			rcx = float32(sys.gameWidth) / 2
+			rcx = sys.gameWidth / 2
 		}
 
 		bg.anim.Draw(&rect, x-xsoffset, y, sclx, scly,
 			bg.xscale[0]*bgscl*(scalestartX+xs)*xs3,
 			xbs*bgscl*(scalestartX+xs)*xs3,
 			ys*ys3, xras*x/(Abs(ys*ys3)*lscl[1]*float32(bg.anim.spr.Size[1])*bg.scalestart[1])*sclx_recip*bg.scalestart[1]-bg.xshear,
-			bg.rot, rcx, bg.palfx, 1, [2]float32{1, 1}, int32(bg.projection), bg.fLength, 0, false)
+			bg.rot, rcx, bg.palfx, 1, [2]float32{1, 1}, int32(bg.projection), bg.fLength, 0, false, "", [16]float32{})
 	}
 }
 
@@ -984,7 +984,7 @@ func loadStage(def string, maindef bool) (*Stage, error) {
 	s.sff = &Sff{}
 
 	lines, i := SplitAndTrim(str, "\n"), 0
-	s.animTable = ReadAnimationTable(s.sff, &s.sff.palList, lines, &i)
+	s.animTable = ReadAnimationTable(def, s.sff, &s.sff.palList, lines, &i, true)
 	i = 0
 	defmap := make(map[string][]IniSection)
 	for i < len(lines) {
@@ -1056,7 +1056,7 @@ func loadStage(def string, maindef bool) (*Stage, error) {
 				sys.appendToConsole(s.warn() + fmt.Sprintf("Can only define up to %d attachedchar(s). '%s' ignored.", MaxAttachedChar, i))
 				continue
 			}
-			if err := sec.LoadFile(i, []string{def, "", sys.motif.Def, "data/"}, func(filename string) error {
+			if err := sec.LoadFile(i, []string{def, "", "data/"}, "stages/", func(filename string) error {
 				// Ensure slice has correct length
 				for len(s.attachedchardef) <= ac {
 					s.attachedchardef = append(s.attachedchardef, "")
@@ -1075,7 +1075,7 @@ func loadStage(def string, maindef bool) (*Stage, error) {
 					re := regexp.MustCompile("[0-9]+")
 					submatchall := re.FindAllString(k, -1)
 					if len(submatchall) == 1 {
-						if err := LoadFile(&v, []string{def, "", sys.motif.Def, "data/"}, func(filename string) error {
+						if err := LoadFile(&v, []string{def, "", "data/"}, "stages/", func(filename string) error {
 							if sys.stageList[Atoi(submatchall[0])], err = loadStage(filename, false); err != nil {
 								return fmt.Errorf("failed to load %v:\n%v", filename, err)
 							}
@@ -1112,7 +1112,7 @@ func loadStage(def string, maindef bool) (*Stage, error) {
 	} else if s.hires {
 		s.scale[1] *= 2
 	}
-	s.localscl = float32(sys.gameWidth) / float32(s.stageCamera.localcoord[0])
+	s.localscl = sys.gameWidth / float32(s.stageCamera.localcoord[0])
 	s.stageCamera.localscl = s.localscl
 	if s.stageCamera.localcoord[0] != 320 {
 		// Update default values to new localcoord. Like characters do
@@ -1271,7 +1271,7 @@ func loadStage(def string, maindef bool) (*Stage, error) {
 
 	// BGDef group
 	if sec, _ := getSection("bgdef"); sec != nil {
-		if sec.LoadFile("spr", []string{def, "", sys.motif.Def, "data/"}, func(filename string) error {
+		if sec.LoadFile("spr", []string{def, "", "data/"}, "", func(filename string) error {
 			sff, err := loadSff(filename, false, false, false)
 			if err != nil {
 				return err
@@ -1286,7 +1286,7 @@ func loadStage(def string, maindef bool) (*Stage, error) {
 		}); err != nil {
 			return nil, err
 		}
-		if err = sec.LoadFile("model", []string{def, "", sys.motif.Def, "data/"}, func(filename string) error {
+		if err = sec.LoadFile("model", []string{def, "", "data/"}, "", func(filename string) error {
 			model, err := loadglTFModel(filename)
 			if err != nil {
 				return err
@@ -1338,7 +1338,7 @@ func loadStage(def string, maindef bool) (*Stage, error) {
 				}
 			}
 		}
-		if err = sec.LoadFile("environment", []string{def, "", sys.motif.Def, "data/"}, func(filename string) error {
+		if err = sec.LoadFile("environment", []string{def, "", "data/"}, "", func(filename string) error {
 			env, err := loadEnvironment(filename)
 			if err != nil {
 				return err
@@ -1799,30 +1799,6 @@ func (s *Stage) action() {
 
 	// Update BG elements
 	for i, b := range s.bg {
-		b.palfx.step()
-
-		// BGPalFX can step even if the stage is paused
-		if sys.bgPalFX.enable {
-			// TODO: Finish proper synthesization of bgPalFX into PalFX from bg element
-			// (Right now, bgPalFX just overrides all unique parameters from BG Elements' PalFX)
-			// for j := 0; j < 3; j++ {
-			// if sys.bgPalFX.invertall {
-			// b.palfx.eAdd[j] = -b.palfx.add[j] * (b.palfx.mul[j]/256) + 256 * (1-(b.palfx.mul[j]/256))
-			// b.palfx.eMul[j] = 256
-			// }
-			// b.palfx.eAdd[j] = int32((float32(b.palfx.eAdd[j])) * sys.bgPalFX.eColor)
-			// b.palfx.eMul[j] = int32(float32(b.palfx.eMul[j]) * sys.bgPalFX.eColor + 256*(1-sys.bgPalFX.eColor))
-			// }
-			// b.palfx.synthesize(sys.bgPalFX)
-			b.palfx.eAdd = sys.bgPalFX.eAdd
-			b.palfx.eMul = sys.bgPalFX.eMul
-			b.palfx.eColor = sys.bgPalFX.eColor
-			b.palfx.eHue = sys.bgPalFX.eHue
-			b.palfx.eInvertall = sys.bgPalFX.eInvertall
-			b.palfx.eInvertblend = sys.bgPalFX.eInvertblend
-			b.palfx.eAllowNeg = sys.bgPalFX.eAllowNeg
-		}
-
 		if canStep {
 			s.bg[i].bga.action(b.enabled)
 			if i > 0 && b.positionlink {
@@ -1847,6 +1823,38 @@ func (s *Stage) action() {
 			s.bg[i].anim.Action()
 		}
 	}
+}
+
+// Currently this function only exists so that the stage update sequence is similar to others. In the future it could run more tasks
+// Doing this allows characters to see "stageTime = 0"
+func (s *Stage) tick() {
+
+	// Update BG elements
+	for _, b := range s.bg {
+		b.palfx.step()
+
+		// BGPalFX can step even if the stage is paused
+		if sys.bgPalFX.enable {
+			// TODO: Finish proper synthesization of bgPalFX into PalFX from bg element
+			// (Right now, bgPalFX just overrides all unique parameters from BG Elements' PalFX)
+			// for j := 0; j < 3; j++ {
+			// if sys.bgPalFX.invertall {
+			// b.palfx.eAdd[j] = -b.palfx.add[j] * (b.palfx.mul[j]/256) + 256 * (1-(b.palfx.mul[j]/256))
+			// b.palfx.eMul[j] = 256
+			// }
+			// b.palfx.eAdd[j] = int32((float32(b.palfx.eAdd[j])) * sys.bgPalFX.eColor)
+			// b.palfx.eMul[j] = int32(float32(b.palfx.eMul[j]) * sys.bgPalFX.eColor + 256*(1-sys.bgPalFX.eColor))
+			// }
+			// b.palfx.synthesize(sys.bgPalFX)
+			b.palfx.eAdd = sys.bgPalFX.eAdd
+			b.palfx.eMul = sys.bgPalFX.eMul
+			b.palfx.eColor = sys.bgPalFX.eColor
+			b.palfx.eHue = sys.bgPalFX.eHue
+			b.palfx.eInvertall = sys.bgPalFX.eInvertall
+			b.palfx.eInvertblend = sys.bgPalFX.eInvertblend
+			b.palfx.eAllowNeg = sys.bgPalFX.eAllowNeg
+		}
+	}
 
 	// Update model PalFX
 	if s.model != nil {
@@ -1861,11 +1869,7 @@ func (s *Stage) action() {
 			s.model.pfx.eAllowNeg = sys.bgPalFX.eAllowNeg
 		}
 	}
-}
 
-// Currently this function only exists so that the stage update sequence is similar to others. In the future it could run more tasks
-// Doing this allows characters to see "stageTime = 0"
-func (s *Stage) tick() {
 	if s.paused() {
 		return
 	}

@@ -297,13 +297,13 @@ func loadStoryboard(def string) (*Storyboard, error) {
 		return nil, err
 	}
 	lines, i := SplitAndTrim(str, "\n"), 0
-	s.AnimTable = ReadAnimationTable(s.Sff, &s.Sff.palList, lines, &i)
+	s.AnimTable = ReadAnimationTable(s.Def, s.Sff, &s.Sff.palList, lines, &i, true)
 	i = 0
 
 	// Storyboard-specific quirk:
 	// enable phantom pixel adjustment on all storyboard animations so that
 	// frames flipped via H or V get an extra pixel of offset.
-	for _, anim := range s.AnimTable {
+	for _, anim := range s.AnimTable.anims {
 		if anim != nil {
 			anim.phantomPixel = true
 		}
@@ -321,7 +321,7 @@ func loadStoryboard(def string) (*Storyboard, error) {
 }
 
 func (s *Storyboard) loadFiles() {
-	LoadFile(&s.SceneDef.Spr, []string{s.SceneDef.Spr}, func(filename string) error {
+	LoadFile(&s.SceneDef.Spr, []string{s.Def, "", "data/"}, "", func(filename string) error {
 		if filename != "" {
 			var err error
 			s.Sff, err = loadSff(filename, false, true, false)
@@ -335,7 +335,7 @@ func (s *Storyboard) loadFiles() {
 		return nil
 	})
 
-	LoadFile(&s.SceneDef.Model, []string{s.SceneDef.Model}, func(filename string) error {
+	LoadFile(&s.SceneDef.Model, []string{s.Def, "", "data/"}, "", func(filename string) error {
 		if filename != "" {
 			var err error
 			s.Model, err = loadglTFModel(filename)
@@ -365,7 +365,7 @@ func (s *Storyboard) loadFiles() {
 		//scene.Bg.BgClearColor = scene.Bg.BGDef.bgclearcolor
 	}
 
-	LoadFile(&s.SceneDef.Snd, []string{s.SceneDef.Snd}, func(filename string) error {
+	LoadFile(&s.SceneDef.Snd, []string{s.Def, "", "data/"}, "", func(filename string) error {
 		if filename != "" {
 			var err error
 			s.Snd, err = LoadSnd(filename)
@@ -380,7 +380,7 @@ func (s *Storyboard) loadFiles() {
 	})
 
 	for key, fnt := range s.SceneDef.Font {
-		LoadFile(&fnt.Font, []string{fnt.Font}, func(filename string) error {
+		LoadFile(&fnt.Font, []string{s.Def, "", "data/"}, "font/", func(filename string) error {
 			re := regexp.MustCompile(`\d+`)
 			i := int(Atoi(re.FindString(key)))
 
@@ -660,7 +660,7 @@ func (s *Storyboard) step() {
 	if endTime > 0 {
 		fadeLen := int32(0)
 		if sceneProps.FadeOut.FadeData != nil {
-			fadeLen = sceneProps.FadeOut.FadeData.time
+			fadeLen = sceneProps.FadeOut.FadeData.duration()
 		}
 		if fadeLen > 0 {
 			startFadeAt = endTime - fadeLen

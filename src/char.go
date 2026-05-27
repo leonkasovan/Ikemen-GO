@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"math"
-	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -681,7 +681,7 @@ type HitDef struct {
 	StandFriction              float32
 	CrouchFriction             float32
 	KeepState                  bool
-	MissOnReversalDef          int32
+	IgnoreReversalDef          int32
 }
 
 func (hd *HitDef) reset(c *Char, proj *Projectile) {
@@ -706,7 +706,7 @@ func (hd *HitDef) reset(c *Char, proj *Projectile) {
 		hitflag:            int32(HF_H | HF_L | HF_A | HF_F),
 		guardflag:          0,
 		affectteam:         1,
-		teamside:           -2,
+		teamside:           c.teamside,
 		animtype:           RA_Light,
 		air_animtype:       RA_Unknown,
 		priority:           4,
@@ -806,7 +806,7 @@ func (hd *HitDef) reset(c *Char, proj *Projectile) {
 		StandFriction:       float32(math.NaN()),
 		CrouchFriction:      float32(math.NaN()),
 		KeepState:           false,
-		MissOnReversalDef:   0,
+		IgnoreReversalDef:   0,
 
 		reversal_guardflag:     IErr,
 		reversal_guardflag_not: IErr,
@@ -974,10 +974,6 @@ func (hd *HitDef) finalizeParams(c *Char, proj *Projectile) {
 	}
 	if !math.IsNaN(float64(hd.snap[2])) {
 		hd.maxdist[2], hd.mindist[2] = hd.snap[2], hd.snap[2]
-	}
-
-	if hd.teamside < -1 || hd.teamside > 1 {
-		hd.teamside = c.teamside
 	}
 
 	if hd.p2clsncheck < 0 {
@@ -1611,6 +1607,7 @@ type Explod struct {
 	scale               [2]float32
 	removeongethit      bool
 	removeonchangestate bool
+	hideonpausemenu     bool
 	statehaschanged     bool
 	removetime          int32
 	velocity            [3]float32
@@ -1672,6 +1669,9 @@ type Explod struct {
 	interpolate_xshear   [2]float32
 	timestamp            int32 // Determines run order
 	sortindex            int   // For faster run order sorting
+
+	shader       string
+	shaderParams [16]float32
 }
 
 func newExplod() *Explod {
@@ -1904,7 +1904,7 @@ func (e *Explod) update() {
 	parent := sys.playerID(e.playerId)
 	root := sys.chars[e.playerno][0]
 
-	if root.scf(SCF_disabled) {
+	if root.scf(SCF_disabled) || (e.hideonpausemenu && sys.motif.me.active) {
 		return
 	}
 
@@ -1986,6 +1986,8 @@ func (e *Explod) update() {
 				e.alpha = syncChar.alpha
 				e.palfx = syncChar.getPalfx()
 				e.facing = syncChar.facing
+				e.shader = syncChar.shader
+				e.shaderParams = syncChar.shaderParams
 
 				if syncChar.aimg != nil && syncChar.aimg.time != 0 {
 					if e.aimg == nil {
@@ -2128,6 +2130,8 @@ func (e *Explod) update() {
 	sd.fLength = fLength
 	sd.window = ewin
 	sd.xshear = xshear
+	sd.shader = e.shader
+	sd.shaderParams = e.shaderParams
 
 	if e.syncId > 0 {
 		sd.syncId = e.syncId
@@ -2377,6 +2381,8 @@ type Projectile struct {
 	contactflag     bool
 	time            int32
 	removeDone      bool
+	shader          string
+	shaderParams    [16]float32
 }
 
 func newProjectile() *Projectile {
@@ -2842,6 +2848,8 @@ func (p *Projectile) cueDraw() {
 	sd.fLength = fLength
 	sd.window = pwin
 	sd.xshear = p.xshear
+	sd.shader = p.shader
+	sd.shaderParams = p.shaderParams
 
 	// Add sprite to the appropriate layer's drawlist
 	sys.spriteList.add(sd)
@@ -2912,12 +2920,15 @@ type PalInfo struct {
 
 type CharGlobalInfo struct {
 	def                     string
+	name                    string
 	nameLow                 string
 	displayname             string
+	defaultDisplayname      string
 	displaynameLow          string
 	author                  string
 	authorLow               string
 	lifebarname             string
+	defaultLifebarname      string
 	sff                     *Sff
 	palettedata             *Palette
 	snd                     *Snd
@@ -2949,6 +2960,7 @@ type CharGlobalInfo struct {
 	attackBase              int32
 	defenceBase             int32
 	canMutateStage          bool // Determines if the stage should be included in save states
+	customShaders           []string
 }
 
 func (cgi *CharGlobalInfo) clearPCTime() {
@@ -3228,6 +3240,9 @@ type Char struct {
 	currentSctrlIndex    int32
 	analogAxes           [6]float32
 	enableSyncId         bool
+	shader               string
+	shaderParams         [16]float32
+	shaderTime           int32
 	//soundChannels        SoundChannels // Moved to system
 }
 
@@ -3332,6 +3347,9 @@ func (c *Char) clearState() {
 	c.makeDustSpacing = 0
 	c.hitStateChangeIdx = -1
 	c.pushAffectTeam = 1
+	c.shader = ""
+	c.shaderParams = [16]float32{}
+	c.shaderTime = 0
 }
 
 func (c *Char) clsnOverlapTrigger(box1, pid, box2 int32) bool {
@@ -3368,7 +3386,6 @@ func (c *Char) enemyNearP2Clear() {
 func (c *Char) prepareNextRound() {
 	c.sysVarRangeSet(0, math.MaxInt32, 0)
 	c.sysFvarRangeSet(0, math.MaxInt32, 0)
-	atk := c.ocd().attackRatio
 	c.CharSystemVar = CharSystemVar{
 		bindToId:              -1,
 		angleDrawScale:        [2]float32{1, 1},
@@ -3377,7 +3394,7 @@ func (c *Char) prepareNextRound() {
 		sizeWidth:             [2]float32{c.baseWidthFront(), c.baseWidthBack()},
 		sizeHeight:            [2]float32{c.baseHeightTop(), c.baseHeightBottom()},
 		sizeDepth:             [2]float32{c.baseDepthTop(), c.baseDepthBottom()},
-		attackMul:             [4]float32{atk, atk, atk, atk},
+		attackMul:             [4]float32{1, 1, 1, 1},
 		fallDefenseMul:        1,
 		superDefenseMul:       1,
 		superDefenseMulBuffer: 1,
@@ -3407,6 +3424,9 @@ func (c *Char) prepareNextRound() {
 	c.enemyNearP2Clear()
 	c.targets = c.targets[:0]
 	c.cpucmd = -1
+	c.shader = ""
+	c.shaderParams = [16]float32{}
+	c.shaderTime = 0
 }
 
 // Return Char Global Info normally
@@ -3452,16 +3472,45 @@ func (c *Char) ocd() *OverrideCharData {
 	return sys.sel.gameParams.ensureOverride(team, c.memberNo)
 }
 
+func (c *Char) applyMapOverrides() {
+	ocd := c.ocd()
+	if ocd == nil || len(ocd.maps) == 0 {
+		return
+	}
+	if c.mapArray == nil {
+		c.mapArray = make(map[string]float32)
+	}
+	for k, v := range ocd.maps {
+		c.mapArray[k] = v
+	}
+}
+
+// Some of these are overridden later anyway, but we'll reset them just in case
+func (c *Char) resetModifyPlayer() {
+	gi := c.gi()
+	gi.displayname = gi.defaultDisplayname
+	gi.lifebarname = gi.defaultLifebarname
+	gi.attackBase = gi.data.attack
+	gi.defenceBase = gi.data.defence
+	c.lifeMax = gi.data.life
+	c.powerMax = gi.data.power
+	c.dizzyPointsMax = gi.data.dizzypoints
+	c.guardPointsMax = gi.data.guardpoints
+	// c.teamside already assigned by loadCharacter()
+}
+
 func (c *Char) load(def string) error {
 	gi := &sys.cgi[c.playerNo]
 
 	// Reset global info
 	gi.def = def
 	gi.displayname, gi.lifebarname, gi.author = "", "", ""
+	gi.defaultDisplayname, gi.defaultLifebarname = "", ""
 	gi.palettedata, gi.snd, gi.quotes = nil, nil, [MaxQuotes]string{}
 	gi.animTable = NewAnimationTable()
 	gi.fnt = make(map[int]*Fnt)
 	gi.portraitscale = 1
+	gi.customShaders = nil
 
 	for i := 0; i < sys.cfg.Config.PaletteMax; i++ {
 		pal := gi.palInfo[i]
@@ -3478,31 +3527,6 @@ func (c *Char) load(def string) error {
 	// Reset DEF file maps
 	c.mapDefault = make(map[string]float32)
 
-	// Helper to resolve paths relative to the .def file's logical location
-	resolvePathRelativeToDef := func(pathInDefFile string) string {
-		isZipDef, zipArchiveOfDef, defSubPathInZip := IsZipPath(gi.def)
-		pathInDefFile = filepath.ToSlash(pathInDefFile)
-
-		if filepath.IsAbs(pathInDefFile) {
-			return pathInDefFile
-		}
-		isEngineRootRelative := strings.HasPrefix(pathInDefFile, "data/") ||
-			strings.HasPrefix(pathInDefFile, "font/") ||
-			strings.HasPrefix(pathInDefFile, "stages/")
-
-		if isZipDef {
-			if isEngineRootRelative {
-				return pathInDefFile
-			}
-			baseDirWithinZip := filepath.ToSlash(filepath.Dir(defSubPathInZip))
-			if baseDirWithinZip == "." || baseDirWithinZip == "" {
-				return filepath.ToSlash(filepath.Join(zipArchiveOfDef, pathInDefFile))
-			}
-			return filepath.ToSlash(filepath.Join(zipArchiveOfDef, baseDirWithinZip, pathInDefFile))
-		}
-		return pathInDefFile
-	}
-
 	if err := c.loadFx(def); err != nil {
 		LogMessage("Error loading FX for %s: %v", def, err)
 	}
@@ -3516,6 +3540,8 @@ func (c *Char) load(def string) error {
 	cns, sprite, anim, sound := "", "", "", ""
 	info, files, keymap, mapArray := true, true, true, true
 	lanInfo, lanFiles, lanKeymap, lanMapArray := true, true, true, true
+	shaders := true
+	lanShaders := true
 
 	// Collect arbitrary number of fonts
 	type fontSpec struct {
@@ -3573,16 +3599,21 @@ func (c *Char) load(def string) error {
 				}
 				info = false
 
-				c.name, _, _ = is.getText("name")
+				gi.name, _, _ = is.getText("name")
+				c.name = gi.name
 				var ok bool
 				if gi.displayname, ok, _ = is.getText("displayname"); !ok {
-					gi.displayname = c.name
+					gi.displayname = gi.name
 				}
 				if gi.lifebarname, ok, _ = is.getText("lifebarname"); !ok {
 					gi.lifebarname = gi.displayname
 				}
 				gi.author, _, _ = is.getText("author")
-				gi.nameLow = strings.ToLower(c.name)
+				// Save default values to be restored later
+				gi.defaultDisplayname = gi.displayname
+				gi.defaultLifebarname = gi.lifebarname
+				// Save lower case variants. These are just to avoid needing strings.ToLower() all over the code
+				gi.nameLow = strings.ToLower(gi.name)
 				gi.displaynameLow = strings.ToLower(gi.displayname)
 				gi.authorLow = strings.ToLower(gi.author)
 				// In Mugen localcoord is clamped to 1. But that's already unplayable anyway so such a safeguard is useless
@@ -3646,6 +3677,47 @@ func (c *Char) load(def string) error {
 					c.mapDefault[key] = float32(Atof(value))
 				}
 			}
+		case "shaders":
+			if (isLan && lanShaders) || (!isLan && shaders) {
+				if isLan {
+					lanShaders = false
+				}
+				shaders = false
+				isVulkan := strings.HasPrefix(gfx.GetName(), "Vulkan")
+
+				for key, val := range is {
+					shaderPath := val
+					shaderAlias := key
+
+					if isVulkan {
+						if !strings.HasSuffix(strings.ToLower(shaderPath), ".spv") {
+							shaderPath += ".spv"
+						}
+					}
+
+					gi.customShaders = append(gi.customShaders, shaderAlias)
+
+					LoadFile(&shaderPath, []string{def, "", "data/"}, "", func(filename string) error {
+						f, err := OpenFile(filename)
+						if err != nil {
+							LogMessage("Failed to open shader file '%s': %v", filename, err)
+							return err
+						}
+						defer f.Close()
+						shaderData, err := io.ReadAll(f)
+						if err != nil {
+							LogMessage("Failed to read shader file '%s': %v", filename, err)
+							return err
+						}
+
+						sys.mainThreadTask <- func() {
+							sys.shaderRefCount[shaderAlias] = 3
+							gfx.LoadCustomSpriteShader(shaderAlias, shaderData)
+						}
+						return nil
+					})
+				}
+			}
 		}
 	}
 
@@ -3658,7 +3730,7 @@ func (c *Char) load(def string) error {
 	// Load common constants
 	for _, key := range SortedKeys(sys.cfg.Common.Const) {
 		for _, v := range sys.cfg.Common.Const[key] {
-			if err := LoadFile(&v, []string{def, sys.motif.Def, sys.fightScreen.def, "", "data/"}, func(filename string) error {
+			if err := LoadFile(&v, []string{def, sys.motif.Def, sys.fightScreen.def, "", "data/"}, "", func(filename string) error {
 				str, err = LoadText(filename)
 				if err != nil {
 					return err
@@ -3681,8 +3753,7 @@ func (c *Char) load(def string) error {
 
 	// Load constants
 	if len(cns) > 0 {
-		cns_resolved := resolvePathRelativeToDef(cns)
-		if err := LoadFile(&cns_resolved, []string{def, "", sys.motif.Def, "data/"}, func(filename string) error {
+		if err := LoadFile(&cns, []string{def, "", "data/"}, "", func(filename string) error {
 			str, err := LoadText(filename)
 			if err != nil {
 				return err
@@ -3950,8 +4021,7 @@ func (c *Char) load(def string) error {
 
 	// Load SFF
 	if len(sprite) > 0 {
-		sprite_resolved := resolvePathRelativeToDef(sprite)
-		if err := LoadFile(&sprite_resolved, []string{gi.def, "", sys.motif.Def, "data/"}, func(filename string) error {
+		if err := LoadFile(&sprite, []string{gi.def, "", "data/"}, "", func(filename string) error {
 			var err_sff error
 			gi.sff, err_sff = loadSff(filename, true, false, false) // loadSff uses OpenFile
 			return err_sff
@@ -3979,14 +4049,21 @@ func (c *Char) load(def string) error {
 	}
 
 	// Read animations
-	str = ""
+	var animFilename string
+	gi.animTable = NewAnimationTable()
+
 	if len(anim) > 0 {
-		anim_resolved := resolvePathRelativeToDef(anim)
-		if LoadFile(&anim_resolved, []string{def, "", sys.motif.Def, "data/"}, func(filename string) error {
-			var err_air error
-			str, err_air = LoadText(filename)
-			if err_air != nil {
-				return err_air
+		if err := LoadFile(&anim, []string{def, "", "data/"}, "", func(filename string) error {
+			str, err := LoadText(filename)
+			if err != nil {
+				return err
+			}
+
+			animFilename = filename
+			gi.animTable.filename = filename
+
+			lines, i := SplitAndTrim(str, "\n"), 0
+			for gi.animTable.readAction(gi.sff, &gi.palettedata.palList, lines, &i, true) != nil {
 			}
 			return nil
 		}); err != nil {
@@ -3994,15 +4071,28 @@ func (c *Char) load(def string) error {
 		}
 	}
 
-	// Append common animations
+	// Read and merge common animations
 	for _, key := range SortedKeys(sys.cfg.Common.Air) {
 		for _, v := range sys.cfg.Common.Air[key] {
-			if err := LoadFile(&v, []string{def, sys.motif.Def, sys.fightScreen.def, "", "data/"}, func(filename string) error {
+			if err := LoadFile(&v, []string{def, sys.motif.Def, sys.fightScreen.def, "", "data/"}, "", func(filename string) error {
 				txt, err := LoadText(filename)
 				if err != nil {
 					return err
 				}
-				str += "\n" + txt
+
+				// Create a temporary table for finer control and local error logging
+				tmp := NewAnimationTable()
+				tmp.filename = filename
+				lines, i := SplitAndTrim(txt, "\n"), 0
+				for tmp.readAction(gi.sff, &gi.palettedata.palList, lines, &i, true) != nil {
+				}
+
+				// Merge temporary table with the char's
+				for no, a := range tmp.anims {
+					if gi.animTable.anims[no] == nil {
+						gi.animTable.anims[no] = a
+					}
+				}
 				return nil
 			}); err != nil {
 				return err
@@ -4010,14 +4100,16 @@ func (c *Char) load(def string) error {
 		}
 	}
 
-	// Load animations
-	lines, i := SplitAndTrim(str, "\n"), 0
-	gi.animTable = ReadAnimationTable(gi.sff, &gi.palettedata.palList, lines, &i)
+	// Resolve Copy Action after all sources have been merged
+	// This only works because we didn't use ReadAnimationTable here, which would've done it per file
+	gi.animTable.resolveCopyAction()
+
+	// Final merged table keeps the main filename
+	gi.animTable.filename = animFilename
 
 	// Load sounds
 	if len(sound) > 0 {
-		sound_resolved := resolvePathRelativeToDef(sound)
-		if LoadFile(&sound_resolved, []string{def, "", sys.motif.Def, "data/"}, func(filename string) error {
+		if LoadFile(&sound, []string{def, "", "data/"}, "", func(filename string) error {
 			var err error
 			gi.snd, err = LoadSnd(filename)
 			return err
@@ -4033,9 +4125,9 @@ func (c *Char) load(def string) error {
 		if len(spec.path) == 0 {
 			continue
 		}
-		resolvedFntPath := resolvePathRelativeToDef(spec.path)
+		fntPath := spec.path
 		i := idx
-		LoadFile(&resolvedFntPath, []string{def, sys.motif.Def, "", "data/", "font/"}, func(filename string) error {
+		LoadFile(&fntPath, []string{def, "", "data/"}, "font/", func(filename string) error {
 			sys.mainThreadTask <- func() {
 				h := int32(-1)
 				if spec.height != 0 {
@@ -4062,7 +4154,7 @@ func (c *Char) loadPalettes() {
 	readAct := func(palPtr *PalInfo) ([]uint32, bool) {
 		var pl []uint32
 		var success bool
-		LoadFile(&palPtr.filename, []string{gi.def, "", sys.motif.Def, "data/"}, func(file string) error {
+		LoadFile(&palPtr.filename, []string{gi.def, "", "data/"}, "", func(file string) error {
 			var err error
 			pl, err = readActPalette(file)
 			if err == nil {
@@ -4222,30 +4314,6 @@ func (c *Char) loadFx(def string) error {
 		return err
 	}
 
-	// Helper function to resolve paths referenced inside the .def file.
-	resolvePathRelativeToDef := func(pathInDefFile string) string {
-		isZipDef, zipArchiveOfDef, defSubPathInZip := IsZipPath(def)
-		pathInDefFile = filepath.ToSlash(pathInDefFile)
-		if filepath.IsAbs(pathInDefFile) {
-			return pathInDefFile
-		}
-		if isZipRel, _, _ := IsZipPath(pathInDefFile); isZipRel {
-			return pathInDefFile
-		}
-		isEngineRootRelative := strings.HasPrefix(pathInDefFile, "data/") || strings.HasPrefix(pathInDefFile, "font/") || strings.HasPrefix(pathInDefFile, "stages/")
-		if isZipDef {
-			if isEngineRootRelative {
-				return pathInDefFile
-			}
-			baseDirWithinZip := filepath.ToSlash(filepath.Dir(defSubPathInZip))
-			if baseDirWithinZip == "." || baseDirWithinZip == "" {
-				return filepath.ToSlash(filepath.Join(zipArchiveOfDef, pathInDefFile))
-			}
-			return filepath.ToSlash(filepath.Join(zipArchiveOfDef, baseDirWithinZip, pathInDefFile))
-		}
-		return pathInDefFile
-	}
-
 	lines, lnidx := SplitAndTrim(charDefContent, "\n"), 0
 	info, files, lanInfo, lanFiles := true, true, true, true
 	langPrefix := sys.cfg.Config.Language + "."
@@ -4284,24 +4352,22 @@ func (c *Char) loadFx(def string) error {
 							continue
 						}
 
-						resolved_path := resolvePathRelativeToDef(fx_path)
-						found_path := ""
-
-						// Check direct existence, then search engine paths
-						if exists := FileExist(resolved_path); exists != "" {
-							found_path = exists
-						} else {
-							found_path = SearchFile(fx_path, []string{def, "", sys.motif.Def, "data/"})
-						}
-
-						if found_path != "" {
-							if err := loadFightFx(found_path, false, false); err != nil {
+						found_path := SearchFile(fx_path, []string{def, "", "data/"})
+						if FileExist(found_path) != "" {
+							alreadyCachedNonChar := false
+							for _, ffx := range sys.ffx {
+								if ffx != nil && !ffx.isCharFX && ffx.fileName == found_path {
+									alreadyCachedNonChar = true
+									break
+								}
+							}
+							if err := loadFightFx(found_path, true, false); err != nil {
 								LogMessage("Could not load CommonFX %s for char %s: %v", found_path, def, err)
-							} else {
+							} else if !alreadyCachedNonChar {
 								gi.fxPath = append(gi.fxPath, found_path)
 							}
 						} else {
-							LogMessage("CommonFX file not found for char %s: %s (resolved to %s)", def, fx_path, resolved_path)
+							LogMessage("CommonFX file not found for char %s: %s", def, fx_path)
 						}
 					}
 				}
@@ -5433,6 +5499,8 @@ func (c *Char) explodVar(eid BytecodeValue, idx BytecodeValue, vtype OpCode) Byt
 			v = BytecodeInt(e.anim.AnimTime())
 		case OC_ex2_explodvar_spriteplayerno:
 			v = BytecodeInt(int32(e.spritePN) + 1)
+		case OC_ex2_explodvar_bindid:
+			v = BytecodeInt(e.bindId)
 		case OC_ex2_explodvar_bindtime:
 			v = BytecodeInt(e.bindtime)
 		case OC_ex2_explodvar_drawpal_group:
@@ -6987,7 +7055,7 @@ func (c *Char) getAnim(n int32, ffx string) (a *Animation) {
 	}
 
 	if current_ffx != "" && current_ffx != "s" {
-		if sys.ffx[current_ffx] != nil && sys.ffx[current_ffx].animTable != nil {
+		if sys.ffx[current_ffx] != nil && sys.ffx[current_ffx].animTable.anims != nil {
 			a = sys.ffx[current_ffx].animTable.get(n)
 		}
 	} else {
@@ -7177,7 +7245,7 @@ func (c *Char) hitAdd(h int32) {
 		for _, tid := range c.targets {
 			if t := sys.playerID(tid); t != nil {
 				t.receivedHits += h
-				c.addComboHits(h)
+				sys.fightScreen.addComboHits(c.teamside, h)
 				break
 			}
 		}
@@ -7188,20 +7256,11 @@ func (c *Char) hitAdd(h int32) {
 				// This is a bit of a workaround for backward compatibility only
 				if p[0].receivedHits != 0 || p[0].ss.moveType == MT_H {
 					p[0].receivedHits += h
-					c.addComboHits(h)
+					sys.fightScreen.addComboHits(c.teamside, h)
 				}
 			}
 		}
 	}
-}
-
-// We track the combo separately from the enemy's received hits
-// So that if partners take turns doing hits to different enemies the combo still adds up
-func (c *Char) addComboHits(n int32) {
-	if c.teamside != 0 && c.teamside != 1 {
-		return
-	}
-	sys.fightScreen.combos[c.teamside].trueHits += n
 }
 
 // Always appends to preserve insertion order
@@ -10151,7 +10210,7 @@ func (c *Char) attrCheck(getter *Char, ghd *HitDef, gstyp StateType) bool {
 
 	// ReversalDef vs HitDef attributes check
 	if ghd.reversal_attr > 0 {
-		if c.hitdef.MissOnReversalDef > 0 {
+		if c.hitdef.IgnoreReversalDef > 0 {
 			return false
 		}
 		// Check HitDef validity
@@ -10973,7 +11032,7 @@ func (c *Char) hitResultCheck(getter *Char, proj *Projectile) (hitResult int32) 
 		if (ghvset || getter.csf(CSF_gethit)) && getter.hoverIdx < 0 &&
 			!(c.hitdef.air_type == HT_None && getter.ss.stateType == ST_A || getter.ss.stateType != ST_A && c.hitdef.ground_type == HT_None) {
 			getter.receivedHits += hd.numhits
-			c.addComboHits(hd.numhits)
+			sys.fightScreen.addComboHits(hd.teamside, hd.numhits)
 		}
 		if !math.IsNaN(float64(hd.score[0])) && !c.asf(ASF_noscore) {
 			c.scoreAdd(hd.score[0])
@@ -11316,6 +11375,13 @@ func (c *Char) actionPrepare() {
 					if c.hover[i].time == 0 {
 						c.hover[i].clear()
 					}
+				}
+			}
+			if c.shaderTime > 0 {
+				c.shaderTime--
+				if c.shaderTime == 0 {
+					c.shader = ""
+					c.shaderParams = [16]float32{}
 				}
 			}
 			if sys.supertime > 0 {
@@ -11730,13 +11796,17 @@ func (c *Char) track() {
 			charleft := c.interPos[0]*c.localscl + edgeleft*c.localscl
 			charright := c.interPos[0]*c.localscl + edgeright*c.localscl
 			canmove := c.acttmp > 0 && !c.csf(CSF_posfreeze) && (c.bindTime == 0 || math.IsNaN(float64(c.bindPos[0])))
-
+			bindToCharacter := sys.playerID(c.bindToId)
 			if charleft < sys.cam.leftest {
 				sys.cam.leftest = charleft
 				if canmove {
 					sys.cam.leftestvel = c.vel[0] * c.localscl * c.facing
 				} else {
-					sys.cam.leftestvel = 0
+					if bindToCharacter != nil {
+						sys.cam.leftestvel = bindToCharacter.vel[0] * bindToCharacter.localscl * bindToCharacter.facing
+					} else {
+						sys.cam.leftestvel = 0
+					}
 				}
 			}
 			if charright > sys.cam.rightest {
@@ -11744,7 +11814,11 @@ func (c *Char) track() {
 				if canmove {
 					sys.cam.rightestvel = c.vel[0] * c.localscl * c.facing
 				} else {
-					sys.cam.rightestvel = 0
+					if bindToCharacter != nil {
+						sys.cam.rightestvel = bindToCharacter.vel[0] * bindToCharacter.localscl * bindToCharacter.facing
+					} else {
+						sys.cam.rightestvel = 0
+					}
 				}
 			}
 		}
@@ -12395,6 +12469,8 @@ func (c *Char) cueDraw() {
 		charSD.fLength = fLength
 		charSD.xshear = c.xshear
 		charSD.window = cwin
+		charSD.shader = c.shader
+		charSD.shaderParams = c.shaderParams
 
 		if c.enableSyncId {
 			charSD.syncId = c.id

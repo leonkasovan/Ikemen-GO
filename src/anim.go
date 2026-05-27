@@ -824,7 +824,8 @@ func (a *Animation) drawSub1(angle, facing float32) (h, v, agl float32) {
 
 func (a *Animation) Draw(window *[4]int32, x, y, xcs, ycs, xs, xbs, ys,
 	rxadd float32, rot Rotation, rcx float32, pfx *PalFX, facing float32,
-	airOffsetFix [2]float32, projectionMode int32, fLength float32, color uint32, isReflection bool) {
+	airOffsetFix [2]float32, projectionMode int32, fLength float32, color uint32,
+	isReflection bool, shader string, shaderParams [16]float32) {
 
 	// Skip blank animations
 	if a == nil || a.isBlank() {
@@ -953,13 +954,15 @@ func (a *Animation) Draw(window *[4]int32, x, y, xcs, ycs, xs, xbs, ys,
 		fLength:        fLength * sys.heightScale,
 		xOffset:        xoff * sys.widthScale,
 		yOffset:        yoff * sys.heightScale,
+		shader:         shader,
+		shaderParams:   shaderParams,
 	}
 
 	RenderSprite(rp)
 }
 
 func (a *Animation) ShadowDraw(window *[4]int32, x, y, xscl, yscl, vscl, rxadd float32, rot Rotation,
-	pfx *PalFX, color uint32, intensity int32, facing float32, airOffsetFix [2]float32, projectionMode int32, fLength float32) {
+	pfx *PalFX, color uint32, intensity int32, facing float32, airOffsetFix [2]float32, projectionMode int32, fLength float32, shader string, shaderParams [16]float32) {
 
 	// Skip blank shadows
 	if a == nil || a.isBlank() {
@@ -1004,6 +1007,8 @@ func (a *Animation) ShadowDraw(window *[4]int32, x, y, xscl, yscl, vscl, rxadd f
 		fLength:        fLength,
 		xOffset:        xoff,
 		yOffset:        yoff,
+		shader:         shader,
+		shaderParams:   shaderParams,
 	}
 
 	// TODO: This is redundant now that rp.tint is used to colorise the shadow
@@ -1062,28 +1067,35 @@ func (a *Animation) ShadowDraw(window *[4]int32, x, y, xscl, yscl, vscl, rxadd f
 	//}
 }
 
-type AnimationTable map[int32]*Animation
-
-func NewAnimationTable() AnimationTable {
-	return AnimationTable(make(map[int32]*Animation))
+type AnimationTable struct {
+	anims    map[int32]*Animation
+	filename string
 }
 
-func (at AnimationTable) readAction(sff *Sff, pal *PaletteList,
-	lines []string, i *int) *Animation {
+func NewAnimationTable() AnimationTable {
+	return AnimationTable{
+		anims: make(map[int32]*Animation),
+	}
+}
+
+func (at AnimationTable) readAction(sff *Sff, pal *PaletteList, lines []string, i *int, log bool) *Animation {
 	for *i < len(lines) {
 		no, a := ReadAction(sff, pal, lines, i)
 		if a != nil {
 			// In case of duplicate action numbers, just use the first one
 			// Even if first one is "Copy Action"
-			if existing := at[no]; existing != nil {
+			if existing := at.anims[no]; existing != nil {
+				if log {
+					LogMessage("WARNING: Duplicate action key in %v: %v (ignored)", at.filename, no)
+				}
 				return existing
 			}
 			// Store the new animation in the table.
-			at[no] = a
+			at.anims[no] = a
 			// Recursive logic until we find a non-empty animation
 			// If the current action is empty, we attempt to copy the very next action found in the file
 			for len(a.frames) == 0 && *i < len(lines) && a.copyAction < 0 {
-				if a2 := at.readAction(sff, pal, lines, i); a2 != nil {
+				if a2 := at.readAction(sff, pal, lines, i, log); a2 != nil {
 					*a = *a2
 					break
 				}
@@ -1098,16 +1110,18 @@ func (at AnimationTable) readAction(sff *Sff, pal *PaletteList,
 	return nil
 }
 
-func ReadAnimationTable(sff *Sff, pal *PaletteList, lines []string, i *int) AnimationTable {
+func ReadAnimationTable(filename string, sff *Sff, pal *PaletteList,
+	lines []string, i *int, log bool) AnimationTable {
 	at := NewAnimationTable()
-	for at.readAction(sff, pal, lines, i) != nil {
+	at.filename = filename
+	for at.readAction(sff, pal, lines, i, log) != nil {
 	}
 	at.resolveCopyAction()
 	return at
 }
 
 func (at AnimationTable) get(no int32) *Animation {
-	a := at[no]
+	a := at.anims[no]
 	if a == nil {
 		return a
 	}
@@ -1121,10 +1135,10 @@ func (at AnimationTable) resolveCopyAction() {
 	// Track actions that fail to resolve
 	var toDelete []int32
 
-	for no, a := range at {
+	for no, a := range at.anims {
 		// Limit the chain depth to 8 to prevent infinite loops from circular references
 		for loops := 0; a.copyAction >= 0 && loops < 8; loops++ {
-			target := at[a.copyAction]
+			target := at.anims[a.copyAction]
 
 			// If the target is missing or it's a self-reference, break the link to stop
 			if target == nil || target == a {
@@ -1153,7 +1167,7 @@ func (at AnimationTable) resolveCopyAction() {
 
 	// Purge the ghost animations from the table
 	for _, no := range toDelete {
-		delete(at, no)
+		delete(at.anims, no)
 	}
 }
 
@@ -1180,6 +1194,8 @@ type SpriteData struct {
 	syncGroup    int   // Used to group syncId's in chunks before drawing
 	sortindex    int   // For faster sorting
 	under        bool
+	shader       string
+	shaderParams [16]float32
 }
 
 func newSpriteData() *SpriteData {
@@ -1343,7 +1359,7 @@ func (dl DrawList) draw(layerno int32, under bool, cameraX, cameraY, cameraScl f
 
 		s.anim.Draw(drawwindow, pos[0]-xsoffset, pos[1], cs, cs, s.scl[0], s.scl[0],
 			s.scl[1], xshear, s.rot, float32(sys.gameWidth)/2, s.pfx, s.facing,
-			s.airOffsetFix, s.projection, s.fLength, 0, false)
+			s.airOffsetFix, s.projection, s.fLength, 0, false, s.shader, s.shaderParams)
 
 		// Restore original animation transparency just in case
 		s.anim.transType = oldTransType
@@ -1609,7 +1625,7 @@ func (sl ShadowList) draw(x, y, scl float32) {
 			sys.cam.GroundLevel()+(sys.cam.Offset[1]-shake[1])-y-(sdwPosY*yscale-offsetY)*scl,
 			scl*s.scl[0]*xscale, scl*-s.scl[1],
 			yscale, xshear, rot,
-			s.pfx, uint32(color), intensity, s.facing, s.airOffsetFix, projection, fLength)
+			s.pfx, uint32(color), intensity, s.facing, s.airOffsetFix, projection, fLength, s.shader, s.shaderParams)
 	}
 }
 
@@ -1880,7 +1896,7 @@ func (rl ReflectionList) draw(x, y, scl float32) {
 			scl, scl,
 			s.scl[0]*xscale, s.scl[0]*xscale,
 			-s.scl[1]*yscale, xshear, rot, float32(sys.gameWidth)/2,
-			s.pfx, s.facing, s.airOffsetFix, projection, fLength, color, true)
+			s.pfx, s.facing, s.airOffsetFix, projection, fLength, color, true, s.shader, s.shaderParams)
 
 		// Restore original animation transparency just in case
 		s.anim.transType = oldTransType
@@ -2213,7 +2229,7 @@ func (a *Anim) Draw(ln int16) {
 
 	a.anim.Draw(&a.window, a.x+a.vel[0]-xsoffset+float32(sys.gameWidth-320)/2,
 		a.y+a.vel[1]+float32(sys.gameHeight-240), 1, 1, xscl, xscl, a.yscl,
-		xshear, a.rot, 0, a.palfx, a.facing, [2]float32{1, 1}, a.projection, a.fLength, 0, false)
+		xshear, a.rot, 0, a.palfx, a.facing, [2]float32{1, 1}, a.projection, a.fLength, 0, false, "", [16]float32{})
 }
 
 func (a *Anim) Reset() {

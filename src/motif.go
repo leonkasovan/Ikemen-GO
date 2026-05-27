@@ -491,28 +491,7 @@ type PlayerSelectProperties struct {
 		Subtract struct {
 			Key []string `ini:"key"`
 		} `ini:"subtract"`
-		Item   ItemProperties `ini:"item"`
-		Ratio1 struct {
-			Icon AnimationProperties `ini:"icon"`
-		} `ini:"ratio1"`
-		Ratio2 struct {
-			Icon AnimationProperties `ini:"icon"`
-		} `ini:"ratio2"`
-		Ratio3 struct {
-			Icon AnimationProperties `ini:"icon"`
-		} `ini:"ratio3"`
-		Ratio4 struct {
-			Icon AnimationProperties `ini:"icon"`
-		} `ini:"ratio4"`
-		Ratio5 struct {
-			Icon AnimationProperties `ini:"icon"`
-		} `ini:"ratio5"`
-		Ratio6 struct {
-			Icon AnimationProperties `ini:"icon"`
-		} `ini:"ratio6"`
-		Ratio7 struct {
-			Icon AnimationProperties `ini:"icon"`
-		} `ini:"ratio7"`
+		Item ItemProperties `ini:"item"`
 	} `ini:"teammenu"`
 	PalMenu struct {
 		Pos  [2]float32 `ini:"pos"`
@@ -552,7 +531,6 @@ type TeamModesProperties struct {
 	Simul  string `ini:"simul"`
 	Turns  string `ini:"turns"`
 	Tag    string `ini:"tag"`
-	Ratio  string `ini:"ratio"`
 }
 
 type ValueIconVsProperties struct {
@@ -1497,7 +1475,7 @@ func reserveUserFontSlots(m *Motif) {
 	}
 }
 
-// returns a stable-sorted list of files named "system.def" located anywhere under the given root (e.g. external/mods), including nested subdirs.
+// returns a stable-sorted list of files named "+system.def" located anywhere under the given root (e.g. external/mods), including nested subdirs.
 func findExternalModSystemDefs(root string) ([]string, error) {
 	st, err := os.Stat(root)
 	if err != nil {
@@ -1519,7 +1497,7 @@ func findExternalModSystemDefs(root string) ([]string, error) {
 			return nil
 		}
 		// Match filename, case-insensitive
-		if strings.EqualFold(d.Name(), "system.def") {
+		if strings.EqualFold(d.Name(), "+system.def") {
 			out = append(out, path)
 		}
 		return nil
@@ -1567,10 +1545,10 @@ func loadMotif(def string) (*Motif, error) {
 	var userIniFile *ini.File
 	var defaultOnlyIni *ini.File
 
-	if err := LoadFile(&def, []string{def, "", "data/"}, func(filename string) error {
+	if err := LoadFile(&def, []string{def, "", "data/"}, "", func(filename string) error {
 		def = filename
 
-		// Inline-append any external/mods/**/system.def files before parsing.
+		// Inline-append any external/mods/**/+system.def files before parsing.
 		modSystemDefs, err := findExternalModSystemDefs(filepath.FromSlash("external/mods"))
 		if err != nil {
 			return fmt.Errorf("Failed to discover external mod system.def files: %w", err)
@@ -1847,7 +1825,7 @@ func loadMotif(def string) (*Motif, error) {
 		return nil, err
 	}
 	lines, i := SplitAndTrim(str, "\n"), 0
-	m.AnimTable = ReadAnimationTable(m.Sff, &m.Sff.palList, lines, &i)
+	m.AnimTable = ReadAnimationTable(m.Def, m.Sff, &m.Sff.palList, lines, &i, true)
 	i = 0
 
 	m.overrideParams()
@@ -2346,7 +2324,7 @@ func (m *Motif) loadBgDefProperties(bgDef *BgDefProperties, bgname, spr string) 
 	if bgDef.Spr == "" || bgDef.Spr == spr || bgDef.Spr == m.Files.Spr {
 		bgDef.Sff = m.Sff
 	} else {
-		LoadFile(&bgDef.Spr, []string{bgDef.Spr, m.Def, "", "data/"}, func(filename string) error {
+		LoadFile(&bgDef.Spr, []string{bgDef.Spr, m.Def, "", "data/"}, "", func(filename string) error {
 			if filename != "" {
 				var err error
 				bgDef.Sff, err = loadSff(filename, false, true, false)
@@ -2374,7 +2352,7 @@ func (m *Motif) loadBgDefProperties(bgDef *BgDefProperties, bgname, spr string) 
 }
 
 func (m *Motif) loadFiles() {
-	LoadFile(&m.Files.Spr, []string{m.Files.Spr}, func(filename string) error {
+	LoadFile(&m.Files.Spr, []string{m.Files.Spr}, "", func(filename string) error {
 		if filename != "" {
 			var err error
 			m.Sff, err = loadSff(filename, false, true, false)
@@ -2389,7 +2367,7 @@ func (m *Motif) loadFiles() {
 	})
 	sys.keepAlive()
 
-	LoadFile(&m.Files.Glyphs, []string{m.Files.Glyphs}, func(filename string) error {
+	LoadFile(&m.Files.Glyphs, []string{m.Files.Glyphs}, "", func(filename string) error {
 		if filename != "" {
 			var err error
 			m.GlyphsSff, err = loadSff(filename, false, true, false)
@@ -2404,7 +2382,7 @@ func (m *Motif) loadFiles() {
 	})
 	sys.keepAlive()
 
-	LoadFile(&m.Files.Model, []string{m.Files.Model}, func(filename string) error {
+	LoadFile(&m.Files.Model, []string{m.Files.Model}, "", func(filename string) error {
 		if filename != "" {
 			var err error
 			m.Model, err = loadglTFModel(filename)
@@ -2477,7 +2455,7 @@ func (m *Motif) loadFiles() {
 		m.HiscoreBgDef = m.TitleBgDef
 	}
 
-	LoadFile(&m.Files.Snd, []string{m.Files.Snd}, func(filename string) error {
+	LoadFile(&m.Files.Snd, []string{m.Files.Snd}, "", func(filename string) error {
 		if filename != "" {
 			var err error
 			m.Snd, err = LoadSnd(filename)
@@ -2493,7 +2471,7 @@ func (m *Motif) loadFiles() {
 	sys.keepAlive()
 
 	for key, fnt := range m.Files.Font {
-		LoadFile(&fnt.Font, []string{fnt.Font}, func(filename string) error {
+		LoadFile(&fnt.Font, []string{fnt.Font}, "", func(filename string) error {
 			re := regexp.MustCompile(`\d+`)
 			i := int(Atoi(re.FindString(key)))
 
@@ -2631,13 +2609,6 @@ func (m *Motif) applyPostParsePosAdjustments() {
 			tm.Item.Cursor.AnimData,
 			tm.Value.Icon.AnimData,
 			tm.Value.Empty.Icon.AnimData,
-			tm.Ratio1.Icon.AnimData,
-			tm.Ratio2.Icon.AnimData,
-			tm.Ratio3.Icon.AnimData,
-			tm.Ratio4.Icon.AnimData,
-			tm.Ratio5.Icon.AnimData,
-			tm.Ratio6.Icon.AnimData,
-			tm.Ratio7.Icon.AnimData,
 		)
 		// Palette menu
 		pm := &ps.PalMenu
@@ -2978,6 +2949,9 @@ func (m *Motif) step() {
 
 // drawAspectBars renders black bars when the fight aspect and motif aspect differ.
 func (m *Motif) drawAspectBars() {
+	if !sys.shouldPersistMotifAspect() {
+		return
+	}
 	fightAspect := sys.getFightAspect()
 	motifAspect := sys.getMotifAspect()
 
@@ -3028,9 +3002,28 @@ func (m *Motif) drawAspectBars() {
 	}
 }
 
+func (m *Motif) shouldScopeMotifAspect() bool {
+	if sys.cfg.Video.KeepAspect || sys.skipMotifScaling() {
+		return false
+	}
+	return (m.me.active && sys.middleOfMatch()) ||
+		m.ch.active ||
+		m.di.active ||
+		m.vi.active ||
+		m.wi.active ||
+		m.hi.active ||
+		m.co.active
+}
+
 func (m *Motif) draw(layerno int16) {
+	if m.shouldScopeMotifAspect() {
+		prev := sys.captureAspectState()
+		sys.setGameSize(sys.scrrect[2], sys.scrrect[3])
+		defer sys.restoreAspectState(prev)
+	}
 	// Draw black bars if fight aspect and motif aspect differ.
-	if layerno == 1 && (!sys.middleOfMatch() || m.me.active || m.di.active) && !sys.skipMotifScaling() {
+	if layerno == 1 && sys.shouldPersistMotifAspect() &&
+		(!sys.middleOfMatch() || m.me.active || m.di.active) {
 		m.drawAspectBars()
 	}
 	if m.ch.active {
@@ -3246,8 +3239,8 @@ func (me *MotifMenu) reset(m *Motif) {
 	me.initialized = false
 	me.endTimer = -1
 	me.closeRequested = false
-	if !m.di.active && !sys.skipMotifScaling() {
-		sys.applyFightAspect()
+	if !m.di.active {
+		sys.leaveMotifAspect()
 	}
 	if err := sys.luaLState.DoString("menuReset()"); err != nil {
 		sys.luaLState.RaiseError("Error executing Lua code: %v\n", err.Error())
@@ -3328,9 +3321,7 @@ func (me *MotifMenu) init(m *Motif) {
 	if !openPressed {
 		return
 	}
-	if !sys.skipMotifScaling() {
-		sys.setGameSize(sys.scrrect[2], sys.scrrect[3])
-	}
+	sys.enterMotifAspect()
 
 	if err := sys.luaLState.DoString("menuInit()"); err != nil {
 		sys.luaLState.RaiseError("Error executing Lua code: %v\n", err.Error())
@@ -3401,9 +3392,7 @@ func (ch *MotifChallenger) reset(m *Motif) {
 	ch.initialized = false
 	ch.endTimer = -1
 	ch.controllerNo = -1
-	//if !sys.skipMotifScaling() {
-	//	sys.applyFightAspect()
-	//}
+	//sys.leaveMotifAspect()
 }
 
 func (ch *MotifChallenger) init(m *Motif) {
@@ -3417,9 +3406,7 @@ func (ch *MotifChallenger) init(m *Motif) {
 		return
 	}
 	ch.controllerNo = controllerNo
-	//if !sys.skipMotifScaling() {
-	//	sys.setGameSize(sys.scrrect[2], sys.scrrect[3])
-	//}
+	//sys.enterMotifAspect()
 
 	if err := sys.luaLState.DoString("hook.run('game.challenger_init')"); err != nil {
 		sys.luaLState.RaiseError("Error executing Lua hook: %s\n%v", "game.challenger_init", err.Error())
@@ -3455,7 +3442,7 @@ func (ch *MotifChallenger) step(m *Motif) {
 	sys.setGSF(GSF_nomusic)
 	sys.setGSF(GSF_timerfreeze)
 	if ch.counter == m.ChallengerInfo.Pause.Time {
-		sys.pausetime = m.ChallengerInfo.Time + m.ChallengerInfo.FadeOut.Time
+		sys.pausetime = m.ChallengerInfo.Time + m.ChallengerInfo.FadeOut.FadeData.duration()
 	}
 	if ch.counter == m.ChallengerInfo.Snd.Time {
 		m.Snd.play(m.ChallengerInfo.Snd.Snd, 100, 0, 0, 0, 0)
@@ -3531,9 +3518,7 @@ func (co *MotifContinue) reset(m *Motif) {
 	co.endTimer = -1
 	co.waitTimer = 0
 	co.showEndAnim = false
-	if !sys.skipMotifScaling() {
-		sys.applyFightAspect()
-	}
+	sys.leaveMotifAspect()
 }
 
 func (co *MotifContinue) extractAndSortKeysDescending(m *Motif) []string {
@@ -3558,15 +3543,17 @@ func (co *MotifContinue) isEnabled() bool {
 	return co.enabled
 }
 
+func (co *MotifContinue) canContinue() bool {
+	return sys.credits == -1 || sys.credits > 0
+}
+
 func (co *MotifContinue) init(m *Motif) {
 	if !m.ContinueScreen.Enabled || !co.isEnabled() ||
 		(sys.winnerTeam() != 0 && sys.winnerTeam() != int32(sys.home)+1) {
 		co.initialized = true
 		return
 	}
-	if !sys.skipMotifScaling() {
-		sys.setGameSize(sys.scrrect[2], sys.scrrect[3])
-	}
+	sys.enterMotifAspect()
 	if err := sys.luaLState.DoString("hook.run('game.continue_init')"); err != nil {
 		sys.luaLState.RaiseError("Error executing Lua hook: %s\n%v", "game.continue_init", err.Error())
 	}
@@ -3623,13 +3610,16 @@ func (co *MotifContinue) init(m *Motif) {
 
 func (co *MotifContinue) processSelection(m *Motif, continueSelected bool) {
 	cs := m.ContinueScreen
+	if continueSelected && !co.canContinue() {
+		return
+	}
 	if continueSelected {
 		m.processStateTransitions(
 			[4][]int32{cs.P2.Yes.State, cs.P4.Yes.State, cs.P6.Yes.State, cs.P8.Yes.State},
 			[4][]int32{cs.P1.Yes.State, cs.P3.Yes.State, cs.P5.Yes.State, cs.P7.Yes.State},
 		)
 		sys.continueFlg = true
-		if sys.credits != -1 {
+		if sys.credits > 0 {
 			sys.credits--
 		}
 	} else {
@@ -3720,12 +3710,14 @@ func (co *MotifContinue) step(m *Motif) {
 				m.Snd.play(m.ContinueScreen.Move.Snd, 100, 0, 0, 0, 0)
 				co.yesSide = !co.yesSide
 			} else if sys.uiRawInput(m.ContinueScreen.Skip.Key, co.pn-1) || sys.uiRawInput(m.ContinueScreen.Done.Key, co.pn-1) {
-				m.Snd.play(m.ContinueScreen.Done.Snd, 100, 0, 0, 0, 0)
-				co.processSelection(m, co.yesSide)
+				if !co.yesSide || co.canContinue() {
+					m.Snd.play(m.ContinueScreen.Done.Snd, 100, 0, 0, 0, 0)
+					co.processSelection(m, co.yesSide)
+				}
 			}
 		} else {
 			if co.counter < m.ContinueScreen.Counter.End.SkipTime {
-				if (sys.credits == -1 || sys.credits > 0) && sys.uiRawInput(m.ContinueScreen.Done.Key, co.pn-1) {
+				if co.canContinue() && sys.uiRawInput(m.ContinueScreen.Done.Key, co.pn-1) {
 					m.Snd.play(m.ContinueScreen.Done.Snd, 100, 0, 0, 0, 0)
 					co.processSelection(m, true)
 				} else if sys.uiRawInput(m.ContinueScreen.Skip.Key, co.pn-1) &&
@@ -4175,9 +4167,7 @@ func (di *MotifDialogue) reset(m *Motif) {
 		}
 	}
 
-	//if !sys.skipMotifScaling() {
-	//	sys.applyFightAspect()
-	//}
+	//sys.leaveMotifAspect()
 }
 
 func (di *MotifDialogue) clear(m *Motif) {
@@ -4197,9 +4187,7 @@ func (di *MotifDialogue) clear(m *Motif) {
 	if m.DialogueInfo.P2.Face.Active.AnimData != nil {
 		m.DialogueInfo.P2.Face.Active.AnimData.anim = nil
 	}
-	if !sys.skipMotifScaling() {
-		sys.applyFightAspect()
-	}
+	sys.leaveMotifAspect()
 }
 
 func (di *MotifDialogue) initDefaults(m *Motif) {
@@ -4296,9 +4284,7 @@ func (di *MotifDialogue) init(m *Motif, matchEnd bool) {
 	if matchEnd && sys.fightScreen.round.fadeOut.isActive() {
 		sys.fightScreen.round.fadeOut.reset()
 	}
-	if !sys.skipMotifScaling() {
-		sys.setGameSize(sys.scrrect[2], sys.scrrect[3])
-	}
+	sys.enterMotifAspect()
 
 	lines, pn, _ := di.getDialogueLines()
 	di.char = sys.chars[pn-1][0]
@@ -5804,9 +5790,7 @@ func (vi *MotifVictory) reset(m *Motif) {
 	m.VictoryScreen.WinQuote.TextSpriteData.textDelay = 0
 	vi.endTimer = -1
 	vi.clear(m)
-	if !sys.skipMotifScaling() {
-		sys.applyFightAspect()
-	}
+	sys.leaveMotifAspect()
 }
 
 func (vi *MotifVictory) clearProps(props *PlayerVictoryProperties) {
@@ -6093,9 +6077,7 @@ func (vi *MotifVictory) init(m *Motif) {
 		}
 	}
 
-	if !sys.skipMotifScaling() {
-		sys.setGameSize(sys.scrrect[2], sys.scrrect[3])
-	}
+	sys.enterMotifAspect()
 
 	//fmt.Printf("[Victory] init: enabled=%v winnerTeam=%d cpu.enabled=%v p1.num=%d p2.num=%d\n", m.VictoryScreen.Enabled, sys.winnerTeam(), m.VictoryScreen.Cpu.Enabled, m.VictoryScreen.P1.Num, m.VictoryScreen.P2.Num)
 
@@ -6534,9 +6516,7 @@ type MotifWin struct {
 func (wi *MotifWin) assignStates(p1States, p2States [4][]int32) {
 	wi.p1States = p1States
 	wi.p2States = p2States
-	if !sys.skipMotifScaling() {
-		sys.applyFightAspect()
-	}
+	sys.leaveMotifAspect()
 }
 
 func (wi *MotifWin) reset(m *Motif) {
@@ -6586,9 +6566,7 @@ func (wi *MotifWin) init(m *Motif) {
 		wi.initialized = true
 		return
 	}
-	if !sys.skipMotifScaling() {
-		sys.setGameSize(sys.scrrect[2], sys.scrrect[3])
-	}
+	sys.enterMotifAspect()
 
 	if !wi.soundsEnabled {
 		sys.clearAllSound()
@@ -6714,7 +6692,7 @@ func (wi *MotifWin) initResultsVariant(m *Motif, sectionName string) bool {
 	wi.soundsEnabled = rs.Sounds.Enabled
 	wi.keyCancel = rs.Cancel.Key
 	wi.time = rs.Show.Time
-	wi.fadeOutTime = rs.FadeOut.Time
+	wi.fadeOutTime = rs.FadeOut.FadeData.duration()
 	wi.fadeIn = rs.FadeIn.FadeData
 	wi.fadeOut = rs.FadeOut.FadeData
 	return true
@@ -6741,7 +6719,7 @@ func (wi *MotifWin) initWinScreen(m *Motif) bool {
 
 	wi.keyCancel = m.WinScreen.Cancel.Key
 	wi.time = m.WinScreen.Pose.Time
-	wi.fadeOutTime = m.WinScreen.FadeOut.Time
+	wi.fadeOutTime = m.WinScreen.FadeOut.FadeData.duration()
 	wi.fadeIn = m.WinScreen.FadeIn.FadeData
 	wi.fadeOut = m.WinScreen.FadeOut.FadeData
 	return true
