@@ -17,6 +17,7 @@ local stageRandom = false
 local stageListNo = 0
 local t_aiRamp = {}
 local t_reservedChars = {{}, {}}
+local t_portraitPriority = {1, 1}
 local timerSelect = 0
 local cursorActive = {}
 local cursorDone = {}
@@ -720,8 +721,7 @@ function start.f_animGet(ref, side, member, params, velParams, loop, srcAnim)
 					animApplyVel(a, srcAnim)
 				end
 				-- Apply palette if needed
-				local sel = start.p[side].t_selected[member]
-				if usePal and not gameMode('netplayteamcoop') then
+				if usePal then
 					local sel = start.p[side].t_selected[member]
 					if sel and sel.ref then
 						a = start.loadPalettes(a, ref, sel.pal)
@@ -770,9 +770,10 @@ end
 local function drawPortraitLayer(t_portraits, side, t, subname, last, dataField)
 	local lastIdx = #t_portraits
 	-- "next player replaces previous one" case
-	local paramsSide, params = getParams(side, lastIdx, t, subname)
+	local idx = clamp(t_portraitPriority[side] or 1, 1, lastIdx)
+	local paramsSide, params = getParams(side, idx, t, subname)
 	if paramsSide.num == 1 and last then
-		local v = t_portraits[lastIdx]
+		local v = t_portraits[idx]
 		local data = v[dataField]
 		if not v.skipCurrent and data ~= nil then
 			main.f_animPosDraw(
@@ -1358,13 +1359,13 @@ end
 --shuffles a table in-place (using synced RNG)
 function start.f_shuffleTable(t, last)
 	for i = #t, 2, -1 do
-		local j = (getRandom() % i) + 1
+		local j = math.random(i)
 		t[i], t[j] = t[j], t[i]
 	end
 	-- prevent first element from repeating the last of previous cycle
 	if last and #t > 1 and t[#t] == last then
 		-- swap the first element with a random other position
-		local swap = (getRandom() % (#t - 1)) + 1
+		local swap = math.random(#t - 1)
 		t[#t], t[swap] = t[swap], t[#t]
 	end
 end
@@ -1450,7 +1451,7 @@ function start.f_slotSelected(cell, side, cmd, player, x, y)
 								sndPlay(motif.Snd, motif.select_info['p' .. side].swap.snd[1], motif.select_info['p' .. side].swap.snd[2])
 							end
 						else --select
-							main.t_selGrid[cell].slot = v[(getRandom() % #v) + 1]
+							main.t_selGrid[cell].slot = v[math.random(#v)]
 							start.c[player].selRef = start.f_selGrid(cell).char_ref
 						end
 						start.t_grid[y + 1][x + 1].char = start.f_selGrid(cell).char
@@ -1762,6 +1763,10 @@ function start.f_selectReset(hardReset, preserveProgress)
 	if not preserveProgress then
 		resetGameStats()
 		setMatchNo(1)
+		if main.elimination then
+			setWinCount(1, 0)
+			setWinCount(2, 0)
+		end
 		setConsecutiveWins(1, 0)
 		setConsecutiveWins(2, 0)
 	end
@@ -1840,6 +1845,7 @@ function start.f_selectReset(hardReset, preserveProgress)
 	t_reservedChars = {{}, {}}
 	cursorActive = {}
 	cursorDone = {}
+	t_portraitPriority = {1, 1}
 	if start.challenger == 0 and not preserveProgress then
 		start.t_roster = {}
 		start.reset = true
@@ -3106,7 +3112,7 @@ function start.f_palMenu(side, cmd, player, member, selectState)
 	start.p[side].inPalMenu = true
 
 	-- accept selection
-	if getInput(cmd, motif.select_info['p' .. side].palmenu.done.key) or timerSelect == -1 then
+	if #validPals <= 1 or getInput(cmd, motif.select_info['p' .. side].palmenu.done.key) or timerSelect == -1 then
 		pal = (curIdx == maxIdx) and (start.c[player].randPalPreview or start.f_randomPal(charRef, validPals)) or validPals[curIdx]
 		st.pal, st.currentIdx = pal, curIdx
 
@@ -3136,7 +3142,10 @@ function start.f_palMenu(side, cmd, player, member, selectState)
 		end
 		selectState = 3
 		start.f_playWave(start.c[player].selRef, 'cursor', motif.select_info['p' .. side].select.snd[1], motif.select_info['p' .. side].select.snd[2])
-		sndPlay(motif.Snd, motif.select_info['p' .. side].palmenu.done.snd[1], motif.select_info['p' .. side].palmenu.done.snd[2])
+		-- Skip sound for auto-confirmation, since we already played the select character confirmation sound
+		if #validPals > 1 then
+			sndPlay(motif.Snd, motif.select_info['p' .. side].palmenu.done.snd[1], motif.select_info['p' .. side].palmenu.done.snd[2])
+		end
 	 -- next palette
 	elseif getInput(cmd, motif.select_info['p' .. side].palmenu.next.key) then
 		curIdx = (curIdx == maxIdx) and 1 or curIdx + 1
@@ -3237,6 +3246,7 @@ function start.f_selectMenu(side, cmd, player, member, selectState)
 			start.c[player].selRef = start.f_selGrid(start.c[player].cell + 1).char_ref
 			-- temp data not existing yet
 			if start.p[side].t_selTemp[member] == nil then
+				t_portraitPriority[side] = member
 				table.insert(start.p[side].t_selTemp, {
 					ref = start.c[player].selRef,
 					cell = start.c[player].cell,
@@ -3259,6 +3269,9 @@ function start.f_selectMenu(side, cmd, player, member, selectState)
 				end
 				-- cursor changed position or character change within current slot
 				if start.p[side].t_selTemp[member].cell ~= start.c[player].cell or start.p[side].t_selTemp[member].ref ~= start.c[player].selRef then
+					if start.p[side].t_selTemp[member].cell ~= start.c[player].cell then
+						t_portraitPriority[side] = member
+					end
 					--start.p[side].t_selTemp[member].pal = 1
 					start.p[side].t_selTemp[member].ref = start.c[player].selRef
 					start.p[side].t_selTemp[member].cell = start.c[player].cell
@@ -3809,6 +3822,7 @@ function start.f_selectLoading(arg)
 	addParam("continue", t.continue)
 	addParam("victoryscreen", t.victoryscreen)
 	addParam("winscreen", t.winscreen)
+	addParam("rankingcondition", main.rankingCondition)
 	addParam("charparam.ai", main.charparam.ai)
 	addParam("charparam.arcadepath", main.charparam.arcadepath)
 	addParam("charparam.music", main.charparam.music)

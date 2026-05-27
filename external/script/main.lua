@@ -1,10 +1,39 @@
 main = {}
---nClock = os.clock()
---print("Elapsed time: " .. os.clock() - nClock)
 --;===========================================================
 --; INITIALIZE DATA
 --;===========================================================
-math.randomseed(os.time())
+do
+	local RANDOM_IMAX = 2147483647 -- Go IMax / Park-Miller modulus
+	function math.random(min, max)
+		local r = getRandom()
+		-- math.random() -> float in [0, 1)
+		if min == nil then
+			return r / RANDOM_IMAX
+		end
+		-- math.random(max) -> integer in [1, max]
+		if max == nil then
+			max = min
+			min = 1
+		end
+		min = math.floor(min)
+		max = math.floor(max)
+		if max < min then
+			error("bad argument #2 to 'random' (interval is empty)", 2)
+		end
+		local range = max - min + 1
+		if range <= 0 or range > RANDOM_IMAX then
+			error("bad argument to 'random' (interval is too large)", 2)
+		end
+		-- Match Go Rand(min, max):
+		-- return min + Random() / (IMax / range + 1)
+		return min + math.floor(r / (math.floor(RANDOM_IMAX / range) + 1))
+	end
+	-- Keep deterministic engine RNG authoritative.
+	-- math.randomseed(...) is intentionally ignored because math.random uses getRandom().
+	function math.randomseed(_)
+		-- intentionally ignored
+	end
+end
 
 --;===========================================================
 --; COMMON FUNCTIONS
@@ -808,7 +837,6 @@ function main.f_commandLine()
 			os.exit()
 		end
 		main.f_clearShuffleTables()
-		math.randomseed(getRandom())
 		refresh()
 	end
 	local params = table.concat(t_params, ", ")
@@ -978,9 +1006,7 @@ function main.f_addChar(line, playable, loading, slot)
 			end
 			c = c:gsub('\\', '/')
 			c = tostring(c)
-			--nClock = os.clock()
 			addChar(c, line)
-			--print(c .. ": " .. os.clock() - nClock)
 			if c:lower() == 'skipslot' then
 				main.t_selChars[row].skip = 1
 				playable = false
@@ -1535,11 +1561,30 @@ end
 
 local function enterSyncedNetplayMenu()
 	main.f_clearShuffleTables()
-	math.randomseed(getRandom())
 	main.f_menuSnap(motif[main.group])
 	main.f_menuItemBgAnimReset(motif[main.group])
 	fadeInInit(motif[main.group].fadein.FadeData)
 	main.menu.submenu.server.loop()
+end
+
+local function isValidIp(address)
+	local a, b, c, d = address:match('^(%d+)%.(%d+)%.(%d+)%.(%d+)$')
+	if a ~= nil then
+		a, b, c, d = tonumber(a), tonumber(b), tonumber(c), tonumber(d)
+		return a <= 255 and b <= 255 and c <= 255 and d <= 255
+	end
+	if address:match('^[0-9A-Fa-f:]+$') and not address:match(':::') then
+		local _, dbl = address:gsub('::', '')
+		if dbl <= 1 then
+			local parts, bad = 0, false
+			for h in address:gmatch('[^:]+') do
+				parts = parts + 1
+				if #h > 4 then bad = true break end
+			end
+			return not bad and ((dbl == 1 and parts < 8) or (dbl == 0 and parts == 8))
+		end
+	end
+	return false
 end
 
 function main.f_default()
@@ -1764,7 +1809,7 @@ main.t_itemname = {
 				motif[main.background],
 				motif[main.group].textinput.overlay.RectData
 			)
-			if address:match('^[0-9%.]+$') then
+			if isValidIp(address) then
 				sndPlay(motif.Snd, motif[main.group].cursor.done.snd.default[1], motif[main.group].cursor.done.snd.default[2])
 				modifyGameOption('Netplay.IP.' .. name, address)
 				table.insert(t, #t, {itemname = 'ip_' .. name, displayname = name})
@@ -1903,7 +1948,7 @@ main.t_itemname = {
 		local doneSnd = motif[main.group].cursor.done.snd.serverconnect or motif[main.group].cursor.done.snd.default
 		sndPlay(motif.Snd, doneSnd[1], doneSnd[2])
 		hook.run("main.t_itemname", t, item)
-		if main.f_connect(gameOption('Netplay.IP.' .. t[item].displayname), t[item].displayname) then
+		if main.f_connect(gameOption('Netplay.IP.' .. t[item].itemname:gsub('^ip_', '')), t[item].displayname) then
 			if synchronize() then
 				enterSyncedNetplayMenu()
 			end
@@ -3127,7 +3172,7 @@ function main.f_getUniquePalette(ch, state)
 		end
 	end
 
-	local pal = available[getRandom() % #available + 1]
+	local pal = available[math.random(#available)]
 	used[pal] = true
 	state.last = {ch = ch, pal = pal}
 	return pal
