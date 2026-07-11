@@ -931,12 +931,24 @@ func (s *SoundEffect) Stream(samples [][2]float64) (n int, ok bool) {
 	// TODO: Test mugen panning in relation to PanningWidth and zoom settings
 	lv, rv := s.volume, s.volume
 	if sys.cfg.Sound.StereoEffects && (s.x != nil || s.pan != 0) {
+		// Use the camera viewport for panning, not the playable area
+		//screen := sys.xmax - sys.xmin
+		leftEdge := sys.cam.ScreenPos[0] + sys.cam.Offset[0]
+		screenWidth := float32(sys.gameWidth) / sys.cam.Scale
+		rightEdge := leftEdge + screenWidth
+
+		// Position ratio, where 0 is all the way right and 1 is all the way left
 		var r float32
-		if s.x != nil { // pan
-			r = ((sys.xmax - s.localscl**s.x) - s.pan) / (sys.xmax - sys.xmin)
-		} else { // abspan
-			r = ((sys.xmax-sys.xmin)/2 - s.pan) / (sys.xmax - sys.xmin)
+
+		// Determine panning position
+		if s.x != nil {
+			// Pan: pan based on the sound's position relative to the screen edges
+			r = ((rightEdge - s.localscl**s.x) - s.pan) / screenWidth
+		} else {
+			// Absolute pan: treat pan as an offset from center of screen
+			r = ((rightEdge-leftEdge)/2 - s.pan) / screenWidth
 		}
+
 		sc := sys.cfg.Sound.PanningRange / 100
 		of := (100 - sys.cfg.Sound.PanningRange) / 200
 		lv = Clamp(s.volume*2*(r*sc+of), 0, 512)
@@ -1334,5 +1346,37 @@ func (s *SoundChannels) Tick() {
 				v.Reset()
 			}
 		}
+	}
+}
+
+// Maybe this should be in char.go?
+type PlaySndParams struct {
+	ffx               string
+	group             int32
+	number            int32
+	channel           int32
+	volume            int32
+	pan               float32
+	xPos              *float32
+	localScale        float32
+	freqMul           float32
+	lowPriority       bool
+	priority          int32
+	startPosition     int
+	loopCount         int32
+	loopStart         int
+	loopEnd           int
+	stopOnGetHit      bool
+	stopOnChangeState bool
+	log               bool
+}
+
+func newPlaySndParams() *PlaySndParams {
+	return &PlaySndParams{
+		group:      -1,
+		channel:    -1,
+		volume:     100,
+		freqMul:    1.0,
+		localScale: 1.0,
 	}
 }

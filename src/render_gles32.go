@@ -59,9 +59,8 @@ func (r *Renderer_GLES32) newShaderProgram(vert, frag, geo, name string, crashWh
 	}
 	Logcat("GLES: Frag Obj created: " + name)
 
-	// IMPORTANT: Geometry shaders are very unstable on GLES 3.2 mobile.
-	// For now, let's force skip them to see if we can reach the main menu.
-	if false && len(geo) > 0 {
+	// Activate the shader if it's there
+	if len(geo) > 0 {
 		if geoObj, err := r.compileShader(gl.GEOMETRY_SHADER, geo); chkEX(err, "Shader compilation error on "+name+"\n", crashWhenFail) {
 			return nil, err
 		} else {
@@ -595,6 +594,10 @@ type GLES32State struct {
 
 func (r *Renderer_GLES32) GetName() string {
 	return "OpenGL ES 3.2"
+}
+
+func (r *Renderer_GLES32) DebugInfo() string {
+	return "" // No OOM tracking — GLES driver manages memory
 }
 
 // init 3D model shader
@@ -1169,6 +1172,8 @@ func (r *Renderer_GLES32) MapBlendFunction(i BlendFunc) uint32 {
 		BlendZero:             gl.ZERO,
 		BlendSrcAlpha:         gl.SRC_ALPHA,
 		BlendOneMinusSrcAlpha: gl.ONE_MINUS_SRC_ALPHA,
+		BlendDstColor:         gl.DST_COLOR,
+		BlendOneMinusDstColor: gl.ONE_MINUS_DST_COLOR,
 	}
 	return BlendFunctionLUT[i]
 }
@@ -1456,13 +1461,13 @@ func (r *Renderer_GLES32) prepareModelPipeline(bufferIndex uint32, env *Environm
 	gl.BindFramebuffer(gl.FRAMEBUFFER, r.fbo)
 
 	gl.Viewport(0, 0, sys.scrrect[2], sys.scrrect[3])
+	r.SetDepthMask(true)
 	gl.Clear(gl.DEPTH_BUFFER_BIT)
 	//gl.Enable(gl.TEXTURE_2D)
 	gl.Enable(gl.TEXTURE_CUBE_MAP)
 	// Set global state
 	r.EnableBlending(r.blendEquation, r.blendSrc, r.blendDst)
 	r.SetDepthTest(true)
-	r.SetDepthMask(true)
 	r.SetFrontFace(r.invertFrontFace)
 	r.SetCullFace(r.doubleSided)
 
@@ -2219,7 +2224,7 @@ func (r *Renderer_GLES32) RenderLUT(distribution int32, cubeTex Texture, lutTex 
 	gl.Uniform1i(loc, 1)
 
 	gl.BindTexture(gl.TEXTURE_2D, lutTexture.handle)
-	gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, lutTexture.width, lutTexture.height, 0, gl.RGBA, gl.FLOAT, nil)
+	gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, lutTexture.width, lutTexture.height, 0, gl.RGBA, gl.HALF_FLOAT, nil)
 
 	gl.FramebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, lutTexture.handle, 0)
 	gl.Clear(gl.COLOR_BUFFER_BIT)
@@ -2262,8 +2267,8 @@ func (r *Renderer_GLES32) LoadCustomSpriteShader(shaderName string, shaderData [
 	shader.RegisterAttributes("position", "uv")
 	shader.RegisterUniforms("modelview", "projection", "x1x2x4x3",
 		"alpha", "tint", "mask", "neg", "gray", "add", "mult", "isFlat", "isRgba", "isTrapez", "hue",
-		"iTime", "iResolution", "aspectRatio")
-	shader.RegisterTextures("pal", "tex", "bgl_RenderedTexture")
+		"iTime", "iResolution", "aspectRatio", "sTime")
+	shader.RegisterTextures("pal", "tex", "tex1", "tex2", "bgl_RenderedTexture")
 
 	shader.needsGrabPass = strings.Contains(fragSource, "bgl_RenderedTexture")
 

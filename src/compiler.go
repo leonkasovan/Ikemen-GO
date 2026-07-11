@@ -1294,6 +1294,9 @@ func (c *CharCompiler) expValue(out *BytecodeExp, in *string,
 			if err != nil {
 				return err
 			}
+			if bv2.IsNone() && len(be2) == 0 {
+				return Error("Missing value after ':=' operator")
+			}
 			be2.appendValue(bv2)
 			if rd {
 				out.appendI32Op(OC_nordrun, int32(len(be2)))
@@ -1416,10 +1419,12 @@ func (c *CharCompiler) expValue(out *BytecodeExp, in *string,
 	var err error
 	switch c.token {
 	case "":
-		if sys.ignoreMostErrors {
-			return bvNone(), nil
-		}
-		return bvNone(), Error("Nothing assigned")
+		// Because empty parameter values are not parsed at all, we don't need to ignore them here
+		// So it's safer to crash in case the value is accidentally empty
+		//if sys.ignoreMostErrors {
+		//	return bvNone(), nil
+		//}
+		return bvNone(), Error("Empty expression")
 	// Redirections without arguments
 	case "root", "parent", "p2", "stateowner":
 		switch c.token {
@@ -1593,8 +1598,7 @@ func (c *CharCompiler) expValue(out *BytecodeExp, in *string,
 		out.append(be2...)
 		return bvNone(), nil
 	case "-":
-		if len(*in) > 0 && (((*in)[0] >= '0' && (*in)[0] <= '9') ||
-			(*in)[0] == '.') {
+		if len(*in) > 0 && (((*in)[0] >= '0' && (*in)[0] <= '9') || (*in)[0] == '.') {
 			c.token += c.tokenizer(in)
 			bv = c.number(c.token)
 			if bv.IsNone() {
@@ -1604,6 +1608,9 @@ func (c *CharCompiler) expValue(out *BytecodeExp, in *string,
 			c.token = c.tokenizer(in)
 			if bv, err = c.expValue(&be1, in, false); err != nil {
 				return bvNone(), err
+			}
+			if bv.IsNone() && len(be1) == 0 {
+				return bvNone(), Error("Missing expression after '-'")
 			}
 			if bv.IsNone() {
 				if rd {
@@ -2452,6 +2459,8 @@ func (c *CharCompiler) expValue(out *BytecodeExp, in *string,
 			}
 		case "id":
 			opc = OC_ex2_explodvar_id
+		case "ignorehitpause":
+			opc = OC_ex2_explodvar_ignorehitpause
 		case "layerno":
 			opc = OC_ex2_explodvar_layerno
 		case "pausemovetime":
@@ -4499,17 +4508,17 @@ func (c *CharCompiler) expValue(out *BytecodeExp, in *string,
 		}
 		switch c.token {
 		case "time":
-			opc = OC_ex_envshakevar_time
+			opc = OC_ex2_envshakevar_time
 		case "freq":
-			opc = OC_ex_envshakevar_freq
+			opc = OC_ex2_envshakevar_freq
 		case "ampl":
-			opc = OC_ex_envshakevar_ampl
+			opc = OC_ex2_envshakevar_ampl
 		case "dir":
-			opc = OC_ex_envshakevar_dir
+			opc = OC_ex2_envshakevar_dir
 		default:
 			return bvNone(), Error("Invalid EnvShakeVar argument: " + c.token)
 		}
-		out.append(OC_ex_, opc)
+		out.append(OC_ex2_, opc)
 		c.token = c.tokenizer(in)
 		if err := c.checkClosingParenthesis(); err != nil {
 			return bvNone(), err
@@ -4845,6 +4854,8 @@ func (c *CharCompiler) expValue(out *BytecodeExp, in *string,
 			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_camerafreeze))
 		case "globalnoko":
 			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_globalnoko))
+		case "notimedisplay":
+			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_notimedisplay))
 		case "roundfreeze":
 			out.appendI32Op(OC_ex_isassertedglobal, int32(GSF_roundfreeze))
 		case "roundnotskip":
@@ -4899,6 +4910,9 @@ func (c *CharCompiler) expValue(out *BytecodeExp, in *string,
 			bv2, err := c.expEqne(&be2, in)
 			if err != nil {
 				return bvNone(), err
+			}
+			if bv2.IsNone() && len(be2) == 0 {
+				return bvNone(), Error("Missing value after ':=' operator")
 			}
 			be2.appendValue(bv2)
 			if rd {
@@ -5806,10 +5820,6 @@ func parseTriggerNumber(name string) (tn int32, isAll bool, ok bool) {
 func (c *CharCompiler) parseSection(sctrl func(name, data string) error) (IniSection, error) {
 	is := NewIniSection()
 
-	// Placeholder var to toggle all the nonsense Mugen's compiler allowed
-	// Maybe this could be sys.ignoreMostErrors. Or something configurable
-	strict := false
-
 	// Helper to find '=' only outside parentheses
 	findTopLevelEqual := func(s string) int {
 		uneven := 0
@@ -5840,7 +5850,7 @@ func (c *CharCompiler) parseSection(sctrl func(name, data string) error) (IniSec
 		}
 
 		fn := lhs[:i]
-		if !strict {
+		if sys.ignoreMostErrors {
 			fn = strings.TrimSpace(fn) // Mugen tolerates "var ("
 		}
 
@@ -5868,8 +5878,9 @@ func (c *CharCompiler) parseSection(sctrl func(name, data string) error) (IniSec
 			return "", false
 		}
 
-		if strict {
-			// When strict, only "var(...)" is valid. No "var (...)" and no trailing garbage
+		// When strict, only "var(...)" is valid. No "var (...)" and no trailing garbage
+		// Note: CNS normally has "sys.ignoreMostErrors" set to false, but that could be configurable in the future
+		if !sys.ignoreMostErrors {
 			if lhs[:i] != strings.TrimSpace(lhs[:i]) || end != len(lhs)-1 {
 				return "", false
 			}
@@ -5915,17 +5926,18 @@ func (c *CharCompiler) parseSection(sctrl func(name, data string) error) (IniSec
 				name = parsed
 			} else if strings.Index(lhs, "(") >= 0 {
 				// Looks like a special parameter, but wasn't valid
-				if strict {
-					if sys.ignoreMostErrors {
-						continue
-					}
-					return nil, Error("Invalid parameter syntax: " + line)
+				msg := "Invalid parameter syntax: " + line
+				if sys.ignoreMostErrors {
+					LogMessage(c.charWarn() + msg)
+					continue
+				} else {
+					return nil, Error(msg)
 				}
 			}
 
 			// Normal parameters
 			if name == "" {
-				if strict {
+				if !sys.ignoreMostErrors {
 					// If strict, only a single token is valid on the LHS
 					if strings.IndexAny(lhs, " \t") >= 0 {
 						if sys.ignoreMostErrors {
@@ -5990,16 +6002,26 @@ func (c *CharCompiler) stateSec(is IniSection, f func() error) error {
 	if err := f(); err != nil {
 		return err
 	}
-	if !sys.ignoreMostErrors {
-		var str string
-		for k := range is {
-			if len(str) > 0 {
-				str += ", "
+	// Check for leftover (unknown) parameters
+	var str string
+	for k := range is {
+		// Ignore CNS keywords
+		if !c.zssMode {
+			if k == "type" || k == "persistent" || k == "ignorehitpause" {
+				continue
 			}
-			str += k
 		}
 		if len(str) > 0 {
-			return Error("Invalid key name: " + str)
+			str += ", "
+		}
+		str += k
+	}
+	if len(str) > 0 {
+		msg := "Unknown state controller parameter(s): " + str
+		if sys.ignoreMostErrors {
+			LogMessage(c.charWarn() + msg)
+		} else {
+			return Error(msg)
 		}
 	}
 	return nil
@@ -6323,18 +6345,18 @@ func (c *CharCompiler) paramSaveData(is IniSection, sc *StateControllerBase, id 
 		if len(data) <= 1 {
 			return Error("savedata not specified")
 		}
-		var sv SaveData
+		var sv int32
 		switch strings.ToLower(data) {
 		case "map":
-			sv = SaveData_map
+			sv = 0
 		case "var":
-			sv = SaveData_var
+			sv = 1
 		case "fvar":
-			sv = SaveData_fvar
+			sv = 2
 		default:
 			return Error("Invalid savedata type: " + data)
 		}
-		sc.add(id, sc.iToExp(int32(sv)))
+		sc.add(id, sc.iToExp(sv))
 		return nil
 	})
 }
@@ -6396,6 +6418,9 @@ func (c *CharCompiler) paramTrans(is IniSection, sc *StateControllerBase, prefix
 			// Older Mugen versions have a bug where AddAlpha defaults to no change if the animation also uses AddAlpha (AS_D_). This is fixed in 1.1
 		case "sub":
 			tt = TT_sub
+			defsrc, defdst = 255, 255
+		case "subadd":
+			tt = TT_subadd
 			defsrc, defdst = 255, 255
 		default:
 			// In Mugen, CNS ignores invalid parameter names
@@ -6471,6 +6496,32 @@ func (c *CharCompiler) paramClsnType(is IniSection, sc *StateControllerBase, par
 			return Error("Invalid Clsn type for " + paramName + ": " + data)
 		}
 		sc.add(id, sc.iToExp(box))
+		return nil
+	})
+}
+
+func (c *CharCompiler) paramStringList(is IniSection, sc *StateControllerBase, paramName string, opcode byte) error {
+	return c.stateParam(is, paramName, false, func(data string) error {
+		parts := strings.Split(data, ",")
+		var allBe []BytecodeExp
+		for _, part := range parts {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			if len(part) < 2 || part[0] != '"' || part[len(part)-1] != '"' {
+				return Error("Value must be enclosed in quotes: " + part)
+			}
+			unquoted, err := strconv.Unquote(part)
+			if err != nil {
+				return Error("Invalid quoted string: " + part)
+			}
+			be := BytecodeExp(unquoted)
+			allBe = append(allBe, be)
+		}
+		if len(allBe) > 0 {
+			sc.add(opcode, allBe)
+		}
 		return nil
 	})
 }
@@ -6733,9 +6784,18 @@ func (c *CharCompiler) stateCompileCNS(states map[int32]StateBytecode, filename,
 			return errmes(err)
 		}
 
-		// Skip if this state has already been added
+		// Duplicate StateDef check. CNS tolerates it
 		if existInThisFile[c.stateNo] {
-			continue
+			msg := fmt.Sprintf("State %v already defined in this file. Skipping duplicate", c.stateNo)
+			if c.stateNo == -10 {
+				msg = "State +1 already defined in this file. Skipping duplicate"
+			}
+			if sys.ignoreMostErrors { // Normally true but might be configurable at some point
+				LogMessage(c.charWarn() + msg)
+				continue
+			} else {
+				return Error(msg)
+			}
 		}
 		existInThisFile[c.stateNo] = true
 
@@ -7914,14 +7974,17 @@ func (c *CharCompiler) stateCompileZSS(states map[int32]StateBytecode, filename,
 				return errmes(err)
 			}
 			c.scan(&line)
+
+			// Duplicate StateDef check. ZSS crashes
 			if existInThisFile[c.stateNo] {
 				if c.stateNo == -10 {
-					return errmes(Error(fmt.Sprintf("State +1 overloaded")))
+					return errmes(Error(fmt.Sprintf("State +1 already defined in the same file")))
 				} else {
-					return errmes(Error(fmt.Sprintf("State %v overloaded", c.stateNo)))
+					return errmes(Error(fmt.Sprintf("State %v already defined in the same file", c.stateNo)))
 				}
 			}
 			existInThisFile[c.stateNo] = true
+
 			is := NewIniSection()
 			for c.token != "]" {
 				switch c.token {
@@ -8243,6 +8306,11 @@ func (c *CharCompiler) Compile(pn int, def string, constants map[string]float32)
 				return nil, Error(cmd + ":\nname = " + is["name"] +
 					"\ncommand = " + is["command"] + "\n" + err.Error())
 			}
+		}
+
+		// Apply backward compatibiliy quirks
+		if sys.cgi[pn].ikemenver[0] == 0 && sys.cgi[pn].ikemenver[1] == 0 {
+			cm.ApplyBackwardCompatibility(pn)
 		}
 
 		c.cmdl.Add(*cm)

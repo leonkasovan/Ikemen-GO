@@ -29,15 +29,12 @@ type Font_VK struct {
 	vbo         uint32
 	program     uint32
 	color       color
-	palfxAdd    [3]float32
-	palfxMul    [3]float32
-	palfxGray   float32
-	palfxHue    float32
-	palfxNeg    float32
+	shaderPalFX ShaderPalFX
 	resolution  [2]float32
 	textures    []*TextureAtlas
 	descriptors []*list.Element
 }
+
 type FontRenderer_VK struct {
 	device          vk.Device
 	program         *VulkanProgramInfo
@@ -539,7 +536,7 @@ func (r *FontRenderer_VK) LoadTrueTypeFont(reader io.Reader, scale int32, low, h
 	f.ttf = ttf
 	f.scale = scale
 	f.SetColor(1.0, 1.0, 1.0, 1.0) //set default white
-	f.SetPalFX(false, 0, [3]float32{0, 0, 0}, [3]float32{1, 1, 1}, 0)
+	f.SetPalFX(NewShaderPalFX())
 	f.textures = append(f.textures, CreateTextureAtlas(256, 256, 8, true))
 	descriptorSet := r.freeDescriptors.Front()
 	r.freeDescriptors.Remove(descriptorSet)
@@ -577,18 +574,17 @@ func (f *Font_VK) SetColor(red float32, green float32, blue float32, alpha float
 	f.color.a = alpha
 	return
 }
-func (f *Font_VK) SetPalFX(neg bool, gray float32, add, mul [3]float32, hue float32) {
-	f.palfxAdd = add
-	f.palfxMul = mul
-	f.palfxGray = gray
-	f.palfxHue = hue
-	f.palfxNeg = float32(Btoi(neg))
+
+func (f *Font_VK) SetPalFX(state ShaderPalFX) {
+	f.shaderPalFX = state
 }
+
 func (f *Font_VK) UpdateResolution(windowWidth int, windowHeight int) {
 	f.resolution[0] = float32(windowWidth)
 	f.resolution[1] = float32(windowHeight)
 	return
 }
+
 func (f *Font_VK) Printf(x, y float32, xscl, yscl float32, spacingXAdd float32, align int32, blend bool, window [4]int32,
 	rxadd float32, rot Rotation, projectionMode int32, fLength float32, rcx, rcy float32,
 	fs string, argv ...interface{}) error {
@@ -646,9 +642,9 @@ func (f *Font_VK) Printf(x, y float32, xscl, yscl float32, spacingXAdd float32, 
 	vk.CmdSetViewport(r.commandBuffers[0], 0, 1, viewports)
 	vk.CmdSetScissor(r.commandBuffers[0], 0, 1, scissors)
 	color := f.color
-	palAddGray := [4]float32{f.palfxAdd[0], f.palfxAdd[1], f.palfxAdd[2], f.palfxGray}
-	palMulHue := [4]float32{f.palfxMul[0], f.palfxMul[1], f.palfxMul[2], f.palfxHue}
-	palNegPad := [4]float32{f.palfxNeg, 0, 0, 0}
+	palAddGray := [4]float32{f.shaderPalFX.add[0], f.shaderPalFX.add[1], f.shaderPalFX.add[2], f.shaderPalFX.gray}
+	palMulHue := [4]float32{f.shaderPalFX.mult[0], f.shaderPalFX.mult[1], f.shaderPalFX.mult[2], f.shaderPalFX.hue}
+	palNegPad := [4]float32{float32(Btoi(f.shaderPalFX.neg)), 0, 0, 0}
 	resolution := f.resolution
 	vk.CmdPushConstants(r.commandBuffers[0], gfxFont.(*FontRenderer_VK).program.pipelineLayout, vk.ShaderStageFlags(vk.ShaderStageFragmentBit), 0, 4*4, unsafe.Pointer(&color))
 	vk.CmdPushConstants(r.commandBuffers[0], gfxFont.(*FontRenderer_VK).program.pipelineLayout, vk.ShaderStageFlags(vk.ShaderStageFragmentBit), 4*4, 4*4, unsafe.Pointer(&palAddGray[0]))

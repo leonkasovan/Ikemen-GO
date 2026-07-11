@@ -107,8 +107,9 @@ type Storyboard struct {
 			Skip   []string `ini:"skip"`
 			Cancel []string `ini:"cancel"`
 		} `ini:"key"`
-		StopMusic     bool `ini:"stopmusic"`
-		DisableCancel bool `ini:"disablecancel"`
+		StopMusic      bool `ini:"stopmusic"`
+		DisableCancel  bool `ini:"disablecancel"`
+		WaitForLoading bool `ini:"waitforloading"`
 	} `ini:"scenedef"`
 	Scene         map[string]*SceneProperties `ini:"map:^(?i)scene_?[0-9]+$" lua:"scene"`
 	fntIndexByKey map[string]int
@@ -119,11 +120,13 @@ type Storyboard struct {
 	endTimer          int32
 	sceneKeys         []string
 	currentSceneIndex int
-	cancel            bool
+	canceled          bool
 	musicPlaying      bool
 	fadePolicy        FadeStartPolicy
 	dialogueLayers    []*LayerProperties // ordered text layers (StartTime asc, then layer index)
 	dialoguePos       int                // current layer index into dialogueLayers
+	netReady          bool
+	loadEnding        bool
 }
 
 // loadStoryboard loads and parses the INI file into a struct.
@@ -154,15 +157,16 @@ func loadStoryboard(def string) (*Storyboard, error) {
 	userOptions.AllowShadows = true
 
 	// Start merged INI as defaults, then overlay user (first-wins for duplicates).
-	iniFile, err := ini.LoadSources(baseOptions, defaultStoryboard)
+	iniFile, err := LoadINIBytes(defaultStoryboard, baseOptions)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to load INI file: %w", err)
 	}
-	defaultOnlyIni, err := ini.LoadSources(baseOptions, defaultStoryboard)
+	defaultOnlyIni, err := LoadINIBytes(defaultStoryboard, baseOptions)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to load defaults-only INI: %w", err)
 	}
-	userIniFile, err := ini.LoadSources(userOptions, def)
+	var userText string
+	userIniFile, userText, err := LoadINIFile(def, userOptions)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to load user INI %s: %w", def, err)
 	}
@@ -292,11 +296,7 @@ func loadStoryboard(def string) (*Storyboard, error) {
 
 	s.loadFiles()
 
-	str, err := LoadText(def)
-	if err != nil {
-		return nil, err
-	}
-	lines, i := SplitAndTrim(str, "\n"), 0
+	lines, i := SplitAndTrim(userText, "\n"), 0
 	s.AnimTable = ReadAnimationTable(s.Def, s.Sff, &s.Sff.palList, lines, &i, true)
 	i = 0
 
@@ -441,7 +441,9 @@ func (s *Storyboard) reset() {
 	s.initialized = false
 	s.endTimer = -1
 	s.currentSceneIndex = s.SceneDef.StartScene
-	s.cancel = false
+	s.canceled = false
+	s.netReady = false
+	s.loadEnding = false
 	for _, sceneProps := range s.Scene {
 		if sceneProps.Bg.Name != "" {
 			sceneProps.Bg.BGDef.Reset()
@@ -605,11 +607,14 @@ func (s *Storyboard) step() {
 		(!sys.motif.AttractMode.Enabled && sys.uiRawInput(s.SceneDef.Key.Cancel, -1)) ||
 		(!sys.gameRunning && sys.motif.AttractMode.Enabled && sys.credits > 0)) {
 		sys.esc = false
-		s.cancel = true
+		s.canceled = true
 	}
 
 	// Skip handling
 	skipPressed := sys.uiRawInput(s.SceneDef.Key.Skip, -1)
+	if s.SceneDef.WaitForLoading {
+		skipPressed = false
+	}
 
 	// Keep dialogue cursor aligned with time progression.
 	s.syncDialoguePosToTime()
@@ -671,10 +676,43 @@ func (s *Storyboard) step() {
 			startFadeAt = 0
 		}
 	}
-	reachedEndTime := endTime <= 0 || (startFadeAt >= 0 && s.counter >= startFadeAt)
+	// Loading storyboard: when local loading and boot preloading are done,
+	// poll net rendezvous (non-blocking) and auto-finish with fadeout.
+	if s.SceneDef.WaitForLoading && !s.canceled && !s.loadEnding && s.endTimer == -1 {
+		if sys.loader.state != LS_Loading && sys.sel.AllPreloadsReady() {
+			if sys.netConnection == nil {
+				s.netReady = true
+			} else if !s.netReady {
+				ready, err := sys.netConnection.LoadingReady()
+				if err != nil {
+					LogMessage("Loading storyboard: %v", err)
+					s.canceled = true
+				} else {
+					s.netReady = ready
+				}
+			}
+			if s.netReady && !s.canceled {
+				startFadeOut(sceneProps.FadeOut.FadeData, sys.motif.fadeOut, false, s.fadePolicy)
+				s.endTimer = s.counter + sys.motif.fadeOut.timeRemaining
+				s.loadEnding = true
+			}
+		}
+	}
 
-	if s.endTimer == -1 && (reachedEndTime || s.cancel || skipAdvancesScene) {
-		userInterrupt := s.cancel || skipAdvancesScene
+	reachedEndTime := endTime <= 0 || (startFadeAt >= 0 && s.counter >= startFadeAt)
+	// Loading storyboard: don't end when the *final* scene timer finishes; keep the last scene running.
+	if s.SceneDef.WaitForLoading && !s.loadEnding && !s.canceled && reachedEndTime {
+		next := s.currentSceneIndex + 1
+		if sceneProps.Jump != nil && *sceneProps.Jump != s.currentSceneIndex {
+			next = *sceneProps.Jump
+		}
+		if next >= len(s.sceneKeys) {
+			reachedEndTime = false
+		}
+	}
+
+	if s.endTimer == -1 && (reachedEndTime || s.canceled || skipAdvancesScene) {
+		userInterrupt := s.canceled || skipAdvancesScene
 		startFadeOut(sceneProps.FadeOut.FadeData, sys.motif.fadeOut, userInterrupt, s.fadePolicy)
 		s.endTimer = s.counter + sys.motif.fadeOut.timeRemaining
 	}
@@ -741,9 +779,23 @@ func (s *Storyboard) step() {
 		if sys.motif.fadeOut != nil {
 			sys.motif.fadeOut.reset()
 		}
+		// Loading storyboard: once we started the auto-fade, finish immediately after fadeout.
+		if s.loadEnding {
+			if s.musicPlaying && s.SceneDef.StopMusic {
+				sys.bgm.Stop()
+			}
+			for _, cl := range sys.commandLists {
+				if cl != nil {
+					cl.BufReset()
+				}
+			}
+			s.active = false
+			s.loadEnding = false
+			return
+		}
 		s.counter = 0
 		s.endTimer = -1
-		if s.cancel {
+		if s.canceled {
 			s.currentSceneIndex = len(s.sceneKeys)
 		} else {
 			if sceneProps.Jump != nil && *sceneProps.Jump != s.currentSceneIndex {

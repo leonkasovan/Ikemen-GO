@@ -363,17 +363,17 @@ func loadEnvironment(filepath string) (*Environment, error) {
 	env.GGXLUT = &GLTFTexture{}
 	if hdrImg, ok := img.(hdr.Image); ok {
 		bounds := img.Bounds()
-		size := bounds.Max.X * bounds.Max.Y * 3
+		size := bounds.Max.X * bounds.Max.Y * 4
 		data := make([]float32, 0, size)
 		for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 			for x := bounds.Min.X; x < bounds.Max.X; x++ {
 				color := hdrImg.HDRAt(x, y)
-				r, g, b, _ := color.HDRRGBA()
-				data = append(data, float32(r), float32(g), float32(b))
+				r, g, b, a := color.HDRRGBA()
+				data = append(data, float32(r), float32(g), float32(b), float32(a))
 			}
 		}
-		for i, j := 0, len(data)-3; i < j; i, j = i+3, j-3 {
-			data[i], data[i+1], data[i+2], data[j], data[j+1], data[j+2] = data[j], data[j+1], data[j+2], data[i], data[i+1], data[i+2]
+		for i, j := 0, len(data)-4; i < j; i, j = i+4, j-4 {
+			data[i], data[i+1], data[i+2], data[i+3], data[j], data[j+1], data[j+2], data[j+3] = data[j], data[j+1], data[j+2], data[j+3], data[i], data[i+1], data[i+2], data[i+3]
 		}
 		sys.mainThreadTask <- func() {
 			if !gfx.IsModelEnabled() {
@@ -1843,36 +1843,36 @@ func drawNode(mdl *Model, scene *Scene, layerNumber int, defaultLayerNumber int,
 		alpha = [2]int32{255, 0}
 	}
 
-	neg, grayscale, padd, pmul, invblend, hue := mdl.pfx.getFinalPalFx(blendMode, alpha)
+	spfx := mdl.pfx.getFinalPalFx(blendMode, alpha)
 
 	blendEq := BlendAdd
 	src := BlendOne
 	dst := BlendOneMinusSrcAlpha
 	switch n.trans {
 	case TransAdd:
-		if invblend == 3 {
+		if spfx.invblend == 3 {
 			src = BlendOne
 			dst = BlendOne
 			blendEq = BlendReverseSubtract
-			neg = false
-			if invblend >= 1 {
-				padd[0] = -padd[0]
-				padd[1] = -padd[1]
-				padd[2] = -padd[2]
+			spfx.neg = false
+			if spfx.invblend >= 1 {
+				spfx.add[0] = -spfx.add[0]
+				spfx.add[1] = -spfx.add[1]
+				spfx.add[2] = -spfx.add[2]
 			}
 		} else {
 			src = BlendOne
 			dst = BlendOne
 		}
 	case TransReverseSubtract:
-		if invblend == 3 {
+		if spfx.invblend == 3 {
 			src = BlendOne
 			dst = BlendOne
-			neg = false
-			if invblend >= 1 {
-				padd[0] = -padd[0]
-				padd[1] = -padd[1]
-				padd[2] = -padd[2]
+			spfx.neg = false
+			if spfx.invblend >= 1 {
+				spfx.add[0] = -spfx.add[0]
+				spfx.add[1] = -spfx.add[1]
+				spfx.add[2] = -spfx.add[2]
 			}
 		} else {
 			src = BlendOne
@@ -1880,11 +1880,11 @@ func drawNode(mdl *Model, scene *Scene, layerNumber int, defaultLayerNumber int,
 			blendEq = BlendReverseSubtract
 		}
 	case TransMul:
-		if invblend == 3 {
+		if spfx.invblend == 3 {
 			//Not accurate
 			src = BlendOneMinusDstColor
 			dst = BlendOne
-			neg = false
+			spfx.neg = false
 			blendEq = BlendReverseSubtract
 		} else {
 			src = BlendDstColor
@@ -1946,11 +1946,12 @@ func drawNode(mdl *Model, scene *Scene, layerNumber int, defaultLayerNumber int,
 			mode = 1 // Set mesh render mode to "lines"
 		}
 		gfx.SetModelUniformI("unlit", int(Btoi(unlit || mat.unlit)))
-		gfx.SetModelUniformFv("add", padd[:])
-		gfx.SetModelUniformFv("mult", []float32{pmul[0] * sys.brightness, pmul[1] * sys.brightness, pmul[2] * sys.brightness})
-		gfx.SetModelUniformI("neg", int(Btoi(neg)))
-		gfx.SetModelUniformF("hue", hue)
-		gfx.SetModelUniformF("gray", grayscale)
+		// Use spfx.add and spfx.mult (modified by invblend logic above)
+		gfx.SetModelUniformFv("add", spfx.add[:])
+		gfx.SetModelUniformFv("mult", []float32{spfx.mult[0] * sys.brightness, spfx.mult[1] * sys.brightness, spfx.mult[2] * sys.brightness})
+		gfx.SetModelUniformI("neg", int(Btoi(spfx.neg)))
+		gfx.SetModelUniformF("hue", spfx.hue)
+		gfx.SetModelUniformF("gray", spfx.gray)
 		gfx.SetModelUniformI("enableAlpha", int(Btoi(mat.alphaMode == AlphaModeBlend)))
 		gfx.SetModelUniformF("alphaThreshold", mat.alphaCutoff.getValue().(float32))
 		gfx.SetModelUniformFv("baseColorFactor", color[:])
@@ -1992,7 +1993,6 @@ func drawNode(mdl *Model, scene *Scene, layerNumber int, defaultLayerNumber int,
 			gfx.SetMeshOutlinePipeline(!reverseCull, meshOutline*outlineConst)
 			gfx.RenderElements(mode, int(p.numIndices), int(p.elementBufferOffset))
 		}
-
 	}
 }
 

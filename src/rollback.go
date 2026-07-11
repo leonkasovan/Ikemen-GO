@@ -624,7 +624,7 @@ func (r *RollbackSession) IsConnected() bool {
 func (r *RollbackSession) SaveGameState(stateIdx int) int {
 	sys.savePool.curStateID = stateIdx
 	sys.rollbackStateID = stateIdx
-	oldest := stateIdx + 1%(MaxSaveStates+2)
+	oldest := (stateIdx + 1) % (MaxSaveStates + 2)
 	if _, ok := sys.arenaSaveMap[oldest]; ok {
 		sys.arenaSaveMap[oldest].Free()
 		sys.arenaSaveMap[oldest] = nil

@@ -15,6 +15,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"gopkg.in/ini.v1"
+
 	"golang.org/x/text/encoding/japanese"
 	"golang.org/x/text/transform"
 )
@@ -407,6 +409,24 @@ func LoadText(filename string) (string, error) {
 	}
 
 	return string(bytes), nil
+}
+
+func LoadINIText(text string, opts ini.LoadOptions) (*ini.File, error) {
+	return ini.LoadSources(opts, []byte(NormalizeNewlines(text)))
+}
+
+func LoadINIBytes(data []byte, opts ini.LoadOptions) (*ini.File, error) {
+	return LoadINIText(string(data), opts)
+}
+
+func LoadINIFile(filename string, opts ini.LoadOptions) (*ini.File, string, error) {
+	text, err := LoadText(filename)
+	if err != nil {
+		return nil, "", err
+	}
+	text = NormalizeNewlines(text)
+	iniFile, err := LoadINIText(text, opts)
+	return iniFile, text, err
 }
 
 func decodeShiftJIS(input string) string {
@@ -1283,7 +1303,7 @@ func (l *Layout) DrawAnim(r *[4]int32, x, y, scl, xscl, yscl float32, ln int16, 
 		a.Draw(drawwindow, x+l.offset[0]-xsoffset, y+l.offset[1]+float32(sys.gameHeight-240),
 			scl, scl, (l.scale[0]*xscl)*float32(l.facing), (l.scale[0]*xscl)*float32(l.facing),
 			(l.scale[1]*yscl)*float32(l.vfacing), xshear, l.rot,
-			float32(sys.gameWidth-320)/2, palfx, 1, [2]float32{1, 1}, int32(l.projection), l.fLength, 0, false, "", [16]float32{})
+			float32(sys.gameWidth-320)/2, palfx, 1, [2]float32{1, 1}, int32(l.projection), l.fLength, 0, false, CustomShaderRenderData{})
 	}
 }
 
@@ -1767,7 +1787,10 @@ func SafeGo(f func()) {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				handlePanic(r)
+				// Forward the panic to the main thread, where dialogs and shutdown are safe
+				sys.mainThreadTask <- func() {
+					panic(r)
+				}
 			}
 		}()
 		f()

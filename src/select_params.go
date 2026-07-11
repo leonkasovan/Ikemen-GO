@@ -352,6 +352,7 @@ type GameParams struct {
 	VsScreen            bool     `ini:"vsscreen"`
 	VictoryScreen       bool     `ini:"victoryscreen"`
 	WinScreen           bool     `ini:"winscreen"`
+	PauseMenu           bool     `ini:"pausemenu"`
 	RankingCondition    bool     `ini:"rankingcondition"`
 	LuaCode             string   `ini:"luacode"`
 	PersistLife         bool     `ini:"persistlife"`
@@ -380,6 +381,7 @@ func newGameParams() *GameParams {
 		VsScreen:      true,
 		VictoryScreen: true,
 		WinScreen:     true,
+		PauseMenu:     true,
 		ocd: [3][]OverrideCharData{
 			make([]OverrideCharData, 0),
 			make([]OverrideCharData, 0),
@@ -532,6 +534,10 @@ func (p *GameParams) AppendParams(entries []string) {
 		case "winscreen":
 			if b, ok := parseBoolLoose(val); ok {
 				p.WinScreen = b
+			}
+		case "pausemenu":
+			if b, ok := parseBoolLoose(val); ok {
+				p.PauseMenu = b
 			}
 		case "rankingcondition":
 			if b, ok := parseBoolLoose(val); ok {

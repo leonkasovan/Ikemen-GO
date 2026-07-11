@@ -32,6 +32,7 @@ type BGDef struct {
 	near         float32
 	far          float32
 	modelOffset  [3]float32
+	modelRotate  [3]float32
 	modelScale   [3]float32
 }
 
@@ -77,6 +78,10 @@ func loadBGDef(sff *Sff, model *Model, def string, bgname string, startlayer int
 		sec[0].readF32ForStage("far", &s.far)
 		if offset := sec[0].readF32CsvForStage("modeloffset"); len(offset) == 3 {
 			s.modelOffset = [3]float32{offset[0], offset[1], offset[2]}
+		}
+		if rotation := sec[0].readF32CsvForStage("modelrotate"); len(rotation) == 3 {
+			// Input is assumed to be in degrees (0-360), so convert to radians (0-pi)
+			s.modelRotate = [3]float32{rotation[0] * (math.Pi / 180), rotation[1] * (math.Pi / 180), rotation[2] * (math.Pi / 180)}
 		}
 		if scale := sec[0].readF32CsvForStage("modelscale"); len(scale) == 3 {
 			s.modelScale = [3]float32{scale[0], scale[1], scale[2]}
@@ -342,6 +347,9 @@ func (s *BGDef) Draw(layer int32, x, y, scl float32) {
 		outlineConst := float32(0.003 * math.Tan(float64(drawFOV)))
 		proj := gfx.PerspectiveProjectionMatrix(drawFOV, float32(sys.scrrect[2])/float32(sys.scrrect[3]), s.near, s.far)
 		view := mgl.Translate3D(s.modelOffset[0], s.modelOffset[1], s.modelOffset[2])
+		view = view.Mul4(mgl.HomogRotate3DX(s.modelRotate[0]))
+		view = view.Mul4(mgl.HomogRotate3DY(s.modelRotate[1]))
+		view = view.Mul4(mgl.HomogRotate3DZ(s.modelRotate[2]))
 		view = view.Mul4(mgl.Scale3D(s.modelScale[0], s.modelScale[1], s.modelScale[2]))
 		s.model.draw(1, int(s.sceneNumber), int(layer), 0, s.modelOffset, proj, view, proj.Mul4(view), outlineConst)
 	}

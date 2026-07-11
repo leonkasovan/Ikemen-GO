@@ -365,6 +365,11 @@ func readBackGround(is IniSection, link *backGround,
 			bg.anim.transType = TT_sub
 			bg.anim.srcAlpha = 255
 			bg.anim.dstAlpha = 255
+		case "subadd":
+			bg.anim.mask = 0
+			bg.anim.transType = TT_subadd
+			bg.anim.srcAlpha = 255
+			bg.anim.dstAlpha = 255
 		case "none":
 			// In Mugen this does the same as Default
 			// TODO: Make ikemenversion fix it
@@ -710,7 +715,7 @@ func (bg backGround) draw(pos [2]float32, drawscl, bgscl, stglscl float32,
 			bg.xscale[0]*bgscl*(scalestartX+xs)*xs3,
 			xbs*bgscl*(scalestartX+xs)*xs3,
 			ys*ys3, xras*x/(Abs(ys*ys3)*lscl[1]*float32(bg.anim.spr.Size[1])*bg.scalestart[1])*sclx_recip*bg.scalestart[1]-bg.xshear,
-			bg.rot, rcx, bg.palfx, 1, [2]float32{1, 1}, int32(bg.projection), bg.fLength, 0, false, "", [16]float32{})
+			bg.rot, rcx, bg.palfx, 1, [2]float32{1, 1}, int32(bg.projection), bg.fLength, 0, false, CustomShaderRenderData{})
 	}
 }
 
@@ -1254,10 +1259,10 @@ func loadStage(def string, maindef bool) (*Stage, error) {
 
 	// Music group
 	if sec, secName := getSection("music"); sec != nil {
-		iniFile, err := ini.LoadSources(ini.LoadOptions{
+		iniFile, err := LoadINIText(str, ini.LoadOptions{
 			Insensitive:             true,
 			SkipUnrecognizableLines: true,
-		}, []byte(str))
+		})
 
 		if err != nil {
 			fmt.Printf("Failed to load INI file: %v\n", err)

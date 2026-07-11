@@ -2355,6 +2355,67 @@ func (c *Command) AutoGreaterExpand() {
 	c.steps = newCmd
 }
 
+// Regress some Ikemen features that may break legacy characters
+// To keep branching to a minimum, we ought to only fix cases that prevent a move from coming out at all
+func (c *Command) ApplyBackwardCompatibility(pn int) {
+	// Helper to log any changes
+	doPrint := func(msg string) {
+		fullMsg := fmt.Sprintf("WARNING: Player %s: command '%s' compatibility: ", sys.cgi[pn].name, c.name) + msg
+		// Print to both places because these characters tend to flood the console with other bugs
+		sys.appendToConsole(fullMsg)
+		LogMessage(fullMsg)
+	}
+
+	// Expand '/' to all elements in the same step ("/x+y" becomes "/x+/y")
+	// https://github.com/ikemen-engine/Ikemen-GO/issues/2922
+	slashModified := false
+	for i := range c.steps {
+		step := &c.steps[i]
+		if step.orLogic {
+			continue // Didn't exist in Mugen
+		}
+		hasSlash := false
+		for _, k := range step.keys {
+			if k.slash {
+				hasSlash = true
+				break
+			}
+		}
+		if hasSlash {
+			for j := range step.keys {
+				if !step.keys[j].slash {
+					step.keys[j].slash = true
+					slashModified = true
+				}
+			}
+		}
+	}
+	if slashModified {
+		doPrint("slash propagated to whole step")
+	}
+
+	// Force buffer time of 1 for "hold-only commands"
+	// https://github.com/ikemen-engine/Ikemen-GO/issues/2235
+	if len(c.steps) > 0 {
+		holdOnly := true
+		for _, step := range c.steps {
+			for _, k := range step.keys {
+				if !k.slash {
+					holdOnly = false
+					break
+				}
+			}
+			if !holdOnly {
+				break
+			}
+		}
+		if holdOnly && c.maxbuftime != 1 {
+			c.maxbuftime = 1
+			doPrint("buffer time forced to 1")
+		}
+	}
+}
+
 func (c *Command) Clear(bufreset bool) {
 	c.curtime = 0
 	c.cursteptime = 0

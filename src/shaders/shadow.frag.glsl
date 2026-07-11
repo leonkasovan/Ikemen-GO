@@ -1,3 +1,7 @@
+#ifdef GL_ES
+	precision highp float; // don't ask why but putting these up here satisfies the compiler
+	precision highp int;
+#endif
 struct Light
 {
 	vec3 direction;

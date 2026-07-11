@@ -113,7 +113,7 @@ function stand(p)
 end
 
 function closeMenu()
-	main.pauseMenu = false
+	main.pauseMenuActive = false
 end
 
 function trainingReset()

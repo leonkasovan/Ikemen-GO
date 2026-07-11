@@ -42,18 +42,34 @@ mapSet{map: "_iksys_dustposz"; value: pos z}
 
 # Round start maps reset
 if !isHelper && roundTime = 0 {
+	map(_iksys_lifeRecoveryValue) := 0;
 	map(_iksys_lifeRecoveryFlag) := 0;
 }
 
-if !isHelper && win && roundState = 4 && map(_iksys_lifeRecoveryFlag) = 0
+# Turns/Survival life recovery
+# TODO: There's a bug here where the enemy also recovers life when you lose in Survival
+if !isHelper && win && roundState = 4 {
+	# Determine how much to recover
+	if map(_iksys_lifeRecoveryFlag) = 0
 	&& (((teamMode = Turns || enemy,teamMode = Turns) && !matchOver) || gameVar(persistlife)) {
-	let bonus = lifeMax * gameOption(options.turns.recovery.bonus) / 100;
-	let base = lifeMax * gameOption(options.turns.recovery.base) / 100;
-	let timeRatio = float(timeRemaining) / (timeRemaining + timeElapsed);
-	if timeRemaining < 0 {
-		let timeRatio = 1;
+		let base = lifeMax * gameOption(options.turns.recovery.base) / 100;
+		let bonus = lifeMax * gameOption(options.turns.recovery.bonus) / 100;
+		let timeRatio = float(timeRemaining) / (timeRemaining + timeElapsed);
+		if timeRemaining < 0 {
+			let timeRatio = 1;
+		}
+		map(_iksys_lifeRecoveryValue) := round($base + $bonus * $timeRatio, 0);
+		map(_iksys_lifeRecoveryFlag) := 1;
 	}
-	let lifeRecovery = round($base + $timeRatio * $bonus, 0);
-	lifeSet{value: min(life + $lifeRecovery, lifeMax)}
-	map(_iksys_lifeRecoveryFlag) := 1;
+	# Recover gradually
+	if map(_iksys_lifeRecoveryValue) > 0 {
+		assertSpecial{flag: roundNotOver; flag2: roundNotSkip}
+		let lifeStep = Min(3, map(_iksys_lifeRecoveryValue));
+		lifeAdd{value: $lifeStep}
+		mapAdd{map: "_iksys_lifeRecoveryValue"; value: -$lifeStep}
+	}
+	# No need to delay round further if life is full
+	if life >= lifeMax {
+		map(_iksys_lifeRecoveryValue) := 0;
+	}
 }

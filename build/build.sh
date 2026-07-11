@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Exit in case of failure; print function-trap friendly errors
 set -o errtrace

@@ -26,6 +26,7 @@ type StatsFighterState struct {
 	WinKO      bool `json:"winKO"`      // won by KO
 	WinTime    bool `json:"winTime"`    // won on time-out
 	WinPerfect bool `json:"winPerfect"` // perfect round
+	WinClutch  bool `json:"winClutch`   // clutch round
 	WinSpecial bool `json:"winSpecial"` // won with a special
 	WinHyper   bool `json:"winHyper"`   // won with a hyper
 	DrawGame   bool `json:"drawGame"`   // round was declared a draw
@@ -198,6 +199,7 @@ func (s *StatsLog) nextRound() {
 				WinKO:      p[0].winKO(),
 				WinTime:    p[0].winTime(),
 				WinPerfect: p[0].winPerfect(),
+				WinClutch:  p[0].winClutch(),
 				WinSpecial: p[0].winType(WT_Special),
 				WinHyper:   p[0].winType(WT_Hyper),
 				DrawGame:   p[0].drawgame(),

@@ -271,6 +271,7 @@ func processCommandLine() {
 -width <num>            Sets game width
 -height <num>           Sets game height
 -setvolume <num>        Sets master volume to <num> (0-100)
+-setport <num>          Overrides port number
 	
 Quick VS Options:
 -p<n> <playername>      Loads player n, eg. -p3 kfm
@@ -278,11 +279,17 @@ Quick VS Options:
 -p<n>.color <col>       Sets player n's color to <col>
 -p<n>.power <power>     Sets player n's power to <power>
 -p<n>.life <life>       Sets player n's life to <life>
+-p<n>.lifeMax <life>    Sets player n's max life to <life>
+-p<n>.dizzyPoints <pts> Sets player n's dizzy points to <pts>
+-p<n>.guardPoints <pts> Sets player n's guard points to <pts>
+-p<n>.input <pn>        Sets player n's controls to use <pn>'s input settings
 -tmode1 <tmode>         Sets p1 team mode to <tmode>
 -tmode2 <tmode>         Sets p2 team mode to <tmode>
 -time <num>             Round time (-1 to disable)
 -rounds <num>           Plays for <num> rounds, and then quits
 -s <stagename>          Loads stage <stagename>
+-loadmotif              Fully loads motif/chars/stages
+-ip <hostip>            Connect to <hostip> for netplay; leave blank for host
 	
 Debug Options:
 -nojoy                  Disables joysticks
@@ -347,6 +354,9 @@ func handlePanic(r interface{}) {
 	memory := fmt.Sprintf("RAM in Use: %v MB / OS Reserved: %v MB", mem.Alloc/1024/1024, mem.Sys/1024/1024)
 	threads := fmt.Sprintf("Active Goroutines: %d", runtime.NumGoroutine())
 
+	// Renderer debug info (GPU memory stats, etc.)
+	rendererDebug := gfx.DebugInfo()
+
 	// Identify the crash type
 	crashType := "Fatal runtime error" // Default for unsafe crashes
 	if _, ok := r.(*lua.ApiError); ok {
@@ -364,6 +374,9 @@ func handlePanic(r interface{}) {
 	// Optional: print error to terminal
 	// We have to do this manually now because we recover() from the actual panic
 	fmt.Fprintf(os.Stderr, "Panic: %s\n\n%s\n", errStr, goStack)
+	if rendererDebug != "" {
+		fmt.Fprintf(os.Stderr, "\nRenderer Debug Info:\n%s\n", rendererDebug)
+	}
 
 	// Write to log file
 	logDir := filepath.Join(sys.baseDir, "save", "logs")
@@ -375,16 +388,29 @@ func handlePanic(r interface{}) {
 		fmt.Fprintf(f, "%s\n%s\n%s\n%s\n%s\n%s\nTimestamp: %s\n\n%s\n\nError: %s\n\n%s",
 			version, buildTime, platform, render, memory, threads,
 			now.Format("2006-01-02 15:04:05"), crashType, errStr, goStack)
+		if rendererDebug != "" {
+			fmt.Fprintf(f, "\n\nRenderer Debug Info:\n%s", rendererDebug)
+		}
 		f.Close()
 	}
 
 	// Show popup message
 	displayErr := errStr
+
+	// Remove stack traces from the popup to keep it concise. The full details already go to the log file
+	// Remove the Lua stack trace
 	if _, ok := r.(*lua.ApiError); ok {
-		parts := strings.SplitN(errStr, "stack traceback:", 2)
-		displayErr = strings.TrimSpace(parts[0]) // Remove the Lua traceback from this one
+		if idx := strings.Index(displayErr, "\nstack traceback:"); idx >= 0 {
+			displayErr = displayErr[:idx]
+		}
+		displayErr = strings.TrimSpace(displayErr)
+	}
+	// Also remove any Go stack trace that may have appeared
+	if idx := strings.Index(displayErr, "\ngoroutine "); idx >= 0 {
+		displayErr = displayErr[:idx]
 	}
 
+	// Limit message to 1000 characters just in case
 	if len(displayErr) > 1000 {
 		displayErr = displayErr[:1000] + "..."
 	}

@@ -25,11 +25,7 @@ type Font_GL33 struct {
 	windowHeight int
 	textures     []*TextureAtlas
 	color        color
-	palfxAdd     [3]float32
-	palfxMul     [3]float32
-	palfxGray    float32
-	palfxHue     float32
-	palfxNeg     int32
+	shaderPalFX  ShaderPalFX
 }
 
 type FontRenderer_GL33 struct {
@@ -97,12 +93,8 @@ func (f *Font_GL33) SetColor(red float32, green float32, blue float32, alpha flo
 	f.color.a = alpha
 }
 
-func (f *Font_GL33) SetPalFX(neg bool, gray float32, add, mul [3]float32, hue float32) {
-	f.palfxAdd = add
-	f.palfxMul = mul
-	f.palfxGray = gray
-	f.palfxHue = hue
-	f.palfxNeg = int32(Btoi(neg))
+func (f *Font_GL33) SetPalFX(state ShaderPalFX) {
+	f.shaderPalFX = state
 }
 
 func (f *Font_GL33) UpdateResolution(windowWidth int, windowHeight int) {
@@ -165,11 +157,13 @@ func (f *Font_GL33) Printf(x, y float32, xscl, yscl float32, spacingXAdd float32
 
 	//set text color
 	r.SetUniformFSub(program.uniforms["textColor"], f.color.r, f.color.g, f.color.b, f.color.a)
-	r.SetUniformFSub(program.uniforms["palAdd"], f.palfxAdd[0], f.palfxAdd[1], f.palfxAdd[2])
-	r.SetUniformFSub(program.uniforms["palMul"], f.palfxMul[0], f.palfxMul[1], f.palfxMul[2])
-	r.SetUniformFSub(program.uniforms["palGray"], f.palfxGray)
-	r.SetUniformFSub(program.uniforms["palHue"], f.palfxHue)
-	r.SetUniformISub(program.uniforms["palNeg"], f.palfxNeg)
+
+	// Set PalFX uniforms
+	r.SetUniformFSub(program.uniforms["palAdd"], f.shaderPalFX.add[0], f.shaderPalFX.add[1], f.shaderPalFX.add[2])
+	r.SetUniformFSub(program.uniforms["palMul"], f.shaderPalFX.mult[0], f.shaderPalFX.mult[1], f.shaderPalFX.mult[2])
+	r.SetUniformFSub(program.uniforms["palGray"], f.shaderPalFX.gray)
+	r.SetUniformFSub(program.uniforms["palHue"], f.shaderPalFX.hue)
+	r.SetUniformISub(program.uniforms["palNeg"], int32(Btoi(f.shaderPalFX.neg)))
 
 	//set screen resolution
 	r.SetUniformFSub(program.uniforms["resolution"], float32(f.windowWidth), float32(f.windowHeight))
@@ -501,7 +495,7 @@ func (r *FontRenderer_GL33) LoadTrueTypeFont(reader io.Reader, scale int32, low,
 	f.ttf = ttf
 	f.scale = scale
 	f.SetColor(1.0, 1.0, 1.0, 1.0) //set default white
-	f.SetPalFX(false, 0, [3]float32{0, 0, 0}, [3]float32{1, 1, 1}, 0)
+	f.SetPalFX(NewShaderPalFX())
 	f.textures = append(f.textures, CreateTextureAtlas(256, 256, 32, true))
 
 	err = f.GenerateGlyphs(low, high)

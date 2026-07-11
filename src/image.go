@@ -20,6 +20,7 @@ const (
 	TT_none TransType = iota
 	TT_add
 	TT_sub
+	TT_subadd
 	TT_default
 )
 
@@ -166,36 +167,33 @@ func (pf *PalFX) getFxPal(blendMode TransType, pal []uint32, neg bool) []uint32 
 	return sys.workpal
 }
 
-func (pf *PalFX) getFinalPalFx(blendMode TransType, alpha [2]int32) (neg bool, grayscale float32,
-	add, mul [3]float32, invblend int32, hue float32) {
-
+func (pf *PalFX) getFinalPalFx(blendMode TransType, alpha [2]int32) (state ShaderPalFX) {
 	p := pf.getSynFx(blendMode, alpha)
+
 	if !p.enable {
-		neg = false
-		grayscale = 0
-		for i := range add {
-			add[i] = 0
-		}
-		for i := range mul {
-			mul[i] = 1
-		}
+		state.neg = false
+		state.gray = 0
+		state.add = [3]float32{0, 0, 0}
+		state.mult = [3]float32{1, 1, 1}
+		state.hue = 0
+		state.invblend = 0
 		return
 	}
-	neg = p.eInvertall
-	grayscale = 1 - p.eColor
-	invblend = p.eInvertblend
-	hue = p.eHue
+
+	state.neg = p.eInvertall
+	state.gray = 1 - p.eColor
+	state.invblend = p.eInvertblend
+	state.hue = p.eHue
 
 	// Determine if we use negative color math based on blendMode
 	useNeg := blendMode == TT_sub && p.eAllowNeg
 
 	for i, v := range p.eAdd {
-		add[i] = float32(v) / 255
+		state.add[i] = float32(v) / 255
 		if useNeg {
-			//add[i] *= -1
-			mul[i] = float32(p.eMul[(i+1)%3]+p.eMul[(i+2)%3]) / 512
+			state.mult[i] = float32(p.eMul[(i+1)%3]+p.eMul[(i+2)%3]) / 512
 		} else {
-			mul[i] = float32(p.eMul[i]) / 256
+			state.mult[i] = float32(p.eMul[i]) / 256
 		}
 	}
 	return
@@ -471,6 +469,20 @@ func (pl *PaletteList) SwapPalMap(palMap *[]int) bool {
 	return true
 }
 
+// Returns the real index of a selectable palette
+// For instance if palette 3 is requested, it checks palette 1,3's location and returns that index
+func (pl *PaletteList) SelectablePalIndex(palNum int) int {
+	if palNum < 1 || palNum > sys.cfg.Config.PaletteMax {
+		return 0 // Fallback
+	}
+	key := [2]uint16{1, uint16(palNum)}
+	palIdx, ok := pl.PalTable[key]
+	if !ok {
+		return 0
+	}
+	return palIdx
+}
+
 // Convert palette color slice into the format used in textures
 func Pal32ToBytes(pal []uint32) []byte {
 	if len(pal) == 0 {
@@ -550,126 +562,6 @@ func readActPalette(filename string) ([]uint32, error) {
 	}
 
 	return pal, nil
-}
-
-// Loads a char's selectable palettes for the motif/scripts
-// Used by things like palette selection and Turns faces colors
-func loadCharPalettes(sff *Sff, filename string, ref int) error {
-	f, err := OpenFile(filename)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	h := sff.header
-	read := func(x interface{}) error {
-		return binary.Read(f, binary.LittleEndian, x)
-	}
-	var lofs, tofs uint32
-	if err := h.Read(f, &lofs, &tofs); err != nil {
-		return err
-	}
-	maxPal := int(sys.cfg.Config.PaletteMax)
-	c := sys.sel.charlist[ref]
-
-	// SFF v2
-	uniquePals := make(map[[2]uint16]int)
-	loaded := make(map[int]bool)
-
-	for headerIdx := 0; headerIdx < int(h.NumberOfPalettes); headerIdx++ {
-		f.Seek(int64(h.FirstPaletteHeaderOffset)+int64(headerIdx*16), 0)
-
-		var gn_ [3]uint16
-		if err := read(gn_[:]); err != nil {
-			return err
-		}
-
-		// We only care about group 1
-		if gn_[0] != 1 || gn_[1] <= 0 {
-			continue
-		}
-
-		destIdx := int(gn_[1]) - 1
-		if destIdx < 0 || destIdx >= maxPal {
-			continue
-		}
-
-		var link uint16
-		if err := read(&link); err != nil {
-			return err
-		}
-		var ofs, plSize uint32
-		if err := read(&ofs); err != nil {
-			return err
-		}
-		if err := read(&plSize); err != nil {
-			return err
-		}
-
-		var pal []uint32
-		// Reuse duplicate if already loaded
-		if old, ok := uniquePals[[2]uint16{gn_[0], gn_[1]}]; ok {
-			if old >= 0 && old < maxPal && loaded[old] {
-				pal = sff.palList.Get(old)
-				destIdx = old
-			}
-		} else if plSize == 0 {
-			// Link must point to a previously loaded slot
-			linkIdx := int(link) - 1
-			if linkIdx >= 0 && linkIdx < maxPal && loaded[linkIdx] {
-				pal = sff.palList.Get(linkIdx)
-				destIdx = linkIdx
-			}
-		} else {
-			// Read SFF palette data
-			var err error
-			pal, err = sff.ReadPalette(f, int64(lofs+ofs), plSize)
-			if err != nil {
-				return err
-			}
-		}
-		// Register only if we have data
-		if pal != nil {
-			sff.palList.SetSource(destIdx, pal)
-			loaded[destIdx] = true
-			uniquePals[[2]uint16{gn_[0], gn_[1]}] = destIdx
-			sff.palList.PalTable[[2]uint16{gn_[0], gn_[1]}] = destIdx
-			sff.palList.numcols[[2]uint16{gn_[0], gn_[1]}] = int(gn_[2])
-		}
-	}
-
-	// SFFv1 and Act Overrides
-	// TODO: External .ACTs on SFFv2 without palette slots may cause color bleeding,
-	// on sprites with unique palettes if a SFFv2 with Acts is loaded by sffNew, since is a simplified utility
-	// and lacks the engine's palInfo/cgi logic to properly isolate palette remapping during rendering.
-	searchDirs := []string{c.def, "", "data/"}
-
-	// Read ACT palettes
-	for x := 0; x < len(c.pal_files) && x < len(c.pal); x++ {
-		if c.pal_files[x] == "" {
-			continue
-		}
-
-		palSlot := uint16(c.pal[x])
-		targetIdx := int(palSlot) - 1
-
-		if targetIdx < 0 || targetIdx >= maxPal {
-			continue
-		}
-
-		palPath := SearchFile(c.pal_files[x], searchDirs)
-		pal, err := readActPalette(palPath)
-		if err != nil {
-			fmt.Println("Error reading " + palPath)
-			continue
-		}
-
-		// Update the PalTable mapping
-		sff.palList.SetSource(targetIdx, pal)
-		sff.palList.PalTable[[2]uint16{1, palSlot}] = targetIdx
-		sff.palList.numcols[[2]uint16{1, palSlot}] = 256 // ACT files are always 256 colors
-	}
-
-	return nil
 }
 
 type Sprite struct {
@@ -1596,8 +1488,16 @@ func findActiveSff(filename string) *Sff {
 	return nil
 }
 
+// Deep loaders should be able to abort quickly when pre-match load is canceled.
+func loadingCanceled() bool {
+	return sys.loader.cancelRequested() || sys.gameEnd || sys.loader.state == LS_Cancel
+}
+
 // Loads the full SFF file
 func loadSff(filename string, char bool, isMainThread bool, isActPal bool) (*Sff, error) {
+	if loadingCanceled() {
+		return nil, ErrLoadingCanceled
+	}
 	// Borrow an existing SFF if possible
 	if s := findActiveSff(filename); s != nil {
 		return s, nil
@@ -1620,66 +1520,19 @@ func loadSff(filename string, char bool, isMainThread bool, isActPal bool) (*Sff
 		return nil, err
 	}
 
-	read := func(x interface{}) error {
-		return binary.Read(f, binary.LittleEndian, x)
+	// Load SFFv2 palettes
+	if err := s.loadPalettes(f, lofs); err != nil {
+		return nil, err
 	}
 
-	// Load palettes
-	if s.header.Version[0] != 1 {
-		uniquePals := make(map[[2]uint16]int)
-		for i := 0; i < int(s.header.NumberOfPalettes); i++ {
-			f.Seek(int64(s.header.FirstPaletteHeaderOffset)+int64(i*16), 0)
-			var gn_ [3]uint16
-			if err := read(gn_[:]); err != nil {
-				return nil, err
-			}
-			var link uint16
-			if err := read(&link); err != nil {
-				return nil, err
-			}
-			var ofs, plSize uint32
-			if err := read(&ofs); err != nil {
-				return nil, err
-			}
-			if err := read(&plSize); err != nil {
-				return nil, err
-			}
-			var pal []uint32
-			var idx int
-			if old, ok := uniquePals[[2]uint16{gn_[0], gn_[1]}]; ok {
-				idx = old
-				pal = s.palList.Get(old)
-				LogMessage("WARNING: Duplicate palette key in %v: %v,%v (%v/%v)", filename, gn_[0], gn_[1], i+1, s.header.NumberOfPalettes)
-			} else if plSize == 0 {
-				idx = int(link)
-				pal = s.palList.Get(idx)
-			} else {
-				// Read palette data
-				var err error
-				pal, err = s.ReadPalette(f, int64(lofs+ofs), plSize)
-				if err != nil {
-					return nil, err
-				}
-				idx = i
-			}
-			uniquePals[[2]uint16{gn_[0], gn_[1]}] = idx
-			s.palList.SetSource(i, pal)
-			s.palList.PalTable[[...]uint16{gn_[0], gn_[1]}] = idx
-			// Number of colors as specified in the SFF
-			// We'll use a length check later instead because that's more reliable
-			s.palList.numcols[[...]uint16{gn_[0], gn_[1]}] = int(gn_[2])
-			if i <= sys.cfg.Config.PaletteMax &&
-				s.palList.PalTable[[...]uint16{1, uint16(i + 1)}] == s.palList.PalTable[[...]uint16{gn_[0], gn_[1]}] &&
-				gn_[0] != 1 && gn_[1] != uint16(i+1) {
-				s.palList.PalTable[[...]uint16{1, uint16(i + 1)}] = -1
-			}
-		}
-	}
 	// Load sprites
 	spriteList := make([]*Sprite, int(s.header.NumberOfSprites))
 	var prev *Sprite
 	shofs := int64(s.header.FirstSpriteHeaderOffset)
 	for i := 0; i < len(spriteList); i++ {
+		if loadingCanceled() {
+			return nil, ErrLoadingCanceled
+		}
 		f.Seek(shofs, 0)
 		spriteList[i] = newSprite()
 		var xofs, size uint32
@@ -1699,6 +1552,9 @@ func loadSff(filename string, char bool, isMainThread bool, isActPal bool) (*Sff
 		if size == 0 {
 			if int(indexOfPrevious) < i {
 				dst, src := spriteList[i], spriteList[int(indexOfPrevious)]
+				if loadingCanceled() {
+					return nil, ErrLoadingCanceled
+				}
 				// Moved to shareCopy() itself
 				//sys.mainThreadTask <- func() {
 				dst.shareCopy(src)
@@ -1737,8 +1593,14 @@ func loadSff(filename string, char bool, isMainThread bool, isActPal bool) (*Sff
 			shofs += 28
 		}
 		if isMainThread {
+			if loadingCanceled() {
+				return nil, ErrLoadingCanceled
+			}
 			sys.runMainThreadTask()
 		}
+	}
+	if loadingCanceled() {
+		return nil, ErrLoadingCanceled
 	}
 
 	/*
@@ -1759,39 +1621,40 @@ func loadSff(filename string, char bool, isMainThread bool, isActPal bool) (*Sff
 // Loads a SFF with only specific sprites
 func preloadSff(filename string, char bool, preloadSpr map[[2]uint16]bool) (*Sff, []int32, error) {
 	sff := newSff()
+	sff.filename = filename
 
 	f, err := OpenFile(filename)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	defer func() { chk(f.Close()) }()
+	defer func() {
+		chk(f.Close())
+	}()
 
-	h := &SffHeader{}
+	// Read SFF header
 	var lofs, tofs uint32
-	if err := h.Read(f, &lofs, &tofs); err != nil {
+	if err := sff.header.Read(f, &lofs, &tofs); err != nil {
 		return nil, nil, err
 	}
-
-	sff.filename = filename
-	sff.header.Version[0] = h.Version[0]
-	sff.header.Version[1] = h.Version[1]
-	sff.header.Version[2] = h.Version[2]
-	sff.header.Version[3] = h.Version[3]
-	sff.header.FirstPaletteHeaderOffset = h.FirstPaletteHeaderOffset
-	sff.header.NumberOfPalettes = h.NumberOfPalettes
 
 	read := func(x interface{}) error {
 		return binary.Read(f, binary.LittleEndian, x)
 	}
 
-	var shofs, xofs, size uint32 = h.FirstSpriteHeaderOffset, 0, 0
+	// Load SFFv2 palettes
+	if err := sff.loadPalettes(f, lofs); err != nil {
+		return nil, nil, err
+	}
+
+	// Prepare sprite reading
+	var shofs, xofs, size uint32 = sff.header.FirstSpriteHeaderOffset, 0, 0
 	var indexOfPrevious uint16
-	var plShofs, plXofs, plSize uint32 = h.FirstPaletteHeaderOffset, 0, 0
+	var plShofs, plXofs, plSize uint32 = sff.header.FirstPaletteHeaderOffset, 0, 0
 	var plIndexOfPrevious uint16
 	pl := &PaletteList{}
 	pl.init()
-	spriteList := make([]*Sprite, int(h.NumberOfSprites))
+	spriteList := make([]*Sprite, int(sff.header.NumberOfSprites))
 	var prev *Sprite
 	preloadSprNum := len(preloadSpr)
 	preloadRef := make(map[int]bool)
@@ -1806,8 +1669,8 @@ func preloadSff(filename string, char bool, preloadSpr map[[2]uint16]bool) (*Sff
 	var initialPalLocation int64
 	coloredPalette := -1
 	if sff.header.Version[0] != 1 {
-		for i := 0; i < int(h.NumberOfPalettes); i++ {
-			f.Seek(int64(h.FirstPaletteHeaderOffset)+int64(i*16), 0)
+		for i := 0; i < int(sff.header.NumberOfPalettes); i++ {
+			f.Seek(int64(sff.header.FirstPaletteHeaderOffset)+int64(i*16), 0)
 			var gn_ [3]int16
 			if err := read(gn_[:]); err != nil {
 				return nil, nil, err
@@ -1821,7 +1684,7 @@ func preloadSff(filename string, char bool, preloadSpr map[[2]uint16]bool) (*Sff
 	for i := 0; i < len(spriteList); i++ {
 		spriteList[i] = newSprite()
 		f.Seek(int64(shofs), 0)
-		switch h.Version[0] {
+		switch sff.header.Version[0] {
 		case 1:
 			if err := spriteList[i].readHeader(f, &xofs, &size, &indexOfPrevious); err != nil {
 				return nil, nil, err
@@ -1889,10 +1752,10 @@ func preloadSff(filename string, char bool, preloadSpr map[[2]uint16]bool) (*Sff
 					bxofs, bsize := headerXofs[base], headerSize[base]
 					if bsize > 0 {
 						var err error
-						switch h.Version[0] {
+						switch sff.header.Version[0] {
 						case 1:
 							err = spriteList[base].read(
-								f, h, headerShofs32[base], bsize, bxofs, prev, pl)
+								f, &sff.header, headerShofs32[base], bsize, bxofs, prev, pl)
 						case 2:
 							err = spriteList[base].readV2(f, int64(bxofs), bsize)
 						}
@@ -1908,9 +1771,9 @@ func preloadSff(filename string, char bool, preloadSpr map[[2]uint16]bool) (*Sff
 					spriteList[i].palidx = 0 // index out of range
 				}
 			} else {
-				switch h.Version[0] {
+				switch sff.header.Version[0] {
 				case 1:
-					if err := spriteList[i].read(f, h, int64(shofs+32), size, xofs, prev, pl); err != nil {
+					if err := spriteList[i].read(f, &sff.header, int64(shofs+32), size, xofs, prev, pl); err != nil {
 						return nil, nil, err
 					}
 				case 2:
@@ -1921,7 +1784,7 @@ func preloadSff(filename string, char bool, preloadSpr map[[2]uint16]bool) (*Sff
 				if ok {
 					// palette
 					plXofs = xofs
-					if h.Version[0] == 1 {
+					if sff.header.Version[0] == 1 {
 						// Try palette from list
 						spriteList[i].Pal = pl.Get(spriteList[i].palidx)
 						if spriteList[i].palidx >= sys.cfg.Config.PaletteMax || spriteList[i].palidx < 0 {
@@ -1953,8 +1816,8 @@ func preloadSff(filename string, char bool, preloadSpr map[[2]uint16]bool) (*Sff
 										spriteList[i].palidx = 0 // shared
 									}
 								}
+								f.Seek(int64(xofs), 0) // reset pointer to sprite data
 							}
-							f.Seek(int64(xofs), 0) // reset pointer to sprite data
 						} else {
 							// Unique palette, keep as is
 							spriteList[i].palidx = 1
@@ -1965,7 +1828,7 @@ func preloadSff(filename string, char bool, preloadSpr map[[2]uint16]bool) (*Sff
 						ip := plIndexOfPrevious + 1
 						for plSize == 0 && ip != plIndexOfPrevious {
 							ip = plIndexOfPrevious
-							plShofs = h.FirstPaletteHeaderOffset + uint32(ip)*16
+							plShofs = sff.header.FirstPaletteHeaderOffset + uint32(ip)*16
 							f.Seek(int64(plShofs)+6, 0)
 							if err := read(&plIndexOfPrevious); err != nil {
 								return nil, nil, err
@@ -1991,7 +1854,6 @@ func preloadSff(filename string, char bool, preloadSpr map[[2]uint16]bool) (*Sff
 						} else {
 							spriteList[i].palidx = 0
 						}
-
 					}
 				}
 				if prev == nil {
@@ -2007,18 +1869,19 @@ func preloadSff(filename string, char bool, preloadSpr map[[2]uint16]bool) (*Sff
 				}
 			}
 		}
-		if h.Version[0] == 1 {
+		if sff.header.Version[0] == 1 {
 			shofs = xofs
 		} else {
 			shofs += 28
 		}
 	}
-	// selectable palettes
+
+	// Build selectable palette list
 	var preSelPal []int32
 	var selPal []int32
-	if h.Version[0] != 1 && char {
-		for i := 0; i < int(h.NumberOfPalettes); i++ {
-			f.Seek(int64(h.FirstPaletteHeaderOffset)+int64(i*16), 0)
+	if sff.header.Version[0] != 1 && char {
+		for i := 0; i < int(sff.header.NumberOfPalettes); i++ {
+			f.Seek(int64(sff.header.FirstPaletteHeaderOffset)+int64(i*16), 0)
 			var gn_ [3]int16
 			if err := read(gn_[:]); err != nil {
 				return nil, nil, err
@@ -2044,7 +1907,80 @@ func preloadSff(filename string, char bool, preloadSpr map[[2]uint16]bool) (*Sff
 	return sff, selPal, nil
 }
 
-// Read SFFv2 palettes
+// Loads all of a v2 SFF's palettes
+// We also load all of them when preloading to avoid issues
+// https://github.com/ikemen-engine/Ikemen-GO/issues/3460
+func (s *Sff) loadPalettes(f io.ReadSeeker, lofs uint32) error {
+	if s.header.Version[0] == 1 {
+		return nil
+	}
+
+	read := func(x interface{}) error {
+		return binary.Read(f, binary.LittleEndian, x)
+	}
+
+	uniquePals := make(map[[2]uint16]int)
+
+	for i := 0; i < int(s.header.NumberOfPalettes); i++ {
+		if loadingCanceled() {
+			return ErrLoadingCanceled
+		}
+		f.Seek(int64(s.header.FirstPaletteHeaderOffset)+int64(i*16), 0)
+		var gn [3]uint16
+		if err := read(gn[:]); err != nil {
+			return err
+		}
+		var link uint16
+		if err := read(&link); err != nil {
+			return err
+		}
+		var ofs, plSize uint32
+		if err := read(&ofs); err != nil {
+			return err
+		}
+		if err := read(&plSize); err != nil {
+			return err
+		}
+		var pal []uint32
+		var idx int
+		if old, ok := uniquePals[[2]uint16{gn[0], gn[1]}]; ok {
+			// Duplicate key
+			idx = old
+			pal = s.palList.Get(old)
+			LogMessage("WARNING: Duplicate palette key in %v: %v,%v (%v/%v)", s.filename, gn[0], gn[1], i+1, s.header.NumberOfPalettes)
+		} else if plSize == 0 {
+			// Linked palette
+			idx = int(link)
+			pal = s.palList.Get(idx)
+		} else {
+			// Unique palette
+			var err error
+			pal, err = s.ReadPalette(f, int64(lofs+ofs), plSize)
+			if err != nil {
+				return err
+			}
+			idx = i
+		}
+		uniquePals[[2]uint16{gn[0], gn[1]}] = idx
+		s.palList.SetSource(i, pal)
+		s.palList.PalTable[[2]uint16{gn[0], gn[1]}] = idx
+		// Number of colors as specified in the SFF
+		// We'll use a length check later instead because that's more reliable
+		s.palList.numcols[[2]uint16{gn[0], gn[1]}] = int(gn[2])
+
+		// This no longer seems necessary after merging select screen and ingame palette codes
+		// Clear conflicting selectable palette mapping
+		//if i <= sys.cfg.Config.PaletteMax &&
+		//	s.palList.PalTable[[2]uint16{1, uint16(i+1)}] == s.palList.PalTable[[2]uint16{gn[0], gn[1]}] &&
+		//	(gn[0] != 1 || gn[1] != uint16(i+1)) {
+		//	s.palList.PalTable[[2]uint16{1, uint16(i+1)}] = -1
+		//}
+	}
+
+	return nil
+}
+
+// Read one SFFv2 palette
 func (s *Sff) ReadPalette(f io.ReadSeeker, offset int64, size uint32) ([]uint32, error) {
 	if _, err := f.Seek(offset, io.SeekStart); err != nil {
 		return nil, err
@@ -2097,6 +2033,49 @@ func (s *Sff) ReadPalette(f io.ReadSeeker, offset int64, size uint32) ([]uint32,
 	}
 
 	return pal, nil
+}
+
+// Loads a char's selectable ACT palettes for the motif/scripts
+// Used by things like palette selection and Turns faces colors
+func (s *Sff) loadActPalettes(ref int) error {
+	// No need to reopen the SFF since the preload already grabbed the palettes
+	//f, err := OpenFile(filename)
+
+	c := sys.sel.charlist[ref]
+	maxPal := int(sys.cfg.Config.PaletteMax)
+
+	// TODO: External .ACTs on SFFv2 without palette slots may cause color bleeding,
+	// on sprites with unique palettes if a SFFv2 with Acts is loaded by sffNew, since is a simplified utility
+	// and lacks the engine's palInfo/cgi logic to properly isolate palette remapping during rendering.
+	searchDirs := []string{c.def, "", "data/"}
+
+	// Read each palette
+	for x := 0; x < len(c.pal_files) && x < len(c.pal); x++ {
+		if c.pal_files[x] == "" {
+			continue
+		}
+
+		palSlot := uint16(c.pal[x])
+		targetIdx := int(palSlot) - 1
+
+		if targetIdx < 0 || targetIdx >= maxPal {
+			continue
+		}
+
+		palPath := SearchFile(c.pal_files[x], searchDirs)
+		pal, err := readActPalette(palPath)
+		if err != nil {
+			LogMessage("Error reading " + palPath)
+			continue
+		}
+
+		// Update the PalTable mapping
+		s.palList.SetSource(targetIdx, pal)
+		s.palList.PalTable[[2]uint16{1, palSlot}] = targetIdx
+		s.palList.numcols[[2]uint16{1, palSlot}] = 256 // ACT files are always 256 colors
+	}
+
+	return nil
 }
 
 func (s *Sff) GetSprite(g, n uint16) *Sprite {

@@ -70,11 +70,8 @@ type FontProperties struct {
 }
 
 type FilesProperties struct {
-	Spr     string `ini:"spr" lookup:"def,,data/"`
-	Snd     string `ini:"snd" lookup:"def,,data/"`
-	Loading struct {
-		Storyboard string `ini:"storyboard" lookup:"def,,data/"`
-	} `ini:"loading"`
+	Spr  string `ini:"spr" lookup:"def,,data/"`
+	Snd  string `ini:"snd" lookup:"def,,data/"`
 	Logo struct {
 		Storyboard string `ini:"storyboard" lookup:"def,,data/"`
 	} `ini:"logo"`
@@ -413,12 +410,13 @@ type ItemProperties struct {
 }
 
 type FaceProperties struct {
-	AnimationCharPreloadProperties
-	Done struct { // not used by [Victory Screen]
-		AnimationCharPreloadProperties
-		Key []string `ini:"key"` // only used by [VS Screen]
+	AnimationCharPreloadProperties `skipinit:"true"`
+	Done                           struct { // not used by [Victory Screen]
+		AnimationCharPreloadProperties `skipinit:"true"`
+		Key                            []string `ini:"key"` // only used by [VS Screen]
 	} `ini:"done"`
-	Random   AnimationProperties `ini:"random"` // only used by [Select Info]
+	Random   AnimationProperties `ini:"random"`  // only used by [Select Info]
+	Loading  AnimationProperties `ini:"loading"` // only used by [Select Info] and [VS Screen]
 	Velocity [2]float32          `ini:"velocity"`
 	MaxDist  [2]float32          `ini:"maxdist"`
 	Accel    [2]float32          `ini:"accel"`
@@ -517,8 +515,8 @@ type PlayerSelectProperties struct {
 			Snd [2]int32 `ini:"snd" default:"-1,0"`
 		} `ini:"value"`
 		Preview struct {
-			AnimationCharPreloadProperties
-			Snd [2]int32 `ini:"snd" default:"-1,0"`
+			AnimationCharPreloadProperties `skipinit:"true"`
+			Snd                            [2]int32 `ini:"snd" default:"-1,0"`
 		} `ini:"preview"`
 		Number TextProperties      `ini:"number"`
 		Text   TextProperties      `ini:"text"`
@@ -599,7 +597,7 @@ type PlayerDialogueProperties struct {
 	Face struct {
 		AnimationProperties
 		Active AnimationProperties `ini:"active"`
-	} `ini:"face"`
+	} `ini:"face" skipinit:"true"`
 	Name TextProperties `ini:"name"`
 	Text struct {
 		TextProperties
@@ -643,8 +641,12 @@ type TitleInfoProperties struct {
 	Cancel struct {
 		Snd [2]int32 `ini:"snd" default:"-1,0"`
 	} `ini:"cancel"`
-	Loading TextProperties `ini:"loading"`
-	Footer  struct {
+	Loading struct {
+		TextProperties
+		Wait       AnimationTextProperties `ini:"wait"`
+		Storyboard string                  `ini:"storyboard" lookup:"def,,data/"`
+	} `ini:"loading"`
+	Footer struct {
 		Title   TextProperties    `ini:"title"`
 		Info    TextProperties    `ini:"info"`
 		Version TextProperties    `ini:"version"`
@@ -731,9 +733,10 @@ type SelectInfoProperties struct {
 			Snd [2]int32 `ini:"snd" default:"-1,0"`
 		} `ini:"move"`
 		Portrait struct {
-			AnimationStagePreloadProperties
-			Bg     AnimationProperties `ini:"bg"`
-			Random AnimationProperties `ini:"random"`
+			AnimationStagePreloadProperties `skipinit:"true"`
+			Bg                              AnimationProperties `ini:"bg"`
+			Random                          AnimationProperties `ini:"random"`
+			Loading                         AnimationProperties `ini:"loading"`
 		} `ini:"portrait"`
 	} `ini:"stage"`
 	Done struct {
@@ -743,9 +746,12 @@ type SelectInfoProperties struct {
 		Key []string `ini:"key"`
 		Snd [2]int32 `ini:"snd" default:"-1,0"`
 	} `ini:"cancel"`
-	Portrait AnimationCharPreloadProperties `ini:"portrait"`
-	Title    TextMapProperties              `ini:"title"`
-	Record   TextMapProperties              `ini:"record"`
+	Portrait struct {
+		AnimationCharPreloadProperties `skipinit:"true"`
+		Loading                        AnimationProperties `ini:"loading"`
+	} `ini:"portrait"`
+	Title    TextMapProperties `ini:"title"`
+	Record   TextMapProperties `ini:"record"`
 	TeamMenu struct {
 		Move struct {
 			Wrapping bool `ini:"wrapping"`
@@ -787,11 +793,18 @@ type VsScreenProperties struct {
 		Pos [2]float32 `ini:"pos"`
 		TextProperties
 		Portrait struct {
-			AnimationStagePreloadProperties
-			Bg AnimationProperties `ini:"bg"`
+			AnimationStagePreloadProperties `skipinit:"true"`
+			Bg                              AnimationProperties `ini:"bg"`
+			Loading                         AnimationProperties `ini:"loading"`
 		} `ini:"portrait"`
 		Snd [2]int32 `ini:"snd" default:"-1,0"`
 	} `ini:"stage"`
+	Loading struct {
+		AnimationTextProperties
+		Done       AnimationTextProperties `ini:"done"`
+		Wait       AnimationTextProperties `ini:"wait"`
+		Storyboard string                  `ini:"storyboard" lookup:"def,,data/"`
+	} `ini:"loading"`
 }
 
 type DemoModeProperties struct {
@@ -1230,11 +1243,11 @@ type HiscoreInfoProperties struct {
 		Result  ItemProperties `ini:"result"`
 		Name    ItemProperties `ini:"name"`
 		Face    struct {
-			AnimationCharPreloadProperties
-			Num     int32               `ini:"num"`
-			Spacing [2]float32          `ini:"spacing"`
-			Bg      AnimationProperties `ini:"bg"`
-			Unknown AnimationProperties `ini:"unknown"`
+			AnimationCharPreloadProperties `skipinit:"true"`
+			Num                            int32               `ini:"num"`
+			Spacing                        [2]float32          `ini:"spacing"`
+			Bg                             AnimationProperties `ini:"bg"`
+			Unknown                        AnimationProperties `ini:"unknown"`
 		} `ini:"face"`
 	} `ini:"item"`
 	Timer  TimerProperties `ini:"timer"`
@@ -1329,6 +1342,7 @@ type Motif struct {
 	WarningInfo     WarningInfoProperties               `ini:"warning_info"`
 	Glyphs          map[string]*GlyphProperties         `ini:"glyphs" literal:"true" insensitivekeys:"false" sff:"GlyphsSff"`
 	fntIndexByKey   map[string]int                      // filepath|height -> index
+	inheritedKeys   map[string]bool                     // normalized .anim/.spr paths assigned by overrideParams inheritance
 	ch              MotifChallenger
 	co              MotifContinue
 	de              MotifDemo
@@ -1353,6 +1367,8 @@ func hasUserKey(iniFile *ini.File, section, key string) bool {
 
 // preprocessINIContent removes or modifies specific sections before parsing.
 func preprocessINIContent(input string) string {
+	// go-ini rejects malformed empty quoted values like """, so collapse quote-only garbage to an empty string.
+	input = regexp.MustCompile(`(?m)^([ \t]*[^;\r\n\[\]=][^=\r\n]*=[ \t]*)"{3,}([ \t]*(?:;.*)?$)`).ReplaceAllString(input, `${1}""${2}`)
 	// Define a regex to find the [Infobox Text] section
 	infoboxRegex := regexp.MustCompile(`(?is)\[\s*infobox\s+text\s*\]\s*\n(.*?)(\n\s*\[|$)`)
 	// Extract the content of [Infobox Text]
@@ -1544,6 +1560,7 @@ func loadMotif(def string) (*Motif, error) {
 	var iniFile *ini.File
 	var userIniFile *ini.File
 	var defaultOnlyIni *ini.File
+	var motifText string
 
 	if err := LoadFile(&def, []string{def, "", "data/"}, "", func(filename string) error {
 		def = filename
@@ -1554,10 +1571,11 @@ func loadMotif(def string) (*Motif, error) {
 			return fmt.Errorf("Failed to discover external mod system.def files: %w", err)
 		}
 
-		inputBytes, err := LoadText(filename)
+		inputText, err := LoadText(filename)
 		if err != nil {
 			return fmt.Errorf("Failed to load text from %s: %w", filename, err)
 		}
+		motifText = NormalizeNewlines(inputText)
 
 		var modsConcat strings.Builder
 		for _, p := range modSystemDefs {
@@ -1574,7 +1592,7 @@ func loadMotif(def string) (*Motif, error) {
 
 		// Preprocess and load INI sources from memory.
 		// Motif file overrides mods
-		baseTxt := NormalizeNewlines(string(inputBytes))
+		baseTxt := motifText
 		modsTxt := modsConcat.String()
 		var combined string
 		if modsTxt != "" {
@@ -1585,22 +1603,22 @@ func loadMotif(def string) (*Motif, error) {
 		} else {
 			combined = baseTxt
 		}
-		normalizedInput := []byte(preprocessINIContent(combined))
-		normalizedDefault := []byte(preprocessINIContent(NormalizeNewlines(string(defaultMotif))))
+		normalizedInput := preprocessINIContent(combined)
+		normalizedDefault := preprocessINIContent(NormalizeNewlines(string(defaultMotif)))
 
 		// Defaults-only baseline
-		defaultOnlyIni, err = ini.LoadSources(baseOptions, normalizedDefault)
+		defaultOnlyIni, err = LoadINIText(normalizedDefault, baseOptions)
 		if err != nil {
 			return fmt.Errorf("Failed to load defaults-only INI from memory: %w", err)
 		}
 
 		// merged starts as defaults, then overlay user (first-wins for duplicates in user)
-		iniFile, err = ini.LoadSources(baseOptions, normalizedDefault)
+		iniFile, err = LoadINIText(normalizedDefault, baseOptions)
 		if err != nil {
 			return fmt.Errorf("Failed to load merged baseline INI from memory: %w", err)
 		}
 
-		userIniFile, err = ini.LoadSources(userOptions, normalizedInput)
+		userIniFile, err = LoadINIText(normalizedInput, userOptions)
 		if err != nil {
 			return fmt.Errorf("Failed to load user INI source from memory: %w", err)
 		}
@@ -1820,11 +1838,7 @@ func loadMotif(def string) (*Motif, error) {
 	m.loadFiles()
 	sys.keepAlive()
 
-	str, err := LoadText(def)
-	if err != nil {
-		return nil, err
-	}
-	lines, i := SplitAndTrim(str, "\n"), 0
+	lines, i := SplitAndTrim(motifText, "\n"), 0
 	m.AnimTable = ReadAnimationTable(m.Def, m.Sff, &m.Sff.palList, lines, &i, true)
 	i = 0
 
@@ -1995,6 +2009,9 @@ func (m *Motif) mergeWithInheritance(specs []InheritSpec) {
 	if m == nil || m.IniFile == nil {
 		return
 	}
+	if m.inheritedKeys == nil {
+		m.inheritedKeys = make(map[string]bool)
+	}
 	user := m.UserIniFile
 	defs := m.DefaultOnlyIni
 	merged := m.IniFile
@@ -2141,6 +2158,18 @@ func (m *Motif) mergeWithInheritance(specs []InheritSpec) {
 				//fmt.Printf("Warning: inheritance set failed for %s = %q: %v\n", query, val, err)
 			}
 
+			// Remember only anim/spr values that were actually inherited into the destination.
+			// Direct destination values from system.def must keep warning on missing sprites.
+			switch strings.ToLower(suf) {
+			case "anim", "spr":
+				switch src {
+				case srcUserSrc, srcDefSrc:
+					m.inheritedKeys[query] = true
+				default:
+					delete(m.inheritedKeys, query)
+				}
+			}
+
 			// If a value comes from the user INI (directly or via src), copy it into m.UserIniFile
 			// so fixLocalcoordOverrides treats the element as user-touched, including inherited keys.
 			if user != nil {
@@ -2193,13 +2222,19 @@ func (m *Motif) customResultsScreenSections() []string {
 func (m *Motif) overrideParams() {
 	// Define inheritance rules (section/prefix based).
 	specs := []InheritSpec{
+		// [Title Info]
+		{SrcSec: "Title Info", SrcPrefix: "loading.", DstSec: "Title Info", DstPrefix: "loading.wait."},
 		// [Option Info]
 		{SrcSec: "Option Info", SrcPrefix: "menu.", DstSec: "Option Info", DstPrefix: "keymenu."},
 		// [Select Info]
 		{SrcSec: "Select Info", SrcPrefix: "p1.face.", DstSec: "Select Info", DstPrefix: "p1.face.done."},
+		{SrcSec: "Select Info", SrcPrefix: "p1.face.", DstSec: "Select Info", DstPrefix: "p1.face.loading."},
 		{SrcSec: "Select Info", SrcPrefix: "p1.face2.", DstSec: "Select Info", DstPrefix: "p1.face2.done."},
+		{SrcSec: "Select Info", SrcPrefix: "p1.face2.", DstSec: "Select Info", DstPrefix: "p1.face2.loading."},
 		{SrcSec: "Select Info", SrcPrefix: "p2.face.", DstSec: "Select Info", DstPrefix: "p2.face.done."},
+		{SrcSec: "Select Info", SrcPrefix: "p2.face.", DstSec: "Select Info", DstPrefix: "p2.face.loading."},
 		{SrcSec: "Select Info", SrcPrefix: "p2.face2.", DstSec: "Select Info", DstPrefix: "p2.face2.done."},
+		{SrcSec: "Select Info", SrcPrefix: "p2.face2.", DstSec: "Select Info", DstPrefix: "p2.face2.loading."},
 		{SrcSec: "Select Info", SrcPrefix: "p1.face.", DstSec: "Select Info", DstPrefix: "p1.palmenu.preview."},
 		{SrcSec: "Select Info", SrcPrefix: "p2.face.", DstSec: "Select Info", DstPrefix: "p2.palmenu.preview."},
 		{SrcSec: "Select Info", SrcPrefix: "p1.teammenu.item.", DstSec: "Select Info", DstPrefix: "p1.teammenu.item.active."},
@@ -2212,20 +2247,28 @@ func (m *Motif) overrideParams() {
 		{SrcSec: "Select Info", SrcPrefix: "p2.", DstSec: "Select Info", DstPrefix: "p4."},
 		{SrcSec: "Select Info", SrcPrefix: "p2.", DstSec: "Select Info", DstPrefix: "p6."},
 		{SrcSec: "Select Info", SrcPrefix: "p2.", DstSec: "Select Info", DstPrefix: "p8."},
+		{SrcSec: "Select Info", SrcPrefix: "portrait.", DstSec: "Select Info", DstPrefix: "portrait.loading."},
 		{SrcSec: "Select Info", SrcPrefix: "stage.", DstSec: "Select Info", DstPrefix: "stage.active."},
 		{SrcSec: "Select Info", SrcPrefix: "stage.", DstSec: "Select Info", DstPrefix: "stage.active2."},
 		{SrcSec: "Select Info", SrcPrefix: "stage.", DstSec: "Select Info", DstPrefix: "stage.done."},
+		{SrcSec: "Select Info", SrcPrefix: "stage.portrait.", DstSec: "Select Info", DstPrefix: "stage.portrait.loading."},
 		// [VS Screen]
+		{SrcSec: "Title Info", SrcPrefix: "loading.", DstSec: "VS Screen", DstPrefix: "loading.wait."},
 		{SrcSec: "VS Screen", SrcPrefix: "p1.", DstSec: "VS Screen", DstPrefix: "p1.done."},
+		{SrcSec: "VS Screen", SrcPrefix: "p1.", DstSec: "VS Screen", DstPrefix: "p1.loading."},
 		{SrcSec: "VS Screen", SrcPrefix: "p1.face2.", DstSec: "VS Screen", DstPrefix: "p1.face2.done."},
+		{SrcSec: "VS Screen", SrcPrefix: "p1.face2.", DstSec: "VS Screen", DstPrefix: "p1.face2.loading."},
 		{SrcSec: "VS Screen", SrcPrefix: "p2.", DstSec: "VS Screen", DstPrefix: "p2.done."},
+		{SrcSec: "VS Screen", SrcPrefix: "p2.", DstSec: "VS Screen", DstPrefix: "p2.loading."},
 		{SrcSec: "VS Screen", SrcPrefix: "p2.face2.", DstSec: "VS Screen", DstPrefix: "p2.face2.done."},
+		{SrcSec: "VS Screen", SrcPrefix: "p2.face2.", DstSec: "VS Screen", DstPrefix: "p2.face2.loading."},
 		{SrcSec: "VS Screen", SrcPrefix: "p1.", DstSec: "VS Screen", DstPrefix: "p3."},
 		{SrcSec: "VS Screen", SrcPrefix: "p1.", DstSec: "VS Screen", DstPrefix: "p5."},
 		{SrcSec: "VS Screen", SrcPrefix: "p1.", DstSec: "VS Screen", DstPrefix: "p7."},
 		{SrcSec: "VS Screen", SrcPrefix: "p2.", DstSec: "VS Screen", DstPrefix: "p4."},
 		{SrcSec: "VS Screen", SrcPrefix: "p2.", DstSec: "VS Screen", DstPrefix: "p6."},
 		{SrcSec: "VS Screen", SrcPrefix: "p2.", DstSec: "VS Screen", DstPrefix: "p8."},
+		{SrcSec: "VS Screen", SrcPrefix: "stage.portrait.", DstSec: "VS Screen", DstPrefix: "stage.portrait.loading."},
 		// [Victory Screen]
 		{SrcSec: "Victory Screen", SrcPrefix: "p1.", DstSec: "Victory Screen", DstPrefix: "p3."},
 		{SrcSec: "Victory Screen", SrcPrefix: "p1.", DstSec: "Victory Screen", DstPrefix: "p5."},
@@ -2318,6 +2361,7 @@ func (m *Motif) initStruct() {
 	m.fadeOut = newFade()
 	m.fadePolicy = FadeContinue
 	m.fntIndexByKey = make(map[string]int)
+	m.inheritedKeys = make(map[string]bool)
 }
 
 func (m *Motif) loadBgDefProperties(bgDef *BgDefProperties, bgname, spr string) {
@@ -3318,10 +3362,15 @@ func (me *MotifMenu) init(m *Motif) {
 	}
 	openPressed := sys.esc || sys.uiRawInput(pm.Menu.Cancel.Key, -1)
 
-	if sys.escExit() || (sys.netplay() && openPressed) {
-		if sys.netplay() {
+	if !sys.sel.gameParams.PauseMenu {
+		if openPressed {
 			sys.esc = true
+			sys.endMatch = true
 		}
+		return
+	}
+
+	if sys.escExit() {
 		sys.endMatch = true
 		return
 	}
@@ -3451,6 +3500,7 @@ func (ch *MotifChallenger) step(m *Motif) {
 	sys.setGSF(GSF_timerfreeze)
 	if ch.counter == m.ChallengerInfo.Pause.Time {
 		sys.pausetime = m.ChallengerInfo.Time + m.ChallengerInfo.FadeOut.FadeData.duration()
+		sys.stopAllCharSounds()
 	}
 	if ch.counter == m.ChallengerInfo.Snd.Time {
 		m.Snd.play(m.ChallengerInfo.Snd.Snd, 100, 0, 0, 0, 0)
@@ -3603,7 +3653,7 @@ func (co *MotifContinue) init(m *Motif) {
 
 	if !m.ContinueScreen.Sounds.Enabled {
 		sys.clearAllSound()
-		sys.noSoundFlg = true
+		sys.noCharSoundFlg = true
 	}
 
 	m.Music.Play("continue", sys.motif.Def)
@@ -3761,7 +3811,7 @@ func (co *MotifContinue) step(m *Motif) {
 		}
 		co.active = false
 		if !m.ContinueScreen.Sounds.Enabled {
-			sys.noSoundFlg = false
+			sys.noCharSoundFlg = false
 		}
 		return
 	}
@@ -4186,7 +4236,7 @@ func (di *MotifDialogue) clear(m *Motif) {
 	}
 	di.initialized = false
 	sys.dialogueForce = 0
-	sys.dialogueBarsFlg = false
+	sys.dialogueHideBars = false
 	m.DialogueInfo.P1.Face.AnimData.anim = nil
 	m.DialogueInfo.P2.Face.AnimData.anim = nil
 	if m.DialogueInfo.P1.Face.Active.AnimData != nil {
@@ -4575,37 +4625,36 @@ func (di *MotifDialogue) applyToken(m *Motif, line *DialogueParsedLine, token Di
 			if !di.isValidPlayerNo(token.pn) {
 				return true
 			}
-			f, lw, lp, stopgh, stopcs := false, false, false, false, false
-			var g, n, ch, vo, priority, lc int32 = -1, 0, -1, 100, 0, 0
-			var loopstart, loopend, startposition int = 0, 0, 0
-			var p, fr float32 = 0, 1
-			x := &sys.chars[token.pn-1][0].pos[0]
-			ls := sys.chars[token.pn-1][0].localscl
-			prefix := ""
-			if f {
-				prefix = "f"
-			}
+			params := newPlaySndParams()
+			c := sys.chars[token.pn-1][0]
+			params.xPos = &c.pos[0]
+			params.localScale = c.localscl
+			params.log = false
+
 			if v1, ok1 := token.value[0].(float32); ok1 {
-				g = int32(v1)
+				params.group = int32(v1)
 				if v2, ok2 := token.value[1].(float32); ok2 {
-					n = int32(v2)
+					params.number = int32(v2)
 					if len(token.value) >= 3 {
 						if v3, ok3 := token.value[2].(float32); ok3 {
-							vo = int32(v3)
+							params.volume = int32(v3)
 						}
 					}
 				}
 			}
-			if lc == 0 {
-				if lp {
-					sys.chars[token.pn-1][0].playSound(prefix, lw, -1, g, n, ch, vo, p, fr, ls, x, false, priority, loopstart, loopend, startposition, stopgh, stopcs)
-				} else {
-					sys.chars[token.pn-1][0].playSound(prefix, lw, 0, g, n, ch, vo, p, fr, ls, x, false, priority, loopstart, loopend, startposition, stopgh, stopcs)
-				}
-				// Otherwise, read the loopcount parameter directly
-			} else {
-				sys.chars[token.pn-1][0].playSound(prefix, lw, lc, g, n, ch, vo, p, fr, ls, x, false, priority, loopstart, loopend, startposition, stopgh, stopcs)
-			}
+
+			// Loop logic (currently unused since all loop variables remain at defaults)
+			// if lc == 0 {
+			// if lp {
+			// params.loopCount = -1
+			// } else {
+			// params.loopCount = 0
+			// }
+			// } else {
+			// params.loopCount = lc
+			// }
+
+			c.playSound(params)
 		}
 		return true
 	case "anim":
@@ -4689,11 +4738,12 @@ func (di *MotifDialogue) step(m *Motif) {
 
 	// Check if we haven't reached StartTime yet
 	if di.counter < m.DialogueInfo.StartTime {
-		// Before dialogue starts, keep both portraits in a neutral pose.
 		di.resetPortraitIdle(m.DialogueInfo.P1.Face.AnimData)
 		di.resetPortraitIdle(m.DialogueInfo.P2.Face.AnimData)
 		di.counter++
-		return
+		if di.counter < m.DialogueInfo.StartTime {
+			return
+		}
 	}
 
 	// Check if we've gone past all lines
@@ -4778,7 +4828,7 @@ func (di *MotifDialogue) step(m *Motif) {
 	}
 
 	// If line is fully rendered, handle auto-switch after SwitchTime
-	if di.lineFullyRendered {
+	if di.lineFullyRendered && di.wait <= 0 {
 		di.switchCounter++
 		if di.switchCounter >= int(m.DialogueInfo.SwitchTime) {
 			di.advanceLine(m)
@@ -6133,7 +6183,7 @@ func (vi *MotifVictory) init(m *Motif) {
 
 	if !m.VictoryScreen.Sounds.Enabled {
 		sys.clearAllSound()
-		sys.noSoundFlg = true
+		sys.noCharSoundFlg = true
 	}
 
 	// If match/stage/select.def defines victory.music, it should keep playing
@@ -6261,7 +6311,7 @@ func (vi *MotifVictory) step(m *Motif) {
 		}
 		vi.active = false
 		if !m.VictoryScreen.Sounds.Enabled {
-			sys.noSoundFlg = false
+			sys.noCharSoundFlg = false
 		}
 		return
 	}
@@ -6578,7 +6628,7 @@ func (wi *MotifWin) init(m *Motif) {
 
 	if !wi.soundsEnabled {
 		sys.clearAllSound()
-		sys.noSoundFlg = true
+		sys.noCharSoundFlg = true
 	}
 
 	m.Music.Play("results", sys.motif.Def)
@@ -6761,7 +6811,7 @@ func (wi *MotifWin) step(m *Motif) {
 		}
 		wi.active = false
 		if !wi.soundsEnabled {
-			sys.noSoundFlg = false
+			sys.noCharSoundFlg = false
 		}
 		return
 	}

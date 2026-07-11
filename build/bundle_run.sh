@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Get the directory of this script (MacOS directory)
 SCRIPT_DIR="$(dirname "$0")"

@@ -113,6 +113,9 @@ type Config struct {
 		TickInterpolation bool     `ini:"TickInterpolation"`
 		ZoomActive        bool     `ini:"ZoomActive" sync:"host"`
 		EscOpensMenu      bool     `ini:"EscOpensMenu" sync:"host"`
+		VsScreenLoading   bool     `ini:"VsScreenLoading" sync:"host"`
+		TurnsLoading      bool     `ini:"TurnsLoading" sync:"host"`
+		BootLoadingMode   int32    `ini:"BootLoadingMode" sync:"host"`
 		FirstRun          bool     `ini:"FirstRun"`
 		WindowTitle       string   `ini:"WindowTitle"`
 		WindowIcon        []string `ini:"WindowIcon"`
@@ -141,26 +144,28 @@ type Config struct {
 		SpeedTest           int     `ini:"SpeedTest"`
 	} `ini:"Debug"`
 	Video struct {
-		RenderMode              string   `ini:"RenderMode"`
-		GameWidth               int32    `ini:"GameWidth" sync:"strict"`
-		GameHeight              int32    `ini:"GameHeight" sync:"strict"`
-		WindowWidth             int      `ini:"WindowWidth"`
-		WindowHeight            int      `ini:"WindowHeight"`
-		Framerate               int      `ini:"Framerate" sync:"strict"`
-		VSync                   int      `ini:"VSync"`
-		Fullscreen              bool     `ini:"Fullscreen"`
-		Borderless              bool     `ini:"Borderless"`
-		RGBSpriteBilinearFilter bool     `ini:"RGBSpriteBilinearFilter"`
-		MSAA                    int32    `ini:"MSAA"`
-		WindowCentered          bool     `ini:"WindowCentered"`
-		ExternalShaders         []string `ini:"ExternalShaders"`
-		WindowScaleMode         bool     `ini:"WindowScaleMode"`
-		FightAspectWidth        int32    `ini:"FightAspectWidth" sync:"strict"`
-		FightAspectHeight       int32    `ini:"FightAspectHeight" sync:"strict"`
-		KeepAspect              bool     `ini:"KeepAspect"`
-		RendererDebugMode       bool     `ini:"RendererDebugMode"`
-		EnableModel             bool     `ini:"EnableModel"`
-		EnableModelShadow       bool     `ini:"EnableModelShadow"`
+		RenderMode               string   `ini:"RenderMode"`
+		GameWidth                int32    `ini:"GameWidth" sync:"strict"`
+		GameHeight               int32    `ini:"GameHeight" sync:"strict"`
+		WindowWidth              int      `ini:"WindowWidth"`
+		WindowHeight             int      `ini:"WindowHeight"`
+		Framerate                int      `ini:"Framerate" sync:"strict"`
+		VSync                    int      `ini:"VSync"`
+		Fullscreen               bool     `ini:"Fullscreen"`
+		Borderless               bool     `ini:"Borderless"`
+		RGBSpriteBilinearFilter  bool     `ini:"RGBSpriteBilinearFilter"`
+		MSAA                     int32    `ini:"MSAA"`
+		WindowCentered           bool     `ini:"WindowCentered"`
+		ExternalShaders          []string `ini:"ExternalShaders"`
+		WindowScaleMode          bool     `ini:"WindowScaleMode"`
+		FightAspectWidth         int32    `ini:"FightAspectWidth" sync:"strict"`
+		FightAspectHeight        int32    `ini:"FightAspectHeight" sync:"strict"`
+		KeepAspect               bool     `ini:"KeepAspect"`
+		RendererDebugMode        bool     `ini:"RendererDebugMode"`
+		EnableModel              bool     `ini:"EnableModel"`
+		EnableModelShadow        bool     `ini:"EnableModelShadow"`
+		ImageSuballocThresholdKB int      `ini:"ImageSuballocThresholdKB"` // ≤ this (KB) suballocated; 0 to disable
+		ImageSuballocBlockSizeMB int      `ini:"ImageSuballocBlockSizeMB"` // block size (MB) for suballocation pool
 	} `ini:"Video"`
 	Sound struct {
 		SampleRate           int32   `ini:"SampleRate"`
@@ -240,31 +245,32 @@ func loadConfig(def string) (*Config, error) {
 	userOptions := baseOptions
 	userOptions.AllowShadows = true
 
-	// Choose default config source: prefer physical file, else embedded bytes.
-	var defaultSrc interface{}
+	var err error
+
+	defaultText := string(defaultConfig)
 	if fp := FileExist("resources/defaultConfig.ini"); len(fp) != 0 {
-		defaultSrc = fp
-	} else {
-		defaultSrc = defaultConfig
+		defaultText, err = LoadText(fp)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load default config %s: %w", fp, err)
+		}
 	}
 	// Load the INI file
 	var iniFile *ini.File
 	var defaultOnlyIni *ini.File
 	var userIniFile *ini.File
 
-	var err error
 	// Load defaults-only.
-	defaultOnlyIni, err = ini.LoadSources(baseOptions, defaultSrc)
+	defaultOnlyIni, err = LoadINIText(defaultText, baseOptions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read defaults-only data: %v", err)
 	}
 	// Start merged INI as defaults, then overlay user (first-wins for duplicates).
-	iniFile, err = ini.LoadSources(baseOptions, defaultSrc)
+	iniFile, err = LoadINIText(defaultText, baseOptions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read base data: %v", err)
 	}
 	if fp := FileExist(def); len(fp) != 0 {
-		userIniFile, err = ini.LoadSources(userOptions, def)
+		userIniFile, _, err = LoadINIFile(fp, userOptions)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read user data: %v", err)
 		}
@@ -364,6 +370,13 @@ func (c *Config) normalize() {
 	case 0, 2, 4, 6, 8, 16, 32:
 	default:
 		c.SetValueUpdate("Video.MSAA", 0)
+	}
+
+	if c.Video.ImageSuballocThresholdKB < 0 {
+		c.SetValueUpdate("Video.ImageSuballocThresholdKB", 256)
+	}
+	if c.Video.ImageSuballocBlockSizeMB < 1 {
+		c.SetValueUpdate("Video.ImageSuballocBlockSizeMB", 64)
 	}
 }
 

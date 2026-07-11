@@ -1,3 +1,7 @@
+#ifdef GL_ES
+	precision highp float;
+	precision highp int;
+#endif
 layout(triangle_strip, max_vertices = 18) out;
 uniform int layerOffset;
 #define LAYER_OFFSET layerOffset

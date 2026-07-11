@@ -246,7 +246,7 @@ func (r *Renderer_GL33) newDataTexture(width, height int32) Texture {
 func (r *Renderer_GL33) newHDRTexture(width, height int32) Texture {
 	r.SetActiveTexture0() //gl.ActiveTexture(gl.TEXTURE0)
 
-	t := r.generateTexture(width, height, 96, false)
+	t := r.generateTexture(width, height, 128, false)
 
 	gl.BindTexture(gl.TEXTURE_2D, t.handle)
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
@@ -263,7 +263,7 @@ func (r *Renderer_GL33) newCubeMapTexture(widthHeight int32, mipmap bool, lowest
 
 	gl.BindTexture(gl.TEXTURE_CUBE_MAP, t.handle)
 	for i := 0; i < 6; i++ {
-		gl.TexImage2D(uint32(gl.TEXTURE_CUBE_MAP_POSITIVE_X+i), 0, gl.RGB32F, widthHeight, widthHeight, 0, gl.RGB, gl.FLOAT, nil)
+		gl.TexImage2D(uint32(gl.TEXTURE_CUBE_MAP_POSITIVE_X+i), 0, gl.RGBA32F, widthHeight, widthHeight, 0, gl.RGBA, gl.FLOAT, nil)
 	}
 
 	if mipmap {
@@ -496,6 +496,10 @@ type GL33State struct {
 
 func (r *Renderer_GL33) GetName() string {
 	return "OpenGL 3.3"
+}
+
+func (r *Renderer_GL33) DebugInfo() string {
+	return "" // No OOM tracking — GL driver manages memory
 }
 
 // init 3D model shader
@@ -1501,6 +1505,7 @@ func (r *Renderer_GL33) prepareModelPipeline(bufferIndex uint32, env *Environmen
 	gl.BindFramebuffer(gl.FRAMEBUFFER, r.fbo)
 
 	gl.Viewport(0, 0, sys.scrrect[2], sys.scrrect[3])
+	r.SetDepthMask(true)
 	gl.Clear(gl.DEPTH_BUFFER_BIT)
 	//gl.Enable(gl.TEXTURE_2D) // Causes OpenGL error
 	//gl.Enable(gl.TEXTURE_CUBE_MAP) // Causes OpenGL error
@@ -1508,7 +1513,6 @@ func (r *Renderer_GL33) prepareModelPipeline(bufferIndex uint32, env *Environmen
 	// Set global state
 	r.EnableBlending(r.blendEquation, r.blendSrc, r.blendDst)
 	r.SetDepthTest(true)
-	r.SetDepthMask(true)
 	r.SetFrontFace(r.invertFrontFace)
 	r.SetCullFace(r.doubleSided)
 
@@ -2266,8 +2270,8 @@ func (r *Renderer_GL33) LoadCustomSpriteShader(shaderName string, shaderData []b
 	shader.RegisterAttributes("position", "uv")
 	shader.RegisterUniforms("modelview", "projection", "x1x2x4x3",
 		"alpha", "tint", "mask", "neg", "gray", "add", "mult", "isFlat", "isRgba", "isTrapez", "hue",
-		"iTime", "iResolution", "aspectRatio")
-	shader.RegisterTextures("pal", "tex", "bgl_RenderedTexture")
+		"iTime", "iResolution", "aspectRatio", "sTime")
+	shader.RegisterTextures("pal", "tex", "tex1", "tex2", "bgl_RenderedTexture")
 
 	shader.needsGrabPass = strings.Contains(fragSource, "bgl_RenderedTexture")
 

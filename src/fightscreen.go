@@ -1005,17 +1005,23 @@ func (pb *PowerBar) step(charpn int, pbr *PowerBar, snd *Snd) {
 		pbr.midpower = pbr.midpowerMin
 	}
 
+	// Initialize "previous power" in the first frame of the round
+	// This prevents level sounds and similar actions from happening in that frame
+	if sys.matchTime == 0 {
+		pbr.prevLevel = level
+		pbr.prevPower = pbval
+	}
+
 	// Level sounds
 	// Skipped if the bar is invisible
-	canPlaySnd := !sys.gsf(GSF_nobardisplay) && !refChar.powerOwner().asf(ASF_nopowerbardisplay)
-	if pbval >= refChar.powerMax && pbr.prevPower < refChar.powerMax && pb.levelmax_snd[0] != -1 {
-		if canPlaySnd {
+	if !sys.gsf(GSF_nobardisplay) && !refChar.powerOwner().asf(ASF_nopowerbardisplay) {
+		if pbval >= refChar.powerMax && pbr.prevPower < refChar.powerMax && pb.levelmax_snd[0] != -1 {
 			snd.play(pb.levelmax_snd, 100, 0, 0, 0, 0)
-		}
-	} else if level > pbr.prevLevel && canPlaySnd {
-		i := int(level - 1)
-		if i >= 0 && i < len(pb.level_snd) {
-			snd.play(pb.level_snd[i], 100, 0, 0, 0, 0)
+		} else if level > pbr.prevLevel {
+			i := int(level - 1)
+			if i >= 0 && i < len(pb.level_snd) {
+				snd.play(pb.level_snd[i], 100, 0, 0, 0, 0)
+			}
 		}
 	}
 
@@ -1697,6 +1703,7 @@ type FightScreenFace struct {
 	face_lay               Layout
 	face_palshare          bool
 	face_palfxshare        bool
+	face_darkenshare       bool
 	teammate_pos           [2]int32
 	teammate_spacing       [2]int32
 	teammate_bg            AnimLayout
@@ -1728,6 +1735,11 @@ func newFightScreenFace() *FightScreenFace {
 		teammate_face_palshare: true,
 		teammate_face_pfx:      nil, // Allocated later
 	}
+	// Before Mugen 1.1, portraits used to share the character's palette in every way
+	// The equivalent of enabling face_palshare, face_palfxshare and face_darkenshare
+	// Mugen 1.1 has some bugs that broke all off that
+	// However, we will default face_palfxshare to disabled because it's no longer a common fighting game feature
+	// face_darkenshare has the same default as face_palfxshare because the two are related
 }
 
 func readFightScreenFace(pre string, is IniSection, sff *Sff, at AnimationTable) *FightScreenFace {
@@ -1745,6 +1757,7 @@ func readFightScreenFace(pre string, is IniSection, sff *Sff, at AnimationTable)
 	fa.face_lay = *ReadLayout(pre+"face.", is, 0)
 	is.ReadBool(pre+"face.palshare", &fa.face_palshare)
 	is.ReadBool(pre+"face.palfxshare", &fa.face_palfxshare)
+	is.ReadBool(pre+"face.darkenshare", &fa.face_darkenshare)
 	is.ReadBool("leaderontop", &fa.leaderontop)
 
 	// Teammates
@@ -1858,9 +1871,11 @@ func (fa *FightScreenFace) draw(layerno int16, charpn int, refFace *FightScreenF
 			refFace.face.PalTex = refFace.face.CachePalTex(charPal)
 		}
 
-		// Reset system brightness if player initiated SuperPause (cancel "darken" parameter)
+		// Save current brightness
 		oldBright := sys.brightness
-		if refChar.ignoreDarkenTime > 0 {
+
+		// Reset system brightness if player initiated SuperPause (cancel "darken" parameter)
+		if fa.face_darkenshare && refChar.ignoreDarkenTime > 0 {
 			sys.brightness = 1.0
 		}
 
@@ -1881,7 +1896,7 @@ func (fa *FightScreenFace) draw(layerno int16, charpn int, refFace *FightScreenF
 	fa.top.Draw(float32(fa.pos[0])+sys.fightScreen.offsetX, float32(fa.pos[1]), layerno, sys.fightScreen.scale)
 }
 
-func (fa *FightScreenFace) drawTeammates(layerno int16, charpn int) {
+func (fa *FightScreenFace) drawTeammates(layerno int16) {
 	if len(fa.teammate_face) == 0 {
 		return
 	}
@@ -1891,13 +1906,15 @@ func (fa *FightScreenFace) drawTeammates(layerno int16, charpn int) {
 	//	return
 	//}
 
-	refChar := sys.chars[charpn][0]
+	// Save current brightness
+	oldBright := sys.brightness
 
 	// Reset system brightness if player initiated SuperPause (cancel "darken" parameter)
-	oldBright := sys.brightness
-	if refChar.ignoreDarkenTime > 0 {
-		sys.brightness = 1.0
-	}
+	// Update: Mugen doesn't do this and it doesn't make much sense to begin with
+	//refChar := sys.chars[charpn][0]
+	//if refChar.ignoreDarkenTime > 0 {
+	//	sys.brightness = 1.0
+	//}
 
 	teamSize := int32(len(fa.teammate_face))
 
@@ -2022,7 +2039,7 @@ func (nm *FightScreenName) draw(layerno int16, charpn int, f map[int]*Fnt, side 
 	nm.top.Draw(float32(nm.pos[0])+sys.fightScreen.offsetX, float32(nm.pos[1]), layerno, sys.fightScreen.scale)
 }
 
-func (nm *FightScreenName) drawTeammates(layerno int16, charpn int, f map[int]*Fnt, side int) {
+func (nm *FightScreenName) drawTeammates(layerno int16, f map[int]*Fnt, side int) {
 	if len(nm.teammate_name_strings) == 0 {
 		return
 	}
@@ -2323,41 +2340,47 @@ func (ti *FightScreenTime) draw(layerno int16, f map[int]*Fnt) {
 }
 
 type FightScreenCombo struct {
-	pos           [2]int32
-	start_x       float32
-	counter       map[int32]*FSText
-	counter_shake bool
-	counter_time  int32
-	counter_mult  float32
-	text          map[int32]*FSText
-	bg            AnimLayout
-	top           AnimLayout
-	displaytime   int32
-	showspeed     float32
-	hidespeed     float32
-	separator     string
-	places        int32
-	trueHits      int32
-	shownHits     int32
-	shownDmg      int32
-	shownPct      float32
-	resttime      int32
-	counterX      float32
-	shaketime     int32
-	autoalign     bool
-	newCombo      bool
+	pos          [2]int32
+	start_x      float32
+	counter      map[int32]*FSText
+	text         map[int32]*FSText
+	bg           AnimLayout
+	top          AnimLayout
+	displaytime  int32
+	showspeed    float32
+	hidespeed    float32
+	separator    string
+	places       int32
+	trueHits     int32
+	shownHits    int32
+	shownDmg     int32
+	shownPct     float32
+	resttime     int32
+	counterX     float32
+	autoalign    bool
+	newCombo     bool
+	counterShake ComboShake
+	textShake    ComboShake
 }
 
 func newFightScreenCombo() *FightScreenCombo {
 	return &FightScreenCombo{
-		displaytime:  90,
-		showspeed:    8,
-		hidespeed:    4,
-		counter:      make(map[int32]*FSText),
-		counter_time: 7,
-		counter_mult: 1.0 / 20,
-		text:         make(map[int32]*FSText),
-		autoalign:    true,
+		displaytime: 90,
+		showspeed:   8,
+		hidespeed:   4,
+		counter:     make(map[int32]*FSText),
+		text:        make(map[int32]*FSText),
+		autoalign:   true,
+		counterShake: ComboShake{
+			freq:  60,  // Same as EnvShake
+			decay: 1.0, // Linear
+			scale: 1.0, // No change
+		},
+		textShake: ComboShake{
+			freq:  60,
+			decay: 1.0,
+			scale: 1.0,
+		},
 	}
 }
 
@@ -2367,7 +2390,7 @@ func readFightScreenCombo(pre string, is IniSection,
 	is.ReadI32(pre+"pos", &co.pos[0], &co.pos[1])
 	is.ReadF32(pre+"start.x", &co.start_x)
 	if side == 1 {
-		// mugen 1.0 implementation reuses winmugen code where both sides shared the same values
+		// Mugen 1.0 implementation reuses Winmugen code where both sides shared the same values
 		if pre == "team2." {
 			co.start_x = float32(sys.fightScreen.localcoord[0]) - co.start_x
 		} else {
@@ -2382,17 +2405,59 @@ func readFightScreenCombo(pre string, is IniSection,
 			align = -1
 		}
 	}
+
+	// Read main counter string then optional multiple values
 	co.counter[0] = readFSText(pre+"counter.", is, "%i", 2, f, align)
 	for k, v := range readMultipleFSText(pre, "counter", is, "%i", 2, f, align) {
 		co.counter[k] = v
 	}
-	is.ReadBool(pre+"counter.shake", &co.counter_shake)
-	is.ReadI32(pre+"counter.time", &co.counter_time)
-	is.ReadF32(pre+"counter.mult", &co.counter_mult)
+
+	// Old counter shake syntax
+	// TODO: Shouldn't shaking parameters also support "multiple values"?
+	var old bool
+	if is.ReadBool(pre+"counter.shake", &old) {
+		if old {
+			co.counterShake.time = 8     // Mugen value
+			co.counterShake.phase = 90   // Like old Ikemen default
+			co.counterShake.scale = 1.35 // Derived from old Ikemen formula
+		}
+	}
+	is.ReadI32(pre+"counter.time", &co.counterShake.time)
+	var mult float32
+	if is.ReadF32(pre+"counter.mult", &mult) {
+		co.counterShake.scale = 1 + float32(co.counterShake.time)*mult
+	}
+
+	// New counter shake syntax
+	is.ReadI32(pre+"counter.shake.time", &co.counterShake.time)
+	if is.ReadF32(pre+"counter.shake.freq", &co.counterShake.freq) {
+		co.counterShake.setDefaultPhase()
+	}
+	is.ReadF32(pre+"counter.shake.phase", &co.counterShake.phase)
+	is.ReadF32(pre+"counter.shake.ampl", &co.counterShake.ampl)
+	is.ReadF32(pre+"counter.shake.scale", &co.counterShake.scale)
+	is.ReadF32(pre+"counter.shake.dir", &co.counterShake.dir)
+	is.ReadF32(pre+"counter.shake.diradd", &co.counterShake.diradd)
+	is.ReadF32(pre+"counter.shake.decay", &co.counterShake.decay)
+
+	// Read main text string then optional multiple values
 	co.text[0] = readFSText(pre+"text.", is, "", 2, f, align)
 	for k, v := range readMultipleFSText(pre, "text", is, "", 2, f, align) {
 		co.text[k] = v
 	}
+
+	// Text shake
+	is.ReadI32(pre+"text.shake.time", &co.textShake.time)
+	if is.ReadF32(pre+"text.shake.freq", &co.textShake.freq) {
+		co.textShake.setDefaultPhase()
+	}
+	is.ReadF32(pre+"text.shake.phase", &co.textShake.phase)
+	is.ReadF32(pre+"text.shake.ampl", &co.textShake.ampl)
+	is.ReadF32(pre+"text.shake.scale", &co.textShake.scale)
+	is.ReadF32(pre+"text.shake.dir", &co.textShake.dir)
+	is.ReadF32(pre+"text.shake.diradd", &co.textShake.diradd)
+	is.ReadF32(pre+"text.shake.decay", &co.textShake.decay)
+
 	co.bg = ReadAnimLayout(pre+"bg0.", is, sff, at, 2)
 	co.top = ReadAnimLayout(pre+"top.", is, sff, at, 2)
 	is.ReadI32(pre+"displaytime", &co.displaytime)
@@ -2402,10 +2467,11 @@ func readFightScreenCombo(pre string, is IniSection,
 	co.separator, _, _ = is.getText("format.decimal.separator")
 	is.ReadI32("format.decimal.places", &co.places)
 	is.ReadBool(pre+"autoalign", &co.autoalign)
+
 	return co
 }
 
-func (co *FightScreenCombo) step(hits, damage int32, percentage float32, dizzy bool) {
+func (co *FightScreenCombo) step(hits, damage int32, percentage float32) {
 	co.bg.Action()
 	co.top.Action()
 
@@ -2422,22 +2488,27 @@ func (co *FightScreenCombo) step(hits, damage int32, percentage float32, dizzy b
 	// True hits are only updated by Char(). The live tally is only used for combo display behavior
 	//co.trueHits = hits
 
+	// Handle show/hide speed
 	if co.resttime > 0 {
+		// Slide in
 		co.counterX -= co.counterX / co.showspeed
+		// Snap to visible position
+		if Abs(co.counterX) < 1 {
+			co.counterX = 0
+		}
 	} else if co.trueHits < 2 {
+		// Slide out when combo ends
 		co.counterX -= sys.fightScreen.fnt_scale * co.hidespeed * float32(sys.fightScreen.localcoord[0]) / 320
+		// Snap to starting position
 		if co.counterX < co.start_x*2 {
 			co.counterX = co.start_x * 2
 		}
 	}
 
-	if co.shaketime > 0 {
-		co.shaketime--
-	}
-
-	// TODO: Most commercial games don't rely on the dizzy flag
-	// They keep the combo active as long as hits >= 2
-	if Abs(co.counterX) < 1 && !dizzy {
+	// The displayed time only decrements when the counter is in the visible position
+	// Currently, the way the timer decrements while the combo is still ongoing can make it stay visible varying amounts of time past the end of the combo
+	// This makes it not always sync correctly with the "nice combo" actions
+	if co.counterX == 0 {
 		co.resttime--
 	}
 
@@ -2445,9 +2516,8 @@ func (co *FightScreenCombo) step(hits, damage int32, percentage float32, dizzy b
 	if co.trueHits >= 2 && (co.newCombo || co.shownHits != co.trueHits || co.shownDmg != damage) {
 		// Reset visuals when hits changed
 		if co.newCombo || co.shownHits != co.trueHits {
-			if co.counter_shake {
-				co.shaketime = co.counter_time
-			}
+			co.counterShake.restart()
+			co.textShake.restart()
 			for i := range co.counter {
 				co.counter[i].resetTxtPfx()
 			}
@@ -2463,6 +2533,10 @@ func (co *FightScreenCombo) step(hits, damage int32, percentage float32, dizzy b
 		co.shownPct = percentage
 		co.newCombo = false
 	}
+
+	// Update shaking effects
+	co.counterShake.update()
+	co.textShake.update()
 
 	// Multiple counter fonts
 	var cv int32
@@ -2495,7 +2569,10 @@ func (co *FightScreenCombo) reset() {
 	co.shownPct = 0
 	co.resttime = 0
 	co.counterX = co.start_x * 2
-	co.shaketime = 0
+
+	// Reset combo shake
+	co.counterShake.curTime = 0
+	co.textShake.curTime = 0
 }
 
 func (co *FightScreenCombo) draw(layerno int16, f map[int]*Fnt, side int) {
@@ -2519,12 +2596,16 @@ func (co *FightScreenCombo) draw(layerno int16, f map[int]*Fnt, side int) {
 		}
 	}
 
+	// Replace operator with current combo value
 	counter := strings.Replace(co.counter[cv].text, "%i", fmt.Sprintf("%v", co.shownHits), 1)
+
+	// Compute base x position
 	x := float32(co.pos[0])
 	if side == 0 {
 		if co.start_x <= 0 {
 			x += co.counterX
 		}
+		// Apply autoalign
 		if co.counter[cv].font[0] >= 0 && co.autoalign {
 			if ff := getFont(f, co.counter[cv].font[0]); ff != nil {
 				x += float32(ff.TextWidth(counter, co.counter[cv].font[1], 0)) *
@@ -2536,56 +2617,200 @@ func (co *FightScreenCombo) draw(layerno int16, f map[int]*Fnt, side int) {
 			x -= co.counterX
 		}
 	}
+
+	// BG
 	co.bg.Draw(x+sys.fightScreen.offsetX, float32(co.pos[1]), layerno, sys.fightScreen.scale)
-	var length float32
+
+	// Text block pre-processing
+	var ffText *Fnt
+	var textBlockWidth float32
+	var lineHeight float32
+	var lines []string
 	if co.text[tv].font[0] >= 0 && getFont(f, co.text[tv].font[0]) != nil {
+		// Replace operator with current combo hits
 		text := strings.Replace(co.text[tv].text, "%i", fmt.Sprintf("%v", co.shownHits), 1)
+		// Replace operator with current combo damage
 		text = strings.Replace(text, "%d", fmt.Sprintf("%v", co.shownDmg), 1)
-		// Truncate the percentage to avoid rounding to 100% unless the enemy is defeated
-		truncatedPct := math.Floor(float64(co.shownPct)*math.Pow10(int(co.places))) / math.Pow10(int(co.places))
-		// Split float value
-		s := strings.Split(fmt.Sprintf("%.[2]*[1]f", truncatedPct, co.places), ".")
-		// Decimal separator
-		if co.places > 0 {
-			if len(s) > 1 {
+
+		// Only process combo damage percentage if necessary
+		if strings.Contains(co.text[tv].text, "%p") {
+			// Truncate the percentage to avoid rounding to 100% unless the enemy is defeated
+			truncatedPct := math.Floor(float64(co.shownPct)*math.Pow10(int(co.places))) / math.Pow10(int(co.places))
+			// Split float value
+			s := strings.Split(fmt.Sprintf("%.[2]*[1]f", truncatedPct, co.places), ".")
+			// Decimal separator
+			if co.places > 0 && len(s) > 1 {
 				s[0] = s[0] + co.separator + s[1]
 			}
+			// Replace %p with formatted string
+			text = strings.Replace(text, "%p", s[0], 1)
 		}
-		// Replace %p with formatted string
-		text = strings.Replace(text, "%p", s[0], 1)
+
 		// Split on new line
-		for k, v := range strings.Split(text, "\\n") {
-			if side == 1 && co.autoalign {
-				if ff := getFont(f, co.text[tv].font[0]); ff != nil {
-					if lt := float32(ff.TextWidth(v, co.text[tv].font[1], 0)) * co.text[tv].lay.scale[0] * sys.fightScreen.fnt_scale; lt > length {
-						length = lt
-					}
+		lines = strings.Split(text, "\\n")
+
+		// Compute text block dimensions
+		ffText = getFont(f, co.text[tv].font[0])
+		if ffText != nil {
+			lineHeight = float32(ffText.Size[1])*co.text[tv].lay.scale[1]*sys.fightScreen.fnt_scale +
+				float32(ffText.Spacing[1])*co.text[tv].lay.scale[1]*sys.fightScreen.fnt_scale
+			for _, line := range lines {
+				w := float32(ffText.TextWidth(line, co.text[tv].font[1], 0)) *
+					co.text[tv].lay.scale[0] * sys.fightScreen.fnt_scale
+				if w > textBlockWidth {
+					textBlockWidth = w
 				}
 			}
-			co.text[tv].lay.DrawText(x+sys.fightScreen.offsetX, float32(co.pos[1])+
-				func() float32 {
-					if ff := getFont(f, co.text[tv].font[0]); ff != nil {
-						return float32(ff.Size[1])*co.text[tv].lay.scale[1]*sys.fightScreen.fnt_scale +
-							float32(ff.Spacing[1])*co.text[tv].lay.scale[1]*sys.fightScreen.fnt_scale
-					}
-					return 0
-				}()*float32(k),
-				sys.fightScreen.scale, layerno, v, getFont(f, co.text[tv].font[0]), co.text[tv].font[1], co.text[tv].font[2],
+		}
+	}
+
+	// Draw text
+	if len(lines) > 0 && ffText != nil {
+		blockX := x + sys.fightScreen.offsetX
+		blockY := float32(co.pos[1])
+
+		// Apply shake effect
+		textShakeScale := co.textShake.getScale()
+		textShakeOffset := co.textShake.getOffset()
+
+		drawBlockX := (blockX + textShakeOffset[0]) / textShakeScale
+		drawBlockY := (blockY + textShakeOffset[1]) / textShakeScale
+		finalScale := textShakeScale * sys.fightScreen.scale
+
+		// Draw each line
+		for i, line := range lines {
+			y := drawBlockY + float32(i)*lineHeight
+			co.text[tv].lay.DrawText(drawBlockX, y, finalScale, layerno, line,
+				ffText, co.text[tv].font[1], co.text[tv].font[2],
 				co.text[tv].palfx, co.text[tv].frgba)
 		}
 	}
+
+	// Counter
 	if co.counter[cv].font[0] >= 0 && getFont(f, co.counter[cv].font[0]) != nil {
+		// Apply autoalign
+		var counterShift float32
 		if side == 0 && co.autoalign {
 			if ff := getFont(f, co.counter[cv].font[0]); ff != nil {
-				length = float32(ff.TextWidth(counter, co.counter[cv].font[1], 0)) * co.counter[cv].lay.scale[0] * sys.fightScreen.fnt_scale
+				counterShift = float32(ff.TextWidth(counter, co.counter[cv].font[1], 0)) *
+					co.counter[cv].lay.scale[0] * sys.fightScreen.fnt_scale
 			}
 		}
+		if side == 1 && co.autoalign {
+			counterShift = counterShift + textBlockWidth
+		}
 
-		z := 1 + float32(co.shaketime)*co.counter_mult*float32(math.Sin(float64(co.shaketime)*(math.Pi/2.5)))
-		co.counter[cv].lay.DrawText((x-length+sys.fightScreen.offsetX)/z, float32(co.pos[1])/z, z*sys.fightScreen.scale, layerno,
-			counter, getFont(f, co.counter[cv].font[0]), co.counter[cv].font[1], co.counter[cv].font[2], co.counter[cv].palfx, co.counter[cv].frgba)
+		// Apply shake effect
+		shakeScale := co.counterShake.getScale()
+		shakeOffset := co.counterShake.getOffset()
+
+		drawX := (x - counterShift + sys.fightScreen.offsetX + shakeOffset[0]) / shakeScale
+		drawY := (float32(co.pos[1]) + shakeOffset[1]) / shakeScale
+		finalScale := shakeScale * sys.fightScreen.scale
+
+		co.counter[cv].lay.DrawText(drawX, drawY, finalScale, layerno,
+			counter, getFont(f, co.counter[cv].font[0]), co.counter[cv].font[1], co.counter[cv].font[2],
+			co.counter[cv].palfx, co.counter[cv].frgba)
 	}
+
+	// Top
 	co.top.Draw(x+sys.fightScreen.offsetX, float32(co.pos[1]), layerno, sys.fightScreen.scale)
+}
+
+// This is like a miniature EnvShake applied to a single object
+type ComboShake struct {
+	time      int32
+	ampl      float32
+	scale     float32
+	freq      float32
+	phase     float32
+	dir       float32 // It's an angle but this name is consistent with EnvShake
+	diradd    float32
+	decay     float32
+	curTime   int32
+	curOffset [2]float32
+	curScale  float32
+}
+
+// Uses a reset instead of a clear because we don't want to lose the original parameters
+func (cs *ComboShake) reset() {
+	cs.curTime = 0
+	cs.curOffset = [2]float32{0, 0}
+	cs.curScale = 1
+}
+
+func (cs *ComboShake) restart() {
+	if cs.time <= 0 {
+		cs.reset() // Just in case
+		return
+	}
+	cs.curTime = cs.time
+}
+
+func (cs *ComboShake) setDefaultPhase() {
+	// No need for NaN
+	if cs.freq >= 90.0 {
+		cs.phase = 90.0
+	} else {
+		cs.phase = 0
+	}
+}
+
+func (cs *ComboShake) update() {
+	if cs.curTime <= 0 {
+		if cs.time > 0 {
+			cs.reset()
+		}
+		return
+	}
+
+	// Handle decay
+	var decay float32 = 1
+	if cs.decay != 0 && cs.time > 0 {
+		t := float32(cs.curTime) / float32(cs.time)
+		decay = float32(math.Pow(float64(t), float64(cs.decay)))
+	}
+
+	elapsed := float32(cs.time - cs.curTime)
+
+	// Calculate offset and cache it
+	// There's no benefit to caching it yet, but it may be useful for future features and keeps the code similar to EnvShake
+	if cs.ampl == 0 {
+		cs.curOffset = [2]float32{0, 0}
+	} else {
+		curAmp := cs.ampl * decay
+		phaseRad := Rad(cs.phase) + Rad(cs.freq)*elapsed
+		val := curAmp * float32(math.Sin(float64(phaseRad)))
+
+		currentAngleDeg := cs.dir + cs.diradd*elapsed
+		radAng := Rad(currentAngleDeg)
+
+		x := val * float32(math.Cos(float64(radAng)))
+		y := -val * float32(math.Sin(float64(radAng))) // Negated for counter‑clockwise
+
+		cs.curOffset = [2]float32{x, y}
+	}
+
+	// Calculate scale and cache it
+	if cs.scale == 1 {
+		cs.curScale = 1
+	} else {
+		phaseRad := Rad(cs.phase) + Rad(cs.freq)*elapsed
+		sinVal := float32(math.Sin(float64(phaseRad)))
+		exponent := float32(math.Log(float64(cs.scale))) * decay * sinVal
+		cs.curScale = float32(math.Exp(float64(exponent)))
+	}
+
+	// Step timer only after computing offset and scale
+	cs.curTime--
+}
+
+func (cs *ComboShake) getOffset() [2]float32 {
+	return cs.curOffset
+}
+
+func (cs *ComboShake) getScale() float32 {
+	return cs.curScale
 }
 
 type FSMsg struct {
@@ -2602,6 +2827,12 @@ type FSMsg struct {
 	bg           AnimLayout
 	front        AnimLayout
 	del          bool
+	snd          [2]int32
+	snd_ffx      string
+	spr          [2]int32
+	animNo       int32
+	anim_ffx     string
+	top          bool
 }
 
 func newFSMsg(side int) *FSMsg {
@@ -2612,6 +2843,10 @@ func newFSMsg(side int) *FSMsg {
 		fontBank:  -1,
 		fontAlign: IErr, // Default to the font's
 		fontColor: [4]int32{255, 255, 255, 255},
+		snd:       [2]int32{-1, -1},
+		spr:       [2]int32{-1, -1},
+		animNo:    -1,
+		top:       true,
 	}
 }
 
@@ -2650,6 +2885,36 @@ func insertFSMsg(array []*FSMsg, value *FSMsg, index int) []*FSMsg {
 
 func removeFSMsg(array []*FSMsg, index int) []*FSMsg {
 	return SliceDelete(array, index)
+}
+
+func (m *FSMsg) isEqual(other *FSMsg) bool {
+	if m == other {
+		return true
+	}
+	if m == nil || other == nil {
+		return false
+	}
+	// Compare font settings
+	if m.fontNo != other.fontNo ||
+		m.fontBank != other.fontBank ||
+		m.fontAlign != other.fontAlign ||
+		m.fontColorSet != other.fontColorSet ||
+		m.fontColor != other.fontColor {
+		return false
+	}
+	// Compare animation
+	if m.animNo != other.animNo || m.anim_ffx != other.anim_ffx {
+		return false
+	}
+	// Compare sprite
+	if m.spr != other.spr {
+		return false
+	}
+	// Compare text (slowest last)
+	if m.text != other.text {
+		return false
+	}
+	return true
 }
 
 type FightScreenAction struct {
@@ -3469,13 +3734,13 @@ func (ro *FightScreenRound) handleRoundOutro() {
 			}
 		} else if sys.winTeam >= 0 {
 			isPlayerWin, isAiWin := false, false
-			for i := wt; i < len(sys.chars); i += 2 {
+			for i := wt; i < MaxSimul*2; i += 2 {
 				if len(sys.chars[i]) > 0 && sys.aiLevel[i] == 0 {
 					isPlayerWin = true
 					break
 				}
 			}
-			for i := lt; i < len(sys.chars); i += 2 {
+			for i := lt; i < MaxSimul*2; i += 2 {
 				if len(sys.chars[i]) > 0 && sys.aiLevel[i] == 0 {
 					isAiWin = true
 					break
@@ -3763,13 +4028,13 @@ func (ro *FightScreenRound) draw(layerno int16, f map[int]*Fnt) {
 			ro.drawgame_top.Draw(float32(ro.pos[0])+sys.fightScreen.offsetX, float32(ro.pos[1]), layerno, sys.fightScreen.scale)
 		} else if sys.winTeam >= 0 {
 			isPlayerWin, isAiWin := false, false
-			for i := wt; i < len(sys.chars); i += 2 {
+			for i := wt; i < MaxSimul*2; i += 2 {
 				if len(sys.chars[i]) > 0 && sys.aiLevel[i] == 0 {
 					isPlayerWin = true
 					break
 				}
 			}
-			for i := lt; i < len(sys.chars); i += 2 {
+			for i := lt; i < MaxSimul*2; i += 2 {
 				if len(sys.chars[i]) > 0 && sys.aiLevel[i] == 0 {
 					isAiWin = true
 					break
@@ -3854,51 +4119,50 @@ func (ro *FightScreenRound) draw(layerno int16, f map[int]*Fnt) {
 
 	// Restore system brightness
 	sys.brightness = oldBright
+}
 
-	// Screen fading
-	if layerno == 2 {
-		if ro.fadeOut.isActive() {
-			ro.fadeOut.draw()
-		} else if ro.fadeIn.isActive() {
-			ro.fadeIn.draw()
-		} else if sys.clsnDisplay && sys.cfg.Debug.ClsnDarken {
-			ro.fadeIn.drawRect(sys.scrrect, 0, 0)
-		}
+func (ro *FightScreenRound) drawFade() {
+	if ro.fadeOut.isActive() {
+		ro.fadeOut.draw()
+	} else if ro.fadeIn.isActive() {
+		ro.fadeIn.draw()
+	} else if sys.clsnDisplay && sys.cfg.Debug.ClsnDarken {
+		ro.fadeIn.drawRect(sys.scrrect, 0, 0)
+	}
 
-		if ro.shutterTimer > 0 {
-			// shutterTimer is a countdown from (shutter_time*2) to 0:
-			// 2T -> open, T -> fully closed, 0 -> open
-			rect := sys.scrrect
-			half := (sys.scrrect[3] + 1) >> 1
-			var cover int32
-			if ro.shutter_time > 0 {
-				if ro.shutterTimer > ro.shutter_time {
-					// Closing phase
-					t := ro.shutter_time*2 - ro.shutterTimer
-					if t < 0 {
-						t = 0
-					}
-					if t > ro.shutter_time {
-						t = ro.shutter_time
-					}
-					cover = t * half / ro.shutter_time
-				} else {
-					// Opening phase
-					t := ro.shutterTimer
-					if t < 0 {
-						t = 0
-					}
-					if t > ro.shutter_time {
-						t = ro.shutter_time
-					}
-					cover = t * half / ro.shutter_time
+	if ro.shutterTimer > 0 {
+		// shutterTimer is a countdown from (shutter_time*2) to 0:
+		// 2T -> open, T -> fully closed, 0 -> open
+		rect := sys.scrrect
+		half := (sys.scrrect[3] + 1) >> 1
+		var cover int32
+		if ro.shutter_time > 0 {
+			if ro.shutterTimer > ro.shutter_time {
+				// Closing phase
+				t := ro.shutter_time*2 - ro.shutterTimer
+				if t < 0 {
+					t = 0
 				}
+				if t > ro.shutter_time {
+					t = ro.shutter_time
+				}
+				cover = t * half / ro.shutter_time
+			} else {
+				// Opening phase
+				t := ro.shutterTimer
+				if t < 0 {
+					t = 0
+				}
+				if t > ro.shutter_time {
+					t = ro.shutter_time
+				}
+				cover = t * half / ro.shutter_time
 			}
-			rect[3] = cover
-			ro.fadeIn.drawRect(rect, ro.shutter_col, 255)
-			rect[1] = sys.scrrect[3] - rect[3]
-			ro.fadeIn.drawRect(rect, ro.shutter_col, 255)
 		}
+		rect[3] = cover
+		ro.fadeIn.drawRect(rect, ro.shutter_col, 255)
+		rect[1] = sys.scrrect[3] - rect[3]
+		ro.fadeIn.drawRect(rect, ro.shutter_col, 255)
 	}
 }
 
@@ -4917,7 +5181,7 @@ func loadFightScreen(def string) (*FightScreen, error) {
 				teamNum := team + 1
 				teamPrefix := fmt.Sprintf("team%v.", teamNum)
 
-				if sys.fightScreen.ikemenver[0] == 0 && sys.fightScreen.ikemenver[1] == 0 {
+				if fs.ikemenver[0] == 0 && fs.ikemenver[1] == 0 { // Not sys.fightScreen yet
 					// Check if "teamX.pos" exists to determine whether or not to use "teamX" prefixes
 					// Mugen works slightly different and apparently checks whether "pos" or "team1.pos" is found first in order to determine what syntax to use
 					// Such prefixes were only added in Mugen 1.0, hence it running this check
@@ -5156,7 +5420,7 @@ func (fs *FightScreen) step() {
 	}
 	// Time
 	fs.time.step()
-	cb, cd, cp, dz := [2]int32{}, [2]int32{}, [2]float32{}, [2]bool{}
+	cb, cd, cp := [2]int32{}, [2]int32{}, [2]float32{}
 	targets := [2]int32{}
 	// Combo
 	for _, ch := range sys.chars {
@@ -5169,9 +5433,6 @@ func (fs *FightScreen) step() {
 				// Perhaps helper percentages shouldn't be tracked, but ignoring them creates scenarios where the lifebars show 0% damage which looks wrong
 				cp[side] += float32(c.receivedDmg) / float32(c.lifeMax) * 100
 				targets[side]++
-				if c.scf(SCF_dizzy) {
-					dz[side] = true
-				}
 			}
 		}
 	}
@@ -5181,7 +5442,7 @@ func (fs *FightScreen) step() {
 		}
 	}
 	for i := range fs.combos {
-		fs.combos[i].step(cb[i], cd[i], cp[i], dz[i]) // Combo hits, combo damage, combo damage percentage, dizzy flag
+		fs.combos[i].step(cb[i], cd[i], cp[i]) // Combo hits, combo damage, combo damage percentage
 	}
 	// Action
 	for i := range fs.actions {
@@ -5318,7 +5579,7 @@ func (fs *FightScreen) visible() bool {
 	return fs.active &&
 		!sys.postMatchFlg &&
 		!sys.lifebarHide &&
-		!sys.dialogueBarsFlg &&
+		!(sys.dialogueHideBars || sys.motif.di.active) &&
 		!(sys.motif.me.active && sys.motif.PauseMenu["pause_menu"].HideBars &&
 			(!sys.motif.me.closeRequested || sys.paused))
 }
@@ -5434,7 +5695,7 @@ func (fs *FightScreen) draw(layerno int16) {
 					}
 					// Draw Turns teammates from the first bar only
 					if slot == 0 {
-						fs.faces[layout][side].drawTeammates(layerno, charpn)
+						fs.faces[layout][side].drawTeammates(layerno)
 					}
 					fs.faces[layout][barpn].bgDraw(layerno)
 					fs.faces[layout][barpn].draw(layerno, charpn, fs.faces[layout][charpn])
@@ -5458,7 +5719,7 @@ func (fs *FightScreen) draw(layerno int16) {
 					}
 					// Draw Turns teammates from the first bar only
 					if slot == 0 {
-						fs.names[layout][side].drawTeammates(layerno, charpn, fs.fnt, side)
+						fs.names[layout][side].drawTeammates(layerno, fs.fnt, side)
 					}
 					fs.names[layout][barpn].bgDraw(layerno)
 					fs.names[layout][barpn].draw(layerno, charpn, fs.fnt, side)
@@ -5466,8 +5727,10 @@ func (fs *FightScreen) draw(layerno int16) {
 			}
 
 			// Time
-			fs.time.bgDraw(layerno)
-			fs.time.draw(layerno, fs.fnt)
+			if !sys.gsf(GSF_notimedisplay) {
+				fs.time.bgDraw(layerno)
+				fs.time.draw(layerno, fs.fnt)
+			}
 
 			// WinIcon
 			for i := 0; i < len(fs.winIcons); i++ {
@@ -5527,6 +5790,12 @@ func (fs *FightScreen) draw(layerno int16) {
 	if fs.active && !sys.postMatchFlg {
 		// Round
 		fs.round.draw(layerno, fs.fnt)
+	}
+}
+
+func (fs *FightScreen) drawFade() {
+	if fs.active && !sys.postMatchFlg {
+		fs.round.drawFade()
 	}
 }
 
@@ -5606,7 +5875,7 @@ func (fs *FightScreen) resolvePath() {
 	fs.def = v
 }
 
-func (fs *FightScreen) appendAction(c *Char, msg *FSMsg, s_ffx, a_ffx string, snd, spr [2]int32, anim int32, top bool) {
+func (fs *FightScreen) appendAction(c *Char, msg *FSMsg, refresh int32) {
 	if c.teamside < 0 {
 		return
 	}
@@ -5615,24 +5884,45 @@ func (fs *FightScreen) appendAction(c *Char, msg *FSMsg, s_ffx, a_ffx string, sn
 	}
 
 	// Play sound
-	if snd[0] != -1 && snd[1] != -1 {
-		if s_ffx != "" && s_ffx != "s" && sys.ffx[s_ffx] != nil && sys.ffx[s_ffx].snd != nil {
-			s := sys.ffx[s_ffx].snd.Get(snd) // Common FX
+	if msg.snd[0] != -1 && msg.snd[1] != -1 {
+		if msg.snd_ffx != "" && msg.snd_ffx != "s" && sys.ffx[msg.snd_ffx] != nil && sys.ffx[msg.snd_ffx].snd != nil {
+			s := sys.ffx[msg.snd_ffx].snd.Get(msg.snd)
 			if s != nil {
-				sys.soundChannels.Play(s, snd[0], snd[1], 100, 0, 0, 0, 0)
+				sys.soundChannels.Play(s, msg.snd[0], msg.snd[1], 100, 0, 0, 0, 0)
 			}
 		} else {
-			fs.snd.play(snd, 100, 0, 0, 0, 0)
+			fs.snd.play(msg.snd, 100, 0, 0, 0, 0)
 		}
 	}
 
 	// If sound only, we can stop here
-	if anim == -1 && (spr[0] == -1 || spr[1] == -1) && msg.text == "" {
+	if msg.animNo == -1 && msg.spr[0] == -1 && msg.text == "" {
 		return
 	}
 
 	// Select side of screen
 	teammsg := fs.actions[c.teamside]
+
+	// Duplicate detection
+	if refresh == 1 || refresh == 2 {
+		for _, existing := range teammsg.messages {
+			if existing.del {
+				continue
+			}
+			if existing.isEqual(msg) {
+				// Found an identical message: refresh its timer to keep it alive
+				existing.resttime = msg.resttime
+				existing.agetimer = 0
+				existing.del = false
+				// Also reappear from outside screen
+				if refresh == 2 {
+					existing.counterX = teammsg.start_x * 2
+				}
+				// Don't add another
+				return
+			}
+		}
+	}
 
 	// If adding a new message while exceeding the maximum number allowed, make the oldest message go away faster
 	var count int32
@@ -5643,11 +5933,11 @@ func (fs *FightScreen) appendAction(c *Char, msg *FSMsg, s_ffx, a_ffx string, sn
 	}
 	if count >= teammsg.max {
 		var oldest int
-		var oldesttimer int32
-		for i, msg := range teammsg.messages {
-			if !msg.del && msg.resttime > 0 && msg.agetimer > oldesttimer {
+		var oldestTimer int32
+		for i, m := range teammsg.messages {
+			if !m.del && m.resttime > 0 && m.agetimer > oldestTimer {
 				oldest = i
-				oldesttimer = msg.agetimer
+				oldestTimer = m.agetimer
 			}
 		}
 		if oldest < len(teammsg.messages) {
@@ -5655,9 +5945,9 @@ func (fs *FightScreen) appendAction(c *Char, msg *FSMsg, s_ffx, a_ffx string, sn
 		}
 	}
 
-	// Use index 0 if "top", otherwise find the first free message slot
+	// Use index 0 if "top". Otherwise find the first free message slot
 	index := 0
-	if !top {
+	if !msg.top {
 		for k, v := range teammsg.messages {
 			if v.del {
 				teammsg.messages = removeFSMsg(teammsg.messages, k)
@@ -5673,13 +5963,13 @@ func (fs *FightScreen) appendAction(c *Char, msg *FSMsg, s_ffx, a_ffx string, sn
 	delete(teammsg.is, prefix+"spr")
 
 	// Read animation
-	if anim != -1 {
-		teammsg.is[prefix+"anim"] = fmt.Sprintf("%v", anim)
+	if msg.animNo != -1 {
+		teammsg.is[prefix+"anim"] = fmt.Sprintf("%v", msg.animNo)
 	}
 
 	// Read sprite
-	if spr[0] != -1 && spr[1] != -1 {
-		teammsg.is[prefix+"spr"] = fmt.Sprintf("%v,%v", spr[0], spr[1])
+	if msg.spr[0] != -1 {
+		teammsg.is[prefix+"spr"] = fmt.Sprintf("%v,%v", msg.spr[0], msg.spr[1])
 	}
 
 	// Read background
@@ -5688,21 +5978,21 @@ func (fs *FightScreen) appendAction(c *Char, msg *FSMsg, s_ffx, a_ffx string, sn
 	// Default to fight screen assets
 	sff := fs.sff
 	at := fs.animTable
-	var alscale float32 = 1.0
+	alscale := float32(1.0)
 
 	// Use animation prefixes to change asset source
-	if a_ffx != "" {
-		if a_ffx == "s" {
+	if msg.anim_ffx != "" {
+		if msg.anim_ffx == "s" {
 			// Use the character
 			sff = sys.cgi[c.playerNo].sff
 			at = sys.cgi[c.playerNo].animTable
-			alscale = float32(sys.fightScreen.localcoord[0]) / float32(sys.chars[c.playerNo][0].localcoord)
-		} else if sys.ffx[a_ffx] != nil {
+			alscale = float32(fs.localcoord[0]) / float32(sys.chars[c.playerNo][0].localcoord)
+		} else if sys.ffx[msg.anim_ffx] != nil {
 			// Use common FX
-			fx := sys.ffx[a_ffx]
+			fx := sys.ffx[msg.anim_ffx]
 			sff = fx.sff
 			at = fx.animTable
-			alscale = fx.fx_scale * float32(sys.fightScreen.localcoord[0]) / float32(fx.localcoord[0])
+			alscale = fx.fx_scale * float32(fs.localcoord[0]) / float32(fx.localcoord[0])
 		}
 	}
 
@@ -5714,7 +6004,7 @@ func (fs *FightScreen) appendAction(c *Char, msg *FSMsg, s_ffx, a_ffx string, sn
 		msg.front.anim.start_scale[1] *= alscale
 	}
 
-	// Insert new message
+	// Insert the new message
 	teammsg.messages = insertFSMsg(teammsg.messages, msg, index)
 }
 
@@ -5734,9 +6024,13 @@ func (fs *FightScreen) syncTeamOrder(side int) {
 	order := make([]int, 0, MaxSimul)
 	// Collect all the members of this team
 	for pn := side; pn < MaxSimul*2; pn += 2 {
-		if len(sys.chars[pn]) > 0 {
-			order = append(order, pn)
+		if len(sys.chars[pn]) == 0 || sys.chars[pn][0] == nil {
+			continue
 		}
+		if sys.chars[pn][0].teamside != side {
+			continue
+		}
+		order = append(order, pn)
 	}
 	// Sort them by memberNo
 	sort.Slice(order, func(i, j int) bool {

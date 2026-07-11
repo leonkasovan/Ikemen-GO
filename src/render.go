@@ -21,6 +21,7 @@ type Texture interface {
 
 type Renderer interface {
 	GetName() string
+	DebugInfo() string
 	Init()
 	Close()
 	BeginFrame(clearColor bool)
@@ -216,7 +217,66 @@ type RenderParams struct {
 	xOffset        float32
 	yOffset        float32
 	shader         string
-	shaderParams   [16]float32
+	customShader   CustomShaderRenderData
+}
+
+type ShaderTexture struct {
+	AnimNo int32
+	Anim   *Animation
+	SprNo  [2]int32
+	Spr    *Sprite
+}
+
+func (st *ShaderTexture) clear() {
+	st.AnimNo = -1
+	st.Anim = nil
+	st.SprNo = [2]int32{-1, -1}
+	st.Spr = nil
+}
+
+func (st *ShaderTexture) GetTexture() Texture {
+	if st.Anim != nil {
+		if st.Anim.spr != nil {
+			return st.Anim.spr.Tex
+		}
+	} else if st.Spr != nil {
+		return st.Spr.Tex
+	}
+	return nil
+}
+
+func (st *ShaderTexture) step() {
+	if st.Anim != nil {
+		st.Anim.Action()
+		st.Anim.UpdateSprite()
+	}
+}
+
+type CustomShader struct {
+	name   string
+	params [16]float32
+	time   int32
+	sTime  float32
+	tex1   ShaderTexture
+	tex2   ShaderTexture
+}
+
+func (cs *CustomShader) clear() {
+	cs.name = ""
+	cs.params = [16]float32{}
+	cs.time = 0
+	cs.sTime = 0
+	cs.tex1.clear()
+	cs.tex2.clear()
+}
+
+type CustomShaderRenderData struct {
+	name   string
+	params [16]float32
+	time   int32
+	sTime  float32
+	tex1   Texture
+	tex2   Texture
 }
 
 func (rp *RenderParams) IsValid() bool {
@@ -483,12 +543,13 @@ func renderSpriteQuad(modelview mgl.Mat4, rp RenderParams) {
 	//	pers = Abs(rp.xbs) / Abs(rp.xts)
 	//}
 	if !rp.rot.IsZero() && rp.tile.xflag == 0 && rp.tile.yflag == 0 {
-		if rp.vs != 1 {
-			y1 = rp.rcy + ((rp.y - rp.ys*float32(rp.size[1])) - rp.rcy)
-			y2 = y1
-			y3 = rp.y
-			y4 = y3
-		}
+		// This block makes shadows ignore their own yscale when in perspective
+		//if rp.vs != 1 {
+		//	y1 = rp.rcy + ((rp.y - rp.ys*float32(rp.size[1])) - rp.rcy)
+		//	y2 = y1
+		//	y3 = rp.y
+		//	y4 = y3
+		//}
 		modelview = applyProjection(modelview, rp, 0, 1, 0)
 		modelview = applyShear(modelview, rp.rxadd, rp.ys*float32(rp.size[1]))
 		modelview = applyRotation(modelview, rp)
@@ -606,9 +667,16 @@ func RenderSprite(rp RenderParams) {
 	initRenderSpriteQuad(&rp)
 
 	// PalFX and color setup
-	neg, grayscale, padd, pmul, invblend, hue := false, float32(0), [3]float32{0, 0, 0}, [3]float32{1, 1, 1}, int32(0), float32(0)
+	spfx := ShaderPalFX{
+		neg:      false,
+		add:      [3]float32{0, 0, 0},
+		mult:     [3]float32{1, 1, 1},
+		gray:     0,
+		hue:      0,
+		invblend: 0,
+	}
 	if rp.pfx != nil {
-		neg, grayscale, padd, pmul, invblend, hue = rp.pfx.getFinalPalFx(rp.blendMode, rp.blendAlpha)
+		spfx = rp.pfx.getFinalPalFx(rp.blendMode, rp.blendAlpha)
 	}
 
 	tint := [4]float32{
@@ -623,7 +691,7 @@ func RenderSprite(rp RenderParams) {
 
 	// Heavy state change
 	// Because renderWithBlending() sometimes needs 2 passes, we'll do most of the setup outside of render()
-	gfx.SetSpritePipeline(rp.shader)
+	gfx.SetSpritePipeline(rp.customShader.name)
 
 	gfx.EnableScissor(rp.window[0], rp.window[1], rp.window[2], rp.window[3])
 
@@ -633,8 +701,8 @@ func RenderSprite(rp RenderParams) {
 	gfx.SetUniformI("mask", int(rp.mask))
 	gfx.SetUniformI("isTrapez", int(Btoi(Abs(Abs(rp.xts)-Abs(rp.xbs)) > 0.001)))
 
-	gfx.SetUniformF("gray", grayscale)
-	gfx.SetUniformF("hue", hue)
+	gfx.SetUniformF("gray", spfx.gray)
+	gfx.SetUniformF("hue", spfx.hue)
 	gfx.SetUniformFv("tint", tint[:])
 
 	if rp.paltex == nil {
@@ -643,7 +711,7 @@ func RenderSprite(rp RenderParams) {
 		gfx.SetUniformI("isRgba", 0)
 	}
 
-	if rp.shader != "" {
+	if rp.customShader.name != "" {
 		var timeSec float32
 		if sys.middleOfMatch() {
 			timeSec = float32(sys.gameTime())
@@ -651,6 +719,7 @@ func RenderSprite(rp RenderParams) {
 			timeSec = float32(sys.frameCounter)
 		}
 		gfx.SetUniformF("iTime", timeSec/60.0)
+		gfx.SetUniformF("sTime", rp.customShader.sTime)
 		gfx.SetUniformF("iResolution", float32(sys.scrrect[2]), float32(sys.scrrect[3]))
 		aspectRatio := sys.getCurrentAspect() / sys.getFightAspect()
 		gfx.SetUniformF("aspectRatio", aspectRatio)
@@ -661,7 +730,13 @@ func RenderSprite(rp RenderParams) {
 				gfx.SetTexture("bgl_RenderedTexture", grabTex)
 			}
 		}
-		gfx.SetCustomUniforms(rp.shaderParams)
+		if rp.customShader.tex1 != nil {
+			gfx.SetTexture("tex1", rp.customShader.tex1)
+		}
+		if rp.customShader.tex2 != nil {
+			gfx.SetTexture("tex2", rp.customShader.tex2)
+		}
+		gfx.SetCustomUniforms(rp.customShader.params)
 	}
 	// Texture binding
 	gfx.SetTexture("tex", rp.tex)
@@ -676,21 +751,23 @@ func RenderSprite(rp RenderParams) {
 
 		// Dynamic uniforms
 		// We must include the parameters that renderWithBlending() may have changed
-		gfx.SetUniformI("neg", int(Btoi(neg)))
-		gfx.SetUniformFv("add", padd[:])
-		gfx.SetUniformFv("mult", pmul[:])
+		gfx.SetUniformI("neg", int(Btoi(spfx.neg)))
+		gfx.SetUniformFv("add", spfx.add[:])
+		gfx.SetUniformFv("mult", spfx.mult[:])
 		gfx.SetUniformF("alpha", a)
 
 		renderSpriteQuad(modelview, rp)
 	}
 
-	renderWithBlending(renderPass, rp.blendMode, rp.blendAlpha, rp.paltex != nil, invblend, &neg, &padd, &pmul, rp.paltex == nil)
+	renderWithBlending(renderPass, rp.blendMode, rp.blendAlpha, rp.paltex != nil, &spfx, rp.paltex == nil)
+
 	gfx.DisableScissor()
 }
 
 func renderWithBlending(
 	render func(eq BlendEquation, src, dst BlendFunc, a float32),
-	blendMode TransType, blendAlpha [2]int32, correctAlpha bool, invblend int32, neg *bool, acolor *[3]float32, mcolor *[3]float32, isrgba bool) {
+	blendMode TransType, blendAlpha [2]int32, correctAlpha bool,
+	spfx *ShaderPalFX, isrgba bool) {
 
 	blendSourceFactor := BlendSrcAlpha
 	if !correctAlpha {
@@ -699,18 +776,18 @@ func renderWithBlending(
 
 	Blend := BlendAdd
 	BlendInv := BlendReverseSubtract
-	if invblend >= 1 {
+	if spfx.invblend >= 1 {
 		Blend = BlendReverseSubtract
 		BlendInv = BlendAdd
 	}
 
-	src := blendAlpha[0]
-	dst := blendAlpha[1]
+	// Convert alpha to the float the renderer uses
+	src := float32(blendAlpha[0]) / 255.0
+	dst := float32(blendAlpha[1]) / 255.0
 
 	// Ensure proper source and destination
-	// TODO: Maybe use byte everywhere
-	src = Clamp(src, 0, 255)
-	dst = Clamp(dst, 0, 255)
+	src = Clamp(src, 0, 1)
+	dst = Clamp(dst, 0, 1)
 
 	// Force None destination to 0 just in case
 	if blendMode == TT_none {
@@ -718,15 +795,14 @@ func renderWithBlending(
 	}
 
 	// Helpers for invertblend
-	invertColor := func() {
-		if acolor != nil {
-			(*acolor)[0], (*acolor)[1], (*acolor)[2] = -acolor[0], -acolor[1], -acolor[2]
-		}
+	// Invert PalFX add
+	invertAColor := func() {
+		spfx.add[0], spfx.add[1], spfx.add[2] = -spfx.add[0], -spfx.add[1], -spfx.add[2]
 	}
+	// Disable the "neg" uniform, which the shader uses to invert colors
+	// We sometimes use this because subtractive transparency already inverts colors on its own, so it'd be a double negation
 	disableNeg := func() {
-		if neg != nil {
-			*neg = false
-		}
+		spfx.neg = false
 	}
 
 	// Proceed with the render calls
@@ -734,30 +810,79 @@ func renderWithBlending(
 	// Sub
 	case blendMode == TT_sub:
 		switch {
-		case src == 0 && dst == 255:
+		case src == 0 && dst == 1:
 			// Fully transparent. Skip render
-		case src == 255 && dst == 255:
+		case src == 1 && dst == 1:
 			// Fast path for full subtraction
-			if invblend >= 1 {
-				invertColor()
+			if spfx.invblend >= 1 {
+				invertAColor()
 			}
-			if invblend == 3 {
+			if spfx.invblend == 3 {
 				disableNeg()
 			}
 			render(BlendInv, blendSourceFactor, BlendOne, 1)
 		default:
 			// Full alpha range
-			if dst < 255 {
-				render(BlendAdd, BlendZero, BlendOneMinusSrcAlpha, 1-float32(dst)/255)
+			if dst < 1 {
+				render(BlendAdd, BlendZero, BlendOneMinusSrcAlpha, 1-dst)
 			}
 			if src > 0 {
-				if invblend >= 1 {
-					invertColor()
+				if spfx.invblend >= 1 {
+					invertAColor()
 				}
-				if invblend == 3 {
+				if spfx.invblend == 3 {
 					disableNeg()
 				}
-				render(BlendInv, blendSourceFactor, BlendOne, float32(src)/255)
+				render(BlendInv, blendSourceFactor, BlendOne, src)
+			}
+		}
+	// SubAdd
+	case blendMode == TT_subadd:
+		// Save original state for later restoration
+		origState := *spfx
+
+		// Helper to set PalFX parameters to grayscale for the first pass
+		makeFxGrayscale := func() {
+			avgAdd := (origState.add[0] + origState.add[1] + origState.add[2]) / 3
+			spfx.add = [3]float32{avgAdd, avgAdd, avgAdd}
+			avgMult := (origState.mult[0] + origState.mult[1] + origState.mult[2]) / 3
+			spfx.mult = [3]float32{avgMult, avgMult, avgMult}
+		}
+		if spfx.neg {
+			// With invertall we invert the passes. Add then sub
+			// This is kind of like "invblend = 3"
+			// But adding "invertblend" support here would force people to have to use it to get the expected results
+			// We avoid "neg" entirely because it turns black edges into white auras. But maybe allowing that would be more consistent?
+			disableNeg() // spfx.neg = false
+			//invertAColor()
+
+			// Pass 1: additive with gray PalFX
+			if dst > 0 {
+				makeFxGrayscale()
+				// Set gray uniform manually because render() doesn't set it (and doesn't need to most of the time)
+				gfx.SetUniformF("gray", 1.0)
+				render(BlendAdd, blendSourceFactor, BlendOne, dst)
+			}
+			// Pass 2: subtractive with original PalFX
+			if src > 0 {
+				*spfx = origState
+				disableNeg() // Disable neg again because of the restore
+				gfx.SetUniformF("gray", spfx.gray)
+				render(BlendReverseSubtract, blendSourceFactor, BlendOne, src)
+			}
+		} else {
+			// Normal behavior
+			// Pass 1: subtractive with gray PalFX
+			if dst > 0 {
+				makeFxGrayscale()
+				gfx.SetUniformF("gray", 1.0)
+				render(BlendReverseSubtract, blendSourceFactor, BlendOne, dst)
+			}
+			// Pass 2: additive with original PalFX
+			if src > 0 {
+				*spfx = origState
+				gfx.SetUniformF("gray", spfx.gray)
+				render(BlendAdd, blendSourceFactor, BlendOne, src)
 			}
 		}
 	// Add, None or Default
@@ -765,47 +890,46 @@ func renderWithBlending(
 	// Default should normally not reach here, so this is only a fallback
 	default:
 		switch {
-		case src == 0 && dst == 255:
+		case src == 0 && dst == 1:
 			// Fully transparent. Just don't render
-		case src == 255 && dst == 0:
+		case src == 1 && dst == 0:
 			// Fast path for fully opaque
 			render(BlendAdd, blendSourceFactor, BlendOneMinusSrcAlpha, 1)
-		case src == 255 && dst == 255:
+		case src == 1 && dst == 1:
 			// Fast path for full Add
-			if invblend >= 1 {
-				invertColor()
+			if spfx.invblend >= 1 {
+				invertAColor()
 			}
-			if invblend == 3 {
+			if spfx.invblend == 3 {
 				disableNeg()
 			}
 			render(Blend, blendSourceFactor, BlendOne, 1)
 		default:
 			// AddAlpha (includes Add1)
-			if dst < 255 {
-				render(Blend, BlendZero, BlendOneMinusSrcAlpha, 1-float32(dst)/255)
+			if dst < 1 {
+				render(Blend, BlendZero, BlendOneMinusSrcAlpha, 1-dst)
 			}
 			if src > 0 {
-				// TODO: Wasn't this already done at the start of the function?
-				if invblend >= 1 { // && dst >= 255 {
+				if spfx.invblend >= 1 && dst == 1 {
 					Blend = BlendReverseSubtract
+					if spfx.invblend >= 2 { // Not 1 here. TODO: Explain why in comment
+						invertAColor()
+					}
+					if spfx.invblend == 3 {
+						disableNeg()
+					}
 				} else {
 					Blend = BlendAdd
 				}
-				if invblend >= 2 { // Not 1 here. TODO: Explain why in comment
-					invertColor()
-				}
-				if invblend == 3 {
-					disableNeg()
-				}
-				if !isrgba && (invblend <= -1 || invblend >= 2) && acolor != nil && mcolor != nil && src < 255 {
+				if !isrgba && (spfx.invblend <= -1 || spfx.invblend >= 2) && src < 1 {
 					// Sum of add components
-					gc := Abs(acolor[0]) + Abs(acolor[1]) + Abs(acolor[2])
-					v3, ml, al := Max((gc*255)-float32(dst+src), 512)/128, (float32(src) / 255), (float32(src+dst) / 255)
-					rM, gM, bM := mcolor[0]*ml, mcolor[1]*ml, mcolor[2]*ml
-					(*mcolor)[0], (*mcolor)[1], (*mcolor)[2] = rM, gM, bM
+					gc := Abs(spfx.add[0]) + Abs(spfx.add[1]) + Abs(spfx.add[2])
+					v3, ml, al := Max(255*(gc-(src+dst)), 512)/128, src, src+dst
+					rM, gM, bM := spfx.mult[0]*ml, spfx.mult[1]*ml, spfx.mult[2]*ml
+					spfx.mult[0], spfx.mult[1], spfx.mult[2] = rM, gM, bM
 					render(Blend, blendSourceFactor, BlendOne, al*Pow(v3, 3))
 				} else {
-					render(Blend, blendSourceFactor, BlendOne, float32(src)/255)
+					render(Blend, blendSourceFactor, BlendOne, src)
 				}
 			}
 		}
@@ -818,10 +942,17 @@ func FillRect(rect [4]int32, color uint32, alpha [2]int32, fx *PalFX) {
 	b := float32(color&0xff) / 255
 
 	// PalFX setup
-	neg, grayscale, padd, pmul, invblend, hue := false, float32(0), [3]float32{0, 0, 0}, [3]float32{1, 1, 1}, int32(0), float32(0)
+	spfx := ShaderPalFX{
+		neg:      false,
+		add:      [3]float32{0, 0, 0},
+		mult:     [3]float32{1, 1, 1},
+		gray:     0,
+		hue:      0,
+		invblend: 0,
+	}
 
 	// This call is safe even if fx is nil. Defaults to just AllPalFX
-	neg, grayscale, padd, pmul, invblend, hue = fx.getFinalPalFx(TT_add, alpha)
+	spfx = fx.getFinalPalFx(TT_add, alpha)
 
 	modelview := mgl.Translate3D(0, float32(sys.scrrect[3]), 0)
 	proj := gfx.OrthographicProjectionMatrix(0, float32(sys.scrrect[2]), 0, float32(sys.scrrect[3]), -65535, 65535)
@@ -847,8 +978,8 @@ func FillRect(rect [4]int32, color uint32, alpha [2]int32, fx *PalFX) {
 	gfx.SetUniformI("isTrapez", 0)
 	gfx.SetUniformI("mask", 0)
 	gfx.SetUniformI("isRgba", 1)
-	gfx.SetUniformF("gray", grayscale)
-	gfx.SetUniformF("hue", hue)
+	gfx.SetUniformF("gray", spfx.gray)
+	gfx.SetUniformF("hue", spfx.hue)
 
 	// Alpha is determined by tint, so we reset it here
 	// TODO: Maybe the shader shouldn't have a duplicate alpha component inside "tint"
@@ -859,14 +990,14 @@ func FillRect(rect [4]int32, color uint32, alpha [2]int32, fx *PalFX) {
 		// Update only the dynamic state
 		gfx.EnableBlending(eq, src, dst)
 		gfx.SetUniformF("tint", r, g, b, a)
-		gfx.SetUniformI("neg", int(Btoi(neg)))
-		gfx.SetUniformFv("add", padd[:])
-		gfx.SetUniformFv("mult", pmul[:])
+		gfx.SetUniformI("neg", int(Btoi(spfx.neg)))
+		gfx.SetUniformFv("add", spfx.add[:])
+		gfx.SetUniformFv("mult", spfx.mult[:])
 
 		gfx.RenderQuad()
 	}
 
-	renderWithBlending(renderPass, TT_add, alpha, true, invblend, &neg, &padd, &pmul, true)
+	renderWithBlending(renderPass, TT_add, alpha, true, &spfx, true)
 }
 
 type TextureAtlas struct {
@@ -879,9 +1010,59 @@ type TextureAtlas struct {
 	skyline *list.List //[][2]uint32
 }
 
+func (ta *TextureAtlas) bytesPerPixel() int32 {
+	bpp := ta.depth / 8
+	if bpp < 1 {
+		bpp = 1
+	}
+	return bpp
+}
+
+func (ta *TextureAtlas) clearTexture(tex Texture, width, height int32) {
+	bpp := ta.bytesPerPixel()
+	clearData := make([]byte, int(width*height*bpp))
+	tex.SetSubData(clearData, 0, 0, width, height, width*bpp)
+}
+
+func extrudeAtlasImage(data []byte, width, height, stride, bpp int32) ([]byte, int32, bool) {
+	if width <= 0 || height <= 0 || bpp <= 0 {
+		return nil, 0, false
+	}
+	if stride <= 0 {
+		stride = width * bpp
+	}
+	if int(stride*height) > len(data) {
+		return nil, 0, false
+	}
+
+	outWidth := width + 2
+	outHeight := height + 2
+	outStride := outWidth * bpp
+	out := make([]byte, int(outStride*outHeight))
+
+	for y := int32(0); y < height; y++ {
+		srcRow := data[y*stride : y*stride+width*bpp]
+		dstRow := out[(y+1)*outStride+1*bpp : (y+1)*outStride+1*bpp+width*bpp]
+		copy(dstRow, srcRow)
+
+		leftPx := srcRow[:bpp]
+		rightPx := srcRow[(width-1)*bpp : width*bpp]
+		copy(out[(y+1)*outStride:(y+1)*outStride+bpp], leftPx)
+		copy(out[(y+1)*outStride+(outWidth-1)*bpp:(y+1)*outStride+outWidth*bpp], rightPx)
+	}
+
+	firstRow := out[outStride : outStride+outStride]
+	lastRow := out[(outHeight-2)*outStride : (outHeight-2)*outStride+outStride]
+	copy(out[0:outStride], firstRow)
+	copy(out[(outHeight-1)*outStride:(outHeight-1)*outStride+outStride], lastRow)
+
+	return out, outStride, true
+}
+
 func CreateTextureAtlas(width, height int32, depth int32, filter bool) *TextureAtlas {
 	ta := &TextureAtlas{width: width, height: height, texture: gfx.newTexture(width, height, depth, filter), depth: depth, filter: filter, skyline: list.New(), resize: false}
-	ta.texture.SetData(nil) // ALLOCATE STORAGE NOW
+	ta.texture.SetData(nil) // Allocate storage where supported.
+	ta.clearTexture(ta.texture, width, height)
 	ta.skyline.PushBack([2]int32{0, 0})
 	return ta
 }
@@ -938,7 +1119,12 @@ func (ta *TextureAtlas) AddImage(width, height, stride int32, data []byte) ([4]f
 	}
 
 	// Otherwise upload and return
-	ta.texture.SetSubData(data, x, y, width, height, stride)
+	bpp := ta.bytesPerPixel()
+	paddedData, paddedStride, ok := extrudeAtlasImage(data, width, height, stride, bpp)
+	if !ok {
+		return [4]float32{}, false
+	}
+	ta.texture.SetSubData(paddedData, x-1, y-1, width+2, height+2, paddedStride)
 
 	return [4]float32{
 		float32(x) / float32(ta.width),
@@ -1014,10 +1200,32 @@ func (ta *TextureAtlas) Resize(width, height int32) {
 		panic("New height cannot be smaller than old height")
 	}
 	t := gfx.newTexture(width, height, ta.depth, ta.filter)
+	ta.clearTexture(t, width, height)
 	t.CopyData(&ta.texture)
 	ta.skyline.PushBack([2]int32{ta.width, 0})
 	ta.width = width
 	ta.height = height
 	ta.texture = t
 	return
+}
+
+// The PalFX parameters sent to the shader uniforms
+type ShaderPalFX struct {
+	neg      bool
+	add      [3]float32
+	mult     [3]float32
+	gray     float32
+	hue      float32
+	invblend int32
+}
+
+func NewShaderPalFX() ShaderPalFX {
+	return ShaderPalFX{
+		neg:      false,
+		add:      [3]float32{0, 0, 0},
+		mult:     [3]float32{1, 1, 1},
+		gray:     0,
+		hue:      0,
+		invblend: 0,
+	}
 }

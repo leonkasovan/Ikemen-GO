@@ -214,7 +214,7 @@ menu.t_itemname = {
 			sndPlay(motif.Snd, sec.cursor.done.snd[1], sec.cursor.done.snd[2])
 			--togglePause(false)
 			resetRound()
-			main.pauseMenu = false
+			main.pauseMenuActive = false
 			return false
 		end
 		return true
@@ -225,7 +225,7 @@ menu.t_itemname = {
 			sndPlay(motif.Snd, sec.cursor.done.snd[1], sec.cursor.done.snd[2])
 			--togglePause(false)
 			reload()
-			main.pauseMenu = false
+			main.pauseMenuActive = false
 			return false
 		end
 		return true
@@ -246,7 +246,7 @@ menu.t_itemname = {
 			--togglePause(false)
 			endMatch()
 			start.characterchange = true
-			main.pauseMenu = false
+			main.pauseMenuActive = false
 			start.f_selectReset(false)
 			return false
 		end
@@ -259,7 +259,7 @@ menu.t_itemname = {
 			--togglePause(false)
 			endMatch()
 			start.exit = true
-			main.pauseMenu = false
+			main.pauseMenuActive = false
 			return false
 		end
 		return true
@@ -558,7 +558,7 @@ menu.movelistChar = 1
 function menu.f_init()
 	esc(false)
 	togglePause(true)
-	main.pauseMenu = true
+	main.pauseMenuActive = true
 	bgReset(motif.optionbgdef.BGDef)
 	local id = f_pauseMenuIdFromKey(f_pauseMenuKey(gameMode()))
 	if id == '' or menu.t_menuIndex == nil or menu.t_menuIndex[id] == nil then
@@ -616,7 +616,7 @@ function menu.f_run()
 		else
 			menu.pauseExitDelay = -1 --prevent retriggering at 0
 			togglePause(false)
-			main.pauseMenu = false
+			main.pauseMenuActive = false
 			return false
 		end
 	end
@@ -634,7 +634,7 @@ function menu.f_run()
 	else
 		menu.currentMenu[1]()
 	end
-	return main.pauseMenu
+	return main.pauseMenuActive
 end
 
 -- Reset selection/scroll state recursively for a menu table (root + submenus)

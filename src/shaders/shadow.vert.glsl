@@ -66,7 +66,8 @@
 	#define COMPAT_TEXTURE texture
 	#ifdef GL_ES
 		precision highp float;
-		#define GS_IN(x) x
+		precision highp int;
+		#define GS_IN(x) x##In
 	#else
 		#define GS_IN(x) x##In
 	#endif
@@ -88,9 +89,10 @@
 	COMPAT_ATTRIBUTE vec4 weights_0;
 	COMPAT_ATTRIBUTE vec4 weights_1;
 
-	COMPAT_VARYING float GS_IN(vColor);
-	COMPAT_VARYING vec2 GS_IN(texcoord);
-	COMPAT_VARYING vec4 GS_IN(FragPos);
+	// GS_IN(name) causes issues on GLES for some reason, just use them as-is
+	COMPAT_VARYING float vColorIn;
+	COMPAT_VARYING vec2 texcoordIn;
+	COMPAT_VARYING vec4 FragPosIn;
 #endif
 
 
@@ -130,7 +132,11 @@ mat4 getJointMatrix(){
 }
 
 void main() {
+	#ifdef GL_ES
+	texcoordIn = uv;
+	#else
 	GS_IN(texcoord) = uv;
+	#endif
 	#if __VERSION__ >= 450
 		if(useVertColor) {
 			vColor = vertColor.a;
@@ -139,7 +145,11 @@ void main() {
 		}
 		bool skinning = useJoint0;
 	#else
+		#ifdef GL_ES
+		vColorIn = vertColor.a;
+		#else
 		GS_IN(vColor) = vertColor.a;
+		#endif
 		bool skinning = checkSkinning();
 	#endif
 	vec4 pos = vec4(position, 1.0);
@@ -152,15 +162,27 @@ void main() {
 			if(float(idx) < morphTargetOffset[0]){
 				pos += morphTargetWeight[idx/4][idx%4] * COMPAT_TEXTURE(morphTargetValues,xy);
 			}else if(float(idx) >= morphTargetOffset[2] && float(idx) < morphTargetOffset[3]){
+				#ifdef GL_ES
+				texcoordIn += morphTargetWeight[idx/4][idx%4] * vec2(COMPAT_TEXTURE(morphTargetValues,xy));
+				#else
 				GS_IN(texcoord) += morphTargetWeight[idx/4][idx%4] * vec2(COMPAT_TEXTURE(morphTargetValues,xy));
+				#endif
 			}
 		}
 	}
 	if(skinning){
 		mat4 jointMatrix = getJointMatrix();
+		#ifdef GL_ES
+		FragPosIn = model * jointMatrix * pos;
+		#else
 		GS_IN(FragPos) = model * jointMatrix * pos;
+		#endif
 	}else{
+		#ifdef GL_ES
+		FragPosIn = model * pos;
+		#else
 		GS_IN(FragPos) = model * pos;
+		#endif
 	}
 	#if __VERSION__ >= 450
 		gl_Layer = int(layers[gl_InstanceIndex/4][gl_InstanceIndex%4]);
@@ -169,6 +191,10 @@ void main() {
 	#else
 		// GLES PATH: Apply the light matrix and set the final gl_Position
 		// We assume lightIndex is passed as a uniform for GLES
+		#ifdef GL_ES
+		gl_Position = lightMatrix * FragPosIn;
+		#else
 		gl_Position = lightMatrix * GS_IN(FragPos);
+		#endif
 	#endif
 }

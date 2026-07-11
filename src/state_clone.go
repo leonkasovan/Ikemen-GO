@@ -216,6 +216,10 @@ func (e *Explod) Clone(a *arena.Arena, gsp *GameStatePool) *Explod {
 		result.anim = e.anim.Clone(a, gsp)
 	}
 
+	if e.customShader.name != "" {
+		result.customShader = e.customShader.Clone(a, gsp)
+	}
+
 	if e.palfx != nil {
 		result.palfx = e.palfx.Clone(a)
 	}
@@ -237,6 +241,10 @@ func (p *Projectile) clone(a *arena.Arena, gsp *GameStatePool) *Projectile {
 
 	if p.anim != nil {
 		result.anim = p.anim.Clone(a, gsp)
+	}
+
+	if p.customShader.name != "" {
+		result.customShader = p.customShader.Clone(a, gsp)
 	}
 
 	if p.palfx != nil {
@@ -284,7 +292,9 @@ func (c *Char) Clone(a *arena.Arena, gsp *GameStatePool) (result Char) {
 	if c.reflectAnim != nil {
 		result.reflectAnim = c.reflectAnim.Clone(a, gsp)
 	}
-
+	if c.customShader.name != "" {
+		result.customShader = c.customShader.Clone(a, gsp)
+	}
 	// TODO: Profiling shows this is hotter than it should be
 	// Maybe we ought to clear animation data from them when their timer expires
 	// Update: Done already but copying 60 PalFX's is still a problem
@@ -1042,5 +1052,16 @@ func (s *Storyboard) Clone(a *arena.Arena) (result Storyboard) {
 		}
 	}
 
+	return result
+}
+
+func (cs *CustomShader) Clone(a *arena.Arena, gsp *GameStatePool) CustomShader {
+	result := *cs
+	if cs.tex1.Anim != nil {
+		result.tex1.Anim = cs.tex1.Anim.Clone(a, gsp)
+	}
+	if cs.tex2.Anim != nil {
+		result.tex2.Anim = cs.tex2.Anim.Clone(a, gsp)
+	}
 	return result
 }

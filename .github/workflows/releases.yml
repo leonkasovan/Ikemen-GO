@@ -56,7 +56,7 @@ jobs:
       buildTime: ${{ steps.meta.outputs.buildTime }}
       #previousTag: ${{ steps.previousTag.outputs.tag }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
@@ -152,7 +152,7 @@ jobs:
             build_target: Android
     runs-on: ${{ matrix.cfg.os }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
 

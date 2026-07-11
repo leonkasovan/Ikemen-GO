@@ -130,6 +130,7 @@ const (
 	GSF_timerfreeze
 	// Ikemen flags
 	GSF_camerafreeze
+	GSF_notimedisplay
 	GSF_roundfreeze
 	GSF_roundnotskip
 	GSF_skipfightdisplay
@@ -164,14 +165,6 @@ const (
 	Projection_Orthographic Projection = iota
 	Projection_Perspective
 	Projection_Perspective2
-)
-
-type SaveData int32
-
-const (
-	SaveData_map SaveData = iota
-	SaveData_var
-	SaveData_fvar
 )
 
 type DebugClsnText struct {
@@ -647,6 +640,8 @@ type HitDef struct {
 	envshake_phase             float32
 	envshake_mul               float32
 	envshake_dir               float32
+	envshake_diradd            float32
+	envshake_decay             float32
 	mindist                    [3]float32
 	maxdist                    [3]float32
 	snap                       [3]float32
@@ -665,6 +660,8 @@ type HitDef struct {
 	fall_envshake_phase        float32
 	fall_envshake_mul          float32
 	fall_envshake_dir          float32
+	fall_envshake_diradd       float32
+	fall_envshake_decay        float32
 	kill                       bool
 	guard_kill                 bool
 	forcenofall                bool
@@ -752,7 +749,7 @@ func (hd *HitDef) reset(c *Char, proj *Projectile) {
 		zaccel: 0,
 
 		p1sprpriority:       IErr, // 1 in Mugen
-		p2sprpriority:       IErr, // 0 in Mugen
+		p2sprpriority:       0,
 		p1stateno:           -1,
 		p2stateno:           -1,
 		missonoverride:      -1,
@@ -773,7 +770,6 @@ func (hd *HitDef) reset(c *Char, proj *Projectile) {
 		envshake_ampl:       -4,
 		envshake_phase:      float32(math.NaN()),
 		envshake_mul:        1.0,
-		envshake_dir:        0.0,
 		mindist:             [...]float32{float32(math.NaN()), float32(math.NaN()), float32(math.NaN())},
 		maxdist:             [...]float32{float32(math.NaN()), float32(math.NaN()), float32(math.NaN())},
 		snap:                [...]float32{float32(math.NaN()), float32(math.NaN()), float32(math.NaN())},
@@ -801,7 +797,6 @@ func (hd *HitDef) reset(c *Char, proj *Projectile) {
 		fall_envshake_ampl:  IErr,
 		fall_envshake_phase: float32(math.NaN()),
 		fall_envshake_mul:   1.0,
-		fall_envshake_dir:   0.0,
 		attack_depth:        [2]float32{c.size.attack.depth[0], c.size.attack.depth[1]},
 		unhittabletime:      [2]int32{IErr, IErr},
 		StandFriction:       float32(math.NaN()),
@@ -1009,11 +1004,10 @@ func (hd *HitDef) finalizeParams(c *Char, proj *Projectile) {
 		c.juggle = hd.air_juggle
 	}
 
-	// Mugen defaults to changing p1 and p2 sprpriority, but you have to work around that more often than not
-	// The new defaults should be harmless or even beneficial, so we won't lock them behind a version check just yet
+	// Mugen defaults to changing p1sprpriority, but you have to work around that more often than not
+	// The new default should be harmless or even beneficial, so we won't lock it behind a version check just yet
 	//if c.stWgi().ikemenver[0] == 0 && c.stWgi().ikemenver[1] == 0 {
 	//	ifierrset(&hd.p1sprpriority, 1)
-	//	ifierrset(&hd.p2sprpriority, 0)
 	//}
 }
 
@@ -1037,84 +1031,86 @@ func (hd *HitDef) testReversalAttr(attr int32) bool {
 }
 
 type GetHitVar struct {
-	targetedBy          [][2]int32 // ID, current juggle
-	attr                int32
-	_type               HitType
-	animtype            Reaction
-	airanimtype         Reaction
-	groundanimtype      Reaction
-	airtype             HitType
-	groundtype          HitType
-	damage              int32
-	hitcount            int32
-	guardcount          int32
-	fallcount           int32
-	hitshaketime        int32
-	hittime             int32
-	slidetime           int32
-	ctrltime            int32
-	xvel                float32
-	yvel                float32
-	zvel                float32
-	xaccel              float32
-	yaccel              float32
-	zaccel              float32
-	xveladd             float32
-	yveladd             float32
-	hitid               int32
-	xoff                float32
-	yoff                float32
-	zoff                float32
-	fall_animtype       Reaction // Old fall struct
-	fall_xvelocity      float32
-	fall_yvelocity      float32
-	fall_zvelocity      float32
-	fall_recover        bool
-	fall_recovertime    int32
-	fall_damage         int32
-	fall_kill           bool
-	fall_envshake_time  int32
-	fall_envshake_freq  float32
-	fall_envshake_ampl  int32
-	fall_envshake_phase float32
-	fall_envshake_mul   float32
-	fall_envshake_dir   float32
-	playerid            int32
-	playerno            int
-	projid              int32
-	fallflag            bool
-	guarded             bool
-	p2getp1state        bool
-	forcestand          bool
-	forcecrouch         bool
-	dizzypoints         int32
-	guardpoints         int32
-	redlife             int32
-	score               float32
-	hitdamage           int32
-	guarddamage         int32
-	power               int32
-	hitpower            int32
-	guardpower          int32
-	hitredlife          int32
-	guardredlife        int32
-	kill                bool
-	priority            int32
-	facing              int32
-	ground_velocity     [3]float32
-	air_velocity        [3]float32
-	down_velocity       [3]float32
-	guard_velocity      [3]float32
-	airguard_velocity   [3]float32
-	frame               bool
-	guardko             bool
-	down_recover        bool
-	down_recovertime    int32
-	guardflag           int32
-	keepstate           bool
-	standfriction       float32
-	crouchfriction      float32
-	teamside            int
+	targetedBy           [][2]int32 // ID, current juggle
+	attr                 int32
+	_type                HitType
+	animtype             Reaction
+	airanimtype          Reaction
+	groundanimtype       Reaction
+	airtype              HitType
+	groundtype           HitType
+	damage               int32
+	hitcount             int32
+	guardcount           int32
+	fallcount            int32
+	hitshaketime         int32
+	hittime              int32
+	slidetime            int32
+	ctrltime             int32
+	xvel                 float32
+	yvel                 float32
+	zvel                 float32
+	xaccel               float32
+	yaccel               float32
+	zaccel               float32
+	xveladd              float32
+	yveladd              float32
+	hitid                int32
+	xoff                 float32
+	yoff                 float32
+	zoff                 float32
+	fall_animtype        Reaction // Old fall struct
+	fall_xvelocity       float32
+	fall_yvelocity       float32
+	fall_zvelocity       float32
+	fall_recover         bool
+	fall_recovertime     int32
+	fall_damage          int32
+	fall_kill            bool
+	fall_envshake_time   int32
+	fall_envshake_freq   float32
+	fall_envshake_ampl   int32
+	fall_envshake_phase  float32
+	fall_envshake_mul    float32
+	fall_envshake_dir    float32
+	fall_envshake_diradd float32
+	fall_envshake_decay  float32
+	playerid             int32
+	playerno             int
+	projid               int32
+	fallflag             bool
+	guarded              bool
+	p2getp1state         bool
+	forcestand           bool
+	forcecrouch          bool
+	dizzypoints          int32
+	guardpoints          int32
+	redlife              int32
+	score                float32
+	hitdamage            int32
+	guarddamage          int32
+	power                int32
+	hitpower             int32
+	guardpower           int32
+	hitredlife           int32
+	guardredlife         int32
+	kill                 bool
+	priority             int32
+	facing               int32
+	ground_velocity      [3]float32
+	air_velocity         [3]float32
+	down_velocity        [3]float32
+	guard_velocity       [3]float32
+	airguard_velocity    [3]float32
+	frame                bool
+	guardko              bool
+	down_recover         bool
+	down_recovertime     int32
+	guardflag            int32
+	keepstate            bool
+	standfriction        float32
+	crouchfriction       float32
+	teamside             int
 }
 
 // This is called every time the char gets hit
@@ -1624,6 +1620,7 @@ type Explod struct {
 	sprpriority         int32
 	layerno             int32
 	shadow              [3]int32
+	reflection          int32
 	supermovetime       int32
 	pausemovetime       int32
 	anim                *Animation
@@ -1678,8 +1675,7 @@ type Explod struct {
 	timestamp            int32 // Determines run order
 	sortindex            int   // For faster run order sorting
 
-	shader       string
-	shaderParams [16]float32
+	customShader CustomShader
 }
 
 func newExplod() *Explod {
@@ -1726,6 +1722,7 @@ func (e *Explod) initFromChar(c *Char) *Explod {
 		friction:          [3]float32{1, 1, 1},
 		remappal:          [2]int32{-1, 0},
 		timestamp:         sys.matchTime,
+		reflection:        -1,
 		//aimg:              *newAfterImage(),
 	}
 
@@ -1902,6 +1899,33 @@ func (e *Explod) setAnimElem() {
 	}
 }
 
+func (e *Explod) canAct() bool {
+	// Challenger screen also pauses the explod
+	// https://github.com/ikemen-engine/Ikemen-GO/issues/3684
+	if sys.motif.ch.active && sys.pausetime > 0 {
+		return false
+	}
+
+	// Determine pause state
+	paused := false
+	if sys.supertime > 0 {
+		paused = (e.supermovetime >= 0 && e.time >= e.supermovetime) || e.supermovetime < -2
+	} else if sys.pausetime > 0 {
+		paused = (e.pausemovetime >= 0 && e.time >= e.pausemovetime) || e.pausemovetime < -2
+	}
+
+	act := !paused
+
+	// Apply ignorehitpause
+	if act && !e.ignorehitpause {
+		if parent := sys.playerID(e.ownerId); parent != nil {
+			act = parent.acttmp%2 >= 0
+		}
+	}
+
+	return act
+}
+
 func (e *Explod) update() {
 	if e.id == IErr || e.anim == nil {
 		e.id = IErr
@@ -1913,10 +1937,6 @@ func (e *Explod) update() {
 	root := sys.chars[e.playerno][0]
 
 	if root.scf(SCF_disabled) {
-		return
-	}
-
-	if e.hidewithbars && (!sys.fightScreen.visible() || sys.gsf(GSF_nobardisplay) || !sys.fightScreen.bars) {
 		return
 	}
 
@@ -1933,18 +1953,7 @@ func (e *Explod) update() {
 		return
 	}
 
-	paused := false
-	if sys.supertime > 0 {
-		paused = (e.supermovetime >= 0 && e.time >= e.supermovetime) || e.supermovetime < -2
-	} else if sys.pausetime > 0 {
-		paused = (e.pausemovetime >= 0 && e.time >= e.pausemovetime) || e.pausemovetime < -2
-	}
-
-	act := !paused
-
-	if act && !e.ignorehitpause {
-		act = parent == nil || parent.acttmp%2 >= 0
-	}
+	act := e.canAct()
 
 	if sys.tickFrame() {
 		if e.removetime >= 0 && e.time >= e.removetime ||
@@ -1978,6 +1987,8 @@ func (e *Explod) update() {
 			e.pos[i] = e.newPos[i] - (e.newPos[i]-e.oldPos[i])*(1-spd)
 		}
 	}
+
+	// Sync parameters
 	if e.syncId > 0 {
 		if syncChar := sys.playerID(e.syncId); syncChar != nil {
 			syncChar.enableSyncId = true // Enable sync layering for this char
@@ -1998,8 +2009,7 @@ func (e *Explod) update() {
 				e.alpha = syncChar.alpha
 				e.palfx = syncChar.getPalfx()
 				e.facing = syncChar.facing
-				e.shader = syncChar.shader
-				e.shaderParams = syncChar.shaderParams
+				e.customShader = syncChar.customShader
 
 				if syncChar.aimg != nil && syncChar.aimg.time != 0 {
 					if e.aimg == nil {
@@ -2035,51 +2045,9 @@ func (e *Explod) update() {
 		}
 	}
 
-	facing := e.trueFacing()
-	//if e.lockSpriteFacing {
-	//	facing = -1
-	//}
-
 	if sys.tickFrame() && act {
 		e.anim.UpdateSprite()
 	}
-
-	var pfx *PalFX
-	if e.palfx != nil && (!e.anim.isCommonFX() || e.ownpal) {
-		pfx = e.palfx
-	} else {
-		pfx = &PalFX{}
-		*pfx = *e.palfx
-		pfx.remap = nil
-	}
-
-	alp := e.alpha
-	anglerot := e.anglerot
-	fLength := e.fLength
-	scale := e.scale
-	xshear := e.xshear
-	if e.interpolate {
-		e.Interpolate(act, &scale, &alp, &anglerot, &fLength, &xshear)
-	}
-	if alp[0] < 0 {
-		alp[0] = -1
-	}
-	if (facing < 0) != (e.vfacing < 0) {
-		anglerot[0] *= -1
-		anglerot[2] *= -1
-	}
-	sdwalp := 255 - alp[1]
-	if sdwalp < 0 {
-		sdwalp = 256
-	}
-	if fLength <= 0 {
-		fLength = 2048
-	}
-	fLength = fLength * e.localscl
-	rot := e.rot
-	rot.angle = anglerot[0]
-	rot.xangle = anglerot[1]
-	rot.yangle = anglerot[2]
 
 	// Interpolated position
 	// With z-axis it's important that we don't use localscl here yet
@@ -2087,112 +2055,6 @@ func (e *Explod) update() {
 		e.pos[0] + e.offset[0] + off[0] + e.interpolate_pos[0],
 		e.pos[1] + e.offset[1] + off[1] + e.interpolate_pos[1],
 		e.pos[2] + e.offset[2] + off[2] + e.interpolate_pos[2],
-	}
-
-	// Set drawing position
-	drawpos := [2]float32{e.interPos[0] * e.localscl, e.interPos[1] * e.localscl}
-
-	// Init z-scale. Explods only need a local variable for this
-	// TODO: ExplodVar zscale?
-	zscale := float32(1.0)
-
-	// Apply Z axis perspective
-	if e.space == Space_stage && sys.zEnabled() {
-		zscale = sys.updateZScale(e.interPos[2], e.localscl)
-		drawpos = sys.drawposXYfromZ(drawpos, e.localscl, e.interPos[2], zscale)
-	}
-
-	// Calculate base scale
-	// Mugen uses "e.localscl" instead of "320 / e.localcoord" but that makes the scale jump in custom states of different localcoord
-	basescale := [2]float32{
-		(320 / e.localcoord) * zscale * facing,
-		(320 / e.localcoord) * zscale * e.vfacing, // Just for consistency with horizontal facing
-	}
-
-	// Calculate draw scale
-	drawscale := [2]float32{
-		basescale[0] * scale[0],
-		basescale[1] * scale[1],
-	}
-
-	// Calculate window scale
-	var ewin = [4]float32{
-		e.window[0] * basescale[0],
-		e.window[1] * basescale[1],
-		e.window[2] * basescale[0],
-		e.window[3] * basescale[1],
-	}
-
-	// Prepare sprite data
-	sd := newSpriteData()
-	sd.anim = e.anim
-	sd.pfx = pfx
-	sd.pos = drawpos
-	sd.scl = drawscale
-	sd.trans = e.trans
-	sd.alpha = alp
-	sd.layerno = e.layerno
-	sd.priority = e.sprpriority + int32(e.interPos[2]*e.localscl)
-	sd.under = e.under
-	sd.rot = rot
-	sd.screen = e.space == Space_screen
-	sd.undarken = parent != nil && parent.ignoreDarkenTime > 0
-	sd.facing = facing
-	sd.projection = int32(e.projection)
-	sd.fLength = fLength
-	sd.window = ewin
-	sd.xshear = xshear
-	sd.shader = e.shader
-	sd.shaderParams = e.shaderParams
-
-	if e.syncId > 0 {
-		sd.syncId = e.syncId
-		sd.syncLayer = e.syncLayer
-	}
-
-	// Record afterimage
-	if e.aimg != nil {
-		if e.aimg.isActive() {
-			e.aimg.recAndCue(sd, e.playerno, sys.tickNextFrame() && act,
-				sys.tickNextFrame() && e.ignorehitpause && (e.supermovetime != 0 || e.pausemovetime != 0))
-		} else {
-			e.aimg = nil
-		}
-	}
-
-	// Add sprite to the appropriate layer's drawlist
-	sys.spriteList.add(sd)
-
-	// Determine shadow color
-	sdwclr := e.shadow[0]<<16 | e.shadow[1]&0xff<<8 | e.shadow[2]&0xff
-
-	// Add shadow if color is not 0
-	if sdwclr != 0 {
-		sdwalp := 255 - alp[1]
-		if sdwalp < 0 {
-			sdwalp = 256
-		}
-		drawZoff := sys.posZtoYoffset(e.interPos[2], e.localscl)
-
-		// Prepare shadow sprite
-		ss := newShadowSprite()
-		ss.SpriteData = sd
-		ss.shadowColor = sdwclr
-		ss.shadowAlpha = sdwalp
-		ss.shadowOffset = [2]float32{0, sys.stage.sdw.yscale*drawZoff + drawZoff}
-		ss.groundLevel = drawZoff
-
-		// Add shadow to list
-		sys.shadowList.add(ss)
-
-		// Prepare reflection sprite
-		rs := newReflectionSprite()
-		rs.SpriteData = sd
-		rs.reflectOffset = [2]float32{0, sys.stage.reflection.yscale*drawZoff + drawZoff}
-		rs.groundLevel = drawZoff
-
-		// Add reflection to list
-		sys.reflectionList.add(rs)
 	}
 
 	if sys.tickNextFrame() {
@@ -2241,11 +2103,193 @@ func (e *Explod) update() {
 			if e.bindtime > 0 {
 				e.bindtime--
 			}
+			if e.customShader.name != "" {
+				e.customShader.sTime++
+				e.customShader.tex1.step()
+				e.customShader.tex2.step()
+				if e.customShader.time > 0 {
+					e.customShader.time--
+				}
+				if e.customShader.time == 0 {
+					e.customShader.clear()
+				}
+			}
 		} else {
 			e.setAllPosX(e.pos[0])
 			e.setAllPosY(e.pos[1])
 			e.setAllPosZ(e.pos[2])
 		}
+	}
+}
+
+func (e *Explod) cueDraw() {
+	if e.hidewithbars && sys.shouldHideWithBars() {
+		return
+	}
+	if e.anim == nil {
+		return
+	}
+
+	parent := sys.playerID(e.ownerId)
+	act := e.canAct()
+
+	var pfx *PalFX
+	if e.palfx != nil && (!e.anim.isCommonFX() || e.ownpal) {
+		pfx = e.palfx
+	} else {
+		pfx = &PalFX{}
+		*pfx = *e.palfx
+		pfx.remap = nil
+	}
+
+	alp := e.alpha
+	anglerot := e.anglerot
+	fLength := e.fLength
+	scale := e.scale
+	xshear := e.xshear
+
+	if e.interpolate {
+		e.Interpolate(act, &scale, &alp, &anglerot, &fLength, &xshear)
+	}
+
+	if alp[0] < 0 {
+		alp[0] = -1
+	}
+
+	facing := e.trueFacing()
+	//if e.lockSpriteFacing {
+	//	facing = -1
+	//}
+	if (facing < 0) != (e.vfacing < 0) {
+		anglerot[0] *= -1
+		anglerot[2] *= -1
+	}
+
+	if fLength <= 0 {
+		fLength = 2048
+	}
+	fLength = fLength * e.localscl
+
+	rot := e.rot
+	rot.angle = anglerot[0]
+	rot.xangle = anglerot[1]
+	rot.yangle = anglerot[2]
+
+	// Set drawing position
+	drawpos := [2]float32{e.interPos[0] * e.localscl, e.interPos[1] * e.localscl}
+
+	// Init z-scale. Explods only need a local variable for this
+	// TODO: ExplodVar zscale?
+	zscale := float32(1.0)
+
+	// Apply Z axis perspective
+	if e.space == Space_stage && sys.zEnabled() {
+		zscale = sys.updateZScale(e.interPos[2], e.localscl)
+		drawpos = sys.drawposXYfromZ(drawpos, e.localscl, e.interPos[2], zscale)
+	}
+
+	// Calculate base scale
+	// Mugen uses "e.localscl" instead of "320 / e.localcoord" but that makes the scale jump in custom states of different localcoord
+	basescale := [2]float32{
+		(320 / e.localcoord) * zscale * facing,
+		(320 / e.localcoord) * zscale * e.vfacing, // Just for consistency with horizontal facing
+	}
+
+	// Calculate draw scale
+	drawscale := [2]float32{
+		basescale[0] * scale[0],
+		basescale[1] * scale[1],
+	}
+
+	// Calculate window scale
+	ewin := [4]float32{
+		e.window[0] * basescale[0],
+		e.window[1] * basescale[1],
+		e.window[2] * basescale[0],
+		e.window[3] * basescale[1],
+	}
+
+	// Prepare sprite data
+	sd := newSpriteData()
+	sd.anim = e.anim
+	sd.pfx = pfx
+	sd.pos = drawpos
+	sd.scl = drawscale
+	sd.trans = e.trans
+	sd.alpha = alp
+	sd.layerno = e.layerno
+	sd.priority = e.sprpriority + int32(e.interPos[2]*e.localscl)
+	sd.under = e.under
+	sd.rot = rot
+	sd.screen = e.space == Space_screen
+	sd.undarken = parent != nil && parent.ignoreDarkenTime > 0
+	sd.facing = facing
+	sd.projection = int32(e.projection)
+	sd.fLength = fLength
+	sd.window = ewin
+	sd.xshear = xshear
+	sd.customShader = CustomShaderRenderData{
+		name:   e.customShader.name,
+		params: e.customShader.params,
+		time:   e.customShader.time,
+		sTime:  e.customShader.sTime,
+		tex1:   e.customShader.tex1.GetTexture(),
+		tex2:   e.customShader.tex2.GetTexture(),
+	}
+
+	if e.syncId > 0 {
+		sd.syncId = e.syncId
+		sd.syncLayer = e.syncLayer
+	}
+
+	// Record afterimage
+	if e.aimg != nil {
+		if e.aimg.isActive() {
+			e.aimg.recAndCue(sd, e.playerno, sys.tickNextFrame() && act,
+				sys.tickNextFrame() && e.ignorehitpause && (e.supermovetime != 0 || e.pausemovetime != 0))
+		} else {
+			e.aimg = nil
+		}
+	}
+
+	// Add sprite to the appropriate layer's drawlist
+	sys.spriteList.add(sd)
+
+	// Determine shadow color
+	sdwclr := e.shadow[0]<<16 | e.shadow[1]&0xff<<8 | e.shadow[2]&0xff
+
+	// Add shadow if color is not 0
+	if sdwclr != 0 {
+		sdwalp := 255 - alp[1]
+		if sdwalp < 0 {
+			sdwalp = 256
+		}
+		drawZoff := sys.posZtoYoffset(e.interPos[2], e.localscl)
+
+		// Prepare shadow sprite
+		ss := newShadowSprite()
+		ss.SpriteData = sd
+		ss.shadowColor = sdwclr
+		ss.shadowAlpha = sdwalp
+		ss.shadowOffset = [2]float32{0, sys.stage.sdw.yscale*drawZoff + drawZoff}
+		ss.groundLevel = drawZoff
+
+		// Add shadow to list
+		sys.shadowList.add(ss)
+	}
+
+	// Add reflection
+	if (e.reflection < 0 && sdwclr != 0) || e.reflection > 0 {
+		drawZoff := sys.posZtoYoffset(e.interPos[2], e.localscl)
+
+		// Prepare reflection sprite
+		rs := newReflectionSprite()
+		rs.SpriteData = sd
+		rs.reflectOffset = [2]float32{0, sys.stage.reflection.yscale*drawZoff + drawZoff}
+		rs.groundLevel = drawZoff
+
+		// Add reflection to list
+		sys.reflectionList.add(rs)
 	}
 }
 
@@ -2371,6 +2415,7 @@ type Projectile struct {
 	facing          float32
 	removefacing    float32
 	shadow          [3]int32
+	reflection      int32
 	supermovetime   int32
 	pausemovetime   int32
 	anim            *Animation
@@ -2394,8 +2439,7 @@ type Projectile struct {
 	contactflag     bool
 	time            int32
 	removeDone      bool
-	shader          string
-	shaderParams    [16]float32
+	customShader    CustomShader
 }
 
 func newProjectile() *Projectile {
@@ -2446,6 +2490,7 @@ func (p *Projectile) initFromChar(c *Char) *Projectile {
 		//aimg:            *newAfterImage(),
 		projection:    Projection_Orthographic,
 		platformFence: true,
+		reflection:    -1,
 	}
 
 	// Backward compatibility
@@ -2762,6 +2807,17 @@ func (p *Projectile) tick() {
 			if p.pausemovetime > 0 {
 				p.pausemovetime--
 			}
+			if p.customShader.name != "" {
+				p.customShader.sTime++
+				p.customShader.tex1.step()
+				p.customShader.tex2.step()
+				if p.customShader.time > 0 {
+					p.customShader.time--
+				}
+				if p.customShader.time == 0 {
+					p.customShader.clear()
+				}
+			}
 			p.freezeflag = false
 		} else {
 			p.hitpause--
@@ -2867,8 +2923,14 @@ func (p *Projectile) cueDraw() {
 	sd.fLength = fLength
 	sd.window = pwin
 	sd.xshear = p.xshear
-	sd.shader = p.shader
-	sd.shaderParams = p.shaderParams
+	sd.customShader = CustomShaderRenderData{
+		name:   p.customShader.name,
+		params: p.customShader.params,
+		time:   p.customShader.time,
+		sTime:  p.customShader.sTime,
+		tex1:   p.customShader.tex1.GetTexture(),
+		tex2:   p.customShader.tex2.GetTexture(),
+	}
 
 	// Add sprite to the appropriate layer's drawlist
 	sys.spriteList.add(sd)
@@ -2898,6 +2960,9 @@ func (p *Projectile) cueDraw() {
 
 		// Add shadow to list
 		sys.shadowList.add(ss)
+	}
+	if (p.reflection < 0 && sdwclr != 0) || p.reflection > 0 {
+		drawZoff := sys.posZtoYoffset(p.interPos[2], p.localscl)
 
 		// Prepare reflection sprite
 		rs := newReflectionSprite()
@@ -3332,9 +3397,7 @@ type Char struct {
 	currentSctrlIndex    int32
 	analogAxes           [6]float32
 	enableSyncId         bool
-	shader               string
-	shaderParams         [16]float32
-	shaderTime           int32
+	customShader         CustomShader
 	pctype               ProjContact
 	pctime, pcid         int32
 	//soundChannels        SoundChannels // Moved to system
@@ -3445,9 +3508,7 @@ func (c *Char) clearState() {
 	c.makeDustSpacing = 0
 	c.hitStateChangeIdx = -1
 	c.pushAffectTeam = 1
-	c.shader = ""
-	c.shaderParams = [16]float32{}
-	c.shaderTime = 0
+	c.customShader.clear()
 }
 
 func (c *Char) clsnOverlapTrigger(box1, pid, box2 int32) bool {
@@ -3502,7 +3563,7 @@ func (c *Char) prepareNextRound() {
 	//c.updateSizeBox()
 	c.oldPos, c.interPos = c.pos, c.pos
 	if c.helperIndex == 0 {
-		if sys.roundsExisted[c.playerNo&1] > 0 { // TODO: Why do we need this branch?
+		if c.roundsExisted() > 0 && c.palfx != nil { // TODO: Why do we need this branch?
 			c.palfx.clear()
 		} else {
 			c.palfx = newPalFX()
@@ -3522,9 +3583,7 @@ func (c *Char) prepareNextRound() {
 	c.enemyNearP2Clear()
 	c.targets = c.targets[:0]
 	c.cpucmd = -1
-	c.shader = ""
-	c.shaderParams = [16]float32{}
-	c.shaderTime = 0
+	c.customShader.clear()
 }
 
 // Return Char Global Info normally
@@ -3556,10 +3615,23 @@ func (c *Char) si() *SelectChar {
 	return &sys.sel.charlist[c.selectNo]
 }
 
+func (c *Char) bgLoadedTurnsRoot() bool {
+	return sys.cfg.Config.TurnsLoading &&
+		c.helperIndex == 0 &&
+		c.playerNo >= 0 &&
+		c.playerNo < MaxSimul*2 &&
+		sys.tmode[c.playerNo&1] == TM_Turns
+}
+
 func (c *Char) ocd() *OverrideCharData {
 	team := c.teamside
 	if c.teamside == -1 {
-		team = 2
+		// BG-loaded Turns roots are hidden from gameplay with teamside -1, but their per-member overrides still belong to their real side.
+		if c.bgLoadedTurnsRoot() {
+			team = c.playerNo & 1
+		} else {
+			team = 2
+		}
 	}
 	if team < 0 || team > 2 || c.memberNo < 0 {
 		return newOverrideCharData()
@@ -5618,6 +5690,8 @@ func (c *Char) explodVar(eid BytecodeValue, idx BytecodeValue, vtype OpCode) Byt
 			v = BytecodeFloat(e.friction[2])
 		case OC_ex2_explodvar_id:
 			v = BytecodeInt(e.id)
+		case OC_ex2_explodvar_ignorehitpause:
+			v = BytecodeBool(e.ignorehitpause)
 		case OC_ex2_explodvar_layerno:
 			v = BytecodeInt(e.layerno)
 		case OC_ex2_explodvar_pausemovetime:
@@ -5932,6 +6006,13 @@ func (c *Char) rightEdge() float32 {
 
 func (c *Char) roundsExisted() int32 {
 	if c.teamside == -1 {
+		// BG-loaded Turns keeps inactive team members resident as standby players. //They must still initialize like fresh entrants until their turn actually comes.
+		if c.bgLoadedTurnsRoot() && c.memberNo >= 0 {
+			team := c.playerNo & 1
+			if int32(c.memberNo) >= sys.wins[team^1] {
+				return 0
+			}
+		}
 		return sys.round - 1
 	}
 	return sys.roundsExisted[c.playerNo&1]
@@ -6221,12 +6302,11 @@ func (c *Char) getOwnChannels(chNo int32) (found []*SoundChannel) {
 	return found
 }
 
-func (c *Char) playSound(ffx string, lowpriority bool, loopCount int32, g, n, chNo, vol int32,
-	p, freqmul, ls float32, x *float32, log bool, priority int32, loopstart, loopend, startposition int, stopgh, stopcs bool) {
-	if g < 0 {
+func (c *Char) playSound(params *PlaySndParams) {
+	if params.group < 0 || sys.noCharSoundFlg {
 		return
 	}
-	current_ffx := ffx
+	current_ffx := params.ffx
 	if current_ffx == "f" {
 		if c.gi().fightfxPrefix != "" {
 			current_ffx = c.gi().fightfxPrefix
@@ -6237,22 +6317,24 @@ func (c *Char) playSound(ffx string, lowpriority bool, loopCount int32, g, n, ch
 		return
 	}
 
+	// Get sound from self or common sounds
 	var s *Sound
 	if current_ffx == "" || current_ffx == "s" {
 		if c.gi().snd != nil {
-			s = c.gi().snd.Get([...]int32{g, n})
+			s = c.gi().snd.Get([...]int32{params.group, params.number})
 		}
 	} else {
 		if sys.ffx[current_ffx] != nil && sys.ffx[current_ffx].snd != nil {
-			s = sys.ffx[current_ffx].snd.Get([...]int32{g, n})
+			s = sys.ffx[current_ffx].snd.Get([...]int32{params.group, params.number})
 		}
 	}
+
 	if s == nil {
-		if log {
+		if params.log {
 			if current_ffx != "" {
-				sys.appendToConsole(c.warn() + fmt.Sprintf("sound %v %v,%v doesn't exist", strings.ToUpper(current_ffx), g, n))
+				sys.appendToConsole(c.warn() + fmt.Sprintf("sound %v %v,%v doesn't exist", strings.ToUpper(current_ffx), params.group, params.number))
 			} else {
-				sys.appendToConsole(c.warn() + fmt.Sprintf("sound %v,%v doesn't exist", g, n))
+				sys.appendToConsole(c.warn() + fmt.Sprintf("sound %v,%v doesn't exist", params.group, params.number))
 			}
 		}
 		if !sys.ignoreMostErrors {
@@ -6262,7 +6344,7 @@ func (c *Char) playSound(ffx string, lowpriority bool, loopCount int32, g, n, ch
 			} else {
 				str += fmt.Sprintf("P%v:", c.playerNo+1)
 			}
-			LogMessage("%v%v,%v", str, g, n)
+			LogMessage("%v%v,%v", str, params.group, params.number)
 		}
 		return
 	}
@@ -6276,12 +6358,12 @@ func (c *Char) playSound(ffx string, lowpriority bool, loopCount int32, g, n, ch
 	}
 
 	// Request a sound channel
-	ch := sys.charSoundChannels[crun.playerNo].Request(crun.id, chNo, lowpriority, priority)
+	ch := sys.charSoundChannels[crun.playerNo].Request(crun.id, params.channel, params.lowPriority, params.priority)
 
 	// Play the sound in it
 	if ch != nil {
-		ch.Play(s, g, n, loopCount, freqmul, loopstart, loopend, startposition)
-		vol = Clamp(vol, -25600, 25600)
+		ch.Play(s, params.group, params.number, params.loopCount, params.freqMul, params.loopStart, params.loopEnd, params.startPosition)
+		vol := Clamp(params.volume, -25600, 25600)
 
 		//ch.channelNo = chNo // Handled by Request()
 
@@ -6292,9 +6374,9 @@ func (c *Char) playSound(ffx string, lowpriority bool, loopCount int32, g, n, ch
 			ch.SetVolume(float32(c.gi().data.volume * vol / 100))
 		}
 
-		if chNo >= 0 {
-			if priority != 0 {
-				ch.SetPriority(priority) // TODO: We can probably allow priority in channel -1 now
+		if params.channel >= 0 {
+			if params.priority != 0 {
+				ch.SetPriority(params.priority) // TODO: We can probably allow priority in channel -1 now
 			}
 		}
 
@@ -6306,9 +6388,9 @@ func (c *Char) playSound(ffx string, lowpriority bool, loopCount int32, g, n, ch
 		//	}
 		//}
 
-		ch.stopOnGetHit = stopgh
-		ch.stopOnChangeState = stopcs
-		ch.SetPan(p*c.facing, ls, x)
+		ch.stopOnGetHit = params.stopOnGetHit
+		ch.stopOnChangeState = params.stopOnChangeState
+		ch.SetPan(params.pan*c.facing, params.localScale, params.xPos)
 	}
 }
 
@@ -8435,6 +8517,29 @@ func (c *Char) targetDrop(excludeid int32, excludechar int32, keepone bool) {
 	}
 }
 
+// We do the extra steps to prevent the internal multiplication by 100 from exposing garbage float digits
+// https://github.com/ikemen-engine/Ikemen-GO/issues/1386
+func (c *Char) attackTrigger() float32 {
+	// Do the multiplication in float64
+	base := float64(c.gi().attackBase)
+	mul := float64(c.attackMul[0])
+	result := base * mul
+
+	// Snap to a 3-decimal grid to kill the garbage (e.g. 120.000008 -> 120.0)
+	// 3 because default attack/defence values have 3 significant digits
+	cleaned := math.Round(result*1e3) / 1e3
+
+	return float32(cleaned)
+}
+
+// See attackTrigger()
+func (c *Char) defenceTrigger() float32 {
+	def := float64(c.finalDefense)
+	result := def * 100
+	clean := math.Round(result*1e3) / 1e3
+	return float32(clean)
+}
+
 // Process raw damage into the value that will actually be used
 // Calculations are done in float64 for the sake of precision
 func (c *Char) computeDamage(damage float64, kill, absolute bool, atkmul float32, attacker *Char, bounds bool) int32 {
@@ -8962,11 +9067,13 @@ func (c *Char) setSuperPauseTime(pausetime, movetime int32, unhittable bool, p2d
 		c.superMovetime--
 	}
 
+	// Because the pause will only happen in the next frame, we'll extend this timer by 1
 	if unhittable {
 		c.unhittableTime = pausetime + Btoi(pausetime > 0)
 	}
 
-	c.ignoreDarkenTime = pausetime
+	// Same with this timer
+	c.ignoreDarkenTime = pausetime + Btoi(pausetime > 0)
 	c.propagateIgnoreDarkenTime()
 
 	// Apply superp2defmul to other teams
@@ -10731,9 +10838,7 @@ func (c *Char) hitResultCheck(getter *Char, proj *Projectile) (hitResult int32) 
 		if !isProjectile && hd.p1sprpriority != IErr {
 			c.sprPriority = hd.p1sprpriority
 		}
-		if hd.p2sprpriority != IErr {
-			getter.sprPriority = hd.p2sprpriority
-		}
+		getter.sprPriority = hd.p2sprpriority
 	}
 
 	// Attacker facing
@@ -11266,9 +11371,15 @@ func (c *Char) hitResultCheck(getter *Char, proj *Projectile) (hitResult int32) 
 			hitspark(c, getter, hd.sparkno, hd.sparkno_ffx, hd.sparkangle, hd.sparkscale)
 		}
 		if hd.hitsound[0] >= 0 && hd.hitsound[1] >= 0 {
-			vo := int32(100)
-			c.playSound(hd.hitsound_ffx, false, 0, hd.hitsound[0], hd.hitsound[1],
-				hd.hitsound_channel, vo, 0, 1, getter.localscl, &getter.pos[0], true, 0, 0, 0, 0, false, false)
+			params := newPlaySndParams()
+			params.ffx = hd.hitsound_ffx
+			params.group = hd.hitsound[0]
+			params.number = hd.hitsound[1]
+			params.channel = hd.hitsound_channel
+			params.localScale = getter.localscl
+			params.xPos = &getter.pos[0]
+			params.log = true
+			c.playSound(params)
 		}
 	} else {
 		if hd.reversal_attr > 0 {
@@ -11277,9 +11388,15 @@ func (c *Char) hitResultCheck(getter *Char, proj *Projectile) (hitResult int32) 
 			hitspark(c, getter, hd.guard_sparkno, hd.guard_sparkno_ffx, hd.guard_sparkangle, hd.guard_sparkscale)
 		}
 		if hd.guardsound[0] >= 0 && hd.guardsound[1] >= 0 {
-			vo := int32(100)
-			c.playSound(hd.guardsound_ffx, false, 0, hd.guardsound[0], hd.guardsound[1],
-				hd.guardsound_channel, vo, 0, 1, getter.localscl, &getter.pos[0], true, 0, 0, 0, 0, false, false)
+			params := newPlaySndParams()
+			params.ffx = hd.guardsound_ffx
+			params.group = hd.guardsound[0]
+			params.number = hd.guardsound[1]
+			params.channel = hd.guardsound_channel
+			params.localScale = getter.localscl
+			params.xPos = &getter.pos[0]
+			params.log = true
+			c.playSound(params)
 		}
 	}
 
@@ -11379,18 +11496,23 @@ func (c *Char) hitResultCheck(getter *Char, proj *Projectile) (hitResult int32) 
 				c.juggle = 0
 			}
 		}
+		// Apply PalFX to target
 		if hd.palfx.time > 0 && getter.palfx != nil {
 			getter.palfx.clearWithNeg(true)
 			getter.palfx.PalFXDef = hd.palfx
 		}
+		// Apply EnvShake
 		if hd.envshake_time > 0 {
 			sys.envShake.time = hd.envshake_time
-			sys.envShake.freq = hd.envshake_freq * float32(math.Pi) / 180
-			sys.envShake.ampl = float32(int32(float32(hd.envshake_ampl) * c.localscl))
+			sys.envShake.freq = hd.envshake_freq
 			sys.envShake.phase = hd.envshake_phase
+			sys.envShake.ampl = float32(int32(float32(hd.envshake_ampl) * c.localscl)) // Truncated
 			sys.envShake.mul = hd.envshake_mul
-			sys.envShake.dir = hd.envshake_dir * float32(math.Pi) / 180
+			sys.envShake.dir = hd.envshake_dir
+			sys.envShake.diradd = 0
+			sys.envShake.decay = 1.0
 			sys.envShake.setDefaultPhase()
+			sys.envShake.restart()
 		}
 		// Cornerpush on hit
 		// In Mugen it is only set if the enemy is already in the corner before the hit
@@ -11491,7 +11613,7 @@ func (c *Char) actionPrepare() {
 				if c.alive() || c.ss.no != 5150 || c.numPartner() == 0 {
 					c.setCSF(CSF_screenbound | CSF_movecamera_x | CSF_movecamera_y)
 				}
-				if sys.roundState() > 0 && (c.alive() || c.numPartner() == 0) {
+				if sys.roundState() > 0 && sys.roundState() < 4 && (c.alive() || c.numPartner() == 0) {
 					c.setCSF(CSF_playerpush)
 				}
 			}
@@ -11518,11 +11640,10 @@ func (c *Char) actionPrepare() {
 					}
 				}
 			}
-			if c.shaderTime > 0 {
-				c.shaderTime--
-				if c.shaderTime == 0 {
-					c.shader = ""
-					c.shaderParams = [16]float32{}
+			if c.customShader.time > 0 {
+				c.customShader.time--
+				if c.customShader.time == 0 {
+					c.customShader = CustomShader{}
 				}
 			}
 			if sys.supertime > 0 {
@@ -11814,6 +11935,8 @@ func (c *Char) actionRun() {
 					c.receivedHits = 0
 					c.ghv.score = 0
 					c.ghv.down_recovertime = c.gi().data.liedown.time
+					// Mugen specifically resets this one for some reason
+					c.ghv.fall_envshake_time = 0
 					// In Mugen, when returning to idle, characters cannot act until the next frame
 					// To account for this, combos in Mugen linger one frame longer than they normally would in a fighting game
 					// Ikemen's "fake combo" code used to replicate this behavior
@@ -11901,7 +12024,12 @@ func (c *Char) actionFinish() {
 		if c.alive() && c.life <= 0 && !sys.gsf(GSF_globalnoko) && !c.asf(ASF_noko) && (!c.ghv.guarded || !c.asf(ASF_noguardko)) {
 			// KO sound
 			if !sys.gsf(GSF_nokosnd) {
-				c.playSound("", false, 0, 11, 0, -1, 100, 0, 1, c.localscl, &c.pos[0], false, 0, 0, 0, 0, false, false)
+				params := newPlaySndParams()
+				params.group = 11
+				params.localScale = c.localscl
+				params.xPos = &c.pos[0]
+				c.playSound(params)
+				// Start echo timer
 				if c.gi().data.ko.echo != 0 {
 					c.koEchoTimer = 1
 				}
@@ -12019,6 +12147,11 @@ func (c *Char) update() {
 					c.ghv.zoff = 0
 				}
 			}
+			if c.customShader.name != "" {
+				c.customShader.sTime++
+				c.customShader.tex1.step()
+				c.customShader.tex2.step()
+			}
 			// Engine dust effects
 			// Moved to system.zss
 			//if sys.supertime == 0 && sys.pausetime == 0 &&
@@ -12105,8 +12238,13 @@ func (c *Char) update() {
 			c.koEchoTimer = 0
 		} else {
 			if c.koEchoTimer == 60 || c.koEchoTimer == 120 {
-				vo := int32(100 * (240 - (c.koEchoTimer + 60)) / 240)
-				c.playSound("", false, 0, 11, 0, -1, vo, 0, 1, c.localscl, &c.pos[0], false, 0, 0, 0, 0, false, false)
+				vol := int32(100 * (240 - (c.koEchoTimer + 60)) / 240)
+				params := newPlaySndParams()
+				params.group = 11
+				params.volume = vol
+				params.localScale = c.localscl
+				params.xPos = &c.pos[0]
+				c.playSound(params)
 			}
 			c.koEchoTimer++
 		}
@@ -12618,8 +12756,14 @@ func (c *Char) cueDraw() {
 		charSD.fLength = fLength
 		charSD.xshear = c.xshear
 		charSD.window = cwin
-		charSD.shader = c.shader
-		charSD.shaderParams = c.shaderParams
+		charSD.customShader = CustomShaderRenderData{
+			name:   c.customShader.name,
+			params: c.customShader.params,
+			time:   c.customShader.time,
+			sTime:  c.customShader.sTime,
+			tex1:   c.customShader.tex1.GetTexture(),
+			tex2:   c.customShader.tex2.GetTexture(),
+		}
 
 		if c.enableSyncId {
 			charSD.syncId = c.id
@@ -13482,19 +13626,23 @@ func (cl *CharList) pushDetection(getter *Char) {
 	}
 
 	for _, c := range cl.runOrder {
-		// Stop current iteration if char won't push
-		interact := false
+		// Stop current iteration if char won't ever push
+		if !c.csf(CSF_playerpush) || c.scf(SCF_standby) || c.scf(SCF_disabled) {
+			continue
+		}
+
+		// AffectTeam check
+		// The logic here needs to be a bit uneven because the default state (pushing enemies only) also is
 		if c.teamside == getter.teamside {
-			if c.pushAffectTeam <= 0 {
-				interact = true
+			// Partners are permissive: skip only if both are in "enemy" mode
+			if c.pushAffectTeam > 0 && getter.pushAffectTeam > 0 {
+				continue
 			}
 		} else {
-			if c.pushAffectTeam >= 0 && getter.pushAffectTeam >= 0 {
-				interact = true
+			// Enemies are strict: skip if either one is in "friendly" mode
+			if c.pushAffectTeam < 0 || getter.pushAffectTeam < 0 {
+				continue
 			}
-		}
-		if !c.csf(CSF_playerpush) || !interact || c.scf(SCF_standby) || c.scf(SCF_disabled) {
-			continue
 		}
 
 		// Get size box
