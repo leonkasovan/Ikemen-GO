@@ -1,0 +1,221 @@
+# ============================================================================
+# Ikemen-GO Makefile
+# Windows (MSYS2 MINGW64) build — ported from build/build.sh (Windows path).
+#
+# Run from the MINGW64 shell:
+#   make                 # Win64 release build (GUI subsystem)
+#   make win64           # explicit Win64 (alias of default)
+#   make win32           # Win32 (x86) build
+#   make DEBUG=1         # console-subsystem build (logs/panics visible)
+#   make IKEMEN_CPP=1    # C++ backend build (adds -tags ikemen_cpp)
+#   make BUILD_FFMPEG=no # use system FFmpeg (default: auto-detect)
+#   make BUILD_FFMPEG=yes# build a minimal FFmpeg locally
+#   make clean           # remove build outputs
+#   make distclean       # clean + remove FFmpeg sources/build
+# ============================================================================
+
+.RECIPEPREFIX = >
+
+# ---- User-overridable configuration ---------------------------------------
+ARCH            ?= amd64
+DEBUG           ?= 0
+IKEMEN_CPP      ?= 0
+BUILD_FFMPEG    ?= auto          # auto | yes | no
+APP_VERSION     ?= nightly
+COPY_START_YEAR ?= 2016
+APP_BUILDTIME   ?= $(shell date '+%Y.%m.%d')
+
+# ---- Directories -----------------------------------------------------------
+# POSIX path (MSYS2 converts the cwd); needed for the safe-path check and for
+# passing absolute paths to helper scripts / pkg-config.
+REPO_ROOT      := $(shell pwd -P)
+BUILDDIR       := build
+DELAYLIB_DIR   := $(BUILDDIR)/delaylib
+WINRES_DIR     := $(BUILDDIR)/winres
+FFMPEG_PREFIX  := $(REPO_ROOT)/$(BUILDDIR)/ffmpeg
+FFMPEG_SRCDIR  := $(BUILDDIR)/ffmpeg-src
+FFMPEG_REV     := release/7.1
+LIBDIR         := lib
+OUTDIR         := .
+PKG_CONFIG     ?= pkg-config
+
+# ---- Go / toolchain environment --------------------------------------------
+# MSYS2 ships a "trimmed" Go that needs GOROOT pointed at its lib dir.
+GOROOT ?= /mingw64/lib/go
+
+export GOROOT
+export CGO_ENABLED = 1
+export GOEXPERIMENT = arenas
+export GOOS = windows
+
+# ---- Arch / target selection -----------------------------------------------
+ifeq ($(ARCH),386)
+  GOARCH      := 386
+  CC          := i686-w64-mingw32-gcc
+  CXX         := i686-w64-mingw32-g++
+  ASM_ARCH    := x86
+  BIN_NAME    := Ikemen_GO_x86.exe
+else
+  GOARCH      := amd64
+  CC          := x86_64-w64-mingw32-gcc
+  CXX         := x86_64-w64-mingw32-g++
+  ASM_ARCH    := amd64
+  ifeq ($(IKEMEN_CPP),1)
+    BIN_NAME  := Ikemen_CPP.exe
+  else
+    BIN_NAME  := Ikemen_GO.exe
+  endif
+endif
+
+export GOARCH
+export CC
+export CXX
+
+# ---- Build flags -----------------------------------------------------------
+ifeq ($(DEBUG),1)
+  LDFLAGS_SUBSYS :=
+else
+  LDFLAGS_SUBSYS := -H windowsgui
+endif
+
+ifeq ($(IKEMEN_CPP),1)
+  BUILD_TAGS := -tags ikemen_cpp
+else
+  BUILD_TAGS :=
+endif
+
+# ---- Derived file targets --------------------------------------------------
+BINARY       := $(OUTDIR)/$(BIN_NAME)
+SRC_SYSO     := src/rsrc_windows.syso
+DELAY_STAMP  := $(DELAYLIB_DIR)/.done
+BUNDLE_STAMP := $(LIBDIR)/.bundle_done
+
+.PHONY: all build win64 win32 deps-check ffdeps winres delaylibs bundle clean distclean
+
+all: build
+
+# Default target = Win64 release build.
+build: deps-check ffdeps $(BINARY) $(BUNDLE_STAMP)
+
+win64: ARCH = amd64
+win64: build
+
+win32: ARCH = 386
+win32: build
+
+# ---- Dependency preflight (tools present) ---------------------------------
+deps-check:
+> @echo "==> Checking build dependencies..."
+> @missing=""; \
+> for t in git make pkg-config gcc g++ nasm go gendef dlltool $(CC) $(CXX); do \
+>   command -v $$t >/dev/null 2>&1 || missing="$$missing $$t"; \
+> done; \
+> if [ -n "$$missing" ]; then \
+>   echo "Missing tools:$$missing" >&2; \
+>   echo "Install from the MINGW64 shell:" >&2; \
+>   echo "  pacman -Syu --noconfirm" >&2; \
+>   echo "  pacman -S --noconfirm git make diffutils mingw-w64-x86_64-pkg-config \\" >&2; \
+>   echo "    mingw-w64-x86_64-go mingw-w64-x86_64-toolchain \\" >&2; \
+>   echo "    mingw-w64-x86_64-nasm mingw-w64-x86_64-yasm \\" >&2; \
+>   echo "    mingw-w64-x86_64-tools-git mingw-w64-x86_64-libxmp \\" >&2; \
+>   echo "    mingw-w64-x86_64-SDL2" >&2; \
+>   exit 1; \
+> fi
+> @case "$$(uname -s 2>/dev/null)" in \
+>   MINGW* | MSYS* | CYGWIN*) \
+>     case "$(REPO_ROOT)" in \
+>       *[!A-Za-z0-9._/-]*) \
+>         echo "ERROR: Repository path contains characters unsafe for MSYS2/autotools:" >&2; \
+>         echo "  $(REPO_ROOT)" >&2; \
+>         echo "Use only letters, digits, '_', '-', '.'" >&2; \
+>         exit 1;; \
+>     esac;; \
+> esac
+> @echo "==> All required tools present."
+
+# ---- FFmpeg / native dependency check (pkg-config) ------------------------
+ffdeps:
+> @if ! $(PKG_CONFIG) --exists libxmp 2>/dev/null; then \
+>   echo "ERROR: libxmp dev package not found. Install: pacman -S mingw-w64-x86_64-libxmp" >&2; \
+>   exit 1; \
+> fi
+> @if ! $(PKG_CONFIG) --exists sdl2 2>/dev/null; then \
+>   echo "ERROR: SDL2 dev package not found. Install: pacman -S mingw-w64-x86_64-SDL2" >&2; \
+>   exit 1; \
+> fi
+> @case "$(BUILD_FFMPEG)" in \
+>   no) \
+>     if ! $(PKG_CONFIG) --exists libavformat libavcodec libavutil libswresample libswscale libavfilter 2>/dev/null; then \
+>       echo "ERROR: FFmpeg dev libraries not found (BUILD_FFMPEG=no)." >&2; \
+>       echo "       Install distro dev packages, or re-run with BUILD_FFMPEG=yes." >&2; \
+>       exit 1; \
+>     fi; \
+>     echo "==> Using system FFmpeg (BUILD_FFMPEG=no).";; \
+>   yes) \
+>     echo "==> BUILD_FFMPEG=yes: building minimal local FFmpeg."; \
+>     bash build/build_ffmpeg.sh;; \
+>   *) \
+>     if $(PKG_CONFIG) --exists libavformat libavcodec libavutil libswresample libswscale libavfilter 2>/dev/null; then \
+>       echo "==> Found FFmpeg via pkg-config; using system."; \
+>     else \
+>       echo "==> FFmpeg not found via pkg-config; building a minimal local copy."; \
+>       bash build/build_ffmpeg.sh; \
+>     fi;; \
+> esac
+
+# ---- Windows resources (.syso) --------------------------------------------
+winres: $(SRC_SYSO)
+
+$(SRC_SYSO): external/icons/Ikemen_Cylia_V2.ico build/gen_winres.sh
+> bash build/gen_winres.sh "$(APP_VERSION)" "$(ASM_ARCH)"
+
+# ---- Delay-load import libraries ------------------------------------------
+delaylibs: $(DELAY_STAMP)
+
+$(DELAY_STAMP): $(SRC_SYSO)
+> bash build/gen_delaylibs.sh
+> touch $@
+
+# ---- Go binary -------------------------------------------------------------
+$(BINARY): $(SRC_SYSO) $(DELAY_STAMP)
+> @mkdir -p $(OUTDIR)
+> @CGO_CFLAGS="$$($(PKG_CONFIG) --cflags libavformat libavcodec libavutil libswscale libswresample libavfilter libxmp sdl2)"; \
+> DEPS_LIBS="$$($(PKG_CONFIG) --libs libavformat libavcodec libavutil libswscale libswresample libavfilter libxmp sdl2)"; \
+> CGO_LDFLAGS="-L$$(pwd)/$(DELAYLIB_DIR) $$DEPS_LIBS"; \
+> echo "==> Building Go binary (this may take a while)..."; \
+> CGO_CFLAGS="$$CGO_CFLAGS" CGO_LDFLAGS="$$CGO_LDFLAGS" \
+>   go build -trimpath -v $(BUILD_TAGS) \
+>     -ldflags "$(LDFLAGS_SUBSYS) -s -w -X 'main.Version=$(APP_VERSION)' -X 'main.BuildTime=$(APP_BUILDTIME)'" \
+>     -o $(OUTDIR)/$(BIN_NAME) ./src; \
+> echo "==> Build successful"; \
+> echo "    Binary: $(OUTDIR)/$(BIN_NAME)"
+
+# ---- Bundle runtime DLLs next to the build --------------------------------
+bundle: $(BUNDLE_STAMP)
+
+$(BUNDLE_STAMP): $(BINARY)
+> @mkdir -p $(LIBDIR)
+> @if [ -d "$(FFMPEG_PREFIX)/bin" ]; then \
+>   cp -a $(FFMPEG_PREFIX)/bin/*.dll $(LIBDIR)/ 2>/dev/null || true; \
+> else \
+>   cp -a /mingw64/bin/av*.dll /mingw64/bin/sw*.dll $(LIBDIR)/ 2>/dev/null || true; \
+> fi
+> @for d in /mingw64/bin/libwinpthread-1.dll \
+>           /mingw64/bin/libgcc_s_seh-1.dll \
+>           /mingw64/bin/libstdc++-6.dll \
+>           /mingw64/bin/libxmp*.dll \
+>           /mingw64/bin/SDL2*.dll; do \
+>   cp -a "$$d" $(LIBDIR)/ 2>/dev/null || true; \
+> done
+> @echo "==> Runtime DLLs bundled into $(LIBDIR)/"
+> @touch $@
+
+# ---- Cleanup ---------------------------------------------------------------
+clean:
+> rm -f $(BINARY) $(SRC_SYSO) $(DELAY_STAMP) $(BUNDLE_STAMP)
+> rm -rf $(DELAYLIB_DIR) $(WINRES_DIR)
+> @echo "==> Cleaned build outputs."
+
+distclean: clean
+> rm -rf $(FFMPEG_SRCDIR) $(FFMPEG_PREFIX) build/ffmpeg-src build/ffmpeg
+> @echo "==> Removed FFmpeg sources and build."

@@ -1,0 +1,302 @@
+# Ikemen GO — Makefile for MSYS2 MinGW (Windows) builds
+#
+# Usage:
+#   make                  # Build Win64 release
+#   make DEBUG=1          # Build Win64 with console (debug)
+#   make ARCH=386         # Build Win32
+#   make IKEMEN_CPP=1     # Build with C++ backend
+#   make clean            # Remove build artifacts
+#   make bundle           # Copy runtime DLLs to lib/
+#   make ffdeps           # Build FFmpeg from source (if not installed)
+#
+# Environment (MSYS2 MINGW64 shell):
+#   export GOROOT=/mingw64/lib/go
+#   export PATH="/mingw64/bin:$PATH"
+#   export GOEXPERIMENT=arenas
+
+# ─── Configuration ───────────────────────────────────────────────────────────
+
+SHELL       := /usr/bin/env bash
+.SHELLFLAGS := -euo pipefail -c
+
+# Target architecture: amd64 (default) or 386
+ARCH        ?= amd64
+
+# Build mode
+DEBUG       ?= 0
+IKEMEN_CPP  ?= 0
+
+# App metadata (overridable by CI)
+APP_VERSION ?= nightly
+APP_BUILDTIME ?= $(shell date '+%Y.%m.%d')
+
+# Directories
+REPO_ROOT   := $(shell pwd)
+BUILDDIR    := build
+OUTDIR      := .
+LIBDIR      := lib
+DELAYDIR    := $(BUILDDIR)/delaylib
+WINRESDIR   := $(BUILDDIR)/winres
+FFMPEG_PREFIX ?= $(REPO_ROOT)/$(BUILDDIR)/ffmpeg
+FFMPEG_SRCDIR := $(BUILDDIR)/ffmpeg-src
+
+# FFmpeg build options
+FFMPEG_REV  ?= release/7.1
+BUILD_FFMPEG ?= auto  # auto|yes|no
+
+# ─── Toolchain ───────────────────────────────────────────────────────────────
+
+ifeq ($(ARCH),386)
+  GOARCH    := 386
+  CC        ?= i686-w64-mingw32-gcc
+  CXX       ?= i686-w64-mingw32-g++
+  WINDRES   ?= windres
+  BINNAME   := Ikemen_GO_x86.exe
+  WRTARGET  := pe-i386
+else
+  GOARCH    := amd64
+  CC        ?= x86_64-w64-mingw32-gcc
+  CXX       ?= x86_64-w64-mingw32-g++
+  WINDRES   ?= windres
+  BINNAME   := $(if $(filter 1,$(IKEMEN_CPP)),Ikemen_CPP.exe,Ikemen_GO.exe)
+  WRTARGET  := pe-x86-64
+endif
+
+GOOS        := windows
+PKG_CONFIG  ?= pkg-config
+
+# ─── Go build flags ──────────────────────────────────────────────────────────
+
+CGO_ENABLED := 1
+export CGO_ENABLED GOOS GOARCH CC CXX
+
+GO_TAGS     := $(if $(filter 1,$(IKEMEN_CPP)),-tags ikemen_cpp)
+GO_LDFLAGS  := -s -w -X 'main.Version=$(APP_VERSION)' -X 'main.BuildTime=$(APP_BUILDTIME)'
+
+ifeq ($(DEBUG),1)
+  # Console subsystem for debug builds
+  GO_LDFLAGS_FINAL := $(GO_LDFLAGS)
+else
+  # GUI subsystem hides console window
+  GO_LDFLAGS_FINAL := -H windowsgui $(GO_LDFLAGS)
+endif
+
+# ─── pkg-config dependencies ────────────────────────────────────────────────
+
+DEPS_PKGS   := libavformat libavcodec libavutil libswscale libswresample libavfilter libxmp sdl2
+CGO_CFLAGS  := $(shell $(PKG_CONFIG) --cflags $(DEPS_PKGS) 2>/dev/null)
+DEPS_LIBS   := $(shell $(PKG_CONFIG) --libs $(DEPS_PKGS) 2>/dev/null)
+
+export CGO_CFLAGS
+
+# ─── Targets ─────────────────────────────────────────────────────────────────
+
+.PHONY: all build clean bundle ffdeps deps-check help
+
+all: build
+
+help:
+	@echo "Ikemen GO Makefile — MSYS2 MinGW"
+	@echo ""
+	@echo "Targets:"
+	@echo "  build       Build the engine (default)"
+	@echo "  clean       Remove build artifacts"
+	@echo "  bundle      Copy runtime DLLs to lib/"
+	@echo "  ffdeps      Build FFmpeg from source"
+	@echo "  deps-check  Verify required tools are installed"
+	@echo "  winres      Compile Windows resources (icon + manifest)"
+	@echo "  delaylibs   Generate delay-load import libraries"
+	@echo ""
+	@echo "Options:"
+	@echo "  ARCH=386         Build 32-bit (default: amd64)"
+	@echo "  DEBUG=1          Debug build with console"
+	@echo "  IKEMEN_CPP=1     Build with C++ backend"
+	@echo "  BUILD_FFMPEG=yes Force local FFmpeg build"
+	@echo ""
+	@echo "Example:"
+	@echo "  make DEBUG=1 IKEMEN_CPP=1"
+
+# ─── Dependency check ────────────────────────────────────────────────────────
+
+REQUIRED_TOOLS := git pkg-config gcc g++ go gendef dlltool nasm windres
+
+deps-check:
+	@echo "==> Checking dependencies..."
+	@missing=""; \
+	for tool in $(REQUIRED_TOOLS); do \
+		command -v $$tool >/dev/null 2>&1 || missing="$$missing $$tool"; \
+	done; \
+	if [ -n "$$missing" ]; then \
+		echo "ERROR: Missing tools:$$missing" >&2; \
+		echo "Install from MINGW64 shell:" >&2; \
+		echo "  pacman -S --noconfirm git make diffutils mingw-w64-x86_64-pkg-config \\" >&2; \
+		echo "    mingw-w64-x86_64-go mingw-w64-x86_64-toolchain \\" >&2; \
+		echo "    mingw-w64-x86_64-nasm mingw-w64-x86_64-yasm \\" >&2; \
+		echo "    mingw-w64-x86_64-tools-git mingw-w64-x86_64-libxmp \\" >&2; \
+		echo "    mingw-w64-x86_64-SDL2" >&2; \
+		exit 1; \
+	fi
+	@echo "    All dependencies found."
+
+# ─── SDL2/libxmp check ──────────────────────────────────────────────────────
+
+.PHONY: check-sdl2 check-libxmp
+
+check-sdl2:
+	@if ! $(PKG_CONFIG) --exists sdl2 2>/dev/null; then \
+		echo "ERROR: SDL2 not found. Install: pacman -S mingw-w64-x86_64-SDL2" >&2; \
+		exit 1; \
+	fi
+
+check-libxmp:
+	@if ! $(PKG_CONFIG) --exists libxmp 2>/dev/null; then \
+		echo "ERROR: libxmp not found. Install: pacman -S mingw-w64-x86_64-libxmp" >&2; \
+		exit 1; \
+	fi
+
+# ─── FFmpeg detection / build ────────────────────────────────────────────────
+
+# Add our FFmpeg to PKG_CONFIG_PATH if it exists
+ifneq ($(wildcard $(FFMPEG_PREFIX)/lib/pkgconfig),)
+  export PKG_CONFIG_PATH := $(FFMPEG_PREFIX)/lib/pkgconfig:/mingw64/lib/pkgconfig:$(PKG_CONFIG_PATH)
+endif
+
+FFMPEG_PC_CHECK := $(shell $(PKG_CONFIG) --exists libavformat libavcodec libavutil libswresample libswscale libavfilter 2>/dev/null && echo yes)
+
+ifeq ($(BUILD_FFMPEG),yes)
+ffdeps: _build_ffmpeg
+else ifeq ($(BUILD_FFMPEG),no)
+ffdeps:
+	@if [ "$(FFMPEG_PC_CHECK)" != "yes" ]; then \
+		echo "ERROR: FFmpeg dev libraries not found." >&2; \
+		echo "       Install libavformat-dev etc., or set BUILD_FFMPEG=yes" >&2; \
+		exit 1; \
+	fi
+	@echo "==> Using system FFmpeg."
+else
+# auto: use system FFmpeg if available, otherwise build
+ifeq ($(FFMPEG_PC_CHECK),yes)
+ffdeps:
+	@echo "==> Found FFmpeg via pkg-config."
+else
+ffdeps: _build_ffmpeg
+endif
+endif
+
+.PHONY: _build_ffmpeg
+_build_ffmpeg:
+	@if [ -d "$(FFMPEG_SRCDIR)" ]; then \
+		echo "==> FFmpeg sources exist, skipping build."; \
+		exit 0; \
+	fi
+	@mkdir -p $(BUILDDIR)
+	@rm -rf $(FFMPEG_SRCDIR)
+	git clone --depth=1 -b $(FFMPEG_REV) https://github.com/FFmpeg/FFmpeg.git $(FFMPEG_SRCDIR)
+	cd $(FFMPEG_SRCDIR) && \
+		./configure \
+			--prefix=$(FFMPEG_PREFIX) \
+			--enable-shared --disable-static \
+			--disable-gpl --disable-nonfree \
+			--disable-debug --disable-doc --disable-programs --disable-everything \
+			--disable-autodetect \
+			--enable-avformat --enable-avcodec --enable-avutil \
+			--enable-swresample --enable-swscale --enable-avfilter \
+			--enable-filter=buffer,buffersink,format,scale,pad,crop \
+			--enable-protocol=file \
+			--enable-demuxer=matroska,webm \
+			--enable-decoder=vp8,vp9,opus,vorbis \
+			--enable-parser=vp8,vp9,opus,vorbis
+	$(MAKE) -C $(FFMPEG_SRCDIR) -j$$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)
+	$(MAKE) -C $(FFMPEG_SRCDIR) install
+	@echo "==> FFmpeg installed to $(FFMPEG_PREFIX)"
+
+# ─── Windows resources ───────────────────────────────────────────────────────
+
+SYSO_FILE := src/rsrc_windows.syso
+
+winres: $(SYSO_FILE)
+
+$(SYSO_FILE): $(WINRESDIR)/Ikemen_GO.rc $(WINRESDIR)/Ikemen_GO.exe.manifest external/icons/Ikemen_Cylia_V2.ico
+	@echo "==> Compiling Windows resources..."
+	@mkdir -p src
+	$(WINDRES) --target=$(WRTARGET) \
+		-I $(WINRESDIR) -I external/icons \
+		-i $(WINRESDIR)/Ikemen_GO.rc \
+		-O coff -o $@
+
+# ─── Delay-load import libraries ────────────────────────────────────────────
+
+DELAY_STAMP := $(DELAYDIR)/.delaylibs_done
+
+delaylibs: $(DELAY_STAMP)
+
+$(DELAY_STAMP):
+	@echo "==> Generating delay-load import libraries..."
+	@mkdir -p $(DELAYDIR)
+	@for dll in \
+		$(FFMPEG_PREFIX)/bin/*.dll \
+		/mingw64/bin/libxmp*.dll \
+		/mingw64/bin/libwinpthread-1.dll \
+		/mingw64/bin/SDL2*.dll; do \
+		[ -f "$$dll" ] || continue; \
+		base=$$(basename "$$dll"); \
+		name=$${base%.dll}; \
+		libname=$${name%%-*}; \
+		libname=$${libname#lib}; \
+		echo "    $$base -> lib$${libname}.dll.a"; \
+		(cd $(DELAYDIR) && gendef "$$dll" >/dev/null 2>&1); \
+		dlltool --dllname "$$base" \
+			--def $(DELAYDIR)/$${name}.def \
+			--output-delaylib $(DELAYDIR)/lib$${libname}.dll.a; \
+		rm -f $(DELAYDIR)/$${name}.def; \
+	done
+	@touch $@
+	@echo "==> Delay libraries ready."
+
+# ─── Bundle runtime DLLs ────────────────────────────────────────────────────
+
+BUNDLE_STAMP := $(LIBDIR)/.bundle_done
+
+bundle: $(BUNDLE_STAMP)
+
+$(BUNDLE_STAMP):
+	@echo "==> Bundling runtime DLLs to $(LIBDIR)/..."
+	@mkdir -p $(LIBDIR)
+	@for dll in \
+		$(FFMPEG_PREFIX)/bin/*.dll \
+		/mingw64/bin/libwinpthread-1.dll \
+		/mingw64/bin/libgcc_s_seh-1.dll \
+		/mingw64/bin/libstdc++-6.dll \
+		/mingw64/bin/libxmp*.dll \
+		/mingw64/bin/SDL2*.dll; do \
+		[ -f "$$dll" ] && cp -v "$$dll" $(LIBDIR)/ || true; \
+	done
+	@touch $@
+	@echo "==> Bundle complete."
+
+# ─── Main build ──────────────────────────────────────────────────────────────
+
+build: deps-check check-sdl2 check-libxmp ffdeps winres delaylibs
+	@echo "==> Building $(BINNAME) ($(GOOS)/$(GOARCH))..."
+	@export CGO_LDFLAGS="-L$(CURDIR)/$(DELAYDIR) $(DEPS_LIBS)"; \
+	go build -trimpath -v $(GO_TAGS) \
+		-ldflags "$(GO_LDFLAGS_FINAL)" \
+		-o $(OUTDIR)/$(BINNAME) ./src
+	@echo "==> Build successful: $(OUTDIR)/$(BINNAME)"
+	@$(MAKE) bundle
+	@rm -f $(SYSO_FILE)
+
+# ─── Clean ───────────────────────────────────────────────────────────────────
+
+clean:
+	@echo "==> Cleaning build artifacts..."
+	rm -f $(SYSO_FILE) 2>/dev/null || true
+	rm -f $(OUTDIR)/Ikemen_GO.exe $(OUTDIR)/Ikemen_GO_x86.exe $(OUTDIR)/Ikemen_CPP.exe 2>/dev/null || true
+	rm -rf $(DELAYDIR) 2>/dev/null || true
+	rm -rf $(LIBDIR) 2>/dev/null || true
+	@echo "    Done."
+
+# Deep clean includes FFmpeg sources/build
+distclean: clean
+	rm -rf $(FFMPEG_SRCDIR) 2>/dev/null || true
+	rm -rf $(FFMPEG_PREFIX) 2>/dev/null || true
