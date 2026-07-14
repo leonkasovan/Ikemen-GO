@@ -134,6 +134,7 @@ func (rs *RollbackSystem) postMatchSetup() {
 	// sys.esc = true
 
 	sys.netConnection = rs.netConnection
+	rs.netConnection = nil
 	rs.session.backend.Close()
 
 	// Prep for the next match.
@@ -797,6 +798,10 @@ func (rs *RollbackSession) LiveChecksum() uint32 {
 	buf := writeI32(sys.randseed)
 	buf = append(buf, writeI32(sys.matchTime)...)
 	buf = append(buf, writeI32(sys.curRoundTime)...)
+	for i := range sys.scorePoints {
+		buf = binary.BigEndian.AppendUint32(buf, math.Float32bits(sys.scorePoints[i]))
+		buf = binary.BigEndian.AppendUint32(buf, uint32(sys.comboCount[i]))
+	}
 
 	// Round start checks. Ensure both players have the same selection
 	if sys.roundState() == 1 {

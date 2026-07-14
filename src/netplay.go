@@ -710,8 +710,9 @@ func (nc *NetConnection) Synchronize() error {
 		}
 	})
 
-	// Update game state after synchronization
-	nc.Update()
+	// Update delay-netplay state after sync. Skip rollback-entry samples;
+	// replay frames are appended later from the authoritative GGPO timeline.
+	nc.update(sys.rollback.session == nil)
 
 	// Log status
 	log.Printf("Network synchronized: seed=%d pmTime=%d time=%d host=%v", seed, pmTime, nc.time, nc.host)
@@ -838,6 +839,12 @@ func (nc *NetConnection) LoadingReady() (bool, error) {
 }
 
 func (nc *NetConnection) Update() bool {
+	return nc.update(true)
+}
+
+// Advance delay-netplay by one frame. Skip recording the final sync frame before rollback,
+// since it belongs to neither the pre-match replay nor the rollback match replay.
+func (nc *NetConnection) update(recordReplay bool) bool {
 	if nc.st != NS_Stopped {
 		nc.stoppedcnt = 0
 	}
@@ -884,7 +891,7 @@ func (nc *NetConnection) Update() bool {
 				nc.buf[nc.remIn].curT = nc.time
 
 				// Write inputs to replay file
-				if nc.recording != nil {
+				if recordReplay && nc.recording != nil {
 					for i := range nc.buf {
 						ringIdx := nc.time & (NETBUF_NUM_FRAMES - 1)
 						if err := writeReplayInput(nc.recording, nc.buf[i].buf[ringIdx], nc.buf[i].axisBuf[ringIdx]); err != nil {
