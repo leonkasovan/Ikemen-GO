@@ -1479,6 +1479,18 @@ func newSff() (s *Sff) {
 // re-initialization.
 var fontSffCache map[string]*Sff
 
+// fontAtlasCacheEntry stores the GPU-side glyph atlas and UV map for a font
+// SFF so they can be reused across screen transitions without rebuilding.
+type fontAtlasCacheEntry struct {
+	atlas    []*TextureAtlas
+	atlasUVs map[[2]int32][4]float32
+}
+
+// fontAtlasCache holds cached atlas textures for sprite-based fonts. The
+// underlying GPU textures are kept alive by the []*TextureAtlas references,
+// preventing garbage collection when the old Fnt struct is freed.
+var fontAtlasCache map[string]*fontAtlasCacheEntry
+
 // registerFontSff adds a font SFF to the global cache so findActiveSff can
 // find it on subsequent loads. Font SFFs (loaded via LoadFntSff) are not
 // owned by any character, stage, or common FX, so they would otherwise be

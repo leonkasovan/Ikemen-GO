@@ -234,7 +234,7 @@ For each sprite:
 
 | # | Severity | Issue | Location |
 |---|----------|-------|----------|
-| B1 | **High** | `Texture_GL33.CopyData()` is a no-op — atlas resize silently loses all data | `render_gl33.go:379-381` |
+| B1 | **Fixed** | `Texture_GL33.CopyData()` was a no-op — now reads source via `gl.GetTexImage` and writes to destination via `gl.TexSubImage2D`. GLES32: FBO `CopyTexSubImage2D`. Vulkan: `vk.CmdCopyImage`. | `render_gl33.go:387-418` |
 | B2 | **Medium** | `Pal32ToBytes()` returns `unsafe.Slice` of local `padded` variable — backing array may be GC'd while slice is in use | `image.go:499-502` |
 
 ### 5.2 Memory Waste
@@ -347,17 +347,18 @@ if m.NumGC != lastGCStats.NumGC {
 - [x] **Lazy texture creation** (`Sprite.pendingData` fields in `image.go` + `ensureTex()` calls in `anim.go`, `render.go`, `font.go`, `char.go`) — GPU textures created on first render instead of eagerly during SFF loading. Eliminates ~220 MB of immediate GPU texture allocation for stage BG layers.
 - [x] **Sprite-based font glyph atlas** (`render.go` + `font.go`) — Font glyph sprites packed into a `TextureAtlas` instead of individual GL textures. Added `UV` sub-texture support to `RenderParams` + `drawQuadsUV()`. Atlas index encoded in UV w-component for multi-atlas support. Eliminates ~94 individual GL textures per sprite-based font (replaced by 1-2 atlas textures).
 - [x] **SFF data release after atlas texture creation** (`font.go`) — After packing glyph pixel data into the atlas via `AddImage`, release the per-glyph `pendingData`/`pendingDepth` on the cloned font sprites. The CPU-side pixel buffer is no longer needed since the GPU atlas holds the data. Frees backing pixel arrays for each glyph in a sprite-based font.
+- [x] **Font atlas caching across screen transitions** (`font.go` + `image.go`) — Added `fontAtlasCache` global map to keep GPU atlas textures alive across `Fnt` GC cycles. On subsequent loads of the same font SFF, the atlas and UV map are reused instead of being rebuilt from scratch. Eliminates atlas rebuild cost (~14 fonts × 64KB GPU churn + CPU glyph re-upload) on every screen transition.
+- [x] **Fix `CopyData` for all render backends** (`render_gl33.go`, `render_gles32.go`, `render_vk.go`) — GL33: `gl.GetTexImage` → CPU → `gl.TexSubImage2D`. GLES32: FBO → `gl.CopyTexSubImage2D`. Vulkan: `vk.CmdCopyImage` with transfer barrier. All three now preserve atlas content during resize, fixing the silent data loss bug (PLANS B1).
 
 ### 7.3 Remaining Opportunities
 
-1. **Fix `CopyData` for GL33** — Enable atlas resizing without data loss
-2. **Texture.Release()** — Explicit GPU cleanup when SFFs are unloaded
-3. **SFF eviction** — When characters are removed from `sys.cgi`, release their SFF data
-4. **`paltemp` hash instead of full copy** — Store `uint64` hash of palette instead of full `[]uint32`
-5. **Pool RLE decode buffers** — `sync.Pool` for `[]byte` buffers
-6. **Fix `Pal32ToBytes` for non-256 palettes** — Return properly retained slice
-7. **Virtual texture streaming** — Load sprites on-demand
-8. **GPU memory budget** — Track total GPU allocation and evict LRU textures
+1. **Texture.Release()** — Explicit GPU cleanup when SFFs are unloaded
+2. **SFF eviction** — When characters are removed from `sys.cgi`, release their SFF data
+3. **`paltemp` hash instead of full copy** — Store `uint64` hash of palette instead of full `[]uint32`
+4. **Pool RLE decode buffers** — `sync.Pool` for `[]byte` buffers
+5. **Fix `Pal32ToBytes` for non-256 palettes** — Return properly retained slice
+6. **Virtual texture streaming** — Load sprites on-demand
+7. **GPU memory budget** — Track total GPU allocation and evict LRU textures
 
 ---
 

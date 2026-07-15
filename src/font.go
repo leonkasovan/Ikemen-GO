@@ -428,12 +428,21 @@ func LoadFntSff(f *Fnt, fontfile string, filename string) {
 	// loaded from disk again on screen transitions.
 	registerFontSff(fileDir, sff)
 
-	// Initialise glyph atlas: pack all glyphs into one or more TextureAtlas
-	// textures instead of creating individual GL textures per glyph.
-	f.atlas = append(f.atlas, CreateTextureAtlas(256, 256, 8, false))
-	f.atlasUVs = make(map[[2]int32][4]float32)
+	// Check if we already have a cached glyph atlas for this font SFF.
+	// If so, reuse the GPU textures and UV map instead of rebuilding from scratch.
+	cachedEntry, cacheHit := fontAtlasCache[fileDir]
+	if cacheHit {
+		f.atlas = cachedEntry.atlas
+		f.atlasUVs = cachedEntry.atlasUVs
+	} else {
+		// First time: create the glyph atlas by packing all glyphs into one
+		// or more TextureAtlas textures.
+		f.atlas = append(f.atlas, CreateTextureAtlas(256, 256, 8, false))
+		f.atlasUVs = make(map[[2]int32][4]float32)
+	}
 
-	// Load sprites
+	// Always iterate sprites to populate f.images (needed for getCharSpr,
+	// CharWidth, etc. — sprite metadata lives here independent of the atlas).
 	var pal_default []uint32
 	for k, sprite := range sff.sprites {
 		s := sff.cloneSpriteWithPal(sprite.Group, sprite.Number, &sff.palList)
@@ -447,13 +456,12 @@ func LoadFntSff(f *Fnt, fontfile string, filename string) {
 			offsetX := uint16(s.Offset[0])
 			sizeX := uint16(s.Size[0])
 
-			// Ensure the sprite's pending texture data is ready for atlas packing.
-			// SetPxl was already called during loadSff, so s.pendingData is populated.
-			if len(s.pendingData) > 0 && s.pendingDepth == 8 {
+			// Only pack glyphs into the atlas on the first load (cache miss).
+			// On subsequent loads the atlas already exists and is reused above.
+			if !cacheHit && len(s.pendingData) > 0 && s.pendingDepth == 8 {
 				// Pack glyph pixel data into the atlas
 				w := int32(s.Size[0])
 				h := int32(s.Size[1])
-				// Try to insert into the first atlas; create new atlas if full.
 				atlasIdx := 0
 				var uv [4]float32
 				var ok bool
@@ -488,6 +496,18 @@ func LoadFntSff(f *Fnt, fontfile string, filename string) {
 			fci.img = make([]Sprite, 1)
 			fci.img[0] = *s
 			f.images[int32(sprite.Group)][rune(k[1])] = fci
+		}
+	}
+
+	// Stash the newly-built atlas and UV map in the cache on first load so they
+	// survive screen transitions and can be reused on subsequent loads.
+	if !cacheHit {
+		if fontAtlasCache == nil {
+			fontAtlasCache = make(map[string]*fontAtlasCacheEntry)
+		}
+		fontAtlasCache[fileDir] = &fontAtlasCacheEntry{
+			atlas:    f.atlas,
+			atlasUVs: f.atlasUVs,
 		}
 	}
 
