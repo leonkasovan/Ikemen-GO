@@ -581,6 +581,8 @@ type Sprite struct {
 	pendingData   []byte // raw pixel data (nil if no pending texture)
 	pendingDepth  int32  // bit depth: 0 = none, 8 = paletted, 24/32 = RGB/RGBA
 	pendingFilter bool   // bilinear filter flag for RGB textures
+	pendingW      int32  // texture width (matches the pixel buffer, not necessarily s.Size)
+	pendingH      int32  // texture height
 }
 
 func (s *Sprite) isBlank() bool {
@@ -732,6 +734,8 @@ func (s *Sprite) shareCopy(src *Sprite) {
 	s.pendingData = src.pendingData
 	s.pendingDepth = src.pendingDepth
 	s.pendingFilter = src.pendingFilter
+	s.pendingW = src.pendingW
+	s.pendingH = src.pendingH
 
 	// We must defer copying the texture during the main thread
 	// Otherwise we can end up copying a nil texture over the good one or other race condition bugs
@@ -791,6 +795,8 @@ func (s *Sprite) SetPxl(px []byte) {
 	s.pendingData = px
 	s.pendingDepth = 8
 	s.pendingFilter = false
+	s.pendingW = int32(s.Size[0])
+	s.pendingH = int32(s.Size[1])
 }
 
 func (s *Sprite) SetRaw(data []byte, sprWidth int32, sprHeight int32, sprDepth int32) {
@@ -799,6 +805,11 @@ func (s *Sprite) SetRaw(data []byte, sprWidth int32, sprHeight int32, sprDepth i
 	s.pendingData = data
 	s.pendingDepth = sprDepth
 	s.pendingFilter = sys.cfg.Video.RGBSpriteBilinearFilter
+	// Store the actual pixel-buffer dimensions. For SFFv2 PNG/RGB sprites the
+	// decoded image size can differ from the SFF subheader s.Size, so we must
+	// size the GPU texture from the buffer, not s.Size.
+	s.pendingW = sprWidth
+	s.pendingH = sprHeight
 }
 
 func (s *Sprite) readHeader(r io.Reader, ofs, size *uint32, link *uint16) error {
@@ -1275,14 +1286,16 @@ func (s *Sprite) ensureTex() {
 		return
 	}
 	if s.pendingDepth == 8 {
-		s.Tex = gfx.newTexture(int32(s.Size[0]), int32(s.Size[1]), 8, false)
+		s.Tex = gfx.newTexture(s.pendingW, s.pendingH, 8, false)
 		s.Tex.SetData(s.pendingData)
 	} else {
-		s.Tex = gfx.newTexture(int32(s.Size[0]), int32(s.Size[1]), s.pendingDepth, s.pendingFilter)
+		s.Tex = gfx.newTexture(s.pendingW, s.pendingH, s.pendingDepth, s.pendingFilter)
 		s.Tex.SetData(s.pendingData)
 	}
 	s.pendingData = nil
 	s.pendingDepth = 0
+	s.pendingW = 0
+	s.pendingH = 0
 }
 
 func (s *Sprite) CachePalTex(pal []uint32) Texture {

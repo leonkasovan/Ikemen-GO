@@ -2132,6 +2132,8 @@ func (a *Anim) Copy() *Anim {
 		dst.pendingData = src.pendingData
 		dst.pendingDepth = src.pendingDepth
 		dst.pendingFilter = src.pendingFilter
+		dst.pendingW = src.pendingW
+		dst.pendingH = src.pendingH
 		dst.palidx = src.palidx
 		dst.coldepth = src.coldepth
 		// Copy arrays (if not slices, this is fine as-is)
