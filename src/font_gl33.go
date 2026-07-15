@@ -438,6 +438,7 @@ func (f *Font_GL33) GenerateGlyphs(low, high rune) error {
 		for {
 			if textureIndex >= len(f.textures) {
 				f.textures = append(f.textures, CreateTextureAtlas(256, 256, 32, true))
+				memLog("Font atlas created: index=%d total=%d", len(f.textures)-1, len(f.textures))
 			}
 
 			var inserted bool
@@ -470,6 +471,7 @@ func (f *Font_GL33) GenerateGlyphs(low, high rune) error {
 	}
 
 	gl.BindTexture(gl.TEXTURE_2D, 0)
+	memGlyphs(low, high, len(f.fontChar), len(f.textures))
 	return nil
 }
 

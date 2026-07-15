@@ -417,6 +417,11 @@ func LoadFntSff(f *Fnt, fontfile string, filename string) {
 		panic(err)
 	}
 
+	// Register this font SFF so that future loads of the same file reuse it.
+	// Font SFFs are not owned by characters/stages/ffx and would otherwise be
+	// loaded from disk again on screen transitions.
+	registerFontSff(fileDir, sff)
+
 	// Load sprites
 	var pal_default []uint32
 	for k, sprite := range sff.sprites {
