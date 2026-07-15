@@ -337,23 +337,26 @@ if m.NumGC != lastGCStats.NumGC {
 
 ## 7. Optimization Recommendations
 
-### 7.1 Short-term (Low Risk)
+### 7.1 Completed (P0)
 
-1. **Pool `batchVertices` in `Font_GL33.Printf`** — Store as a field on `Font_GL33`, reuse across calls
-2. **Use hash instead of full copy for `paltemp`** — Store `uint64` hash of palette instead of full `[]uint32`
-3. **Fix `Pal32ToBytes` for non-256 palettes** — Return a properly retained slice
+- [x] **Pool `batchVertices`** (`font_gl33.go`, `font_gles32.go`, `font_vk.go`) — per-call `make([]float32)` replaced with struct field + cap check, eliminating ~24KB heap allocation per `Printf` call.
+- [x] **Font SFF cache** (`image.go` + `font.go`) — added `fontSffCache` map + `registerFontSff()` to fix `findActiveSff()` missing font SFFs, eliminating duplicate disk loads on screen transitions.
 
-### 7.2 Medium-term
+### 7.2 Completed (P1)
 
-4. **Implement `Texture.Release()`** — Explicit GPU cleanup when SFFs are unloaded
-5. **Add SFF eviction** — When characters are removed from `sys.cgi`, release their SFF data
-6. **Pool RLE decode buffers** — `sync.Pool` for `[]byte` buffers sized to common sprite dimensions
+- [x] **Lazy texture creation** (`Sprite.pendingData` fields in `image.go` + `ensureTex()` calls in `anim.go`, `render.go`, `font.go`, `char.go`) — GPU textures created on first render instead of eagerly during SFF loading. Eliminates ~220 MB of immediate GPU texture allocation for stage BG layers.
+- [x] **Sprite-based font glyph atlas** (`render.go` + `font.go`) — Font glyph sprites packed into a `TextureAtlas` instead of individual GL textures. Added `UV` sub-texture support to `RenderParams` + `drawQuadsUV()`. Atlas index encoded in UV w-component for multi-atlas support. Eliminates ~94 individual GL textures per sprite-based font (replaced by 1-2 atlas textures).
 
-### 7.3 Long-term
+### 7.3 Remaining Opportunities
 
-7. **Implement `CopyData` for GL33** — Enable atlas resizing without data loss
-8. **Virtual texture streaming** — Load sprites on-demand rather than bulk loading entire SFFs
-9. **GPU memory budget** — Track total GPU allocation and evict least-recently-used textures
+1. **Fix `CopyData` for GL33** — Enable atlas resizing without data loss
+2. **Texture.Release()** — Explicit GPU cleanup when SFFs are unloaded
+3. **SFF eviction** — When characters are removed from `sys.cgi`, release their SFF data
+4. **`paltemp` hash instead of full copy** — Store `uint64` hash of palette instead of full `[]uint32`
+5. **Pool RLE decode buffers** — `sync.Pool` for `[]byte` buffers
+6. **Fix `Pal32ToBytes` for non-256 palettes** — Return properly retained slice
+7. **Virtual texture streaming** — Load sprites on-demand
+8. **GPU memory budget** — Track total GPU allocation and evict LRU textures
 
 ---
 

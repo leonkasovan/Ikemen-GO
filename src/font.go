@@ -89,6 +89,11 @@ type Fnt struct {
 	lastPalBank int32
 	lastPalBase *uint32
 	paltexCache map[*uint32]Texture
+	// Glyph atlas for sprite-based fonts: packs all glyphs into one or a few
+	// TextureAtlas textures instead of creating individual GL textures per glyph.
+	// atlasUVs stores [4]float32 UV {u1,v1,u2,v2} for each glyph, keyed by (bank, rune).
+	atlas    []*TextureAtlas
+	atlasUVs map[[2]int32][4]float32 // key = (bank<<16 | int32(c)), value = UV
 }
 
 func newFnt() *Fnt {
@@ -97,6 +102,7 @@ func newFnt() *Fnt {
 		BankType:    "palette",
 		lastPalBank: -1,
 		paltexCache: make(map[*uint32]Texture),
+		atlasUVs:    make(map[[2]int32][4]float32),
 	}
 }
 
@@ -422,6 +428,11 @@ func LoadFntSff(f *Fnt, fontfile string, filename string) {
 	// loaded from disk again on screen transitions.
 	registerFontSff(fileDir, sff)
 
+	// Initialise glyph atlas: pack all glyphs into one or more TextureAtlas
+	// textures instead of creating individual GL textures per glyph.
+	f.atlas = append(f.atlas, CreateTextureAtlas(256, 256, 8, false))
+	f.atlasUVs = make(map[[2]int32][4]float32)
+
 	// Load sprites
 	var pal_default []uint32
 	for k, sprite := range sff.sprites {
@@ -435,6 +446,34 @@ func LoadFntSff(f *Fnt, fontfile string, filename string) {
 			}
 			offsetX := uint16(s.Offset[0])
 			sizeX := uint16(s.Size[0])
+
+			// Ensure the sprite's pending texture data is ready for atlas packing.
+			// SetPxl was already called during loadSff, so s.pendingData is populated.
+			if len(s.pendingData) > 0 && s.pendingDepth == 8 {
+				// Pack glyph pixel data into the atlas
+				w := int32(s.Size[0])
+				h := int32(s.Size[1])
+				// Try to insert into the first atlas; create new atlas if full.
+				atlasIdx := 0
+				var uv [4]float32
+				var ok bool
+				for {
+					if atlasIdx >= len(f.atlas) {
+						f.atlas = append(f.atlas, CreateTextureAtlas(256, 256, 8, false))
+					}
+					uv, ok = f.atlas[atlasIdx].AddImage(w, h, w, s.pendingData)
+					if ok {
+						// Store atlas index in the UV w component so drawChar can find the right atlas.
+						// UV v2 is always < 1.0, so we encode atlasIdx in the integer part.
+						uv[3] = uv[3] + float32(atlasIdx)
+						// Store UV for this glyph (keyed by bank and rune)
+						bank := int32(sprite.Group) << 16
+						f.atlasUVs[[2]int32{bank, int32(k[1])}] = uv
+						break
+					}
+					atlasIdx++
+				}
+			}
 
 			fci := &FntCharImage{
 				ofs: offsetX,
@@ -546,11 +585,15 @@ func (f *Fnt) drawChar(
 	}
 
 	spr := f.getCharSpr(c, bank, bt)
-	if spr == nil || (spr.Tex == nil && spr.pendingDepth == 0) {
+	if spr == nil {
 		return 0
 	}
-	// Ensure the sprite's GPU texture has been created
-	spr.ensureTex()
+	// Check if glyph has data: either an atlas entry, a pending texture, or an existing texture.
+	bankKey := int32(spr.Group) << 16
+	_, hasUV := f.atlasUVs[[2]int32{bankKey, int32(c)}]
+	if !hasUV && spr.Tex == nil && spr.pendingDepth == 0 {
+		return 0
+	}
 
 	// Only paletted sprites (<=8bpp) use palette mapping.
 	if spr.coldepth <= 8 {
@@ -588,7 +631,27 @@ func (f *Fnt) drawChar(
 	}
 
 	// Update only the render parameters that change between each character
-	rp.tex = spr.Tex
+	// Check if this glyph has an atlas entry (sprite-based fonts with LoadFntSff)
+	bankKey = int32(spr.Group) << 16
+	if uv, hasUV := f.atlasUVs[[2]int32{bankKey, int32(c)}]; hasUV && len(f.atlas) > 0 {
+		// Use atlas texture with sub-UV coordinates.
+		// The atlas index is encoded in the UV w component: uv[3] = atlasIdx * 1.0 + sub_uv_v2.
+		atlasIdx := int(uv[3])
+		if atlasIdx < 0 || atlasIdx >= len(f.atlas) || f.atlas[atlasIdx] == nil {
+			atlasIdx = 0
+		}
+		// Recover the actual v2 from the fractional part
+		actV2 := uv[3] - float32(atlasIdx)
+		actUV := [4]float32{uv[0], uv[1], uv[2], actV2}
+		rp.tex = f.atlas[atlasIdx].texture
+		rp.UV = actUV
+	} else {
+		// Fall back to individual sprite texture
+		spr.ensureTex()
+		rp.tex = spr.Tex
+		rp.UV = [4]float32{} // full texture
+	}
+
 	if spr.coldepth <= 8 {
 		rp.paltex = f.paltex
 	} else {

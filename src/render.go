@@ -218,6 +218,7 @@ type RenderParams struct {
 	yOffset        float32
 	shader         string
 	customShader   CustomShaderRenderData
+	UV             [4]float32 // Sub-texture UV coords {u1,v1,u2,v2}. Zero means full texture.
 }
 
 type ShaderTexture struct {
@@ -287,6 +288,10 @@ func (rp *RenderParams) IsValid() bool {
 }
 
 func drawQuads(modelview mgl.Mat4, x1, y1, x2, y2, x3, y3, x4, y4 float32) {
+	drawQuadsUV(modelview, x1, y1, x2, y2, x3, y3, x4, y4, [4]float32{0, 0, 1, 1})
+}
+
+func drawQuadsUV(modelview mgl.Mat4, x1, y1, x2, y2, x3, y3, x4, y4 float32, uv [4]float32) {
 	gfx.SetUniformMatrix("modelview", modelview[:])
 	gfx.SetUniformF("x1x2x4x3", x1, x2, x4, x3) // this uniform is optional
 
@@ -294,12 +299,16 @@ func drawQuads(modelview mgl.Mat4, x1, y1, x2, y2, x3, y3, x4, y4 float32) {
 	// that caused visible and frequent artifacts on the diagonal.
 	// See: https://github.com/ikemen-engine/Ikemen-GO/issues/3583
 	uvBias := float32(0.000002)
+	u1 := Max(uv[0], uvBias)
+	v1 := Max(uv[1], 0.0)
+	u2 := Max(uv[2]-uvBias, uvBias)
+	v2 := Max(uv[3]-uvBias, 0.0)
 
 	gfx.SetVertexData(
-		x2, y2, 1, 1-uvBias,
-		x3, y3, 1, 0,
-		x1, y1, uvBias, 1-uvBias,
-		x4, y4, uvBias, 0,
+		x2, y2, u2, v2,
+		x3, y3, u2, v1,
+		x1, y1, u1, v2,
+		x4, y4, u1, v1,
 	)
 
 	gfx.RenderQuad()
@@ -469,6 +478,10 @@ func transformTextQuad(x1, y1, x2, y2, x3, y3, x4, y4, rxadd float32,
 
 // Render a quad with optional horizontal tiling
 func renderSpriteHTile(modelview mgl.Mat4, x1, y1, x2, y2, x3, y3, x4, y4, dy, width float32, rp RenderParams) {
+	uv := rp.UV
+	if uv == [4]float32{} {
+		uv = [4]float32{0, 0, 1, 1}
+	}
 	//            p3
 	//    p4 o-----o-----o- - -o
 	//      /      |      \     ` .
@@ -529,11 +542,15 @@ func renderSpriteHTile(modelview mgl.Mat4, x1, y1, x2, y2, x3, y3, x4, y4, dy, w
 			mat = mat.Mul4(mgl.Translate3D(-(rp.rcx + float32(n)*botdist), -(rp.rcy + dy), 0))
 		}
 
-		drawQuads(mat, x1d, y1, x2d, y2, x3d, y3, x4d, y4)
+		drawQuadsUV(mat, x1d, y1, x2d, y2, x3d, y3, x4d, y4, uv)
 	}
 }
 
 func renderSpriteQuad(modelview mgl.Mat4, rp RenderParams) {
+	uv := rp.UV
+	if uv == [4]float32{} {
+		uv = [4]float32{0, 0, 1, 1}
+	}
 	x1, y1 := rp.x, rp.rcy+((rp.y-rp.ys*float32(rp.size[1]))-rp.rcy)*rp.vs
 	x2, y2 := x1+rp.xbs*float32(rp.size[0]), y1
 	x3, y3 := rp.x+rp.xts*float32(rp.size[0]), rp.rcy+(rp.y-rp.rcy)*rp.vs
@@ -557,7 +574,7 @@ func renderSpriteQuad(modelview mgl.Mat4, rp RenderParams) {
 		modelview = applyRotation(modelview, rp)
 		modelview = modelview.Mul4(mgl.Translate3D(-rp.rcx, -rp.rcy, 0))
 
-		drawQuads(modelview, x1, y1, x2, y2, x3, y3, x4, y4)
+		drawQuadsUV(modelview, x1, y1, x2, y2, x3, y3, x4, y4, uv)
 		return
 	}
 	if rp.tile.yflag == 1 && rp.xbs != 0 {

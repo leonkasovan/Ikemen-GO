@@ -17,6 +17,7 @@ const DebugMem = true
 var (
 	memTextureAlive int64
 	memGPUBytes     uint64
+	memGPUBytesPeak uint64
 )
 
 func memBpp(depth int32) int32 {
@@ -36,9 +37,16 @@ func memLog(format string, a ...any) {
 func memTextureCreated(width, height, depth int32, handle uint32, serial uint64) {
 	n := atomic.AddInt64(&memTextureAlive, 1)
 	bytes := uint64(width) * uint64(height) * uint64(memBpp(depth))
-	atomic.AddUint64(&memGPUBytes, bytes)
+	newTotal := atomic.AddUint64(&memGPUBytes, bytes)
+	// Track peak GPU memory
+	for {
+		peak := atomic.LoadUint64(&memGPUBytesPeak)
+		if newTotal <= peak || atomic.CompareAndSwapUint64(&memGPUBytesPeak, peak, newTotal) {
+			break
+		}
+	}
 	memLog("Texture created: %dx%dx%d handle=%d serial=%d alive=%d gpuBytes=%d",
-		width, height, depth, handle, serial, n, atomic.LoadUint64(&memGPUBytes))
+		width, height, depth, handle, serial, n, newTotal)
 }
 
 // memTextureFreed records a GL asset-texture deallocation (finalizer).
@@ -89,9 +97,10 @@ func memMonitorStart() {
 					m.HeapObjects, runtime.NumGoroutine(), atomic.LoadInt64(&memTextureAlive))
 				lastNumGC = m.NumGC
 			}
-			memLog("HEAP: alloc=%dMB sys=%dMB objects=%d texturesAlive=%d gpuBytes=%d",
+			memLog("HEAP: alloc=%dMB sys=%dMB objects=%d texturesAlive=%d gpuBytes=%d peakGPUBytes=%d",
 				m.HeapAlloc/1e6, m.Sys/1e6, m.HeapObjects,
-				atomic.LoadInt64(&memTextureAlive), atomic.LoadUint64(&memGPUBytes))
+				atomic.LoadInt64(&memTextureAlive), atomic.LoadUint64(&memGPUBytes),
+				atomic.LoadUint64(&memGPUBytesPeak))
 		}
 	}()
 }
