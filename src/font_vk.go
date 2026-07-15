@@ -33,6 +33,7 @@ type Font_VK struct {
 	resolution  [2]float32
 	textures    []*TextureAtlas
 	descriptors []*list.Element
+	vertexData  []float32 // Reused per-frame to avoid heap allocation in Printf
 }
 
 type FontRenderer_VK struct {
@@ -601,7 +602,12 @@ func (f *Font_VK) Printf(x, y float32, xscl, yscl float32, spacingXAdd float32, 
 	}
 
 	// Buffer to store vertex data for multiple glyphs
-	vertexData := make([]float32, 0, len(indices)*24)
+	if cap(f.vertexData) < len(indices)*24 {
+		f.vertexData = make([]float32, 0, len(indices)*24)
+	} else {
+		f.vertexData = f.vertexData[:0]
+	}
+	vertexData := f.vertexData
 	//setup blending mode
 	pipelineIndex := 0
 	if blend {

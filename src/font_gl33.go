@@ -26,6 +26,7 @@ type Font_GL33 struct {
 	textures     []*TextureAtlas
 	color        color
 	shaderPalFX  ShaderPalFX
+	batchVertices []float32 // Reused per-frame to avoid heap allocation in Printf
 }
 
 type FontRenderer_GL33 struct {
@@ -140,7 +141,12 @@ func (f *Font_GL33) Printf(x, y float32, xscl, yscl float32, spacingXAdd float32
 
 	// Buffer to store vertex data for multiple glyphs
 	batchSize := Min(MaxFontBatchSize, int32(len(indices)))
-	batchVertices := make([]float32, 0, batchSize*6*4)
+	if cap(f.batchVertices) < int(batchSize*6*4) {
+		f.batchVertices = make([]float32, 0, batchSize*6*4)
+	} else {
+		f.batchVertices = f.batchVertices[:0]
+	}
+	batchVertices := f.batchVertices
 
 	//setup blending mode
 	if blend {
