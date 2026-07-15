@@ -1299,9 +1299,11 @@ func (s *Sprite) CachePalTex(pal []uint32) Texture {
 	}
 	// If cached texture doesn't match, update or replace it
 	if !match {
-		memLog("PalTex cache miss: sprite=%p colors=%d newTexture=%v", s, len(pal), s.PalTex == nil)
-		// Previously we were always generating a new texture in this branch
+		// Log first-time palette texture creation (newTexture=true). Suppress the
+		// per-frame SetData spam (newTexture=false) since it's driven by animated
+		// PalFX and is expected visual behaviour, not a memory concern.
 		if s.PalTex == nil {
+			memLog("PalTex cache miss: sprite=%p colors=%d newTexture=true", s, len(pal))
 			s.PalTex = NewTextureFromPalette(pal)
 		} else {
 			s.PalTex.SetData(Pal32ToBytes(pal))

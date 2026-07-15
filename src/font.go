@@ -469,6 +469,12 @@ func LoadFntSff(f *Fnt, fontfile string, filename string) {
 						// Store UV for this glyph (keyed by bank and rune)
 						bank := int32(sprite.Group) << 16
 						f.atlasUVs[[2]int32{bank, int32(k[1])}] = uv
+						// P1 #5: Release the per-glyph pixel buffer now that it's in the atlas.
+						// The atlas texture stores the data on the GPU; the CPU-side copy is no
+						// longer needed. The fallback path in drawChar still has the atlas UV
+						// map entry, so ensureTex() is never called for atlas glyphs.
+						s.pendingData = nil
+						s.pendingDepth = 0
 						break
 					}
 					atlasIdx++
