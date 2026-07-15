@@ -6,7 +6,7 @@
 #
 # Usage:
 #   make                    # Win64 release build (default)
-#   make debug              # Win64 debug build (console subsystem)
+#   make debug              # Win64 debug build -> Ikemen_GO_debug.exe (console + -tags debug memory instrumentation)
 #   make win32              # Win32 (x86) build
 #   make IKEMEN_CPP=1       # C++ backend build
 #   make clean              # Remove build artifacts
@@ -14,6 +14,7 @@
 #   make screenpack         # Clone/update Elecbyte screenpack
 #   make ffmpeg             # Build/check FFmpeg dependencies
 #   make bundle             # Copy runtime DLLs to lib/
+#   make install             # Assemble runnable build in install/ (screenpack + binary)
 #   make help               # Show all targets and options
 #
 # Prerequisites (MSYS2 MINGW64 shell):
@@ -25,7 +26,7 @@
 #     mingw-w64-x86_64-SDL2
 # ============================================================================
 
-SHELL       := /usr/bin/env bash
+SHELL       := /bin/bash
 .SHELLFLAGS := -euo pipefail -c
 .ONESHELL:
 
@@ -72,6 +73,13 @@ WINRES_DIR    := $(BUILDDIR)/winres
 FFMPEG_SRCDIR := $(BUILDDIR)/ffmpeg-src
 FFMPEG_PREFIX ?= $(CURDIR)/$(BUILDDIR)/ffmpeg
 FFMPEG_REV    ?= release/7.1
+
+# ─── Install / Screenpack Distribution ────────────────────────────────────────
+INSTALLDIR         ?= install
+SCREENPACK_TAG     ?= 20260715
+SCREENPACK_URL     ?= https://github.com/leonkasovan/Ikemen-GO-Screenpack/archive/refs/tags/$(SCREENPACK_TAG).zip
+SCREENPACK_DL      := $(BUILDDIR)/screenpack-$(SCREENPACK_TAG).zip
+SCREENPACK_EXTRACT := Ikemen-GO-Screenpack-$(SCREENPACK_TAG)
 
 # ─── Build Options ───────────────────────────────────────────────────────────
 DEBUG_BUILD   ?= 0
@@ -120,16 +128,24 @@ ifeq ($(IKEMEN_CPP),1)
 else
   GO_TAGS :=
 endif
+ifeq ($(DEBUG_BUILD),1)
+  # The `debug` target enables the memory-analysis instrumentation (see
+  # src/memdebug.go / src/memdebug_off.go, gated by the `debug` Go build tag).
+  GO_TAGS += -tags debug
+endif
 
-LDFLAGS_BASE := -s -w \
+# Version stamping is common to both builds.
+LDFLAGS_BASE := \
   -X 'main.Version=$(APP_VERSION)' \
   -X 'main.BuildTime=$(APP_BUILDTIME)'
 
 ifeq ($(DEBUG_BUILD),1)
+  # Debug build: keep symbols/DWARF for debugging; console subsystem.
   LDFLAGS_GO := $(LDFLAGS_BASE)
   BUILD_TYPE := debug
 else
-  LDFLAGS_GO := -H windowsgui $(LDFLAGS_BASE)
+  # Release build: GUI subsystem, strip symbols (-s) and DWARF (-w).
+  LDFLAGS_GO := -H windowsgui -s -w $(LDFLAGS_BASE)
   BUILD_TYPE := release
 endif
 
@@ -142,7 +158,7 @@ DELAY_STAMP  := $(DELAYLIB_DIR)/.delaylibs_done
 .PHONY: all release debug win32 help \
         deps-check check-sdl2 check-libxmp check-go-env \
         ffdeps _build-ffmpeg \
-        winres delaylibs binary bundle \
+        winres delaylibs binary bundle install \
         screenpack \
         clean distclean FORCE
 
@@ -159,7 +175,7 @@ release: deps-check check-sdl2 check-libxmp ffdeps binary bundle
 # ===========================================================================
 
 debug:
-	$(MAKE) release DEBUG_BUILD=1
+	$(MAKE) release DEBUG_BUILD=1 BINNAME=Ikemen_GO_debug.exe
 
 win32:
 	$(MAKE) release ARCH=386
@@ -171,7 +187,7 @@ win32:
 deps-check:
 	@echo "==> Checking build dependencies..."
 	@missing=""; \
-	for tool in git make pkg-config gcc g++ nasm go gendef dlltool; do \
+	for tool in git make pkg-config gcc g++ nasm go gendef dlltool unzip; do \
 		command -v $$tool >/dev/null 2>&1 || missing="$$missing $$tool"; \
 	done; \
 	if [ -n "$$missing" ]; then \
@@ -413,6 +429,38 @@ bundle:
 	@echo "==> Runtime DLLs bundled in $(LIBDIR)/"
 
 # ===========================================================================
+# Install — assemble a runnable distribution in $(INSTALLDIR)
+# ===========================================================================
+
+install: binary bundle deps-check
+	@echo "==> Installing to $(INSTALLDIR)/..."
+	@if [ ! -f "$(SCREENPACK_DL)" ]; then \
+		echo "==> Downloading screenpack (tag $(SCREENPACK_TAG))..."; \
+		curl -L -o "$(SCREENPACK_DL)" "$(SCREENPACK_URL)" || { echo "ERROR: screenpack download failed." >&2; exit 1; }; \
+	fi
+	@echo "==> Extracting screenpack..."
+	rm -rf "$(INSTALLDIR)/$(SCREENPACK_EXTRACT)"
+	mkdir -p "$(INSTALLDIR)"
+	unzip -o -q "$(SCREENPACK_DL)" -d "$(INSTALLDIR)"
+	@echo "==> Copying screenpack dirs: chars data font sound stages video"
+	for d in chars data font sound stages video; do \
+		rm -rf "$(INSTALLDIR)/$$d"; \
+		cp -r "$(INSTALLDIR)/$(SCREENPACK_EXTRACT)/$$d" "$(INSTALLDIR)/$$d"; \
+	done
+	@echo "==> Merging engine dirs from repo root: data font external"
+	for d in data font external; do \
+		cp -rT "$$d" "$(INSTALLDIR)/$$d"; \
+	done
+	@echo "==> Copying runtime DLLs (lib/)..."
+	rm -rf "$(INSTALLDIR)/lib"
+	cp -r "$(LIBDIR)" "$(INSTALLDIR)/"
+	@echo "==> Removing extracted screenpack folder..."
+	rm -rf "$(INSTALLDIR)/$(SCREENPACK_EXTRACT)"
+	@echo "==> Copying binary $(BINNAME)..."
+	cp -f "$(BINARY)" "$(INSTALLDIR)/"
+	@echo "==> Install complete: $(INSTALLDIR)/"
+
+# ===========================================================================
 # Screenpack Clone / Update
 # ===========================================================================
 
@@ -440,7 +488,7 @@ screenpack:
 clean:
 	@echo "==> Cleaning build artifacts..."
 	rm -f $(BINARY) 2>/dev/null || true
-	rm -f $(OUTDIR)/Ikemen_GO.exe $(OUTDIR)/Ikemen_GO_x86.exe $(OUTDIR)/Ikemen_CPP.exe 2>/dev/null || true
+	rm -f $(OUTDIR)/Ikemen_GO.exe $(OUTDIR)/Ikemen_GO_x86.exe $(OUTDIR)/Ikemen_CPP.exe $(OUTDIR)/Ikemen_GO_debug.exe 2>/dev/null || true
 	rm -f $(SRC_SYSO) 2>/dev/null || true
 	rm -f $(DELAY_STAMP) 2>/dev/null || true
 	rm -rf $(DELAYLIB_DIR) 2>/dev/null || true
@@ -469,11 +517,12 @@ help:
 	@echo ''
 	@echo 'Targets:'
 	@echo '  all / release  Win64 release build (default, GUI subsystem)'
-	@echo '  debug          Win64 debug build (console subsystem)'
+	@echo '  debug          Win64 debug build -> Ikemen_GO_debug.exe (console + memory instrumentation)'
 	@echo '  win32          Win32 (x86) build'
 	@echo '  ffmpeg         Build/check FFmpeg dependencies'
 	@echo '  screenpack     Clone/update Elecbyte screenpack'
 	@echo '  bundle         Copy shared DLLs to lib/'
+	@echo '  install        Assemble runnable build in install/ (screenpack + binary)'
 	@echo '  clean          Remove build artifacts'
 	@echo '  distclean      Remove artifacts + FFmpeg + screenpack'
 	@echo '  deps-check     Verify required tools are installed'
@@ -481,7 +530,7 @@ help:
 	@echo ''
 	@echo 'Options:'
 	@echo '  ARCH=386           Build 32-bit (default: amd64)'
-	@echo '  DEBUG_BUILD=1      Debug build with console subsystem'
+	@echo '  DEBUG_BUILD=1      Debug build (console subsystem) + memory instrumentation'
 	@echo '  IKEMEN_CPP=1       Enable C++ backend (Go build tags)'
 	@echo '  BUILD_FFMPEG=yes   Force local FFmpeg build'
 	@echo '  BUILD_FFMPEG=no    Require system FFmpeg only'

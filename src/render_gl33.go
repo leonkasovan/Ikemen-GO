@@ -199,9 +199,13 @@ func (r *Renderer_GL33) generateTexture(width, height, depth int32, filter bool)
 		serial: textureSerialNumber,
 	}
 
+	memTextureCreated(width, height, depth, h, textureSerialNumber)
+
 	runtime.SetFinalizer(tex, func(t *Texture_GL33) {
 		sys.mainThreadTask <- func() {
 			gl.DeleteTextures(1, &t.handle)
+			memTextureFreed(t.handle, t.serial)
+			memGPUBytesSub(t.width, t.height, t.depth)
 		}
 	})
 
@@ -376,8 +380,75 @@ func (t *Texture_GL33) SetPixelData(data []float32) {
 	gl.TexImage2D(gl.TEXTURE_2D, 0, int32(internalFormat), t.width, t.height, 0, uint32(format), gl.FLOAT, unsafe.Pointer(&data[0]))
 }
 
+// CopyData copies the source texture's pixel region into this texture at the
+// origin. Used by TextureAtlas.Resize to preserve already-inserted glyph/image
+// data when the atlas is grown. Previously a no-op (PLANS B1) — resizing lost
+// all atlas content.
 func (t Texture_GL33) CopyData(src *Texture) {
+	if src == nil {
+		return
+	}
+	s, ok := (*src).(*Texture_GL33)
+	if !ok || s.handle == 0 || t.handle == 0 {
+		return
+	}
 
+	srcFmt, srcType := atlasPixelFormat(s.depth)
+	dstFmt, dstType := atlasPixelFormat(t.depth)
+
+	bpp := s.depth / 8
+	if bpp < 1 {
+		bpp = 1
+	}
+	// Resize only ever grows the atlas, so copy the (smaller) source region.
+	w, h := s.width, s.height
+	if w > t.width {
+		w = t.width
+	}
+	if h > t.height {
+		h = t.height
+	}
+	size := int(w) * int(h) * int(bpp)
+	if size <= 0 {
+		return
+	}
+	buf := make([]byte, size)
+
+	r := gfx.(*Renderer_GL33)
+	r.SetActiveTexture0()
+
+	// Read the source texture's pixels into a CPU buffer.
+	gl.BindTexture(gl.TEXTURE_2D, s.handle)
+	gl.PixelStorei(gl.PACK_ALIGNMENT, 1)
+	gl.PixelStorei(gl.PACK_ROW_LENGTH, 0)
+	gl.GetTexImage(gl.TEXTURE_2D, 0, srcFmt, srcType, unsafe.Pointer(&buf[0]))
+
+	// Upload them into the destination texture at the origin.
+	gl.BindTexture(gl.TEXTURE_2D, t.handle)
+	gl.PixelStorei(gl.UNPACK_ALIGNMENT, 1)
+	gl.PixelStorei(gl.UNPACK_ROW_LENGTH, 0)
+	gl.TexSubImage2D(gl.TEXTURE_2D, 0, 0, 0, w, h, dstFmt, dstType, unsafe.Pointer(&buf[0]))
+
+	gl.BindTexture(gl.TEXTURE_2D, 0)
+}
+
+// atlasPixelFormat maps a texture bit-depth to the (format, type) pair used for
+// reading/writing its pixel data via GetTexImage / TexSubImage2D.
+func atlasPixelFormat(depth int32) (uint32, uint32) {
+	switch depth {
+	case 8:
+		return gl.RED, gl.UNSIGNED_BYTE
+	case 24:
+		return gl.RGB, gl.UNSIGNED_BYTE
+	case 32:
+		return gl.RGBA, gl.UNSIGNED_BYTE
+	case 96:
+		return gl.RGB, gl.FLOAT
+	case 128:
+		return gl.RGBA, gl.FLOAT
+	default:
+		return gl.RGBA, gl.UNSIGNED_BYTE
+	}
 }
 
 // Return whether texture has a valid handle

@@ -1199,6 +1199,7 @@ func (ta *TextureAtlas) Resize(width, height int32) {
 	if height < ta.height {
 		panic("New height cannot be smaller than old height")
 	}
+	memAtlasResize(ta.width, ta.height, width, height)
 	t := gfx.newTexture(width, height, ta.depth, ta.filter)
 	ta.clearTexture(t, width, height)
 	t.CopyData(&ta.texture)

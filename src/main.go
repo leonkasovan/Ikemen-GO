@@ -198,6 +198,7 @@ func realMain() {
 	//defer sys.shutdown()
 
 	// Begin processing game using its lua scripts
+	memMonitorStart()
 	if err := sys.luaLState.DoFile(sys.cfg.Config.System); err != nil {
 		if strings.Contains(err.Error(), "<game end>") {
 			handleExit()

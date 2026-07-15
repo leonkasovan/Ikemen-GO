@@ -1273,6 +1273,7 @@ func (s *Sprite) CachePalTex(pal []uint32) Texture {
 	}
 	// If cached texture doesn't match, update or replace it
 	if !match {
+		memLog("PalTex cache miss: sprite=%p colors=%d newTexture=%v", s, len(pal), s.PalTex == nil)
 		// Previously we were always generating a new texture in this branch
 		if s.PalTex == nil {
 			s.PalTex = NewTextureFromPalette(pal)
@@ -1443,21 +1444,22 @@ func newSff() (s *Sff) {
 	return
 }
 
-/*
-// A simple SFF cache storing shallow copies
-type SffCacheEntry struct {
-	sffData  Sff
-	refCount int
-}
+// fontSffCache holds SFF data loaded for sprite-based fonts (via LoadFntSff).
+// These SFFs are not tracked in sys.cgi / sys.stage / sys.ffx, so a separate
+// cache is needed to avoid re-loading the same font SFF from disk on screen
+// re-initialization.
+var fontSffCache map[string]*Sff
 
-var SffCache = map[string]*SffCacheEntry{}
-
-func removeSFFCache(filename string) {
-	if _, ok := SffCache[filename]; ok {
-		delete(SffCache, filename)
+// registerFontSff adds a font SFF to the global cache so findActiveSff can
+// find it on subsequent loads. Font SFFs (loaded via LoadFntSff) are not
+// owned by any character, stage, or common FX, so they would otherwise be
+// reloaded from disk on every screen transition.
+func registerFontSff(filename string, sff *Sff) {
+	if fontSffCache == nil {
+		fontSffCache = make(map[string]*Sff)
 	}
+	fontSffCache[filename] = sff
 }
-*/
 
 // Find an already loaded SFF we can borrow. Replaces SFF caching
 func findActiveSff(filename string) *Sff {
@@ -1485,6 +1487,13 @@ func findActiveSff(filename string) *Sff {
 		}
 	}
 
+	// Scan font SFF cache (loaded via LoadFntSff for sprite-based fonts)
+	if fontSffCache != nil {
+		if s, ok := fontSffCache[filename]; ok && s != nil {
+			return s
+		}
+	}
+
 	return nil
 }
 
@@ -1500,9 +1509,11 @@ func loadSff(filename string, char bool, isMainThread bool, isActPal bool) (*Sff
 	}
 	// Borrow an existing SFF if possible
 	if s := findActiveSff(filename); s != nil {
+		memLog("SFF borrowed: %s (reuse, sprites=%d palettes=%d)", filename, len(s.sprites), len(s.palList.palettes))
 		return s, nil
 	}
 
+	memLog("SFF loading: %s", filename)
 	s := newSff()
 	s.filename = filename
 
@@ -1602,6 +1613,8 @@ func loadSff(filename string, char bool, isMainThread bool, isActPal bool) (*Sff
 	if loadingCanceled() {
 		return nil, ErrLoadingCanceled
 	}
+
+	memLog("SFF loaded: %s — sprites=%d palettes=%d", filename, len(s.sprites), len(s.palList.palettes))
 
 	/*
 		SffCache[filename] = &SffCacheEntry{*s, 1}
