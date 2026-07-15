@@ -909,6 +909,10 @@ func (a *Animation) Draw(window *[4]int32, x, y, xcs, ycs, xs, xbs, ys,
 	if a == nil || a.isBlank() {
 		return
 	}
+	// Lazily create the sprite's GPU texture if it hasn't been uploaded yet
+	if a.spr != nil {
+		a.spr.ensureTex()
+	}
 
 	// Determine animation angle. Invert for reflection
 	h, v, angle := a.drawSub1(rot.angle, facing)
@@ -1044,6 +1048,10 @@ func (a *Animation) ShadowDraw(window *[4]int32, x, y, xscl, yscl, vscl, rxadd f
 	// Skip blank shadows
 	if a == nil || a.isBlank() {
 		return
+	}
+	// Lazily create the sprite's GPU texture if it hasn't been uploaded yet
+	if a.spr != nil {
+		a.spr.ensureTex()
 	}
 
 	// Determine animation angle. Invert for shadows
@@ -2121,6 +2129,9 @@ func (a *Anim) Copy() *Anim {
 		dst := newSprite()
 
 		dst.Tex = src.Tex
+		dst.pendingData = src.pendingData
+		dst.pendingDepth = src.pendingDepth
+		dst.pendingFilter = src.pendingFilter
 		dst.palidx = src.palidx
 		dst.coldepth = src.coldepth
 		// Copy arrays (if not slices, this is fine as-is)

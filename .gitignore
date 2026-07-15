@@ -84,5 +84,7 @@ build/winres/
 *.syso
 *.exe
 *.dll
+*.zip
+.cron*
 external/script/version
 install/*

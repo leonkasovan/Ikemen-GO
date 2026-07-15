@@ -216,6 +216,8 @@ func (dc *DebugClsn) draw(color uint32, blendAlpha [2]int32) {
 		dc.palTex = NewTextureFromPalette(pal)
 	}
 
+	// Ensure the debug clsn sprite has its texture created
+	sys.clsnSpr.ensureTex()
 	for _, c := range dc.rects {
 		params := RenderParams{
 			tex:            sys.clsnSpr.Tex,

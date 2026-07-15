@@ -576,10 +576,15 @@ type Sprite struct {
 	coldepth byte
 	paltemp  []uint32
 	PalTex   Texture
+	// Deferred texture creation: pixel data stored during SFF loading and
+	// uploaded to the GPU lazily when the sprite is first rendered.
+	pendingData   []byte // raw pixel data (nil if no pending texture)
+	pendingDepth  int32  // bit depth: 0 = none, 8 = paletted, 24/32 = RGB/RGBA
+	pendingFilter bool   // bilinear filter flag for RGB textures
 }
 
 func (s *Sprite) isBlank() bool {
-	return s.Tex == nil || s.Size[0] == 0 || s.Size[1] == 0
+	return (s.Tex == nil && s.pendingDepth == 0) || s.Size[0] == 0 || s.Size[1] == 0
 }
 
 func newSprite() *Sprite {
@@ -723,6 +728,11 @@ func (s *Sprite) shareCopy(src *Sprite) {
 	}
 	s.coldepth = src.coldepth
 
+	// Copy pending texture data for deferred creation
+	s.pendingData = src.pendingData
+	s.pendingDepth = src.pendingDepth
+	s.pendingFilter = src.pendingFilter
+
 	// We must defer copying the texture during the main thread
 	// Otherwise we can end up copying a nil texture over the good one or other race condition bugs
 	sys.mainThreadTask <- func() {
@@ -776,17 +786,19 @@ func (s *Sprite) SetPxl(px []byte) {
 	if int64(len(px)) != int64(s.Size[0])*int64(s.Size[1]) {
 		return
 	}
-	sys.mainThreadTask <- func() {
-		s.Tex = gfx.newTexture(int32(s.Size[0]), int32(s.Size[1]), 8, false)
-		s.Tex.SetData(px)
-	}
+	// Defer texture creation to first render (ensureTex).
+	// Previously this created the GL texture immediately via the main thread queue.
+	s.pendingData = px
+	s.pendingDepth = 8
+	s.pendingFilter = false
 }
 
 func (s *Sprite) SetRaw(data []byte, sprWidth int32, sprHeight int32, sprDepth int32) {
-	sys.mainThreadTask <- func() {
-		s.Tex = gfx.newTexture(sprWidth, sprHeight, sprDepth, sys.cfg.Video.RGBSpriteBilinearFilter)
-		s.Tex.SetData(data)
-	}
+	// Defer texture creation to first render (ensureTex).
+	// Previously this created the GL texture immediately via the main thread queue.
+	s.pendingData = data
+	s.pendingDepth = sprDepth
+	s.pendingFilter = sys.cfg.Video.RGBSpriteBilinearFilter
 }
 
 func (s *Sprite) readHeader(r io.Reader, ofs, size *uint32, link *uint16) error {
@@ -1256,9 +1268,23 @@ func (s *Sprite) readV2(f io.ReadSeeker, offset int64, datasize uint32) error {
 	return nil
 }
 
-// Update the cached palette for the sprite then return it
-// Next time the sprite is drawn, it will only need a new texture if the reference changed
-// This should always be called when updating a PalTex
+// ensureTex creates the OpenGL texture from pending pixel data if it hasn't
+// been created yet. Must be called from the main (rendering) thread.
+func (s *Sprite) ensureTex() {
+	if s.Tex != nil || s.pendingDepth == 0 || len(s.pendingData) == 0 {
+		return
+	}
+	if s.pendingDepth == 8 {
+		s.Tex = gfx.newTexture(int32(s.Size[0]), int32(s.Size[1]), 8, false)
+		s.Tex.SetData(s.pendingData)
+	} else {
+		s.Tex = gfx.newTexture(int32(s.Size[0]), int32(s.Size[1]), s.pendingDepth, s.pendingFilter)
+		s.Tex.SetData(s.pendingData)
+	}
+	s.pendingData = nil
+	s.pendingDepth = 0
+}
+
 func (s *Sprite) CachePalTex(pal []uint32) Texture {
 	match := true
 	if s.PalTex == nil || len(pal) != len(s.paltemp) {
@@ -1287,6 +1313,7 @@ func (s *Sprite) CachePalTex(pal []uint32) Texture {
 }
 
 func (s *Sprite) Draw(x, y, xscale, yscale float32, rxadd float32, rot Rotation, projectionMode int32, fLength float32, fx *PalFX, window *[4]int32) {
+	s.ensureTex()
 	x += float32(sys.gameWidth-320)/2 - xscale*float32(s.Offset[0])
 	y += float32(sys.gameHeight-240) - yscale*float32(s.Offset[1])
 	var rcx, rcy float32

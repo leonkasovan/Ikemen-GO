@@ -546,9 +546,11 @@ func (f *Fnt) drawChar(
 	}
 
 	spr := f.getCharSpr(c, bank, bt)
-	if spr == nil || spr.Tex == nil {
+	if spr == nil || (spr.Tex == nil && spr.pendingDepth == 0) {
 		return 0
 	}
+	// Ensure the sprite's GPU texture has been created
+	spr.ensureTex()
 
 	// Only paletted sprites (<=8bpp) use palette mapping.
 	if spr.coldepth <= 8 {
