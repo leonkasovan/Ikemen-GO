@@ -3,10 +3,197 @@ package main
 import (
 	"container/list"
 	_ "embed"
+	"fmt"
 	"math"
+	"sort"
+	"unsafe"
 
 	mgl "github.com/go-gl/mathgl/mgl32"
 )
+
+// ---------- Sprite Batching Analysis ----------
+
+// batchStatsLog enables per-frame batch statistics logging.
+// When true, RenderSprite records batch group data and prints a summary each frame.
+var batchStatsLog bool
+
+// BatchKey identifies a unique batch group. Two sprites with the same BatchKey
+// could theoretically share a single draw call if their geometry were combined.
+type BatchKey struct {
+	texID      uintptr // pointer identity of rp.tex
+	paltexID   uintptr // 0 if nil
+	blendMode  int32   // TransType value
+	blendA0    int32   // blendAlpha[0]
+	blendA1    int32   // blendAlpha[1]
+	shaderHash uint32  // FNV-1a of customShader.name (0 if none)
+	windowPtr  uintptr // pointer identity of rp.window
+	projMode   int32
+	mask       int32
+	isTrapez   int32
+}
+
+// SpriteBatchStats accumulates per-frame statistics.
+type SpriteBatchStats struct {
+	frame          int64
+	totalSprites   int
+	totalPasses    int // TT_subadd = 2 passes
+	uniqueTextures int
+	uniqueBatches  int
+	batchGroups    map[BatchKey]int
+	textureSet     map[uintptr]bool
+	rotatedCount   int
+	tiledCount     int
+	customShaders  int
+	subaddCount    int
+}
+
+var batchAccum SpriteBatchStats
+
+func batchKeyBeginFrame() {
+	batchAccum = SpriteBatchStats{
+		frame:       int64(sys.frameCounter),
+		batchGroups: make(map[BatchKey]int),
+		textureSet:  make(map[uintptr]bool),
+	}
+}
+
+func fnv1a(s string) uint32 {
+	h := uint32(2166136261)
+	for i := 0; i < len(s); i++ {
+		h ^= uint32(s[i])
+		h *= 16777619
+	}
+	return h
+}
+
+// texInterfaceData extracts the underlying data pointer from a Texture interface.
+// Go interfaces are represented as (type_ptr, data_ptr) pairs. We want the data pointer
+// so that two interface values wrapping the same *Texture object compare equal.
+func texInterfaceData(tex Texture) uintptr {
+	if tex == nil {
+		return 0
+	}
+	// interface{} is (type, data) — we want data
+	ifaceHeader := (*[2]uintptr)(unsafe.Pointer(&tex))
+	return ifaceHeader[1]
+}
+
+func batchKeyFromRP(rp RenderParams) BatchKey {
+	texID := texInterfaceData(rp.tex)
+	palID := texInterfaceData(rp.paltex)
+	var winPtr uintptr
+	if rp.window != nil {
+		winPtr = uintptr(unsafe.Pointer(rp.window))
+	}
+	isTrap := int32(0)
+	if Abs(Abs(rp.xts)-Abs(rp.xbs)) > 0.001 {
+		isTrap = 1
+	}
+	return BatchKey{
+		texID:      texID,
+		paltexID:   palID,
+		blendMode:  int32(rp.blendMode),
+		blendA0:    rp.blendAlpha[0],
+		blendA1:    rp.blendAlpha[1],
+		shaderHash: fnv1a(rp.customShader.name),
+		windowPtr:  winPtr,
+		projMode:   rp.projectionMode,
+		mask:       rp.mask,
+		isTrapez:   isTrap,
+	}
+}
+
+func batchKeyRecord(rp RenderParams) {
+	if !batchStatsLog {
+		return
+	}
+	// Lazy-init on first call or new frame
+	if batchAccum.batchGroups == nil || int64(batchAccum.frame) != int64(sys.frameCounter) {
+		batchKeyEndFrame() // log previous frame if any
+		batchKeyBeginFrame()
+	}
+	batchAccum.totalSprites++
+	if rp.blendMode == TT_subadd {
+		batchAccum.subaddCount++
+		batchAccum.totalPasses += 2
+	} else {
+		batchAccum.totalPasses++
+	}
+	if !rp.rot.IsZero() {
+		batchAccum.rotatedCount++
+	}
+	if rp.tile.xflag != 0 || rp.tile.yflag != 0 {
+		batchAccum.tiledCount++
+	}
+	if rp.customShader.name != "" {
+		batchAccum.customShaders++
+	}
+	// Track unique textures
+	if rp.tex != nil {
+		id := texInterfaceData(rp.tex)
+		batchAccum.textureSet[id] = true
+	}
+	batchAccum.uniqueTextures = len(batchAccum.textureSet)
+
+	key := batchKeyFromRP(rp)
+	batchAccum.batchGroups[key]++
+}
+
+func batchKeyEndFrame() {
+	if !batchStatsLog {
+		return
+	}
+	if batchAccum.batchGroups == nil {
+		return
+	}
+	// Count unique textures across all recorded sprites (we need a separate tracker)
+	batchAccum.uniqueBatches = len(batchAccum.batchGroups)
+
+	type kv struct {
+		key   BatchKey
+		count int
+	}
+	var sorted []kv
+	for k, v := range batchAccum.batchGroups {
+		sorted = append(sorted, kv{k, v})
+	}
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].count > sorted[j].count })
+
+	topN := 15
+	if len(sorted) < topN {
+		opN = len(sorted)
+	}
+
+	LogMessage("[BatchStats] frame=%d sprites=%d passes=%d batches=%d rotated=%d tiled=%d subadd=%d shaders=%d",
+		batchAccum.frame, batchAccum.totalSprites, batchAccum.totalPasses,
+		batchAccum.uniqueBatches, batchAccum.rotatedCount, batchAccum.tiledCount,
+		batchAccum.subaddCount, batchAccum.customShaders)
+
+	blendNames := map[int32]string{
+		int32(TT_none):   "none",
+		int32(TT_add):    "add",
+		int32(TT_sub):    "sub",
+		int32(TT_subadd): "subadd",
+		int32(TT_default): "default",
+	}
+	for i := 0; i < topN; i++ {
+		s := sorted[i]
+		bName := blendNames[s.key.blendMode]
+		if bName == "" {
+			bName = fmt.Sprintf("%d", s.key.blendMode)
+		}
+		shaderStr := ""
+		if s.key.shaderHash != 0 {
+			shaderStr = fmt.Sprintf(" shader=0x%x", s.key.shaderHash)
+		}
+		LogMessage("  Batch #%d: tex=0x%x pal=0x%x blend=%s[%d,%d] proj=%d mask=%d trap=%d count=%d%s",
+			i+1, s.key.texID, s.key.paltexID, bName,
+			s.key.blendA0, s.key.blendA1, s.key.projMode, s.key.mask, s.key.isTrapez,
+			s.count, shaderStr)
+	}
+
+	batchAccum.batchGroups = nil
+}
 
 type Texture interface {
 	SetData(data []byte)
@@ -684,6 +871,9 @@ func RenderSprite(rp RenderParams) {
 	}
 
 	initRenderSpriteQuad(&rp)
+
+	// Record batch stats for analysis
+	batchKeyRecord(rp)
 
 	// PalFX and color setup
 	spfx := ShaderPalFX{
