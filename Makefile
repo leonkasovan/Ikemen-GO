@@ -160,6 +160,7 @@ DELAY_STAMP  := $(DELAYLIB_DIR)/.delaylibs_done
         ffdeps _build-ffmpeg \
         winres delaylibs binary bundle install \
         screenpack \
+        test test-debug test-bench \
         clean distclean FORCE
 
 # ─── Default Target ──────────────────────────────────────────────────────────
@@ -176,6 +177,38 @@ release: deps-check check-sdl2 check-libxmp ffdeps binary bundle
 
 debug:
 	$(MAKE) release DEBUG_BUILD=1 BINNAME=Ikemen_GO_debug.exe
+
+# ===========================================================================
+# Test — run Go tests with the same build environment as `make debug`.
+# The GOEXPERIMENT=arenas flag is required because the engine uses Go's
+# experimental arena package for rollback state cloning.
+# ===========================================================================
+
+.PHONY: test test-debug test-bench
+
+test: deps-check check-go-env
+	@echo "==> Running unit tests..."
+	IKEMEN_SKIP_DLL_CHECK=1 \
+	PKG_CONFIG_PATH="$(PKG_CONFIG_PATH)" \
+	CGO_CFLAGS="$$($(PKG_CONFIG) --cflags $(PKG_PKGS))" \
+	CGO_LDFLAGS="-L$$(pwd)/$(DELAYLIB_DIR) $$($(PKG_CONFIG) --libs $(PKG_PKGS))" \
+	go test -v $(GO_TAGS) -count=1 ./src -run 'Test'
+
+test-debug: deps-check check-go-env
+	@echo "==> Running unit tests with -tags debug (memory instrumentation)..."
+	IKEMEN_SKIP_DLL_CHECK=1 \
+	PKG_CONFIG_PATH="$(PKG_CONFIG_PATH)" \
+	CGO_CFLAGS="$$($(PKG_CONFIG) --cflags $(PKG_PKGS))" \
+	CGO_LDFLAGS="-L$$(pwd)/$(DELAYLIB_DIR) $$($(PKG_CONFIG) --libs $(PKG_PKGS))" \
+	go test -v $(GO_TAGS) -tags debug -count=1 ./src -run 'Test'
+
+test-bench: deps-check check-go-env
+	@echo "==> Running benchmarks..."
+	IKEMEN_SKIP_DLL_CHECK=1 \
+	PKG_CONFIG_PATH="$(PKG_CONFIG_PATH)" \
+	CGO_CFLAGS="$$($(PKG_CONFIG) --cflags $(PKG_PKGS))" \
+	CGO_LDFLAGS="-L$$(pwd)/$(DELAYLIB_DIR) $$($(PKG_CONFIG) --libs $(PKG_PKGS))" \
+	go test -v $(GO_TAGS) -bench=. -benchmem -count=1 ./src
 
 win32:
 	$(MAKE) release ARCH=386

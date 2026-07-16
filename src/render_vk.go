@@ -4884,7 +4884,7 @@ func (r *Renderer_VK) Destroy() {
 			_ = os.MkdirAll("./cache/Vulkan", os.ModePerm)
 			err = os.WriteFile("./cache/Vulkan/pipeline_cache.bin", pipelineCacheData, 0644)
 			if err != nil {
-				LogMessage("Failed to write pipeline cache to disk:", err)
+				LogMessage("Failed to write pipeline cache to disk: %v", err)
 			}
 		}
 	}

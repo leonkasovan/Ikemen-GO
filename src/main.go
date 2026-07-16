@@ -197,8 +197,15 @@ func realMain() {
 	sys.luaLState = sys.init(int32(sys.gameWidth), int32(sys.gameHeight))
 	//defer sys.shutdown()
 
+	// Set a soft memory limit so Go returns freed pages to the OS instead of hoarding
+	// them (which on Windows can cause Task Manager to show 1 GB+ after loading SFFs).
+	// 256 MB sits safely above the peak heapAlloc (~218 MB during loading, ~131 MB
+	// steady-state) while forcing Go to release unused pages back to the OS.
+	debug.SetMemoryLimit(256 * 1024 * 1024)
+
 	// Begin processing game using its lua scripts
 	memMonitorStart()
+	startProfiler()
 	if err := sys.luaLState.DoFile(sys.cfg.Config.System); err != nil {
 		if strings.Contains(err.Error(), "<game end>") {
 			handleExit()

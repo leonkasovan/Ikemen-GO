@@ -11,6 +11,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"time"
 	"unsafe"
 )
 
@@ -1669,6 +1670,57 @@ func loadSff(filename string, char bool, isMainThread bool, isActPal bool) (*Sff
 	}
 
 	memLog("SFF loaded: %s — sprites=%d palettes=%d", filename, len(s.sprites), len(s.palList.palettes))
+
+	// For sprites with large pixel data (>128 KB), eagerly create GPU textures
+	// to free CPU heap memory. Large sprites (character sprites, backgrounds)
+	// are almost always rendered, so the GPU memory tradeoff is worthwhile.
+	// Small sprites (font glyphs, UI elements, etc.) remain lazy so they don't
+	// waste GPU memory if never displayed.
+	const largeSpriteThreshold int64 = 128 * 1024
+	ensureStart := time.Now()
+	largeCount := 0
+	if isMainThread {
+		for _, spr := range s.sprites {
+			if spr.pendingDepth != 0 && len(spr.pendingData) > 0 {
+				bpp := int64(spr.pendingDepth) / 8
+				if bpp < 1 {
+					bpp = 1
+				}
+				if int64(spr.pendingW)*int64(spr.pendingH)*bpp > largeSpriteThreshold {
+					largeCount++
+					spr.ensureTex()
+				}
+			}
+		}
+		memLog("SFF eager ensureTex: %d large sprites uploaded in %v", largeCount, time.Since(ensureStart))
+	} else {
+		// Count large sprites here before the closure (capture by value)
+		for _, spr := range s.sprites {
+			if spr.pendingDepth != 0 && len(spr.pendingData) > 0 {
+				bpp := int64(spr.pendingDepth) / 8
+				if bpp < 1 {
+					bpp = 1
+				}
+				if int64(spr.pendingW)*int64(spr.pendingH)*bpp > largeSpriteThreshold {
+					largeCount++
+				}
+			}
+		}
+		memLog("SFF eager ensureTex: %d large sprites queued for main thread in %v", largeCount, time.Since(ensureStart))
+		sys.mainThreadTask <- func() {
+			for _, spr := range s.sprites {
+				if spr.pendingDepth != 0 && len(spr.pendingData) > 0 {
+					bpp := int64(spr.pendingDepth) / 8
+					if bpp < 1 {
+						bpp = 1
+					}
+					if int64(spr.pendingW)*int64(spr.pendingH)*bpp > largeSpriteThreshold {
+						spr.ensureTex()
+					}
+				}
+			}
+		}
+	}
 
 	/*
 		SffCache[filename] = &SffCacheEntry{*s, 1}

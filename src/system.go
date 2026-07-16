@@ -788,11 +788,6 @@ func (s *System) keepAlive() {
 
 func (s *System) await(fps int) bool {
 	if !s.frameSkip {
-		// Flush batch stats at frame end
-		if batchStatsLog {
-			batchKeyEndFrame()
-		}
-
 		// Render the finished frame
 		gfx.EndFrame()
 		if gfx.GetName()[:6] == "OpenGL" {

@@ -13,6 +13,13 @@ import (
 )
 
 func init() {
+	// Skip DLL loading during `go test` — the test binary runs from a temp
+	// directory without runtime DLLs. The Makefile sets this env var for the
+	// test, test-debug, and test-bench targets.
+	if os.Getenv("IKEMEN_SKIP_DLL_CHECK") == "1" {
+		return
+	}
+
 	exe, err := os.Executable()
 	if err != nil {
 		return

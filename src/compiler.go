@@ -2001,7 +2001,7 @@ func (c *CharCompiler) expValue(out *BytecodeExp, in *string,
 		case "bottom":
 			opc = OC_ex2_clsnvar_bottom
 		default:
-			return bvNone(), Error(fmt.Sprint("Invalid ClsnVar argument: %s", vname))
+			return bvNone(), Error(fmt.Sprintf("Invalid ClsnVar argument: %s", vname))
 		}
 		c.token = c.tokenizer(in)
 
@@ -2400,7 +2400,7 @@ func (c *CharCompiler) expValue(out *BytecodeExp, in *string,
 			case "z":
 				opc = OC_ex2_explodvar_accel_z
 			default:
-				return bvNone(), Error(fmt.Sprint("Invalid ExplodVar accel argument: %s", c.token))
+				return bvNone(), Error(fmt.Sprintf("Invalid ExplodVar accel argument: %s", c.token))
 			}
 		case "angle":
 			c.token = c.tokenizer(in)
@@ -2413,7 +2413,7 @@ func (c *CharCompiler) expValue(out *BytecodeExp, in *string,
 			case ")":
 				opc = OC_ex2_explodvar_angle
 			default:
-				return bvNone(), Error(fmt.Sprint("Invalid ExplodVar angle argument: %s", c.token))
+				return bvNone(), Error(fmt.Sprintf("Invalid ExplodVar angle argument: %s", c.token))
 			}
 		case "anim":
 			opc = OC_ex2_explodvar_anim
@@ -2455,7 +2455,7 @@ func (c *CharCompiler) expValue(out *BytecodeExp, in *string,
 			case "z":
 				opc = OC_ex2_explodvar_friction_z
 			default:
-				return bvNone(), Error(fmt.Sprint("Invalid ExplodVar friction argument: %s", c.token))
+				return bvNone(), Error(fmt.Sprintf("Invalid ExplodVar friction argument: %s", c.token))
 			}
 		case "id":
 			opc = OC_ex2_explodvar_id
@@ -2476,7 +2476,7 @@ func (c *CharCompiler) expValue(out *BytecodeExp, in *string,
 			case "z":
 				opc = OC_ex2_explodvar_pos_z
 			default:
-				return bvNone(), Error(fmt.Sprint("Invalid ExplodVar pos argument: %s", c.token))
+				return bvNone(), Error(fmt.Sprintf("Invalid ExplodVar pos argument: %s", c.token))
 			}
 		case "removetime":
 			opc = OC_ex2_explodvar_removetime
@@ -2489,7 +2489,7 @@ func (c *CharCompiler) expValue(out *BytecodeExp, in *string,
 			case "y":
 				opc = OC_ex2_explodvar_scale_y
 			default:
-				return bvNone(), Error(fmt.Sprint("Invalid ExplodVar scale argument: %s", c.token))
+				return bvNone(), Error(fmt.Sprintf("Invalid ExplodVar scale argument: %s", c.token))
 			}
 		case "sprpriority":
 			opc = OC_ex2_explodvar_sprpriority
@@ -2506,12 +2506,12 @@ func (c *CharCompiler) expValue(out *BytecodeExp, in *string,
 			case "z":
 				opc = OC_ex2_explodvar_vel_z
 			default:
-				return bvNone(), Error(fmt.Sprint("Invalid ExplodVar vel argument: %s", c.token))
+				return bvNone(), Error(fmt.Sprintf("Invalid ExplodVar vel argument: %s", c.token))
 			}
 		case "xshear":
 			opc = OC_ex2_explodvar_xshear
 		default:
-			return bvNone(), Error(fmt.Sprint("Invalid ExplodVar angle argument: %s", vname))
+			return bvNone(), Error(fmt.Sprintf("Invalid ExplodVar angle argument: %s", vname))
 		}
 		if opc != OC_ex2_explodvar_angle {
 			c.token = c.tokenizer(in)
@@ -3336,7 +3336,7 @@ func (c *CharCompiler) expValue(out *BytecodeExp, in *string,
 			case "z":
 				opc = OC_ex2_projvar_accel_z
 			default:
-				return bvNone(), Error(fmt.Sprint("Invalid ProjVar accel argument: %s", c.token))
+				return bvNone(), Error(fmt.Sprintf("Invalid ProjVar accel argument: %s", c.token))
 			}
 		case "angle":
 			c.token = c.tokenizer(in)
@@ -3349,7 +3349,7 @@ func (c *CharCompiler) expValue(out *BytecodeExp, in *string,
 			case ")":
 				opc = OC_ex2_projvar_projangle
 			default:
-				return bvNone(), Error(fmt.Sprint("Invalid ProjVar angle argument: %s", c.token))
+				return bvNone(), Error(fmt.Sprintf("Invalid ProjVar angle argument: %s", c.token))
 			}
 		case "anim":
 			opc = OC_ex2_projvar_projanim
@@ -3394,7 +3394,7 @@ func (c *CharCompiler) expValue(out *BytecodeExp, in *string,
 			case "z":
 				opc = OC_ex2_projvar_pos_z
 			default:
-				return bvNone(), Error(fmt.Sprint("Invalid ProjVar pos argument: %s", c.token))
+				return bvNone(), Error(fmt.Sprintf("Invalid ProjVar pos argument: %s", c.token))
 			}
 		case "projcancelanim":
 			opc = OC_ex2_projvar_projcancelanim
@@ -3435,7 +3435,7 @@ func (c *CharCompiler) expValue(out *BytecodeExp, in *string,
 			case "z":
 				opc = OC_ex2_projvar_remvelocity_z
 			default:
-				return bvNone(), Error(fmt.Sprint("Invalid ProjVar remvelocity argument: %s", c.token))
+				return bvNone(), Error(fmt.Sprintf("Invalid ProjVar remvelocity argument: %s", c.token))
 			}
 		case "scale":
 			c.token = c.tokenizer(in)
@@ -3446,7 +3446,7 @@ func (c *CharCompiler) expValue(out *BytecodeExp, in *string,
 			case "y":
 				opc = OC_ex2_projvar_projscale_y
 			default:
-				return bvNone(), Error(fmt.Sprint("Invalid ProjVar scale argument: %s", c.token))
+				return bvNone(), Error(fmt.Sprintf("Invalid ProjVar scale argument: %s", c.token))
 			}
 		case "shadow":
 			c.token = c.tokenizer(in)
@@ -3459,7 +3459,7 @@ func (c *CharCompiler) expValue(out *BytecodeExp, in *string,
 			case "b":
 				opc = OC_ex2_projvar_projshadow_b
 			default:
-				return bvNone(), Error(fmt.Sprint("Invalid ProjVar shadow argument: %s", c.token))
+				return bvNone(), Error(fmt.Sprintf("Invalid ProjVar shadow argument: %s", c.token))
 			}
 		case "supermovetime":
 			opc = OC_ex2_projvar_supermovetime
@@ -3478,7 +3478,7 @@ func (c *CharCompiler) expValue(out *BytecodeExp, in *string,
 			case "z":
 				opc = OC_ex2_projvar_vel_z
 			default:
-				return bvNone(), Error(fmt.Sprint("Invalid ProjVar vel argument: %s", c.token))
+				return bvNone(), Error(fmt.Sprintf("Invalid ProjVar vel argument: %s", c.token))
 			}
 		case "velmul":
 			c.token = c.tokenizer(in)
@@ -3491,12 +3491,12 @@ func (c *CharCompiler) expValue(out *BytecodeExp, in *string,
 			case "z":
 				opc = OC_ex2_projvar_velmul_z
 			default:
-				return bvNone(), Error(fmt.Sprint("Invalid ProjVar velmul argument: %s", c.token))
+				return bvNone(), Error(fmt.Sprintf("Invalid ProjVar velmul argument: %s", c.token))
 			}
 		case "xshear":
 			opc = OC_ex2_projvar_projxshear
 		default:
-			return bvNone(), Error(fmt.Sprint("Invalid ProjVar argument: %s", vname))
+			return bvNone(), Error(fmt.Sprintf("Invalid ProjVar argument: %s", vname))
 		}
 		if opc != OC_ex2_projvar_projangle {
 			c.token = c.tokenizer(in)
@@ -3636,7 +3636,7 @@ func (c *CharCompiler) expValue(out *BytecodeExp, in *string,
 		case "volumescale":
 			opc = OC_ex2_soundvar_volumescale
 		default:
-			return bvNone(), Error(fmt.Sprint("Invalid SoundVar argument: %s", vname))
+			return bvNone(), Error(fmt.Sprintf("Invalid SoundVar argument: %s", vname))
 		}
 
 		c.token = c.tokenizer(in)
