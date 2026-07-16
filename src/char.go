@@ -1965,7 +1965,7 @@ func (e *Explod) update() {
 		}
 	}
 
-	oldVer := root.gi().mugenverF < 1.1
+	oldVer := root.gi().mugenver[0] != 1 || root.gi().mugenver[1] != 1
 
 	// Bind explod to parent
 	// In Mugen this only happens if the explod is not paused, hence "act"
@@ -3072,9 +3072,7 @@ type CharGlobalInfo struct {
 	palInfo                 map[int]PalInfo
 	palno                   int32
 	ikemenver               [3]uint16
-	ikemenverF              float32
 	mugenver                [2]uint16
-	mugenverF               float32
 	data                    CharData
 	velocity                CharVelocity
 	movement                CharMovement
@@ -11559,10 +11557,14 @@ func (c *Char) actionPrepare() {
 	}
 
 	c.pauseBool = false
-	if sys.supertime > 0 {
-		c.pauseBool = c.superMovetime == 0
-	} else if sys.pausetime > 0 && c.pauseMovetime == 0 {
-		c.pauseBool = true
+	// Removing this c.cmd check makes a basic helper init incorrectly during a pause
+	// TODO: Confirm why it uses c.cmd specifically
+	if c.cmd != nil {
+		if sys.supertime > 0 {
+			c.pauseBool = c.superMovetime == 0
+		} else if sys.pausetime > 0 && c.pauseMovetime == 0 {
+			c.pauseBool = true
+		}
 	}
 	// Due to the nature of how pauses are processed, these are needed to fix an "off by 1" error in the PauseTime trigger
 	c.prevSuperMovetime = c.superMovetime
