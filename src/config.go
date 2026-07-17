@@ -132,6 +132,7 @@ type Config struct {
 		ClipboardRows       int     `ini:"ClipboardRows"`
 		ConsoleRows         int     `ini:"ConsoleRows"`
 		ClsnDarken          bool    `ini:"ClsnDarken"`
+		MemoryLimitMB       int     `ini:"MemoryLimitMB"`
 		DumpLuaTables       bool    `ini:"DumpLuaTables"`
 		Font                string  `ini:"Font"`
 		FontScale           float32 `ini:"FontScale"`
@@ -166,6 +167,7 @@ type Config struct {
 		EnableModelShadow        bool     `ini:"EnableModelShadow"`
 		ImageSuballocThresholdKB int      `ini:"ImageSuballocThresholdKB"` // ≤ this (KB) suballocated; 0 to disable
 		ImageSuballocBlockSizeMB int      `ini:"ImageSuballocBlockSizeMB"` // block size (MB) for suballocation pool
+		PaletteAtlasSize         int32    `ini:"PaletteAtlasSize"`          // Size of palette atlas texture (square, RGBA)
 	} `ini:"Video"`
 	Sound struct {
 		SampleRate           int32   `ini:"SampleRate"`
@@ -378,6 +380,23 @@ func (c *Config) normalize() {
 	}
 	if c.Video.ImageSuballocBlockSizeMB < 1 {
 		c.SetValueUpdate("Video.ImageSuballocBlockSizeMB", 64)
+	}
+	// Memory limit: 0 means disabled, otherwise at least 64 MB
+	if c.Debug.MemoryLimitMB > 0 && c.Debug.MemoryLimitMB < 64 {
+		c.SetValueUpdate("Debug.MemoryLimitMB", 64)
+	}
+	// Palette atlas size must be at least 256 and a power of two
+	if size := c.Video.PaletteAtlasSize; size < 256 {
+		c.SetValueUpdate("Video.PaletteAtlasSize", int32(256))
+	} else if size&(size-1) != 0 {
+		// Round up to next power of two
+		n := size - 1
+		n |= n >> 1
+		n |= n >> 2
+		n |= n >> 4
+		n |= n >> 8
+		n |= n >> 16
+		c.SetValueUpdate("Video.PaletteAtlasSize", int32(n+1))
 	}
 }
 

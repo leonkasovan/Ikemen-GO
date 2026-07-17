@@ -8,6 +8,7 @@ package main
 
 import (
 	"bytes"
+	"container/list"
 	"encoding/binary"
 	"fmt"
 	"math"
@@ -215,12 +216,15 @@ func (r *Renderer_GLES32) linkProgram(params ...uint32) (program uint32, err err
 // Texture_GLES32
 
 type Texture_GLES32 struct {
-	width  int32
-	height int32
-	depth  int32
-	filter bool
-	handle uint32 // GL side handle
-	serial uint64 // Go side serial number
+	width   int32
+	height  int32
+	depth   int32
+	filter  bool
+	handle  uint32 // GL side handle
+	serial  uint64 // Go side serial number
+	offsetX int32  // Palette atlas: X offset within atlas (pixels). 0 for normal textures.
+	offsetY int32  // Palette atlas: Y offset within atlas (pixels). 0 for normal textures.
+	palSlot bool   // True if this is a sub-region of the palette atlas.
 }
 
 // Helper that wraps the actual GL call to generate a texture
@@ -258,8 +262,67 @@ func (r *Renderer_GLES32) newTexture(width, height, depth int32, filter bool) Te
 	return t
 }
 
+func (r *Renderer_GLES32) createPalAtlas() {
+	r.palAtlasSize = PalAtlasSize
+	r.palFreeSlots = list.New()
+
+	// Create a single PalAtlasSize x PalAtlasSize RGBA texture
+	r.palAtlas = r.newTexture(PalAtlasSize, PalAtlasSize, 32, false).(*Texture_GLES32)
+
+	// Initialize the atlas to transparent
+	clearData := make([]byte, PalAtlasSize*PalAtlasSize*4)
+	r.palAtlas.SetData(clearData)
+
+	// Fill the free slot queue (slotsPerRow * PalAtlasSize slots)
+	for i := int32(0); i < PalAtlasSize*(PalAtlasSize/256); i++ {
+		r.palFreeSlots.PushBack(int32(i))
+	}
+
+	LogMessage("[PalAtlas] Created %dx%d palette atlas with %d slots",
+		PalAtlasSize, PalAtlasSize, PalAtlasSize*(PalAtlasSize/256))
+}
+
 func (r *Renderer_GLES32) newPaletteTexture() Texture {
-	return r.newTexture(256, 1, 32, false)
+	if r.palFreeSlots == nil || r.palFreeSlots.Len() == 0 {
+		// Should not happen unless createPalAtlas wasn't called, or we somehow
+		// exhaust all 16384 palette slots (unrealistic for any game).
+		fmt.Printf("[PalAtlas] Out of palette slots! Creating fallback standalone texture.\n")
+		return r.newTexture(256, 1, 32, false)
+	}
+
+	slot := r.palFreeSlots.Remove(r.palFreeSlots.Front()).(int32)
+
+	// Calculate slot position within the atlas.
+	// Layout: slots arranged in rows of (PalAtlasSize / 256) per row.
+	// Slot 0: (0, 0), Slot 1: (256, 0), ..., Slot 7: (1792, 0)
+	// Slot 8: (0, 1), ..., etc.
+	slotsPerRow := r.palAtlasSize / 256
+	offsetY := slot / slotsPerRow
+	offsetX := (slot % slotsPerRow) * 256
+
+	t := &Texture_GLES32{
+		width:   256,
+		height:  1,
+		depth:   32,
+		filter:  false,
+		handle:  r.palAtlas.handle,
+		serial:  r.palAtlas.serial,
+		offsetX: offsetX,
+		offsetY: offsetY,
+		palSlot: true,
+	}
+
+	// When the texture is garbage collected, return the slot to the free list.
+	sid := slot // capture by value for the closure
+	runtime.SetFinalizer(t, func(t *Texture_GLES32) {
+		sys.mainThreadTask <- func() {
+			if r.palFreeSlots != nil {
+				r.palFreeSlots.PushFront(sid)
+			}
+		}
+	})
+
+	return t
 }
 
 func (r *Renderer_GLES32) newModelTexture(width, height, depth int32, filter bool) Texture {
@@ -318,11 +381,6 @@ func (r *Renderer_GLES32) newCubeMapTexture(widthHeight int32, mipmap bool, lowe
 
 // Bind a texture and upload texel data to it
 func (t *Texture_GLES32) SetData(data []byte) {
-	var interp int32 = gl.NEAREST
-	if t.filter {
-		interp = gl.LINEAR
-	}
-
 	bits := Max(t.depth, 8)
 	internalFormat := t.MapSizedInternalFormat(bits)
 	uploadFormat := t.MapUploadFormat(bits)
@@ -335,16 +393,30 @@ func (t *Texture_GLES32) SetData(data []byte) {
 	gl.PixelStorei(gl.UNPACK_ALIGNMENT, 1)
 	gl.PixelStorei(gl.UNPACK_ROW_LENGTH, 0)
 
-	if data != nil {
-		gl.TexImage2D(gl.TEXTURE_2D, 0, int32(internalFormat), t.width, t.height, 0, uploadFormat, uploadType, unsafe.Pointer(&data[0]))
+	if t.palSlot {
+		// Palette atlas slot: write to sub-region of the shared atlas texture.
+		// Only upload actual payload; nil means "do nothing" (atlas already allocated).
+		if data != nil {
+			gl.TexSubImage2D(gl.TEXTURE_2D, 0, t.offsetX, t.offsetY, t.width, t.height, uint32(uploadFormat), uploadType, unsafe.Pointer(&data[0]))
+		}
 	} else {
-		gl.TexImage2D(gl.TEXTURE_2D, 0, int32(internalFormat), t.width, t.height, 0, uploadFormat, uploadType, nil)
-	}
+		// Normal texture: allocate storage.
+		var interp int32 = gl.NEAREST
+		if t.filter {
+			interp = gl.LINEAR
+		}
 
-	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, interp)
-	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, interp)
-	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+		if data != nil {
+			gl.TexImage2D(gl.TEXTURE_2D, 0, int32(internalFormat), t.width, t.height, 0, uploadFormat, uploadType, unsafe.Pointer(&data[0]))
+		} else {
+			gl.TexImage2D(gl.TEXTURE_2D, 0, int32(internalFormat), t.width, t.height, 0, uploadFormat, uploadType, nil)
+		}
+
+		gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, interp)
+		gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, interp)
+		gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+		gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+	}
 }
 
 func (t *Texture_GLES32) SetSubData(data []byte, x, y, width, height, stride int32) {
@@ -474,6 +546,21 @@ func (t *Texture_GLES32) GetHeight() int32 {
 	return t.height
 }
 
+func (t *Texture_GLES32) GetPalUV() [4]float32 {
+	if t.palSlot {
+		// Palette atlas slot: compute UV relative to the shared atlas texture.
+		// Add 0.5 pixel centering to avoid texture bleeding at slot edges.
+		atlasSize := float32(PalAtlasSize)
+		u1 := (float32(t.offsetX) + 0.5) / atlasSize
+		v1 := (float32(t.offsetY) + 0.5) / atlasSize
+		uSize := float32(256) / atlasSize
+		vSize := float32(1) / atlasSize
+		return [4]float32{u1, v1, uSize, vSize}
+	}
+	// Standalone 256x1 texture: sample the full width at middle row
+	return [4]float32{0, 0.5, 1, 0}
+}
+
 func (t *Texture_GLES32) MapUploadType(i int32) uint32 {
 	switch i {
 	case 96, 128:
@@ -561,6 +648,11 @@ type Renderer_GLES32 struct {
 
 	enableModel  bool
 	enableShadow bool
+
+	// Palette atlas
+	palAtlas     *Texture_GLES32 // Shared atlas texture for all palettes
+	palAtlasSize int32           // Size of atlas (e.g., 2048)
+	palFreeSlots *list.List      // Queue of free slot indices
 	GLES32State
 }
 type GLES32State struct {
@@ -752,7 +844,7 @@ func (r *Renderer_GLES32) Init() {
 	r.spriteShader, _ = r.newShaderProgram(vertShader, fragShader, "", "Main Shader", true)
 	r.spriteShader.RegisterAttributes("position", "uv")
 	r.spriteShader.RegisterUniforms("modelview", "projection", "x1x2x4x3",
-		"alpha", "tint", "mask", "neg", "gray", "add", "mult", "isFlat", "isRgba", "isTrapez", "hue")
+		"alpha", "tint", "mask", "neg", "gray", "add", "mult", "isFlat", "isRgba", "isTrapez", "hue", "palUV")
 	r.spriteShader.RegisterTextures("pal", "tex")
 
 	// Configure spriteVAO
@@ -984,10 +1076,16 @@ func (r *Renderer_GLES32) Init() {
 
 	gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
 
+	// Create palette atlas
+	r.createPalAtlas()
+
 	r.InitStateCache()
 }
 
 func (r *Renderer_GLES32) Close() {
+	// Palette atlas cleaned up via GC finalizer on palAtlas
+	r.palAtlas = nil
+	r.palFreeSlots = nil
 }
 
 func (r *Renderer_GLES32) InitStateCache() {

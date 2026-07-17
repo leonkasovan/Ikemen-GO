@@ -733,6 +733,10 @@ func (t *Texture_VK) GetHeight() int32 {
 	return t.height
 }
 
+func (t *Texture_VK) GetPalUV() [4]float32 {
+	return t.uvst
+}
+
 func (t *Texture_VK) MapInternalFormat(i int32) vk.Format {
 	var InternalFormatLUT = map[int32]vk.Format{
 		8:  vk.FormatR8Unorm,

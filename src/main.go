@@ -197,11 +197,18 @@ func realMain() {
 	sys.luaLState = sys.init(int32(sys.gameWidth), int32(sys.gameHeight))
 	//defer sys.shutdown()
 
+	// Apply palette atlas size from config before renderer init
+	if sys.cfg.Video.PaletteAtlasSize > 0 {
+		PalAtlasSize = sys.cfg.Video.PaletteAtlasSize
+	}
+
 	// Set a soft memory limit so Go returns freed pages to the OS instead of hoarding
 	// them (which on Windows can cause Task Manager to show 1 GB+ after loading SFFs).
-	// 256 MB sits safely above the peak heapAlloc (~218 MB during loading, ~131 MB
-	// steady-state) while forcing Go to release unused pages back to the OS.
-	debug.SetMemoryLimit(256 * 1024 * 1024)
+	// Controlled by [Debug] MemoryLimitMB in config (default 256 MB).
+	// Set to 0 to disable (not recommended).
+	if sys.cfg.Debug.MemoryLimitMB > 0 {
+		debug.SetMemoryLimit(int64(sys.cfg.Debug.MemoryLimitMB) * 1024 * 1024)
+	}
 
 	// Begin processing game using its lua scripts
 	memMonitorStart()

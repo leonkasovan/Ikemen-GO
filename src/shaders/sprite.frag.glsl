@@ -31,6 +31,7 @@
 	uniform sampler2D pal;
 	uniform vec4 x1x2x4x3;
 	uniform vec4 tint;
+	uniform vec4 palUV;
 	uniform vec3 add, mult;
 	uniform float alpha, gray, hue;
 	uniform int mask;
@@ -96,11 +97,12 @@ void main(void) {
 			final_add *= c.a;
 			final_mul.rgb *= alpha;
 		} else {
-			// Palette lookup
+			// Palette lookup — use palUV for atlas support
+			// palUV.x = U offset, palUV.y = V offset, palUV.z = U size (256/atlasSize)
 			#if __VERSION__ >= 450
 				c = COMPAT_TEXTURE(pal, vec2(palUV[0]+palUV[2]*c.r*0.9966, palUV[1]));
 			#else
-				c = COMPAT_TEXTURE(pal, vec2(c.r*0.9966, 0.5));
+				c = COMPAT_TEXTURE(pal, vec2(palUV[0]+palUV[2]*c.r*0.9966, palUV[1]));
 			#endif
 			if (mask == -1) c.a = 1.0;
 		}

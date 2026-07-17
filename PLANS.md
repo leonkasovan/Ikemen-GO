@@ -7,8 +7,9 @@ This document outlines memory analysis and debugging strategies for the Ikemen-G
 | File | Role |
 |------|------|
 | `src/image.go` | SFF parsing, sprite decoding, palette management, texture creation |
-| `src/render.go` | Render pipeline, TextureAtlas, blending, `RenderSprite` |
-| `src/render_gl33.go` | GL33 texture lifecycle, shader programs, FBO setup, GC finalizers |
+| `src/render.go` | Render pipeline, TextureAtlas, blending, `RenderSprite`, palette atlas interface |
+| `src/render_gl33.go` | GL33 texture lifecycle, shader programs, FBO setup, GC finalizers, GL33 palette atlas |
+| `src/render_gles32.go` | GLES32 texture lifecycle, shader programs, FBO setup, GLES32 palette atlas |
 | `src/font.go` | Font loading (FNT v1/v2, SFF-based), text drawing, palette caching |
 | `src/font_gl33.go` | TTF glyph atlas generation, font shader, batch rendering |
 | `src/bgdef.go` | Background layer rendering |
@@ -17,26 +18,30 @@ This document outlines memory analysis and debugging strategies for the Ikemen-G
 
 ## 2. Key Memory Structures & Their Lifecycle
 
-### 2.1 Texture (`Texture_GL33`)
+### 2.1 Texture (`Texture_GL33` / `Texture_GLES32`)
 
-**Location:** `render_gl33.go:176-183`
+**Location:** `render_gl33.go:176-187`, `render_gles32.go:218-228`
 
 ```go
-type Texture_GL33 struct {
+type Texture_GL33 struct {  // (same layout as Texture_GLES32)
     width, height, depth int32
     filter bool
     handle uint32    // GL handle
     serial uint64    // Unique ID
+    offsetX int32    // Palette atlas: X offset within atlas (pixels)
+    offsetY int32    // Palette atlas: Y offset within atlas (pixels)
+    palSlot bool     // True if this is a sub-region of the palette atlas
 }
 ```
 
-- **Allocation:** `generateTexture()` at `render_gl33.go:186-209`
-- **Deallocation:** Via `runtime.SetFinalizer` (line 202-206) — GC-triggered, posts `gl.DeleteTextures` to main thread
+- **Allocation:** `generateTexture()` at `render_gl33.go:190-217` / `render_gles32.go:231-252`
+- **Deallocation:** Via `runtime.SetFinalizer` — GC-triggered, posts `gl.DeleteTextures` to main thread
 - **No explicit Release() API exists** — GPU memory freed only when Go GC collects the struct
 
 **Debug points:**
-- Monitor `textureSerialNumber` (global counter, `render.go:144`) — monotonically increasing, never wraps
+- Monitor `textureSerialNumber` (global counter, `render.go:148`) — monotonically increasing, never wraps
 - Each `SetFinalizer` closure captures the handle — if the texture struct is kept alive by any reference, the GPU handle leaks
+- Palette slot textures (`.palSlot == true`) share the atlas texture's `handle` and `serial` — their finalizer only returns the slot to the free list, it does NOT call `gl.DeleteTextures`
 
 ### 2.2 Sprite
 
@@ -103,13 +108,13 @@ type TextureAtlas struct {
 ```
 
 - **Creation:** `CreateTextureAtlas(256, 256, 32, true)` — 256KB GPU (256x256 RGBA)
-- **Resize:** `Resize()` (line 1195-1209) creates new texture, calls `CopyData` (which is a **no-op** on GL33!)
-- **BUG:** `Texture_GL33.CopyData()` at `render_gl33.go:379-381` is empty — atlas resize loses all glyph data
+- **Resize:** `Resize()` (line 1195-1209) creates new texture, calls `CopyData` to preserve existing content
+- **CopyData is now fixed** for all backends: GL33 reads source via `gl.GetTexImage` → CPU → `gl.TexSubImage2D`; GLES32 uses FBO `CopyTexSubImage2D`; Vulkan uses `vk.CmdCopyImage` with transfer barrier
 
 **Debug points:**
 - `extrudeAtlasImage()` (line 1027-1059) allocates `(w+2)*(h+2)*bpp` bytes per glyph insertion
 - `clearTexture()` (line 1021-1024) allocates `width*height*bpp` bytes for zero-fill
-- Font atlases have `resize: false` so the broken `CopyData` is not hit in practice
+- Font atlases have `resize: false` so resize path is unused for fonts — only `TextureAtlas.Resize` exercises `CopyData`
 
 ### 2.5 Font (`Font_GL33`)
 
@@ -349,8 +354,15 @@ if m.NumGC != lastGCStats.NumGC {
 - [x] **SFF data release after atlas texture creation** (`font.go`) — After packing glyph pixel data into the atlas via `AddImage`, release the per-glyph `pendingData`/`pendingDepth` on the cloned font sprites. The CPU-side pixel buffer is no longer needed since the GPU atlas holds the data. Frees backing pixel arrays for each glyph in a sprite-based font.
 - [x] **Font atlas caching across screen transitions** (`font.go` + `image.go`) — Added `fontAtlasCache` global map to keep GPU atlas textures alive across `Fnt` GC cycles. On subsequent loads of the same font SFF, the atlas and UV map are reused instead of being rebuilt from scratch. Eliminates atlas rebuild cost (~14 fonts × 64KB GPU churn + CPU glyph re-upload) on every screen transition.
 - [x] **Fix `CopyData` for all render backends** (`render_gl33.go`, `render_gles32.go`, `render_vk.go`) — GL33: `gl.GetTexImage` → CPU → `gl.TexSubImage2D`. GLES32: FBO → `gl.CopyTexSubImage2D`. Vulkan: `vk.CmdCopyImage` with transfer barrier. All three now preserve atlas content during resize, fixing the silent data loss bug (PLANS B1).
+- [x] **Palette texture atlas (GL33)** (`render_gl33.go`, `render.go`, `shaders/sprite.frag.glsl`) — Replaced ~150 separate `256×1` GL palette textures with a single shared `2048×2048` atlas texture. Each palette is a `256×1` sub-region in the atlas, providing 16,384 slots. Added `palSlot` flag for proper sub-region writes via `gl.TexSubImage2D` and `palUV` uniform for per-slot UV coordinate lookup in the fragment shader. All palette slots share the atlas `serial` number so the texture cache hits instantly after the first palette bind per frame, reducing texture unit switches from ~15-19 per frame to 1.
+- [x] **Palette texture atlas (GLES32)** (`render_gles32.go`) — Identical implementation to GL33: `createPalAtlas()`, atlas-based `newPaletteTexture()` with slot allocation/GC recycling, `palSlot`-aware `SetData()` using `gl.TexSubImage2D` for sub-region writes, and `GetPalUV()` returning atlas UV with 0.5 pixel centering. Same cache optimization via shared atlas serial.
 
-### 7.3 Remaining Opportunities
+### 7.3 Configurable Settings
+
+- [x] **`[Debug] MemoryLimitMB`** (`config.go`, `main.go`, `defaultConfig.ini`) — Replaced hardcoded `debug.SetMemoryLimit(256*1024*1024)` with config value from `save/config.ini`. Clamped to ≥ 64 MB (0 = disabled). Default: 256 MB.
+- [x] **`[Video] PaletteAtlasSize`** (`config.go`, `render.go`, `defaultConfig.ini`) — Replaced hardcoded `const PalAtlasSize = 2048` with config-driven `var PalAtlasSize int32`. Clamped to ≥ 256 and rounded up to next power of two. Default: 2048 (16,384 palette slots).
+
+### 7.4 Remaining Opportunities
 
 1. **Texture.Release()** — Explicit GPU cleanup when SFFs are unloaded
 2. **SFF eviction** — When characters are removed from `sys.cgi`, release their SFF data
@@ -411,8 +423,8 @@ Every texture created via `generateTexture()` gets a `runtime.SetFinalizer` that
 - GPU memory is not released until GC runs (potentially much later than when a texture becomes unreachable).
 - If many textures are created in a burst (e.g., loading a large SFF), GPU memory peaks before GC catches up.
 
-**`render_gl33.go:379-381` — `Texture_GL33.CopyData()` is a no-op (empty body).**
-This means `TextureAtlas.Resize()` (`render.go:1195-1209`) creates a new texture, calls `clearTexture`, then calls `t.CopyData(&ta.texture)` — but the old atlas texture data is **never actually copied** to the new texture. After resize, all previously inserted glyph/image data in the atlas is lost. This is a correctness bug, not just a memory issue. *(Note: the font atlas has `resize: false` so this path is never hit for fonts, but any future use of resizable atlas would silently lose data.)*
+**`render_gl33.go:387-418` — `Texture_GL33.CopyData()` was fixed.**
+Previously a no-op, it now reads source via `gl.GetTexImage` → CPU buffer → `gl.TexSubImage2D`. GLES32 uses FBO `gl.CopyTexSubImage2D`. Vulkan uses `vk.CmdCopyImage`. All three backends preserve atlas content during resize, fixing the silent data loss bug (PLANS B1).
 
 **`render_gl33.go:186-209` — `textureSerialNumber` is a global uint64 incremented on every `generateTexture` call.**
 It's only used to detect stale texture handles in the texture cache. The counter itself is fine, but it means the cache (`texCacheTexSerial`/`texCacheLastUsed`) is invalidated on every `ChangeProgram` call (`render_gl33.go:1289-1294`), causing a full reset of the texture binding cache whenever switching between sprite and model shaders.

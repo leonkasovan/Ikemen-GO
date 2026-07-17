@@ -17,6 +17,7 @@ type Texture interface {
 	IsValid() bool
 	GetWidth() int32
 	GetHeight() int32
+	GetPalUV() [4]float32
 	CopyData(src *Texture)
 }
 
@@ -140,6 +141,10 @@ var vertexFontShader string
 // The global, platform-specific rendering backend
 var gfx Renderer
 var gfxFont FontRenderer
+
+// Size of the palette atlas texture (square, RGBA). Each palette is a 256x1 sub-region.
+// Set from config.Video.PaletteAtlasSize before renderer init.
+var PalAtlasSize int32 = 2048
 
 // Counter for unique texture cache serial numbers
 var textureSerialNumber uint64
@@ -761,6 +766,9 @@ func RenderSprite(rp RenderParams) {
 	// Texture binding
 	gfx.SetTexture("tex", rp.tex)
 	if rp.paltex != nil {
+		// Pass palette atlas UV coordinates to the shader
+		palUV := rp.paltex.GetPalUV()
+		gfx.SetUniformF("palUV", palUV[0], palUV[1], palUV[2], palUV[3])
 		gfx.SetTexture("pal", rp.paltex)
 	}
 
