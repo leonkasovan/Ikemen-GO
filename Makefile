@@ -235,6 +235,7 @@ deps-check:
 		exit 1; \
 	fi
 	@# Safe path check for MSYS2/Cygwin
+	echo "Safe path check: $(CURDIR)" >&2;
 	@case "$$(uname -s 2>/dev/null)" in \
 		MINGW* | MSYS* | CYGWIN*) \
 			case "$(CURDIR)" in \

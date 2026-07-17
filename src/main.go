@@ -192,15 +192,14 @@ func realMain() {
 	}
 	ftemp.Close()
 
-	// Initialize game and create window
-	// This is where the window is born!
-	sys.luaLState = sys.init(int32(sys.gameWidth), int32(sys.gameHeight))
-	//defer sys.shutdown()
-
-	// Apply palette atlas size from config before renderer init
+	// Apply palette atlas size from config BEFORE renderer init
 	if sys.cfg.Video.PaletteAtlasSize > 0 {
 		PalAtlasSize = sys.cfg.Video.PaletteAtlasSize
 	}
+
+	// Initialize game and create window
+	// This is where the window is born!
+	sys.luaLState = sys.init(int32(sys.gameWidth), int32(sys.gameHeight))
 
 	// Set a soft memory limit so Go returns freed pages to the OS instead of hoarding
 	// them (which on Windows can cause Task Manager to show 1 GB+ after loading SFFs).

@@ -31,6 +31,7 @@ type Texture_GL33 struct {  // (same layout as Texture_GLES32)
     offsetX int32    // Palette atlas: X offset within atlas (pixels)
     offsetY int32    // Palette atlas: Y offset within atlas (pixels)
     palSlot bool     // True if this is a sub-region of the palette atlas
+    atlasSize int32  // Atlas size at allocation time (0 for normal textures)
 }
 ```
 
@@ -356,6 +357,13 @@ if m.NumGC != lastGCStats.NumGC {
 - [x] **Fix `CopyData` for all render backends** (`render_gl33.go`, `render_gles32.go`, `render_vk.go`) — GL33: `gl.GetTexImage` → CPU → `gl.TexSubImage2D`. GLES32: FBO → `gl.CopyTexSubImage2D`. Vulkan: `vk.CmdCopyImage` with transfer barrier. All three now preserve atlas content during resize, fixing the silent data loss bug (PLANS B1).
 - [x] **Palette texture atlas (GL33)** (`render_gl33.go`, `render.go`, `shaders/sprite.frag.glsl`) — Replaced ~150 separate `256×1` GL palette textures with a single shared `2048×2048` atlas texture. Each palette is a `256×1` sub-region in the atlas, providing 16,384 slots. Added `palSlot` flag for proper sub-region writes via `gl.TexSubImage2D` and `palUV` uniform for per-slot UV coordinate lookup in the fragment shader. All palette slots share the atlas `serial` number so the texture cache hits instantly after the first palette bind per frame, reducing texture unit switches from ~15-19 per frame to 1.
 - [x] **Palette texture atlas (GLES32)** (`render_gles32.go`) — Identical implementation to GL33: `createPalAtlas()`, atlas-based `newPaletteTexture()` with slot allocation/GC recycling, `palSlot`-aware `SetData()` using `gl.TexSubImage2D` for sub-region writes, and `GetPalUV()` returning atlas UV with 0.5 pixel centering. Same cache optimization via shared atlas serial.
+- [x] **Palette slot usage counter** (`memdebug.go`, `render_gl33.go`, `render_gles32.go`) — Added `palSlotsUsed`/`palSlotsMax` atomic counters tracking concurrent palette atlas slot usage. `memPalSlotAlloc()` is called on slot allocation, `memPalSlotFree()` in the GC finalizer. Peak usage reported via `palSlots=%d/%d` in the periodic HEAP log line, enabling users to determine the minimum viable `PaletteAtlasSize` for their content.
+- [x] **Palette atlas capacity warning** (`memdebug.go`, `render_gl33.go`, `render_gles32.go`) — HEAP log now shows `palSlots=used/peak/total` (total = atlas capacity). Warns at ≥90% usage and ≥100% (exhausted). `memPalSlotSetTotal()` records the capacity from `createPalAtlas()`.
+- [x] **Palette atlas auto-resize** (`render_gl33.go`, `render_gles32.go`) — When `newPaletteTexture()` finds the free slot queue empty, it calls `autoResizeAtlas()` before falling back to standalone textures. Doubles the atlas (cap 4096), persists the new size to config via `sys.cfg.SetValueUpdate("Video.PaletteAtlasSize")`, creates a new larger atlas, and fills only the new slot indices. Old atlas kept alive in `oldPalAtlases[]` slice to prevent dangling GL handles on existing palette textures. The resized config takes effect immediately and persists across restarts.
+
+- [x] **Fix palette config init order** (`main.go`) — Moved `PalAtlasSize = sys.cfg.Video.PaletteAtlasSize` from AFTER `sys.init()` to BEFORE it. Previously the atlas was created at the Go default (2048) while `GetPalUV()` used the config value (256), producing 8×-scaled UV coordinates that caused black sprites and backgrounds on startup with smaller config values.
+
+- [x] **Fix UV mismatch after atlas auto-resize** (`render_gl33.go`, `render_gles32.go`) — Added `atlasSize int32` field to `Texture_GL33`/`Texture_GLES32`, captured at allocation time from `r.palAtlasSize`. `GetPalUV()` now uses `t.atlasSize` (per-texture) instead of the global `PalAtlasSize`. After auto-resize, old palette textures binding the old (smaller) atlas would compute UVs for the new (larger) atlas, sampling only half the palette colors → garbled/black sprites. The fix ensures each texture's UV computation always matches its actual GPU texture dimensions.
 
 ### 7.3 Configurable Settings
 

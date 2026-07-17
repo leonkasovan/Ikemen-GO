@@ -216,15 +216,16 @@ func (r *Renderer_GLES32) linkProgram(params ...uint32) (program uint32, err err
 // Texture_GLES32
 
 type Texture_GLES32 struct {
-	width   int32
-	height  int32
-	depth   int32
-	filter  bool
-	handle  uint32 // GL side handle
-	serial  uint64 // Go side serial number
-	offsetX int32  // Palette atlas: X offset within atlas (pixels). 0 for normal textures.
-	offsetY int32  // Palette atlas: Y offset within atlas (pixels). 0 for normal textures.
-	palSlot bool   // True if this is a sub-region of the palette atlas.
+	width     int32
+	height    int32
+	depth     int32
+	filter    bool
+	handle    uint32 // GL side handle
+	serial    uint64 // Go side serial number
+	offsetX   int32  // Palette atlas: X offset within atlas (pixels). 0 for normal textures.
+	offsetY   int32  // Palette atlas: Y offset within atlas (pixels). 0 for normal textures.
+	palSlot   bool   // True if this is a sub-region of the palette atlas.
+	atlasSize int32  // Size of the palette atlas when this slot was allocated. 0 for normal textures.
 }
 
 // Helper that wraps the actual GL call to generate a texture
@@ -280,17 +281,57 @@ func (r *Renderer_GLES32) createPalAtlas() {
 
 	LogMessage("[PalAtlas] Created %dx%d palette atlas with %d slots",
 		PalAtlasSize, PalAtlasSize, PalAtlasSize*(PalAtlasSize/256))
+
+	// Record total capacity for the slot-usage warning in the HEAP log.
+	memPalSlotSetTotal(int64(PalAtlasSize * (PalAtlasSize / 256)))
+}
+
+func (r *Renderer_GLES32) autoResizeAtlas() {
+	newSize := r.palAtlasSize * 2
+	if newSize > 4096 {
+		LogMessage("[PalAtlas] Already at maximum size %d — cannot resize further.", r.palAtlasSize)
+		return
+	}
+
+	// Keep old atlas alive — existing palette textures still reference it via handle.
+	r.oldPalAtlases = append(r.oldPalAtlases, r.palAtlas)
+
+	oldSlotCount := r.palAtlasSize * (r.palAtlasSize / 256)
+
+	// Update config for persistence (takes effect on next launch).
+	sys.cfg.SetValueUpdate("Video.PaletteAtlasSize", newSize)
+	PalAtlasSize = newSize
+
+	// Create new, larger atlas.
+	r.palAtlasSize = newSize
+	r.palAtlas = r.newTexture(newSize, newSize, 32, false).(*Texture_GLES32)
+	clearData := make([]byte, newSize*newSize*4)
+	r.palAtlas.SetData(clearData)
+
+	// Fill free slot queue with ONLY the new slots (old slots are in-use).
+	for i := oldSlotCount; i < newSize*(newSize/256); i++ {
+		r.palFreeSlots.PushBack(i)
+	}
+
+	memPalSlotSetTotal(int64(newSize * (newSize / 256)))
+
+	LogMessage("[PalAtlas] Auto-resized from %dx%d to %dx%d — %d additional slots available (config saved)",
+		newSize/2, newSize/2, newSize, newSize, newSize*(newSize/256)-oldSlotCount)
 }
 
 func (r *Renderer_GLES32) newPaletteTexture() Texture {
 	if r.palFreeSlots == nil || r.palFreeSlots.Len() == 0 {
-		// Should not happen unless createPalAtlas wasn't called, or we somehow
-		// exhaust all 16384 palette slots (unrealistic for any game).
+		// Try auto-resizing the atlas before falling back to standalone textures.
+		r.autoResizeAtlas()
+	}
+
+	if r.palFreeSlots == nil || r.palFreeSlots.Len() == 0 {
 		fmt.Printf("[PalAtlas] Out of palette slots! Creating fallback standalone texture.\n")
 		return r.newTexture(256, 1, 32, false)
 	}
 
 	slot := r.palFreeSlots.Remove(r.palFreeSlots.Front()).(int32)
+	memPalSlotAlloc()
 
 	// Calculate slot position within the atlas.
 	// Layout: slots arranged in rows of (PalAtlasSize / 256) per row.
@@ -301,21 +342,24 @@ func (r *Renderer_GLES32) newPaletteTexture() Texture {
 	offsetX := (slot % slotsPerRow) * 256
 
 	t := &Texture_GLES32{
-		width:   256,
-		height:  1,
-		depth:   32,
-		filter:  false,
-		handle:  r.palAtlas.handle,
-		serial:  r.palAtlas.serial,
-		offsetX: offsetX,
-		offsetY: offsetY,
-		palSlot: true,
+		width:     256,
+		height:    1,
+		depth:     32,
+		filter:    false,
+		handle:    r.palAtlas.handle,
+		serial:    r.palAtlas.serial,
+		offsetX:   offsetX,
+		offsetY:   offsetY,
+		palSlot:   true,
+		atlasSize: r.palAtlasSize,
 	}
 
-	// When the texture is garbage collected, return the slot to the free list.
+	// When the texture is garbage collected, return the slot to the free list
+	// and decrement the usage counter.
 	sid := slot // capture by value for the closure
 	runtime.SetFinalizer(t, func(t *Texture_GLES32) {
 		sys.mainThreadTask <- func() {
+			memPalSlotFree()
 			if r.palFreeSlots != nil {
 				r.palFreeSlots.PushFront(sid)
 			}
@@ -548,9 +592,11 @@ func (t *Texture_GLES32) GetHeight() int32 {
 
 func (t *Texture_GLES32) GetPalUV() [4]float32 {
 	if t.palSlot {
-		// Palette atlas slot: compute UV relative to the shared atlas texture.
-		// Add 0.5 pixel centering to avoid texture bleeding at slot edges.
-		atlasSize := float32(PalAtlasSize)
+		// Palette atlas slot: compute UV relative to the atlas texture size at
+		// allocation time — NOT the current global PalAtlasSize, which may have
+		// changed due to a later auto-resize. Using the stale global would produce
+		// wrong UVs when old palettes reference the old (smaller) atlas texture.
+		atlasSize := float32(t.atlasSize)
 		u1 := (float32(t.offsetX) + 0.5) / atlasSize
 		v1 := (float32(t.offsetY) + 0.5) / atlasSize
 		uSize := float32(256) / atlasSize
@@ -650,9 +696,10 @@ type Renderer_GLES32 struct {
 	enableShadow bool
 
 	// Palette atlas
-	palAtlas     *Texture_GLES32 // Shared atlas texture for all palettes
-	palAtlasSize int32           // Size of atlas (e.g., 2048)
-	palFreeSlots *list.List      // Queue of free slot indices
+	palAtlas      *Texture_GLES32   // Shared atlas texture for all palettes
+	palAtlasSize  int32             // Size of atlas (e.g., 2048)
+	palFreeSlots  *list.List        // Queue of free slot indices
+	oldPalAtlases []*Texture_GLES32 // Kept alive so existing palette textures don't dangle
 	GLES32State
 }
 type GLES32State struct {
@@ -1086,6 +1133,7 @@ func (r *Renderer_GLES32) Close() {
 	// Palette atlas cleaned up via GC finalizer on palAtlas
 	r.palAtlas = nil
 	r.palFreeSlots = nil
+	r.oldPalAtlases = nil
 }
 
 func (r *Renderer_GLES32) InitStateCache() {

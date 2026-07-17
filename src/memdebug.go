@@ -18,7 +18,16 @@ var (
 	memTextureAlive int64
 	memGPUBytes     uint64
 	memGPUBytesPeak uint64
+	palSlotsUsed    int64 // Current palette atlas slots allocated
+	palSlotsMax     int64 // Peak palette atlas slots allocated
+	palSlotsTotal   int64 // Total palette atlas slots available
 )
+
+// memPalSlotSetTotal records the total number of palette slots in the atlas.
+// This is set once by createPalAtlas() during renderer init.
+func memPalSlotSetTotal(total int64) {
+	atomic.StoreInt64(&palSlotsTotal, total)
+}
 
 func memBpp(depth int32) int32 {
 	bpp := depth / 8
@@ -82,6 +91,27 @@ func memGlyphs(low, high rune, fontCharCount, atlasCount int) {
 
 // memMonitorStart launches a background goroutine logging GC / heap stats.
 // It logs a periodic heap snapshot plus a line whenever a GC cycle runs.
+// memPalSlotAlloc records one palette atlas slot allocation and returns the
+// current number of used slots and the peak (max concurrent) slots so far.
+func memPalSlotAlloc() (used int64, peak int64) {
+	u := atomic.AddInt64(&palSlotsUsed, 1)
+	// Track peak (CAS loop — same pattern as memGPUBytesPeak)
+	for {
+		m := atomic.LoadInt64(&palSlotsMax)
+		if u <= m {
+			return u, m
+		}
+		if atomic.CompareAndSwapInt64(&palSlotsMax, m, u) {
+			return u, u
+		}
+	}
+}
+
+// memPalSlotFree records one palette atlas slot release (via GC finalizer).
+func memPalSlotFree() {
+	atomic.AddInt64(&palSlotsUsed, -1)
+}
+
 func memMonitorStart() {
 	go func() {
 		var lastNumGC uint32
@@ -97,10 +127,23 @@ func memMonitorStart() {
 					m.HeapObjects, runtime.NumGoroutine(), atomic.LoadInt64(&memTextureAlive))
 				lastNumGC = m.NumGC
 			}
-			memLog("HEAP: alloc=%dMB sys=%dMB objects=%d texturesAlive=%d gpuBytes=%d peakGPUBytes=%d",
+					used := atomic.LoadInt64(&palSlotsUsed)
+			peak := atomic.LoadInt64(&palSlotsMax)
+			total := atomic.LoadInt64(&palSlotsTotal)
+			memLog("HEAP: alloc=%dMB sys=%dMB objects=%d texturesAlive=%d palSlots=%d/peak=%d/total=%d gpuBytes=%d peakGPUBytes=%d",
 				m.HeapAlloc/1e6, m.Sys/1e6, m.HeapObjects,
-				atomic.LoadInt64(&memTextureAlive), atomic.LoadUint64(&memGPUBytes),
+				atomic.LoadInt64(&memTextureAlive),
+				used, peak, total,
+				atomic.LoadUint64(&memGPUBytes),
 				atomic.LoadUint64(&memGPUBytesPeak))
+			// Warn if palette slot usage exceeds the atlas capacity
+			if total > 0 && used >= total {
+				memLog("WARNING: Palette atlas exhausted! Used %d of %d slots — consider increasing PaletteAtlasSize",
+					used, total)
+			} else if total > 0 && used >= total*90/100 {
+				memLog("WARNING: Palette atlas nearly full! Used %d of %d slots (%d%%)",
+					used, total, used*100/total)
+			}
 		}
 	}()
 }

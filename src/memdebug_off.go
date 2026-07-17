@@ -12,5 +12,8 @@ func memTextureFreed(handle uint32, serial uint64)           {}
 func memGPUBytesSub(width, height, depth int32)             {}
 func memAtlasResize(oldW, oldH, newW, newH int32)         {}
 func memGlyphs(low, high rune, fontCharCount, atlasCount int) {}
+func memPalSlotAlloc() (used int64, peak int64)              { return 0, 0 }
+func memPalSlotFree()                                        {}
+func memPalSlotSetTotal(total int64)                         {}
 func memMonitorStart()                                       {}
 
