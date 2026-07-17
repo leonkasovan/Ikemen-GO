@@ -490,17 +490,23 @@ func Pal32ToBytes(pal []uint32) []byte {
 		return nil
 	}
 
-	// Fast path if palette is already 256 colors
+	// Fast path if palette is already 256 colors.
+	// Safe because the caller retains a reference to the palette buffer.
 	if len(pal) == 256 {
 		return unsafe.Slice((*byte)(unsafe.Pointer(&pal[0])), 1024)
 	}
 
-	// Otherwise add padding because the GPU expects 256 colors
-	// Extra colors will just be invisible because of the 0 alpha
-	padded := make([]uint32, 256)
-	copy(padded, pal)
-
-	return unsafe.Slice((*byte)(unsafe.Pointer(&padded[0])), 1024)
+	// Pad to 256 colors. Allocate a proper []byte so the GC tracks the
+	// backing memory — unsafe.Slice of a locally-scoped uint32 slice would
+	// leave the heap array unreachable after this function returns (bug B2).
+	b := make([]byte, 1024)
+	for i, c := range pal {
+		b[i*4+0] = byte(c)
+		b[i*4+1] = byte(c >> 8)
+		b[i*4+2] = byte(c >> 16)
+		b[i*4+3] = byte(c >> 24)
+	}
+	return b
 }
 
 func NewTextureFromPalette(pal []uint32) Texture {
@@ -575,7 +581,7 @@ type Sprite struct {
 	palidx   int
 	rle      int
 	coldepth byte
-	paltemp  []uint32
+	palhash  uint64 // FNV-1a hash of the palette data (0 = unset)
 	PalTex   Texture
 	// Deferred texture creation: pixel data stored during SFF loading and
 	// uploaded to the GPU lazily when the sprite is first rendered.
@@ -588,6 +594,20 @@ type Sprite struct {
 
 func (s *Sprite) isBlank() bool {
 	return (s.Tex == nil && s.pendingDepth == 0) || s.Size[0] == 0 || s.Size[1] == 0
+}
+
+// releaseTextures immediately frees the GPU resources held by this sprite's
+// textures. Safe to call multiple times. After this, the sprite should not
+// be rendered until new textures are created (via ensureTex / CachePalTex).
+func (s *Sprite) releaseTextures() {
+	if s.Tex != nil {
+		s.Tex.Release()
+		s.Tex = nil
+	}
+	if s.PalTex != nil {
+		s.PalTex.Release()
+		s.PalTex = nil
+	}
 }
 
 func newSprite() *Sprite {
@@ -1299,32 +1319,47 @@ func (s *Sprite) ensureTex() {
 	s.pendingH = 0
 }
 
+// hashPal computes a 64-bit FNV-1a hash of the given palette slice.
+// This is used to detect when the palette has changed (e.g. due to PalFX)
+// so the GPU palette texture can be updated. A 64-bit hash gives a collision
+// probability of ~2^-64 per comparison, which is negligible for this use case.
+func hashPal(pal []uint32) uint64 {
+	var h uint64 = 14695981039346656037 // FNV-1a offset basis
+	for _, c := range pal {
+		// Process each byte of the uint32 in little-endian order
+		for i := 0; i < 4; i++ {
+			b := byte(c >> (i * 8))
+			h ^= uint64(b)
+			h *= 1099511628211 // FNV-1a prime
+		}
+	}
+	return h
+}
+
 func (s *Sprite) CachePalTex(pal []uint32) Texture {
-	match := true
-	if s.PalTex == nil || len(pal) != len(s.paltemp) {
-		match = false
+	// Compute hash of the incoming palette
+	newHash := hashPal(pal)
+
+	// If cached texture matches the hash, reuse it (no update needed)
+	if s.PalTex != nil && s.palhash == newHash && s.palhash != 0 {
+		return s.PalTex
+	}
+
+	// Log first-time palette texture creation (newTexture=true). Suppress the
+	// per-frame SetData spam (newTexture=false) since it's driven by animated
+	// PalFX and is expected visual behaviour, not a memory concern.
+	if s.PalTex == nil {
+		memLog("PalTex cache miss: sprite=%p colors=%d newTexture=true", s, len(pal))
+		s.PalTex = NewTextureFromPalette(pal)
 	} else {
-		for i := range pal {
-			if pal[i] != s.paltemp[i] {
-				match = false
-				break
-			}
-		}
+		s.PalTex.SetData(Pal32ToBytes(pal))
 	}
-	// If cached texture doesn't match, update or replace it
-	if !match {
-		// Log first-time palette texture creation (newTexture=true). Suppress the
-		// per-frame SetData spam (newTexture=false) since it's driven by animated
-		// PalFX and is expected visual behaviour, not a memory concern.
-		if s.PalTex == nil {
-			memLog("PalTex cache miss: sprite=%p colors=%d newTexture=true", s, len(pal))
-			s.PalTex = NewTextureFromPalette(pal)
-		} else {
-			s.PalTex.SetData(Pal32ToBytes(pal))
-		}
-		// Update cache reference for the next comparison
-		s.paltemp = append([]uint32{}, pal...)
+
+	// Update hash for next comparison
+	if s.palhash == 0 {
+		memPalhashAlloc()
 	}
+	s.palhash = newHash
 	return s.PalTex
 }
 

@@ -207,6 +207,9 @@ func (r *Renderer_GL33) generateTexture(width, height, depth int32, filter bool)
 	memTextureCreated(width, height, depth, h, textureSerialNumber)
 
 	runtime.SetFinalizer(tex, func(t *Texture_GL33) {
+		if t.handle == 0 {
+			return // already released via Release()
+		}
 		sys.mainThreadTask <- func() {
 			gl.DeleteTextures(1, &t.handle)
 			memTextureFreed(t.handle, t.serial)
@@ -215,6 +218,28 @@ func (r *Renderer_GL33) generateTexture(width, height, depth int32, filter bool)
 	})
 
 	return tex
+}
+
+// Release immediately frees the GPU resources held by this texture.
+// Safe to call multiple times — subsequent calls are no-ops.
+// After Release(), the texture's handle is invalid and the finalizer
+// will skip GL cleanup to prevent double-free.
+func (t *Texture_GL33) Release() {
+	if t.handle == 0 {
+		return
+	}
+	if !t.palSlot {
+		// Regular texture (non-atlas): delete the GL handle.
+		sys.mainThreadTask <- func() {
+			gl.DeleteTextures(1, &t.handle)
+			memTextureFreed(t.handle, t.serial)
+			memGPUBytesSub(t.width, t.height, t.depth)
+		}
+	}
+	// Palette atlas slots share the atlas GL handle — only the finalizer
+	// returns the slot to the free list. We just zero the handle here so
+	// the finalizer guard skips GL deletion.
+	t.handle = 0
 }
 
 // Creates a generic texture
@@ -324,10 +349,14 @@ func (r *Renderer_GL33) newPaletteTexture() Texture {
 
 	memTextureCreated(256, 1, 32, r.palAtlas.handle, r.palAtlas.serial)
 
-	// When the texture is garbage collected, return the slot to the free list
-	// and decrement the usage counter.
+	// When the texture is garbage collected (or explicitly released), return the
+	// slot to the free list and decrement the usage counter.
+	// The handle guard prevents double-return when Release() is called explicitly.
 	sid := slot // capture by value for the closure
 	runtime.SetFinalizer(t, func(t *Texture_GL33) {
+		if t.handle == 0 {
+			return // already released or slot already returned
+		}
 		sys.mainThreadTask <- func() {
 			memPalSlotFree()
 			if r.palFreeSlots != nil {

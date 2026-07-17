@@ -15,5 +15,6 @@ func memGlyphs(low, high rune, fontCharCount, atlasCount int) {}
 func memPalSlotAlloc() (used int64, peak int64)              { return 0, 0 }
 func memPalSlotFree()                                        {}
 func memPalSlotSetTotal(total int64)                         {}
+func memPalhashAlloc()                                        {}
 func memMonitorStart()                                       {}
 

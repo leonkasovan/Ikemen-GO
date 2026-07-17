@@ -21,6 +21,7 @@ var (
 	palSlotsUsed    int64 // Current palette atlas slots allocated
 	palSlotsMax     int64 // Peak palette atlas slots allocated
 	palSlotsTotal   int64 // Total palette atlas slots available
+	palhashCount    int64 // Number of sprites with computed palhash (8 bytes each)
 )
 
 // memPalSlotSetTotal records the total number of palette slots in the atlas.
@@ -112,6 +113,12 @@ func memPalSlotFree() {
 	atomic.AddInt64(&palSlotsUsed, -1)
 }
 
+// memPalhashAlloc records that a sprite has computed a palhash (currently 8 bytes).
+// Replaces the old paltemp allocation that held a full 1 KB palette copy.
+func memPalhashAlloc() {
+	atomic.AddInt64(&palhashCount, 1)
+}
+
 func memMonitorStart() {
 	go func() {
 		var lastNumGC uint32
@@ -130,10 +137,12 @@ func memMonitorStart() {
 					used := atomic.LoadInt64(&palSlotsUsed)
 			peak := atomic.LoadInt64(&palSlotsMax)
 			total := atomic.LoadInt64(&palSlotsTotal)
-			memLog("HEAP: alloc=%dMB sys=%dMB objects=%d texturesAlive=%d palSlots=%d/peak=%d/total=%d gpuBytes=%d peakGPUBytes=%d",
+			paltemps := atomic.LoadInt64(&palhashCount)
+			memLog("HEAP: alloc=%dMB sys=%dMB objects=%d texturesAlive=%d palSlots=%d/peak=%d/total=%d palthashes=%d palhashBytes=%d gpuBytes=%d peakGPUBytes=%d",
 				m.HeapAlloc/1e6, m.Sys/1e6, m.HeapObjects,
 				atomic.LoadInt64(&memTextureAlive),
 				used, peak, total,
+				paltemps, paltemps*8,
 				atomic.LoadUint64(&memGPUBytes),
 				atomic.LoadUint64(&memGPUBytesPeak))
 			// Warn if palette slot usage exceeds the atlas capacity

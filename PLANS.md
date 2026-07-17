@@ -370,15 +370,18 @@ if m.NumGC != lastGCStats.NumGC {
 - [x] **`[Debug] MemoryLimitMB`** (`config.go`, `main.go`, `defaultConfig.ini`) — Replaced hardcoded `debug.SetMemoryLimit(256*1024*1024)` with config value from `save/config.ini`. Clamped to ≥ 64 MB (0 = disabled). Default: 256 MB.
 - [x] **`[Video] PaletteAtlasSize`** (`config.go`, `render.go`, `defaultConfig.ini`) — Replaced hardcoded `const PalAtlasSize = 2048` with config-driven `var PalAtlasSize int32`. Clamped to ≥ 256 and rounded up to next power of two. Default: 2048 (16,384 palette slots).
 
-### 7.4 Remaining Opportunities
+### 7.4 Completed
 
-1. **Texture.Release()** — Explicit GPU cleanup when SFFs are unloaded
-2. **SFF eviction** — When characters are removed from `sys.cgi`, release their SFF data
-3. **`paltemp` hash instead of full copy** — Store `uint64` hash of palette instead of full `[]uint32`
-4. **Pool RLE decode buffers** — `sync.Pool` for `[]byte` buffers
-5. **Fix `Pal32ToBytes` for non-256 palettes** — Return properly retained slice
-6. **Virtual texture streaming** — Load sprites on-demand
-7. **GPU memory budget** — Track total GPU allocation and evict LRU textures
+- [x] **Texture.Release()** (`render.go`, `render_gl33.go`, `render_gles32.go`, `render_vk.go`) — Added `Release()` to the `Texture` interface. GL33/GLES32: queues `gl.DeleteTextures` on the main thread + zeros `handle`. VK: pushes `VkImage`/view/sampler/allocation to deferred destruction queue + sets `img = nil`. All three backends have double-free guards in their GC finalizers. Palette atlas slots are no-ops (shared atlas handle owned by finalizer).
+- [x] **`paltemp` → `palhash`** (`image.go`, `system.go`, `memdebug.go`) — Replaced per-sprite `[]uint32` palette cache copy (~1 KB heap alloc) with `uint64` FNV-1a hash (8 bytes inline, no heap alloc). `CachePalTex()` now compares a single 64-bit integer instead of a 1024-byte slice. Reduces per-sprite palette cache memory by ~99.2%.
+
+### 7.5 Remaining Opportunities
+
+1. **SFF eviction** — When characters are removed from `sys.cgi`, release their SFF data
+2. **Pool RLE decode buffers** — `sync.Pool` for `[]byte` buffers
+3. **Fix `Pal32ToBytes` for non-256 palettes** — Return properly retained slice
+4. **Virtual texture streaming** — Load sprites on-demand
+5. **GPU memory budget** — Track total GPU allocation and evict LRU textures
 
 ---
 

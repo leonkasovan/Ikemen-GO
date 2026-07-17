@@ -6072,12 +6072,11 @@ func (l *Loader) prepareTurnsFaces(pn int, fa *FightScreenFace, nm *FightScreenN
 				// Pull selected palette index (1-based)
 				targetPal := sc.sff.palList.Get(int(palIdx) - 1)
 				if targetPal != nil {
-					// Decouple clone from global SFF palettes
-					spr.Pal = make([]uint32, len(targetPal))
-					copy(spr.Pal, targetPal)
+					// Decouple clone from global SFF palettes				spr.Pal = make([]uint32, len(targetPal))
+				copy(spr.Pal, targetPal)
 
-					spr.paltemp = make([]uint32, len(targetPal))
-					copy(spr.paltemp, targetPal)
+					// Pre-compute hash for the new palette
+					spr.palhash = hashPal(targetPal)
 
 					// Force lazy loading for unique recolored texture
 					spr.PalTex = nil

@@ -153,12 +153,13 @@ endif
 BINARY       := $(OUTDIR)/$(BINNAME)
 SRC_SYSO     := src/rsrc_windows.syso
 DELAY_STAMP  := $(DELAYLIB_DIR)/.delaylibs_done
+BUNDLE_STAMP := $(LIBDIR)/.bundle_done
 
 # ─── Phony Targets ───────────────────────────────────────────────────────────
 .PHONY: all release debug win32 help \
         deps-check check-sdl2 check-libxmp check-go-env \
         ffdeps _build-ffmpeg \
-        winres delaylibs binary bundle install \
+        winres delaylibs binary install \
         screenpack \
         test test-debug test-bench \
         clean distclean FORCE
@@ -445,8 +446,9 @@ binary: check-go-env $(SRC_SYSO) $(DELAY_STAMP)
 # Bundle Shared DLLs
 # ===========================================================================
 
-.PHONY: bundle
-bundle:
+bundle: $(BUNDLE_STAMP)
+
+$(BUNDLE_STAMP): $(BINARY)
 	@echo "==> Bundling runtime DLLs to $(LIBDIR)/..."
 	mkdir -p $(LIBDIR)
 	if [ -d "$(FFMPEG_PREFIX)/bin" ]; then
@@ -461,6 +463,7 @@ bundle:
 		[ -f "$$d" ] && cp -av "$$d" "$(LIBDIR)/" 2>/dev/null || true
 	done
 	@echo "==> Runtime DLLs bundled in $(LIBDIR)/"
+	touch $@
 
 # ===========================================================================
 # Install — assemble a runnable distribution in $(INSTALLDIR)
@@ -524,7 +527,7 @@ clean:
 	rm -f $(BINARY) 2>/dev/null || true
 	rm -f $(OUTDIR)/Ikemen_GO.exe $(OUTDIR)/Ikemen_GO_x86.exe $(OUTDIR)/Ikemen_CPP.exe $(OUTDIR)/Ikemen_GO_debug.exe 2>/dev/null || true
 	rm -f $(SRC_SYSO) 2>/dev/null || true
-	rm -f $(DELAY_STAMP) 2>/dev/null || true
+	rm -f $(DELAY_STAMP) $(BUNDLE_STAMP) 2>/dev/null || true
 	rm -rf $(DELAYLIB_DIR) 2>/dev/null || true
 	rm -rf $(LIBDIR) 2>/dev/null || true
 	rm -rf $(WINRES_DIR) 2>/dev/null || true

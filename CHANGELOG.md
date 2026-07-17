@@ -20,9 +20,16 @@
 - `debug.SetMemoryLimit` now reads from config instead of being hardcoded to 256 MB.
 - `PLANS.md` updated with completed palette atlas entries and corrected `CopyData` fix references.
 
+### Added
+
+- **Deterministic GPU texture cleanup** (`render.go`, `render_gl33.go`, `render_gles32.go`, `render_vk.go`) — Added `Release()` to the `Texture` interface, enabling explicit GPU resource freeing when SFFs are unloaded or sprites are evicted. GL33/GLES32: queued `gl.DeleteTextures` on the main thread with `handle` zeroed to prevent double-free in finalizers. Vulkan: pushes to deferred destruction queue with `img = nil` guard. Palette atlas slots are no-ops (handled by finalizer slot recycling).
+  
+- **`paltemp` → `palhash` optimization** (`image.go`, `system.go`, `memdebug.go`) — Replaced per-sprite `[]uint32` palette cache copy (~1 KB heap allocation) with a `uint64` FNV-1a hash (8 bytes inline, zero heap). `CachePalTex()` now compares a single 64-bit integer instead of a 1024-byte slice. HEAP log shows `palthashes=%d palhashBytes=%d` (e.g. `159 palthashes, 1272 bytes` vs the old `159 KB`). Reduces per-sprite palette cache memory by ~99.2%.
+
 ### Fixed
 
 - Compile error in `render_gl33.go` where `PalAtlasSize` type change (`int32` vs untyped const) caused loop variable type mismatch.
+- Compile error in `render_vk.go` where `Release()` attempted `vk.ImageView(0)` and `vk.Sampler(0)` casts — these types are structs, not integer handles, so the cast was invalid. Removed unnecessary nil-out of imageView/sampler (finalizer guard only checks `t.img`).
 
 - **Palette atlas config init order** — `PalAtlasSize` was read from config AFTER `sys.init()` created the atlas at the Go default (2048). `GetPalUV()` used the config value (256), producing wrong UV coordinates → black sprites/backgrounds when `PaletteAtlasSize < 2048`. Fixed by moving the config read before `sys.init()`.
 

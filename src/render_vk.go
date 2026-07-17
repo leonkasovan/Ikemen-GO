@@ -52,10 +52,32 @@ type Texture_VK struct {
 	imageView  vk.ImageView
 	sampler    vk.Sampler
 	allocation *VulkanAllocation
+	palSlot    bool
+}
+
+// Release immediately frees the GPU resources held by this texture.
+// Safe to call multiple times — subsequent calls are no-ops.
+// Palette atlas slots are a no-op here (the finalizer returns the slot).
+// For regular textures, the VkImage is pushed to the deferred destruction
+// queue and img is set to nil so the finalizer skips double-free.
+func (t *Texture_VK) Release() {
+	if t.palSlot {
+		return // slot return handled by finalizer
+	}
+	if t.img == nil {
+		return // already released
+	}
+	r := gfx.(*Renderer_VK)
+	r.destroyResourceQueues[r.destroyResourceQueueIndex] <- VulkanResource{
+		VulkanResourceTypeTexture,
+		[]interface{}{t.img, t.imageView, t.sampler, t.allocation},
+	}
+	t.img = nil   // finalizer guard — finalizer checks t.img == nil before double-free
+	t.allocation = nil
 }
 
 func (r *Renderer_VK) newTexture(width, height, depth int32, filter bool) Texture {
-	t := &Texture_VK{width, height, depth, filter, 1, [2]int32{0, 0}, [4]float32{0, 0, 1, 1}, nil, nil, nil, nil}
+	t := &Texture_VK{width: width, height: height, depth: depth, filter: filter, mipLevels: 1, uvst: [4]float32{0, 0, 1, 1}, palSlot: false}
 	format := t.MapInternalFormat(Max(t.depth, 8))
 	t.img = r.CreateImage(uint32(t.width), uint32(t.height), format, t.mipLevels, 1, vk.ImageUsageFlags(vk.ImageUsageTransferDstBit|vk.ImageUsageSampledBit), 1, vk.ImageTilingOptimal, false)
 
@@ -67,6 +89,9 @@ func (r *Renderer_VK) newTexture(width, height, depth int32, filter bool) Textur
 	t.imageView = r.CreateImageView(t.img, format, 0, 1, 1, false)
 
 	runtime.SetFinalizer(t, func(t *Texture_VK) {
+		if t.img == nil {
+			return // already released via Release()
+		}
 		r.destroyResourceQueues[r.destroyResourceQueueIndex] <- VulkanResource{
 			VulkanResourceTypeTexture,
 			[]interface{}{t.img, t.imageView, t.sampler, t.allocation},
@@ -76,7 +101,7 @@ func (r *Renderer_VK) newTexture(width, height, depth int32, filter bool) Textur
 }
 
 func (r *Renderer_VK) newModelTexture(width, height, depth int32, filter bool) Texture {
-	t := &Texture_VK{width, height, depth, filter, 1, [2]int32{0, 0}, [4]float32{0, 0, 1, 1}, nil, nil, nil, nil}
+	t := &Texture_VK{width: width, height: height, depth: depth, filter: filter, mipLevels: 1, uvst: [4]float32{0, 0, 1, 1}, palSlot: false}
 	format := t.MapInternalFormat(Max(t.depth, 8))
 	t.mipLevels = uint32(math.Floor(math.Log2(float64(Max(int(width), int(height))))) + 1)
 	t.img = r.CreateImage(uint32(t.width), uint32(t.height), format, t.mipLevels, 1, vk.ImageUsageFlags(vk.ImageUsageTransferSrcBit|vk.ImageUsageTransferDstBit|vk.ImageUsageSampledBit), 1, vk.ImageTilingOptimal, false)
@@ -89,6 +114,9 @@ func (r *Renderer_VK) newModelTexture(width, height, depth int32, filter bool) T
 	t.imageView = r.CreateImageView(t.img, format, 0, t.mipLevels, 1, false)
 
 	runtime.SetFinalizer(t, func(t *Texture_VK) {
+		if t.img == nil {
+			return // already released via Release()
+		}
 		r.destroyResourceQueues[r.destroyResourceQueueIndex] <- VulkanResource{
 			VulkanResourceTypeTexture,
 			[]interface{}{t.img, t.imageView, t.sampler, t.allocation},
@@ -98,7 +126,7 @@ func (r *Renderer_VK) newModelTexture(width, height, depth int32, filter bool) T
 }
 
 func (r *Renderer_VK) newDataTexture(width, height int32) Texture {
-	t := &Texture_VK{width, height, 32 * 4, false, 1, [2]int32{0, 0}, [4]float32{0, 0, 1, 1}, nil, nil, nil, nil}
+	t := &Texture_VK{width: width, height: height, depth: 32 * 4, filter: false, mipLevels: 1, uvst: [4]float32{0, 0, 1, 1}, palSlot: false}
 	format := t.MapInternalFormat(Max(t.depth, 8))
 	t.img = r.CreateImage(uint32(t.width), uint32(t.height), format, t.mipLevels, 1, vk.ImageUsageFlags(vk.ImageUsageColorAttachmentBit|vk.ImageUsageSampledBit|vk.ImageUsageTransferDstBit), 1, vk.ImageTilingOptimal, false)
 
@@ -111,6 +139,9 @@ func (r *Renderer_VK) newDataTexture(width, height int32) Texture {
 	t.sampler = r.GetSampler(VulkanSamplerInfo{TextureSamplingFilterNearest, TextureSamplingFilterNearest, TextureSamplingWrapClampToEdge, TextureSamplingWrapClampToEdge})
 
 	runtime.SetFinalizer(t, func(t *Texture_VK) {
+		if t.img == nil {
+			return // already released via Release()
+		}
 		r.destroyResourceQueues[r.destroyResourceQueueIndex] <- VulkanResource{
 			VulkanResourceTypeTexture,
 			[]interface{}{t.img, t.imageView, t.sampler, t.allocation},
@@ -125,7 +156,7 @@ func (r *Renderer_VK) newHDRTexture(width, height int32) Texture {
 	return t
 }
 func (r *Renderer_VK) newCubeMapTexture(widthHeight int32, mipmap bool, lowestMipLevel int32) Texture {
-	t := &Texture_VK{widthHeight, widthHeight, 128, false, 1, [2]int32{0, 0}, [4]float32{0, 0, 1, 1}, nil, nil, nil, nil}
+	t := &Texture_VK{width: widthHeight, height: widthHeight, depth: 128, filter: false, mipLevels: 1, uvst: [4]float32{0, 0, 1, 1}, palSlot: false}
 	if mipmap {
 		t.mipLevels = uint32(math.Floor(math.Log2(float64(widthHeight)))+1) - uint32(lowestMipLevel)
 		t.sampler = r.GetSampler(VulkanSamplerInfo{TextureSamplingFilterLinear, TextureSamplingFilterLinearMipMapLinear, TextureSamplingWrapClampToEdge, TextureSamplingWrapClampToEdge})
@@ -143,6 +174,9 @@ func (r *Renderer_VK) newCubeMapTexture(widthHeight int32, mipmap bool, lowestMi
 	t.imageView = r.CreateImageView(t.img, format, 0, t.mipLevels, 6, true)
 
 	runtime.SetFinalizer(t, func(t *Texture_VK) {
+		if t.img == nil {
+			return // already released via Release()
+		}
 		r.destroyResourceQueues[r.destroyResourceQueueIndex] <- VulkanResource{
 			VulkanResourceTypeTexture,
 			[]interface{}{t.img, t.imageView, t.sampler, t.allocation},
@@ -152,7 +186,7 @@ func (r *Renderer_VK) newCubeMapTexture(widthHeight int32, mipmap bool, lowestMi
 }
 
 func (r *Renderer_VK) newPaletteTexture() Texture {
-	t := &Texture_VK{256, 1, 32, false, 1, [2]int32{0, 0}, [4]float32{0, 0, 1, 1}, nil, nil, nil, nil}
+	t := &Texture_VK{width: 256, height: 1, depth: 32, filter: false, mipLevels: 1, uvst: [4]float32{0, 0, 1, 1}, palSlot: true}
 	if r.palTexture.emptySlot.Len() == 0 {
 		r.addPalTexture()
 	}
@@ -168,6 +202,9 @@ func (r *Renderer_VK) newPaletteTexture() Texture {
 	}
 
 	runtime.SetFinalizer(t, func(t *Texture_VK) {
+		if t.img == nil {
+			return // already released
+		}
 		r.destroyResourceQueues[r.destroyResourceQueueIndex] <- VulkanResource{
 			VulkanResourceTypePaletteTexture,
 			[]interface{}{
@@ -179,7 +216,7 @@ func (r *Renderer_VK) newPaletteTexture() Texture {
 }
 
 func (r *Renderer_VK) newDummyCubeMapTexture() Texture {
-	t := &Texture_VK{1, 1, 8, false, 1, [2]int32{0, 0}, [4]float32{0, 0, 1, 1}, nil, nil, nil, nil}
+	t := &Texture_VK{width: 1, height: 1, depth: 8, filter: false, mipLevels: 1, uvst: [4]float32{0, 0, 1, 1}, palSlot: false}
 	format := t.MapInternalFormat(Max(t.depth, 8))
 	t.img = r.CreateImage(uint32(t.width), uint32(t.height), format, t.mipLevels, 6, vk.ImageUsageFlags(vk.ImageUsageTransferDstBit|vk.ImageUsageSampledBit), 1, vk.ImageTilingOptimal, true)
 
@@ -191,6 +228,9 @@ func (r *Renderer_VK) newDummyCubeMapTexture() Texture {
 	t.imageView = r.CreateImageView(t.img, format, 0, t.mipLevels, 6, true)
 
 	runtime.SetFinalizer(t, func(t *Texture_VK) {
+		if t.img == nil {
+			return // already released via Release()
+		}
 		r.destroyResourceQueues[r.destroyResourceQueueIndex] <- VulkanResource{
 			VulkanResourceTypeTexture,
 			[]interface{}{t.img, t.imageView, t.sampler, t.allocation},
@@ -1782,7 +1822,7 @@ func (r *Renderer_VK) CreateRenderTarget(renderpass vk.RenderPass, width, height
 }
 
 func (r *Renderer_VK) CreateRenderTargetTexture(width, height uint32, numSamples int32, main bool) *Texture_VK {
-	t := &Texture_VK{int32(width), int32(height), 32, false, 1, [2]int32{0, 0}, [4]float32{0, 0, 1, 1}, nil, nil, nil, nil}
+	t := &Texture_VK{width: int32(width), height: int32(height), depth: 32, filter: false, mipLevels: 1, uvst: [4]float32{0, 0, 1, 1}, palSlot: false}
 	usage := vk.ImageUsageFlags(vk.ImageUsageColorAttachmentBit | vk.ImageUsageTransferSrcBit)
 	if !main {
 		usage = usage | vk.ImageUsageFlags(vk.ImageUsageSampledBit) | vk.ImageUsageFlags(vk.ImageUsageTransferDstBit)
@@ -1797,6 +1837,9 @@ func (r *Renderer_VK) CreateRenderTargetTexture(width, height uint32, numSamples
 	t.imageView = r.CreateImageView(t.img, r.swapchains[0].format, 0, 1, 1, false)
 
 	runtime.SetFinalizer(t, func(t *Texture_VK) {
+		if t.img == nil {
+			return // already released via Release()
+		}
 		r.destroyResourceQueues[r.destroyResourceQueueIndex] <- VulkanResource{
 			VulkanResourceTypeTexture,
 			[]interface{}{t.img, t.imageView, t.sampler, t.allocation},
@@ -1806,7 +1849,7 @@ func (r *Renderer_VK) CreateRenderTargetTexture(width, height uint32, numSamples
 }
 
 func (r *Renderer_VK) CreateRenderTargetDepthTexture(width, height uint32, numSamples int32) *Texture_VK {
-	t := &Texture_VK{int32(width), int32(height), 32, false, 1, [2]int32{0, 0}, [4]float32{0, 0, 1, 1}, nil, nil, nil, nil}
+	t := &Texture_VK{width: int32(width), height: int32(height), depth: 32, filter: false, mipLevels: 1, uvst: [4]float32{0, 0, 1, 1}, palSlot: false}
 	usage := vk.ImageUsageFlags(vk.ImageUsageDepthStencilAttachmentBit)
 	if numSamples > 1 {
 		usage = usage | vk.ImageUsageFlags(vk.ImageUsageTransferSrcBit)
@@ -1821,6 +1864,9 @@ func (r *Renderer_VK) CreateRenderTargetDepthTexture(width, height uint32, numSa
 	t.imageView = r.CreateImageView(t.img, vk.FormatD32Sfloat, 0, 1, 1, false)
 
 	runtime.SetFinalizer(t, func(t *Texture_VK) {
+		if t.img == nil {
+			return // already released via Release()
+		}
 		r.destroyResourceQueues[r.destroyResourceQueueIndex] <- VulkanResource{
 			VulkanResourceTypeTexture,
 			[]interface{}{t.img, t.imageView, t.sampler, t.allocation},
@@ -1882,7 +1928,7 @@ func (r *Renderer_VK) addPalTexture() {
 	for i := uint32(0); i < r.palTexture.size; i++ {
 		r.palTexture.emptySlot.PushBack([2]uint32{index, uint32(i)})
 	}
-	t := &Texture_VK{int32(r.palTexture.size), int32(r.palTexture.size), 32, false, 1, [2]int32{0, 0}, [4]float32{0, 0, 1, 1}, nil, nil, nil, nil}
+	t := &Texture_VK{width: int32(r.palTexture.size), height: int32(r.palTexture.size), depth: 32, filter: false, mipLevels: 1, uvst: [4]float32{0, 0, 1, 1}, palSlot: false}
 	t.img = r.CreateImage(uint32(t.width), uint32(t.height), vk.FormatR8g8b8a8Unorm, 1, 1, vk.ImageUsageFlags(vk.ImageUsageTransferDstBit|vk.ImageUsageSampledBit), 1, vk.ImageTilingLinear, false)
 
 	alloc, err := r.allocator.AllocateImageMemory(t.img, vk.MemoryPropertyDeviceLocalBit)
@@ -1894,6 +1940,9 @@ func (r *Renderer_VK) addPalTexture() {
 	r.palTexture.textures = append(r.palTexture.textures, t)
 
 	runtime.SetFinalizer(t, func(t *Texture_VK) {
+		if t.img == nil {
+			return // already released via Release()
+		}
 		r.destroyResourceQueues[r.destroyResourceQueueIndex] <- VulkanResource{
 			VulkanResourceTypeTexture,
 			[]interface{}{t.img, t.imageView, t.sampler, t.allocation},
@@ -1922,7 +1971,7 @@ func (r *Renderer_VK) addPalTexture() {
 	r.EndSingleTimeCommands(commandBuffer)
 }
 func (r *Renderer_VK) createShadowMapTexture(widthHeight int32) *Texture_VK {
-	t := &Texture_VK{widthHeight, widthHeight, 96, false, 1, [2]int32{0, 0}, [4]float32{0, 0, 1, 1}, nil, nil, nil, nil}
+	t := &Texture_VK{width: widthHeight, height: widthHeight, depth: 96, filter: false, mipLevels: 1, uvst: [4]float32{0, 0, 1, 1}, palSlot: false}
 	t.sampler = r.GetSampler(VulkanSamplerInfo{TextureSamplingFilterNearest, TextureSamplingFilterNearest, TextureSamplingWrapClampToEdge, TextureSamplingWrapClampToEdge})
 	format := vk.FormatD32Sfloat
 	t.img = r.CreateImage(uint32(widthHeight), uint32(widthHeight), format, 1, 6*4, vk.ImageUsageFlags(vk.ImageUsageDepthStencilAttachmentBit|vk.ImageUsageSampledBit), 1, vk.ImageTilingOptimal, true)
@@ -1959,6 +2008,9 @@ func (r *Renderer_VK) createShadowMapTexture(widthHeight int32) *Texture_VK {
 	r.tempCommands = append(gfx.(*Renderer_VK).tempCommands, commandBuffer)
 
 	runtime.SetFinalizer(t, func(t *Texture_VK) {
+		if t.img == nil {
+			return // already released via Release()
+		}
 		r.destroyResourceQueues[r.destroyResourceQueueIndex] <- VulkanResource{
 			VulkanResourceTypeTexture,
 			[]interface{}{t.img, t.imageView, t.sampler, t.allocation},

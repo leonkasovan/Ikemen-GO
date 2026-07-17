@@ -19,6 +19,7 @@ type Texture interface {
 	GetHeight() int32
 	GetPalUV() [4]float32
 	CopyData(src *Texture)
+	Release()
 }
 
 type Renderer interface {
