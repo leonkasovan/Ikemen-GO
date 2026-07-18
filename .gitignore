@@ -73,8 +73,8 @@ build/android-apk/
 build/android-deps/
 build/libxmp-src/
 build/xmp-src/
-build/sdl2-src/
-build/ffmpeg-src/
+build/SDL-release-2.32.10/*
+build/FFmpeg-n7.1/*
 build/ffmpeg/
 build/delaylib/
 build/winres/

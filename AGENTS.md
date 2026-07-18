@@ -22,12 +22,6 @@ C:\msys64\usr\bin\sh -lc 'cd /c/Projects/ikemen-develop-update && export PATH=/m
 
 ### Fully static build (no MinGW/SDL2 DLLs)
 
-1. Add packages\go-sdl2 and packages\gl
-2. Add build\ffmpeg-src and build\xmp-src
-3. Replace in go source code: from "github.com/veandco/go-sdl2/sdl" to "github.com/ikemen-engine/Ikemen-GO/packages/go-sdl2/sdl"
-4. Replace in go source code: from "github.com/go-gl/gl/v3.3-core/gl" to "github.com/ikemen-engine/Ikemen-GO/packages/gl/v3.3-core/gl"
-5. Replace in go source code: from "github.com/leonkasovan/gl/v3.2/gles2" to "github.com/ikemen-engine/Ikemen-GO/packages/gl/v3.2/gles2"
-
 The Windows binary (`Ikemen_GO.exe`) links **fully static** — no
 `libwinpthread-1.dll`, `libgcc_s_seh-1.dll`, `libstdc++-6.dll`, or `SDL2.dll`
 ships. At runtime `ldd` shows only genuine Windows system DLLs (KERNEL32,

@@ -203,25 +203,28 @@ debug:
 # Static libs resolve against the LOCAL pkgconfig only (never the
 # system FFmpeg). SDL2 is linked statically via -tags static (vendored
 # _libs), so no shared SDL2 entry is needed here.
-TEST_CGO = CGO_CFLAGS="$$( PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig" $(PKG_CONFIG) --cflags $(STATIC_PKGS) )" \
+TEST_CGO = CGO_CFLAGS="$$( $(PKG_CONFIG) --cflags $(STATIC_PKGS) )" \
 	CGO_LDFLAGS="-L$(BUILD_PREFIX)/lib \
-		$$( PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig" $(PKG_CONFIG) --static --libs $(STATIC_PKGS) )"
+		$$( $(PKG_CONFIG) --static --libs $(STATIC_PKGS) )"
 
-test: deps-check check-go-env
+test: deps-check check-go-env xmp ffmpeg
 	@echo "==> Running unit tests..."
 	IKEMEN_SKIP_DLL_CHECK=1 \
+	PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig$(if $(PKG_CONFIG_PATH),:$(PKG_CONFIG_PATH),)" \
 	$(TEST_CGO) \
 	go test -v $(GO_TAGS) -count=1 ./src -run 'Test'
 
-test-debug: deps-check check-go-env
+test-debug: deps-check check-go-env xmp ffmpeg
 	@echo "==> Running unit tests with -tags debug (memory instrumentation)..."
 	IKEMEN_SKIP_DLL_CHECK=1 \
+	PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig$(if $(PKG_CONFIG_PATH),:$(PKG_CONFIG_PATH),)" \
 	$(TEST_CGO) \
 	go test -v $(GO_TAGS) -tags debug -count=1 ./src -run 'Test'
 
-test-bench: deps-check check-go-env
+test-bench: deps-check check-go-env xmp ffmpeg
 	@echo "==> Running benchmarks..."
 	IKEMEN_SKIP_DLL_CHECK=1 \
+	PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig$(if $(PKG_CONFIG_PATH),:$(PKG_CONFIG_PATH),)" \
 	$(TEST_CGO) \
 	go test -v $(GO_TAGS) -bench=. -benchmem -count=1 ./src
 
@@ -244,7 +247,7 @@ deps-check:
 		echo "  pacman -Syu --noconfirm" >&2; \
 		echo "  pacman -S --noconfirm git make diffutils mingw-w64-x86_64-pkg-config \\" >&2; \
 		echo "    mingw-w64-x86_64-go mingw-w64-x86_64-toolchain \\" >&2; \
-		echo "    mingw-w64-x86_64-nasm mingw-w64-x86_64-yasm \\" >&2; \
+		echo "    mingw-w64-x86_64-nasm \\" >&2; \
 		echo "    mingw-w64-x86_64-tools-git" >&2; \
 		exit 1; \
 	fi
@@ -266,24 +269,49 @@ check-go-env:
 	@go version >/dev/null 2>&1 || \
 		{ echo "ERROR: 'go version' failed. Set GOROOT=/mingw64/lib/go" >&2; exit 1; }
 
+# SDL2 static build, installs into $(BUILD_PREFIX)
+# source: https://github.com/libsdl-org/SDL/archive/refs/tags/release-2.32.10.zip
+
+SDL2_SOURCE := https://github.com/libsdl-org/SDL/archive/refs/tags/release-2.32.10.zip
+SDL2_SRCDIR := $(BUILDDIR)/SDL-release-2.32.10
+
+sdl2: $(BUILD_PREFIX)/lib/libSDL2.a
+
+$(BUILD_PREFIX)/lib/libSDL2.a:
+	@echo "==> Building static SDL2 ..."
+	mkdir -p $(BUILDDIR)
+	if [ ! -d "$(SDL2_SRCDIR)" ]; then \
+		echo "==> Downloading SDL2 source ..."; \
+		wget "$(SDL2_SOURCE)" -O "$(BUILDDIR)/SDL-release-2.32.10.zip"; \
+		unzip "$(BUILDDIR)/SDL-release-2.32.10.zip" -d "$(BUILDDIR)"; \
+	fi
+	cd $(SDL2_SRCDIR) && \
+		./configure --prefix="$(BUILD_PREFIX)" --enable-static --disable-shared && \
+		make -j"$$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)" && \
+		make install
+	@echo "==> SDL2 static library installed to: $(BUILD_PREFIX)"
+
 # ===========================================================================
 # FFmpeg Static Build
 # ===========================================================================
 # FFmpeg Static Build — installs into $(BUILD_PREFIX) (shared with XMP)
+# source: https://github.com/FFmpeg/FFmpeg/archive/refs/tags/n7.1.zip
 # ===========================================================================
 
-FFMPEG_SRCDIR := $(BUILDDIR)/ffmpeg-src
+FFMPEG_SOURCE := https://github.com/FFmpeg/FFmpeg/archive/refs/tags/n7.1.zip
+FFMPEG_SRCDIR := $(BUILDDIR)/FFmpeg-n7.1
 
 .PHONY: ffmpeg
 
 ffmpeg: $(FFMPEG_LIBS)
 
 $(FFMPEG_LIBS):
-	@echo "==> Building minimal static FFmpeg ($(FFMPEG_REV))..."
+	@echo "==> Building static FFmpeg ..."
 	mkdir -p $(BUILDDIR)
 	if [ ! -d "$(FFMPEG_SRCDIR)" ]; then \
-		@echo "==> Cloning FFmpeg source ($(FFMPEG_REV))..."; \
-		git clone --depth=1 -b "$(FFMPEG_REV)" https://github.com/FFmpeg/FFmpeg.git $(FFMPEG_SRCDIR); \
+		echo "==> Downloading FFmpeg source ..."; \
+		wget "$(FFMPEG_SOURCE)" -O "$(BUILDDIR)/FFmpeg-n7.1.zip"; \
+		unzip "$(BUILDDIR)/FFmpeg-n7.1.zip" -d "$(BUILDDIR)"; \
 	fi
 	cd $(FFMPEG_SRCDIR) && \
 		./configure \
@@ -388,9 +416,10 @@ $(SRC_SYSO): $(WINRES_DIR)/Ikemen_GO.rc
 
 binary: ffmpeg xmp check-go-env $(SRC_SYSO)
 	@echo "==> Building $(BINNAME) ($(BUILD_TYPE), GOARCH=$(GOARCH))..."
-	@CGO_CFLAGS="$$( PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig" $(PKG_CONFIG) --cflags $(STATIC_PKGS) )" \
+	@export PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig$(if $(PKG_CONFIG_PATH),:$(PKG_CONFIG_PATH),)"; \
+	CGO_CFLAGS="$$( $(PKG_CONFIG) --cflags $(STATIC_PKGS) )" \
 	CGO_LDFLAGS="-L$(BUILD_PREFIX)/lib \
-		$$( PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig" $(PKG_CONFIG) --static --libs $(STATIC_PKGS) )" \
+		$$( $(PKG_CONFIG) --static --libs $(STATIC_PKGS) )" \
 	go build -trimpath -v $(GO_TAGS) \
 		-ldflags "$(LDFLAGS_GO)" \
 		-o "$(BINARY)" ./src

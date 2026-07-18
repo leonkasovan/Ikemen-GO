@@ -15,6 +15,6 @@ package sdl
 //#cgo linux,arm,!android LDFLAGS: -L/opt/vc/lib -L/opt/vc/lib64 -lSDL2_linux_arm -lm -ldl -liconv -lbcm_host -lvcos -lvchiq_arm -pthread
 import "C"
 import (
-       _ "github.com/veandco/go-sdl2/_libs"
-       _ "github.com/veandco/go-sdl2/_libs/include/SDL2"
+       _ "github.com/ikemen-engine/Ikemen-GO/packages/go-sdl2/_libs"
+       _ "github.com/ikemen-engine/Ikemen-GO/packages/go-sdl2/_libs/include/SDL2"
 )
