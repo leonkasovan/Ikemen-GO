@@ -676,6 +676,11 @@ type Renderer_GL33 struct {
 	// Shader and vertex data for primitive rendering
 	spriteShader *ShaderProgram_GL33
 	vertexBuffer uint32
+
+	// vertexScratch is a reusable byte buffer for SetVertexData, avoiding a
+	// per-quad []byte allocation via f32.Bytes on the render hot path.
+	// gl.BufferData copies immediately, so the buffer can be safely reused.
+	vertexScratch []byte
 	// Custom shaders
 	customShaders   map[uint32]*ShaderProgram_GL33
 	customShaderMap map[string]uint32
@@ -2326,7 +2331,14 @@ func (r *Renderer_GL33) SetShadowFrameCubeTexture(i uint32) {
 }
 
 func (r *Renderer_GL33) SetVertexData(values ...float32) {
-	data := f32.Bytes(binary.LittleEndian, values...)
+	n := len(values) * 4
+	if cap(r.vertexScratch) < n {
+		r.vertexScratch = make([]byte, n)
+	}
+	data := r.vertexScratch[:n]
+	for i, v := range values {
+		binary.LittleEndian.PutUint32(data[i*4:], math.Float32bits(v))
+	}
 	gl.BindBuffer(gl.ARRAY_BUFFER, r.vertexBuffer)
 	gl.BufferData(gl.ARRAY_BUFFER, len(data), unsafe.Pointer(&data[0]), gl.STATIC_DRAW)
 	// STREAM_DRAW was attempted here, but some users might be havign trouble with it

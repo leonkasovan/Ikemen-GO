@@ -707,6 +707,10 @@ type Renderer_GLES32 struct {
 	// Shader and vertex data for primitive rendering
 	spriteShader *ShaderProgram_GLES32
 	vertexBuffer uint32
+	// vertexScratch is a reusable byte buffer for SetVertexData, avoiding a
+	// per-quad []byte allocation via f32.Bytes on the render hot path.
+	// gl.BufferData copies immediately, so the buffer can be safely reused.
+	vertexScratch []byte
 	// Shader and index data for 3D model rendering
 	shadowMapShader         *ShaderProgram_GLES32
 	modelShader             *ShaderProgram_GLES32
@@ -2249,7 +2253,14 @@ func (r *Renderer_GLES32) SetShadowFrameCubeTexture(i uint32) {
 }
 
 func (r *Renderer_GLES32) SetVertexData(values ...float32) {
-	data := f32.Bytes(binary.LittleEndian, values...)
+	n := len(values) * 4
+	if cap(r.vertexScratch) < n {
+		r.vertexScratch = make([]byte, n)
+	}
+	data := r.vertexScratch[:n]
+	for i, v := range values {
+		binary.LittleEndian.PutUint32(data[i*4:], math.Float32bits(v))
+	}
 	gl.BindBuffer(gl.ARRAY_BUFFER, r.vertexBuffer)
 	gl.BufferData(gl.ARRAY_BUFFER, len(data), unsafe.Pointer(&data[0]), gl.STATIC_DRAW)
 }
