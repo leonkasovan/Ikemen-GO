@@ -203,10 +203,10 @@ func realMain() {
 
 	// Set a soft memory limit so Go returns freed pages to the OS instead of hoarding
 	// them (which on Windows can cause Task Manager to show 1 GB+ after loading SFFs).
-	// Controlled by [Debug] MemoryLimitMB in config (default 256 MB).
+	// Controlled by [Debug] HeapMemoryLimit in config (default 256 MB).
 	// Set to 0 to disable (not recommended).
-	if sys.cfg.Debug.MemoryLimitMB > 0 {
-		debug.SetMemoryLimit(int64(sys.cfg.Debug.MemoryLimitMB) * 1024 * 1024)
+	if sys.cfg.Debug.HeapMemoryLimit > 0 {
+		debug.SetMemoryLimit(int64(sys.cfg.Debug.HeapMemoryLimit) * 1024 * 1024)
 	}
 
 	// Begin processing game using its lua scripts

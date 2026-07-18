@@ -27,7 +27,7 @@
 
 - **Palette slot usage telemetry** — Added `palSlotsUsed`/`palSlotsMax` atomic counters (both backends) tracking current and peak concurrent palette atlas slot usage. The periodic `HEAP` log line reports `palSlots=%d(peak %d)`, where the first value is slots currently allocated and the second is the peak concurrent count seen so far (a process-lifetime high-water mark, not the configured atlas capacity). Use it to pick the minimum viable `PaletteAtlasSize`.
 
-- **Configurable memory limit** — Added `[Debug] MemoryLimitMB` (`save/config.ini`, default: `256`). Controls Go's `debug.SetMemoryLimit()` to return freed pages to the OS. Set to `0` to disable (not recommended — may cause Task Manager to show 1 GB+ after loading SFFs). Clamped to ≥ 64 MB.
+- **Configurable memory limit** — Added `[Debug] HeapMemoryLimit` (`save/config.ini`, default: `256`). Controls Go's `debug.SetMemoryLimit()` to return freed pages to the OS. Set to `0` to disable (not recommended — may cause Task Manager to show 1 GB+ after loading SFFs). Clamped to ≥ 64 MB.
 
 - **Configurable palette atlas size** — Added `[Video] PaletteAtlasSize` (`save/config.ini`, default: `1024`). Controls the palette atlas texture dimensions (square, RGBA). Clamped to ≥ 256 and rounded up to the next power of two. At 1024×1024 the atlas provides 4,096 palette slots (each 256×1) at 4 MB GPU memory, down from the previous default of 2048 (16,384 slots, 16 MB).
 

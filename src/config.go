@@ -132,7 +132,7 @@ type Config struct {
 		ClipboardRows       int     `ini:"ClipboardRows"`
 		ConsoleRows         int     `ini:"ConsoleRows"`
 		ClsnDarken          bool    `ini:"ClsnDarken"`
-		MemoryLimitMB       int     `ini:"MemoryLimitMB"`
+		HeapMemoryLimit     int     `ini:"HeapMemoryLimit"`
 		DumpLuaTables       bool    `ini:"DumpLuaTables"`
 		Font                string  `ini:"Font"`
 		FontScale           float32 `ini:"FontScale"`
@@ -382,8 +382,8 @@ func (c *Config) normalize() {
 		c.SetValueUpdate("Video.ImageSuballocBlockSizeMB", 64)
 	}
 	// Memory limit: 0 means disabled, otherwise at least 64 MB
-	if c.Debug.MemoryLimitMB > 0 && c.Debug.MemoryLimitMB < 64 {
-		c.SetValueUpdate("Debug.MemoryLimitMB", 64)
+	if c.Debug.HeapMemoryLimit > 0 && c.Debug.HeapMemoryLimit < 64 {
+		c.SetValueUpdate("Debug.HeapMemoryLimit", 64)
 	}
 	// Palette atlas size must be at least 256 and a power of two
 	if size := c.Video.PaletteAtlasSize; size < 256 {

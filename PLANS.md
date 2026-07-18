@@ -371,7 +371,7 @@ if m.NumGC != lastGCStats.NumGC {
 
 ### 7.3 Configurable Settings
 
-- [x] **`[Debug] MemoryLimitMB`** (`config.go`, `main.go`, `defaultConfig.ini`) — Replaced hardcoded `debug.SetMemoryLimit(256*1024*1024)` with config value from `save/config.ini`. Clamped to ≥ 64 MB (0 = disabled). Default: 256 MB.
+- [x] **`[Debug] HeapMemoryLimit`** (`config.go`, `main.go`, `defaultConfig.ini`) — Replaced hardcoded `debug.SetMemoryLimit(256*1024*1024)` with config value from `save/config.ini`. Clamped to ≥ 64 MB (0 = disabled). Default: 256 MB.
 - [x] **`[Video] PaletteAtlasSize`** (`config.go`, `render.go`, `defaultConfig.ini`) — Replaced hardcoded `const PalAtlasSize = 2048` with config-driven `var PalAtlasSize int32`. Clamped to ≥ 256 and rounded up to next power of two. Default: 2048 (16,384 palette slots).
 
 ### 7.4 Completed
