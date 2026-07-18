@@ -201,10 +201,14 @@ func realMain() {
 	// This is where the window is born!
 	sys.luaLState = sys.init(int32(sys.gameWidth), int32(sys.gameHeight))
 
-	// Set a soft memory limit so Go returns freed pages to the OS instead of hoarding
-	// them (which on Windows can cause Task Manager to show 1 GB+ after loading SFFs).
-	// Controlled by [Debug] HeapMemoryLimit in config (default 256 MB).
-	// Set to 0 to disable (not recommended).
+	// Set a soft heap limit. This is a GC target ceiling: as the live heap
+	// approaches this value the garbage collector runs more aggressively to
+	// keep total heap memory under it. It does NOT itself return freed pages
+	// to the OS (see debug.FreeOSMemory, called after asset loading for that).
+	// Set it comfortably above the normal working set (~150-200 MB) so it acts
+	// as a safety cap rather than a constant GC trigger; too low a value causes
+	// GC thrash. Controlled by [Debug] HeapMemoryLimit in config (default 512 MB).
+	// Set to 0 to disable (uses Go's default of unlimited).
 	if sys.cfg.Debug.HeapMemoryLimit > 0 {
 		debug.SetMemoryLimit(int64(sys.cfg.Debug.HeapMemoryLimit) * 1024 * 1024)
 	}

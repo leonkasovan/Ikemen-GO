@@ -381,9 +381,11 @@ func (c *Config) normalize() {
 	if c.Video.ImageSuballocBlockSizeMB < 1 {
 		c.SetValueUpdate("Video.ImageSuballocBlockSizeMB", 64)
 	}
-	// Memory limit: 0 means disabled, otherwise at least 64 MB
-	if c.Debug.HeapMemoryLimit > 0 && c.Debug.HeapMemoryLimit < 64 {
-		c.SetValueUpdate("Debug.HeapMemoryLimit", 64)
+	// Memory limit: 0 means disabled, otherwise at least 256 MB. Lower values
+	// risk GC thrash because the normal working set (~150-200 MB) can approach
+	// or exceed the limit, forcing the collector to run almost continuously.
+	if c.Debug.HeapMemoryLimit > 0 && c.Debug.HeapMemoryLimit < 256 {
+		c.SetValueUpdate("Debug.HeapMemoryLimit", 256)
 	}
 	// Palette atlas size must be at least 256 and a power of two
 	if size := c.Video.PaletteAtlasSize; size < 256 {

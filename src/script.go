@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -3015,7 +3016,10 @@ func systemScriptInit(l *lua.LState) {
 				}
 				sys.await(sys.gameRenderSpeed())
 			}
-			runtime.GC()
+			// Loading allocates large transient buffers (PNG/SFF decode, audio
+			// decode). FreeOSMemory runs a full GC and returns the now-unused
+			// pages to the OS, trimming RSS after the working set has settled.
+			debug.FreeOSMemory()
 			return nil
 		}
 

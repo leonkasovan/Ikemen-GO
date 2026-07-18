@@ -614,3 +614,128 @@ To verify any changes:
 4. Test font atlas generation with non-Latin characters (CJK) to exercise atlas resizing.
 5. Verify `CopyData` fix by testing any future code that calls `TextureAtlas.Resize`.
 
+---
+
+# Memory Limit Review + Runtime Profiling (2026-07-19)
+
+## Scope
+Empirical validation of `debug.SetMemoryLimit` usage and identification of the
+real runtime GC-pressure sources, using live `pprof` profiles captured from a
+debug build (heap `inuse_space`, heap `alloc_space`, and a 30 s CPU profile)
+during actual gameplay.
+
+## What was measured
+
+**Live heap (`inuse_space`):** ~137 MB in use, peaking ~174 MB. Top live objects:
+`reisen._Cfunc_GoBytes` (FFmpeg video frames), `image.NewPaletted` (SFF decode),
+`gopher-lua` tables, `image.NewRGBA`, `main.readSound`.
+
+**CPU profile (30 s, in-match):**
+
+| Symbol | flat% | Meaning |
+|--------|-------|---------|
+| `runtime.cgocall` (under `System.await`/`update`) | 83% | vsync / SDL swap / audio queue wait — normal frame-sync idle |
+| `runtime.mallocgc` | 1.1% | allocator — trivial |
+| `gcBgMarkWorker` / `scanobject` / `gcDrain` | — | **absent from top 30** |
+
+**Cumulative allocation churn (`alloc_space`, ~3.1 GB over session):**
+
+| Source | Cum | Category |
+|--------|-----|----------|
+| `image/png.Decode` (`NewRGBA`/`NewNRGBA`) | ~830 MB | PNG/SFF decode (load-time, transient) |
+| `main.drawQuadsUV` / `RenderSprite.func1` | ~372 MB | **per-frame render buffers** |
+| `golang.org/x/mobile/exp/f32.Bytes` | 104 MB | **per-frame vertex float→byte conversion** |
+| `beep.Mixer.Stream` + `SDLSpeaker.FillAudio` | ~360 MB | **per-audio-callback mixing buffers** |
+| `gopher-lua.newFuncContext` | 348 MB | Lua VM call frames |
+| `reisen._Cfunc_GoBytes` | 194 MB | FFmpeg video frames |
+
+## Conclusions
+
+1. **`SetMemoryLimit(256 MB)` was inert, not harmful.** The live heap
+   (137–174 MB) never approaches the limit, and the CPU profile shows GC is not
+   hot (`mallocgc` 1.1%, no GC workers in top 30). It was neither causing thrash
+   nor meaningfully trimming RSS.
+2. **The limit does NOT reduce RSS.** Resident memory is dominated by `heapSys`
+   (~420 MB of unreturned pages) and GPU textures (~440 MB `gpuBytes`), neither
+   governed by `SetMemoryLimit`. The correct tool for returning pages is
+   `debug.FreeOSMemory()`.
+3. **A 64 MB clamp floor was genuinely dangerous** — below the working set, it
+   would have forced near-continuous GC.
+
+## Changes made (implemented 2026-07-19)
+
+| File | Change |
+|------|--------|
+| `src/main.go` | Corrected the misleading comment: `SetMemoryLimit` is a soft GC ceiling, not an OS-page-return mechanism. |
+| `src/config.go` | Raised clamp floor 64 MB → 256 MB (below-working-set values cause thrash). |
+| `src/resources/defaultConfig.ini` | Default 256 MB → 512 MB; rewrote comment to describe it accurately. |
+| `src/script.go` | Replaced the post-load `runtime.GC()` with `debug.FreeOSMemory()` (full GC **and** returns freed pages to OS) — directly targets the "Task Manager shows 1 GB after SFF load" report by trimming the `heapSys − heapAlloc` gap. |
+
+## Deferred follow-up — per-frame buffer pooling (NOT yet done)
+
+The `alloc_space` data contradicts the earlier "No Issues Found: `RenderSprite`
+and `drawQuads` are allocation-free in the hot path" claim in the section above.
+`drawQuadsUV`, `RenderSprite.func1`, and `f32.Bytes` allocate fresh buffers
+**every frame**, and `beep.Mixer.Stream` / `SDLSpeaker.FillAudio` allocate on
+every audio callback. These are the dominant *steady-state* GC-pressure sources.
+
+### Second alloc_space capture (2026-07-19, video-heavy session)
+
+A follow-up `alloc_space` on the new 512 MB build (cumulative 4.58 GB, longer
+session with more video) confirmed the churn shape is unchanged by the memory
+edits (as expected — `SetMemoryLimit`/`FreeOSMemory` change GC timing and page
+return, never allocation *rate*). It also surfaced a source that dominates when
+video plays:
+
+| Source | flat% | Per-what | Category |
+|--------|-------|----------|----------|
+| `image.NewRGBA` | 23.3% | per PNG/video frame | decode |
+| `reisen._Cfunc_GoBytes` | **15.5%** | **per video frame** | FFmpeg frame copy |
+| `main.drawQuadsUV` | 7.6% | **per draw** | render vertex buffer |
+| `image.NewNRGBA` | 7.5% | per PNG | decode |
+| `beep.Mixer.Stream` | 5.7% | **per audio callback** | audio mix buffer |
+| `main.(*SDLSpeaker).FillAudio` (cum) | 7.5% | **per audio callback** | audio fill buffer |
+| `f32.Bytes` | 3.2% | **per draw** | vertex float→byte conv |
+
+### Ranked pooling opportunities — DO THESE IN ORDER
+
+**1st — Render vertex buffers (`drawQuadsUV` + `f32.Bytes` + `RenderSprite.func1`, ~18% combined). START HERE.**
+- Why first: allocates on *every* draw call of *every* sprite in *every* frame —
+  it is the constant, unavoidable steady-state pressure present in all gameplay
+  (no video required). Highest frequency, most predictable win.
+- Lowest risk: buffers are consumed synchronously within the draw call on one
+  thread, so a reusable scratch `[]byte`/`[]float32` field on the renderer (or a
+  `sync.Pool`) is safe with no lifetime/ownership concerns.
+- Where: `src/render.go` `drawQuadsUV` / `RenderSprite`, and the
+  `golang.org/x/mobile/exp/f32.Bytes` conversion — reuse one renderer-owned
+  scratch buffer instead of allocating per quad.
+
+**2nd — Audio mix/fill buffers (`beep.Mixer.Stream` + `SDLSpeaker.FillAudio`, ~13% combined).**
+- Why second: also constant (runs every audio callback regardless of video), but
+  lower frequency than per-sprite draws and slightly more care needed because the
+  buffer crosses the audio callback boundary.
+- Where: `src/audio_sdl.go` / `SDLSpeaker.FillAudio` and the beep `Mixer.Stream`
+  path — reuse the fill/mix buffer per callback instead of allocating each fill.
+
+**3rd — Video frame buffers (`reisen._Cfunc_GoBytes`, up to 15.5% *when video plays*).**
+- Why third despite the high %: it is **conditional** — only large when a video
+  is actually playing (intros, attract mode, video-backed stages). Zero cost in
+  ordinary matches. Also the **highest risk / most invasive**: the allocation is
+  inside the `reisen` dependency (`vf.Image()` → `C.GoBytes`), and frames are
+  passed over `bgv.frameBuffer` (a channel) to the render goroutine, so a pooled
+  buffer would need double-buffering + careful handoff to avoid the producer
+  overwriting a frame the consumer is still uploading.
+- Where: `src/video_ffmpeg.go:366` (`bgv.frameBuffer <- vf.Image()`), and would
+  likely require a reisen API change (or a local copy into a ping-pong buffer
+  pair owned by `bgv`) to reuse the frame backing array across decodes.
+
+### Suggested sequence
+Do **1 (render)** first for the broadest always-on benefit and lowest risk,
+then **2 (audio)**, and only tackle **3 (video)** if video-heavy scenes show
+GC pressure in practice — its cross-goroutine handoff makes it the riskiest.
+
+**Verification for each step:** capture `alloc_space` before/after a fixed
+gameplay window; the targeted entry should drop toward zero, and `mallocgc` in
+the CPU profile should shrink further. For step 3, verify with a video-backed
+stage or attract-mode loop specifically.
+
