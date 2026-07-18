@@ -1,25 +1,44 @@
-# Dependencies
+# ============================
+# Go module cache / vendor
+# ============================
 go/*
 vendor/*
 
-# Runtime
-*.log
-*.cmd
-*.bat
-/*.sh
-!build/**/*.sh
-*.png
-save/*
-Ikemen_GO.exe
-Ikemen_GO_Linux
-Ikemen_GO_MacOS
-Ikemen_GO_x86.exe
-Ikemen_GO.command
-external/script/.idea/*
-*.manifest
-resources/*
+# ============================
+# Build artifacts (Makefile)
+# ============================
+build/output/*
+build/build-sdl2/*
+build/build-ffmpeg/*
+build/build-xmp/*
+build/winres/*
+build/SDL-release-2.32.10/*
+build/FFmpeg-n7.1/*
+build/libxmp-libxmp-4.7.1/*
+build/screenpack/*
 
-# Ikemen_GO-Elecbyte-Screenpack
+# ============================
+# Binaries
+# ============================
+*.exe
+*.syso
+*.dll
+*.o
+*.a
+Ikemen_GO
+Ikemen_GO.command
+install/*
+
+# ============================
+# Archives / temp
+# ============================
+*.zip
+*.log
+.cron*
+
+# ============================
+# Screenpack assets (downloaded)
+# ============================
 ScreenpackLicense.txt
 chars/*
 data/big/*
@@ -48,48 +67,48 @@ stages/*
 sound/*
 debug/*
 video/*
-
 external/mods/*
+resources/*
 
-# Temp
-src/lua_triggers.go
-external/script/wip/*
-
-# IDE Files
-.vscode/*
-.vs/*
-.idea/*
-.mimocode/*
-
-# Android build outputs (generated)
+# ============================
+# Android build outputs
+# ============================
 bin/*.apk
 bin/libmain.so
 bin/libmain.h
 lib/*.so
 lib/*.so.*
 build/android-apk/
-
-# Binaries
 build/android-deps/
-build/libxmp-src/
-build/xmp-src/
-build/SDL-release-2.32.10/*
-build/FFmpeg-n7.1/*
-build/ffmpeg/
-build/delaylib/
-build/winres/
 
-# macOS bundle by local make
-/I.K.E.M.E.N-Go.app/
-
-# Compilation files
-*.syso
-*.exe
-*.dll
-*.zip
-*.o
-*.a
-.cron*
+# ============================
+# Temp / generated sources
+# ============================
+src/lua_triggers.go
+external/script/wip/*
 external/script/version
-install/*
-build/output/*
+*.manifest
+*.cmd
+*.bat
+*.sh
+!build/**/*.sh
+save/*
+
+# ============================
+# IDE files
+# ============================
+.vscode/*
+.vs/*
+.idea/*
+.mimocode/*
+
+# ============================
+# Runtime files
+# ============================
+*.png
+external/script/.idea/*
+
+# ============================
+# macOS bundle
+# ============================
+/I.K.E.M.E.N-Go.app/

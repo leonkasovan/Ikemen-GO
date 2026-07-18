@@ -28,6 +28,18 @@ These instructions are for those interested in developing the Ikemen GO engine i
 For setup and platform-specific steps, see [BUILDING.md](./BUILDING.md).
 It covers Windows, Linux (including ARM64), macOS (Apple Silicon and Intel), and Android (APK via Docker).
 
+On **Windows** (MSYS2 MINGW64), a single `make` command builds SDL2, FFmpeg, and libxmp
+from source and produces a fully statically-linked `Ikemen_GO.exe` with no external DLL
+dependencies (except Windows system DLLs).
+
+On **Linux** and **macOS**, the same Makefile detects your platform and builds a native
+binary — `Ikemen_GO` — with SDL2, FFmpeg, and libxmp compiled in statically and system
+libraries linked dynamically.
+
+Use `make CONFIG=debug` for a debug build with memory instrumentation, or
+`make install` to assemble a runnable installation with screenpack assets.
+See BUILDING.md for prerequisites and platform-specific details.
+
 ### Debugging
 In order to run the compiled Ikemen GO executable, you will need to download the [engine dependencies](https://github.com/ikemen-engine/Ikemen-GO-Screenpack) and unpack them into the Ikemen-GO source directory. After that, you can use [Goland](https://www.jetbrains.com/go/) or [Visual Studio Code](https://code.visualstudio.com/) to debug.
 

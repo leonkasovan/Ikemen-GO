@@ -1,194 +1,184 @@
 # Building Ikemen GO
 
-Ikemen GO links against **FFmpeg** (background video: VP9/Opus/Vorbis in WebM/Matroska), **libxmp** (module music: MOD/XM/S3M/IT, etc.), and **SDL2** (windowing, input, and game controller support via go-sdl2).
-All three must be available as development packages via **pkg-config** (`libav*`, `libxmp`, and `sdl2`).
-`build/build.sh` **auto-detects your OS** and, by default, **auto-builds a minimal FFmpeg**
-(same config as CI). You don't need system FFmpeg dev packages unless you prefer them.
+Ikemen GO links against **SDL2** (windowing, input, and game controller support via go-sdl2),
+**FFmpeg** (background video: VP9/Opus/Vorbis in WebM/Matroska), and **libxmp** (module music:
+MOD/XM/S3M/IT, etc.). All three are **built from source** by the Makefile and linked
+statically into the binary.
+
+On **Windows**, the MinGW runtime is also linked statically — the `.exe` needs only
+Windows system DLLs at runtime.
+On **Linux/macOS**, system libraries (glibc, X11, frameworks) stay dynamically linked.
+
+---
+
+## Quick start
+
+```bash
+git clone https://github.com/ikemen-engine/Ikemen-GO.git
+cd Ikemen-GO
+make                    # native build (release)
+make install            # assemble runnable distribution in install/
+```
+
+> The first build downloads and compiles SDL2, FFmpeg, and libxmp from source.
+> Subsequent builds skip download if sources exist and skip compilation if the
+> static libraries are already cached.
 
 ---
 
 ## Windows (MSYS2 / MINGW64)
 
-### Dependencies
+### Prerequisites
+
 Install MSYS2 from https://www.msys2.org and open **MSYS2 MINGW64**, then:
+
 ```bash
 pacman -Syu --noconfirm
-pacman -S --noconfirm \
-  git make diffutils mingw-w64-x86_64-pkg-config \
+pacman -S --noconfirm git make mingw-w64-x86_64-pkg-config \
   mingw-w64-x86_64-go mingw-w64-x86_64-toolchain \
-  mingw-w64-x86_64-nasm mingw-w64-x86_64-yasm \
-  mingw-w64-x86_64-tools-git mingw-w64-x86_64-libxmp \
-  mingw-w64-x86_64-SDL2
+  mingw-w64-x86_64-nasm mingw-w64-x86_64-cmake
+pacman -S --noconfirm wget unzip
 ```
 
-> On MSYS2 we auto-fix "trimmed" Go by setting `GOROOT=/mingw64/lib/go` if needed.
+> System libraries (SDL2, libxmp) are **not** needed — all three are built from source.
+> `mingw-w64-x86_64-yasm` is optional (nasm covers the assembler needs).
+>
+> On MSYS2 the Makefile auto-fixes "trimmed" Go by setting `GOROOT=/mingw64/lib/go`.
+> If you get a `GOROOT` error, run `export GOROOT=/mingw64/lib/go` before `make`.
 
-### Build 64-bit (Ikemen_GO.exe)
+### What gets built
+
+| Library  | Build system | Source URL |
+|----------|-------------|------------|
+| SDL2     | CMake       | https://github.com/libsdl-org/SDL (release-2.32.10) |
+| FFmpeg   | autotools   | https://github.com/FFmpeg/FFmpeg (n7.1, minimal config) |
+| libxmp   | CMake       | https://github.com/libxmp/libxmp (libxmp-4.7.1) |
+
+### Build targets
+
+| Command              | Description |
+|----------------------|-------------|
+| `make` / `make release` | Win64 release build → `Ikemen_GO.exe` (GUI subsystem) |
+| `make CONFIG=debug`  | Win64 debug build (console + memory instrumentation) |
+| `make ffmpeg`        | Build FFmpeg libraries only |
+| `make xmp`           | Build libxmp only |
+| `make sdl2`          | Build SDL2 only |
+| `make screenpack`    | Clone/update Elecbyte screenpack in `build/screenpack/` |
+| `make install`       | Assemble runnable build in `install/` (screenpack + binary) |
+| `make clean`         | Remove binary and build artifacts |
+| `make distclean`     | Remove binary, artifacts, and downloaded library sources |
+| `make deps-check`    | Verify required tools are installed |
+
+### Options
+
+| Variable        | Values              | Description |
+|-----------------|---------------------|-------------|
+| `CONFIG=debug`  | release / debug     | Debug build with memory instrumentation |
+| `ARCH=386`      | amd64 / 386         | Build 32-bit instead of 64-bit |
+| `APP_VERSION=X` | string              | Version string embedded in the binary (default: nightly) |
+| `APP_BUILDTIME` | date string         | Build timestamp (default: current date) |
+
+### Examples
 
 ```bash
-git clone https://github.com/ikemen-engine/Ikemen-GO.git
-cd Ikemen-GO
-# build.sh (matches CI default)
-./build/build.sh Win64
-# or make
-make Ikemen_GO.exe
+make                          # Win64 release
+make CONFIG=debug             # Win64 debug
+make ARCH=386                 # Win32 release
+make APP_VERSION=v1.0.0       # Tagged build
+make APP_VERSION=v1.0.0 CONFIG=debug
+make install                  # Build + assemble runnable install/
 ```
 
-### Build 32-bit (Ikemen_GO_x86.exe)
-
-> Requires 32-bit MinGW cross tools in addition to the above:
-> `pacman -S --noconfirm mingw-w64-i686-toolchain mingw-w64-i686-pkg-config mingw-w64-i686-nasm mingw-w64-i686-yasm mingw-w64-i686-libxmp mingw-w64-i686-SDL2`
+### Run
 
 ```bash
-# build.sh
-./build/build.sh Win32
-# or make
-make Ikemen_GO_x86.exe
+./Ikemen_GO.exe               # 64-bit
 ```
 
-### Run (Windows)
-
-```bash
-./Ikemen_GO.exe          # 64-bit
-./Ikemen_GO_x86.exe      # 32-bit
-```
-
-### Use system FFmpeg instead (optional)
-
-Install `mingw-w64-x86_64-ffmpeg` (and/or i686 variant for 32-bit), then:
-
-```bash
-BUILD_FFMPEG=no ./build/build.sh Win64   # or Win32
-```
+> 32-bit builds use `ARCH=386` and produce `Ikemen_GO_x86.exe`.
 
 ---
 
 ## Linux
 
-### Dependencies (Debian/Ubuntu)
+### Prerequisites (Debian/Ubuntu)
 
 ```bash
 sudo apt update && sudo apt install -y \
-  golang-go git pkg-config make nasm yasm build-essential \
-  libxmp-dev libsdl2-dev
+  git make cmake pkg-config golang-go gcc g++ nasm \
+  wget unzip libx11-dev libxext-dev libxrandr-dev \
+  libxcursor-dev libxi-dev libxinerama-dev libxss-dev \
+  libxxf86vm-dev libasound2-dev libgl1-mesa-dev
 ```
 
-### Build x86-64 (Ikemen_GO_Linux)
+> `mingw-w64-x86_64-yasm` is optional (nasm covers the assembler needs).
+> No system SDL2, FFmpeg, or libxmp packages are needed — all are built from source.
+
+### Build
 
 ```bash
-git clone https://github.com/ikemen-engine/Ikemen-GO.git
-cd Ikemen-GO
-# build.sh (matches CI default)
-./build/build.sh Linux
-# or make
-make Ikemen_GO_Linux
+make                          # Native release → Ikemen_GO
+make CONFIG=debug             # Debug build
 ```
 
-### Build ARM64 on an ARM host (Ikemen_GO_LinuxARM)
+The Makefile detects your architecture and builds natively (x86-64 or ARM64).
 
-> On an **ARM64 (aarch64) machine**, the same dependencies apply.
-
-```bash
-# build.sh
-./build/build.sh LinuxARM
-# or make
-make Ikemen_GO_LinuxARM
-```
-
-> Cross-compiling x86→ARM with CGO/FFmpeg requires an ARM cross toolchain and is not covered here.
-
-### Run (Linux)
+### Run
 
 ```bash
-./Ikemen_GO_Linux        # x86-64
-./Ikemen_GO_LinuxARM     # ARM64
+./Ikemen_GO
 # If you need a GL fallback on some drivers:
-MESA_GL_VERSION_OVERRIDE=2.1 ./Ikemen_GO_Linux
-```
-
-You can also double-click **`build/Ikemen_GO.command`** on Linux.
-
-### Use system FFmpeg instead (optional)
-
-```bash
-sudo apt install -y ffmpeg libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libswresample-dev libavfilter-dev
-BUILD_FFMPEG=no ./build/build.sh Linux      # or LinuxARM
+MESA_GL_VERSION_OVERRIDE=2.1 ./Ikemen_GO
 ```
 
 ---
 
-## macOS (Apple Silicon by default; Intel supported)
+## macOS (Apple Silicon / Intel)
 
-### Dependencies (Homebrew)
-
-```bash
-brew update && brew install git go pkg-config nasm libxmp sdl2 molten-vk
-# Optional: brew install yasm
-```
-
-### Build (Apple Silicon default)
+### Prerequisites (Homebrew)
 
 ```bash
-git clone https://github.com/ikemen-engine/Ikemen-GO.git
-cd Ikemen-GO
-# build.sh (matches CI default)
-./build/build.sh MacOSARM
-# or make
-make Ikemen_GO_MacOSARM
+brew install git make cmake pkg-config go nasm wget molten-vk
 ```
 
-### Build (Intel)
+> MoltenVK is required for the Vulkan renderer on macOS.
+> No system SDL2, FFmpeg, or libxmp are needed — all are built from source.
+
+### Build
 
 ```bash
-./build/build.sh MacOS
-# or
-make Ikemen_GO_MacOS
+make                          # Native release → Ikemen_GO
+make CONFIG=debug             # Debug build
 ```
 
-### App bundle (optional)
+The Makefile detects your architecture — Apple Silicon → arm64, Intel → amd64.
+
+### Run
 
 ```bash
-make appbundle BINNAME=bin/Ikemen_GO_MacOSARM   # or BINNAME=bin/Ikemen_GO_MacOS
-open I.K.E.M.E.N-Go.app
+./Ikemen_GO
 ```
 
-You can also double-click **`build/Ikemen_GO.command`**; it starts the bundle or the binary.
-
-### Run (raw binary)
-
-```bash
-./bin/Ikemen_GO_MacOSARM   # Apple Silicon
-./bin/Ikemen_GO_MacOS      # Intel
-```
-
-### Use system FFmpeg instead (optional)
-
-```bash
-brew install ffmpeg
-BUILD_FFMPEG=no ./build/build.sh MacOSARM   # or MacOS
-```
+You can also double-click **`build/Ikemen_GO.command`**.
 
 ---
 
 ## Android (APK via Docker)
 
-This builds the engine **and** produces a ready-to-install **APK** inside Docker. No Android Studio required.
+This builds the engine **and** produces a ready-to-install **APK** inside Docker.
+No Android Studio required.
 
 ### Requirements
 
-* Docker (Docker Desktop on Windows/macOS, or Docker Engine on Linux)
+- Docker (Docker Desktop on Windows/macOS, or Docker Engine on Linux)
 
 ### Build (from repo root)
-
-#### Option A: one-liner helper script
 
 ```bash
 ./build/build_android.sh
 ```
 
-This script wraps the docker compose commands and runs the Android build inside the container.
-
-### Option B: run Docker Compose directly
+Or run Docker Compose directly:
 
 ```bash
 docker compose -f build/docker/android/docker-compose.yml build
@@ -197,72 +187,67 @@ docker compose -f build/docker/android/docker-compose.yml run --rm android-build
 
 ### Outputs
 
-After a successful run, these will exist in your repo:
+| File | Description |
+|------|-------------|
+| `bin/ikemen-go.apk` | Installable APK |
+| `bin/libmain.so` + `bin/libmain.h` | Engine shared library + header |
+| `lib/*.so` | Android runtime deps (SDL2, FFmpeg, libxmp) |
+| `build/android-apk/ikemen-droid` | Cloned Android wrapper project |
 
-* `bin/ikemen-go.apk` (the APK)
-* `bin/libmain.so` and `bin/libmain.h` (engine shared library + header)
-* `lib/*.so` (Android runtime dependencies: SDL2, FFmpeg libs, libxmp, etc.)
-* `build/android-apk/ikemen-droid` (cloned Android wrapper project)
-
-### Configuration knobs (optional)
-
-You can override build metadata and wrapper source:
+### Configuration
 
 ```bash
 APP_VERSION=my-build APP_BUILDTIME=2026.01.13 \
 ANDROID_APK_REPO=https://github.com/Jesuszilla/ikemen-droid.git \
 ANDROID_APK_REF=main \
-docker compose -f build/docker/android/docker-compose.yml run --rm android-build
+docker compose -f build/android/docker-compose.yml run --rm android-build
 ```
 
-To skip APK packaging (only build `.so` + deps):
+Skip APK packaging (only build `.so` + deps):
 
 ```bash
-BUILD_ANDROID_APK=0 docker compose -f build/docker/android/docker-compose.yml run --rm android-build
+BUILD_ANDROID_APK=0 docker compose -f build/android/docker-compose.yml run --rm android-build
 ```
 
-### Customizing the Android wrapper (package name, manifest, icons, etc.)
+### Customizing the Android wrapper
 
-The APK is built from the `ikemen-droid` wrapper project, which is cloned into:
+The APK is built from the `ikemen-droid` wrapper project, cloned into:
 `build/android-apk/ikemen-droid`
 
-If you need changes in that wrapper, fork it and point the build to your fork via:
-`ANDROID_APK_REPO` and `ANDROID_APK_REF` (shown above).
+To use a custom fork, set `ANDROID_APK_REPO` and `ANDROID_APK_REF`.
 
 ---
 
 ## Assets required to run (desktop builds)
 
 Place these folders **next to the executable or app bundle**:
-`data`, `external`, `font`, and a screenpack (see our Elecbyte screenpack repo).
-The release CI bundles these automatically.
+`data`, `external`, `font`, and a screenpack (chars, stages, sound, video).
 
----
-
-## Static building
-
-1. Add packages\go-sdl2 and packages\gl
-2. Add build\ffmpeg-src and build\xmp-src
-3. Replace in go source code: from "github.com/veandco/go-sdl2/sdl" to "github.com/ikemen-engine/Ikemen-GO/packages/go-sdl2/sdl"
-4. Replace in go source code: from "github.com/go-gl/gl/v3.3-core/gl" to "github.com/ikemen-engine/Ikemen-GO/packages/gl/v3.3-core/gl"
-5. Replace in go source code: from "github.com/leonkasovan/gl/v3.2/gles2" to "github.com/ikemen-engine/Ikemen-GO/packages/gl/v3.2/gles2"
+Use `make install` to automatically assemble a runnable distribution with
+the Elecbyte screenpack. The release CI bundles these automatically.
 
 ---
 
 ## Notes & licensing
 
-* The minimal FFmpeg we build matches CI: shared libs only; `file` protocol; Matroska/WebM demuxers;
-  VP9/Opus/Vorbis decoders and parsers; no FFmpeg CLI tools.
-* FFmpeg is used under **LGPL v2.1**; releases attach the corresponding source snapshot.
-* Ikemen GO sources are MIT; bundled screenpack assets have their own licenses.
+- The minimal FFmpeg we build matches CI: static libs only; `file` protocol;
+  Matroska/WebM demuxers; VP9/Opus/Vorbis decoders and parsers; no FFmpeg CLI tools.
+- FFmpeg is used under **LGPL v2.1**; releases attach the corresponding source snapshot.
+- On Windows, the Makefile builds SDL2, FFmpeg, and libxmp from source and links them
+  fully statically (including the MinGW runtime). The resulting `.exe` needs only
+  Windows system DLLs at runtime.
+- On Linux/macOS, SDL2, FFmpeg, and libxmp are compiled into the binary while system
+  libraries (glibc, X11, frameworks) remain dynamically linked.
+- Ikemen GO sources are MIT; bundled screenpack assets have their own licenses.
 
 ---
 
 ## Troubleshooting
 
-* **Missing tools**: re-run the dependency commands for your OS/arch.
-* **FFmpeg link errors**: use the default `build.sh` (auto-builds FFmpeg), or install system FFmpeg dev packages and run with `BUILD_FFMPEG=no`.
-* **libxmp not found**: install libxmp-dev (Linux), libxmp (macOS/Homebrew), or the MSYS2 package mingw-w64-*-libxmp on Windows.
-* **SDL2 not found / pkg-config errors**: if you see an error mentioning that the sdl2 package is missing from the pkg-config search path, install SDL2 development files.
-* **Windows DLLs**: verify `.\lib\*.dll` exists (local build places FFmpeg DLLs there).
-* **Linux GL compatibility**: try `MESA_GL_VERSION_OVERRIDE=2.1` for a fallback.
+- **Missing tools**: run `make deps-check` to see what's missing.
+- **CMake errors**: ensure `mingw-w64-x86_64-cmake` is installed via pacman (Windows)
+  or `cmake` via apt/brew (Linux/macOS).
+- **SDL2 link errors**: run `make sdl2` separately to verify the SDL2 build completes.
+- **FFmpeg link errors**: run `make ffmpeg` separately to verify the FFmpeg build.
+- **libxmp not found**: run `make xmp` separately to verify the XMP build.
+- **Linux GL compatibility**: try `MESA_GL_VERSION_OVERRIDE=2.1` for a fallback.
