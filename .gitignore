@@ -12,10 +12,11 @@ build/build-sdl2/*
 build/build-ffmpeg/*
 build/build-xmp/*
 build/winres/*
-build/SDL-release-2.32.10/*
-build/FFmpeg-n7.1/*
-build/libxmp-libxmp-4.7.1/*
-build/screenpack/*
+# Downloaded dependency source trees — ignore entirely (all files, all depths).
+build/SDL-release-2.32.10/
+build/FFmpeg-n7.1/
+build/libxmp-libxmp-4.7.1/
+build/screenpack/
 
 # ============================
 # Binaries
@@ -91,7 +92,10 @@ external/script/version
 *.cmd
 *.bat
 *.sh
-!build/**/*.sh
+# Keep only our own build scripts (top-level build/), NOT scripts inside the
+# downloaded dependency source trees (SDL/FFmpeg/libxmp), which would otherwise
+# be re-included by a recursive !build/**/*.sh and make git recurse into them.
+!build/*.sh
 save/*
 
 # ============================
