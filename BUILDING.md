@@ -239,6 +239,16 @@ The release CI bundles these automatically.
 
 ---
 
+## Static building
+
+1. Add packages\go-sdl2 and packages\gl
+2. Add build\ffmpeg-src and build\xmp-src
+3. Replace in go source code: from "github.com/veandco/go-sdl2/sdl" to "github.com/ikemen-engine/Ikemen-GO/packages/go-sdl2/sdl"
+4. Replace in go source code: from "github.com/go-gl/gl/v3.3-core/gl" to "github.com/ikemen-engine/Ikemen-GO/packages/gl/v3.3-core/gl"
+5. Replace in go source code: from "github.com/leonkasovan/gl/v3.2/gles2" to "github.com/ikemen-engine/Ikemen-GO/packages/gl/v3.2/gles2"
+
+---
+
 ## Notes & licensing
 
 * The minimal FFmpeg we build matches CI: shared libs only; `file` protocol; Matroska/WebM demuxers;

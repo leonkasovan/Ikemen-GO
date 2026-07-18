@@ -44,16 +44,9 @@ func init() {
 	_ = os.Setenv("PATH", libDir+";"+os.Getenv("PATH"))
 
 	// Families we require.
+	// FFmpeg and XMP are now statically linked into the binary.
 	wantPatterns := []string{
-		"avcodec-*.dll",
-		"avdevice-*.dll",
-		"avfilter-*.dll",
-		"avformat-*.dll",
-		"avutil-*.dll",
 		"libwinpthread-*.dll",
-		"swresample-*.dll",
-		"swscale-*.dll",
-		"libxmp*.dll",
 		"SDL2*.dll",
 	}
 

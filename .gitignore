@@ -59,6 +59,7 @@ external/script/wip/*
 .vscode/*
 .vs/*
 .idea/*
+.mimocode/*
 
 # Android build outputs (generated)
 bin/*.apk
@@ -71,6 +72,7 @@ build/android-apk/
 # Binaries
 build/android-deps/
 build/libxmp-src/
+build/xmp-src/
 build/sdl2-src/
 build/ffmpeg-src/
 build/ffmpeg/
@@ -85,6 +87,9 @@ build/winres/
 *.exe
 *.dll
 *.zip
+*.o
+*.a
 .cron*
 external/script/version
 install/*
+build/output/*

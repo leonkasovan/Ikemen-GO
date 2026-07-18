@@ -343,6 +343,10 @@ if m.NumGC != lastGCStats.NumGC {
 
 ## 7. Optimization Recommendations
 
+### 7.0 Completed (Build / Packaging)
+
+- [x] **Fully static Windows binary** (`Makefile`, `packages/go-sdl2/sdl/sdl_cgo_static.go`, `packages/go-sdl2/_libs/`) — SDL2 now links statically from the vendored `libSDL2_windows_amd64.a` (and `libSDL2_windows_386.a` for Win32) via the go-sdl2 `static` build tag, replacing the shared `SDL2.dll` + `delaylibs` step. The MinGW runtime (winpthread/gcc/stdc++) links statically via `-extldflags '-static -Wl,--defsym,__ms_vsscanf=__mingw_vsscanf'`. Verified: `make clean && make` succeeds, `ldd Ikemen_GO.exe` lists only Windows system DLLs (no `libwinpthread-1.dll` / `SDL2.dll`), and the exe launches from `cmd.exe` with no `clock_gettime64` crash. Removed the now-dead `MINGW_STATIC_LIBS`, `SHARED_PKGS`, and `delaylibs` machinery from the Makefile.
+
 ### 7.1 Completed (P0)
 
 - [x] **Pool `batchVertices`** (`font_gl33.go`, `font_gles32.go`, `font_vk.go`) — per-call `make([]float32)` replaced with struct field + cap check, eliminating ~24KB heap allocation per `Printf` call.

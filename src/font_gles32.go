@@ -13,7 +13,7 @@ import (
 
 	"github.com/golang/freetype"
 	"github.com/golang/freetype/truetype"
-	gl "github.com/leonkasovan/gl/v3.2/gles2"
+	gl "github.com/ikemen-engine/Ikemen-GO/packages/gl/v3.2/gles2"
 	"golang.org/x/image/font"
 	"golang.org/x/image/math/fixed"
 )

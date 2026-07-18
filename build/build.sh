@@ -724,7 +724,7 @@ function patch_go_sdl2_android() {
 	local f=""
 
 	# 1) Prefer vendored copy (writable, deterministic)
-	local vendorf="$REPO_ROOT/vendor/github.com/veandco/go-sdl2/sdl/system_android.go"
+	local vendorf="$REPO_ROOT/vendor/github.com/ikemen-engine/Ikemen-GO/packages/go-sdl2/sdl/system_android.go"
 	if [[ -f "$vendorf" ]]; then
 		f="$vendorf"
 	else
@@ -1201,8 +1201,23 @@ function bundle_shared_libs() {
 	if [[ -d "$FFMPEG_PREFIX/bin" ]]; then
 		# Windows
 		cp -av "$FFMPEG_PREFIX"/bin/*.dll "$dest_lib/" 2>/dev/null || true
-		# MSYS2 runtime dep
-		#cp -av /mingw64/bin/libwinpthread-1.dll "$dest_lib/" 2>/dev/null || true
+	elif [[ -d "$FFMPEG_PREFIX/lib" && "$GOOS" != "android" ]]; then
+		# Linux & macOS
+		cp -av "$FFMPEG_PREFIX"/lib/lib*.so* "$dest_lib/" 2>/dev/null || true
+		cp -av "$FFMPEG_PREFIX"/lib/lib*.dylib "$dest_lib/" 2>/dev/null || true
+	fi
+
+	# On Windows, always copy support DLLs and, if no local FFmpeg build exists, system FFmpeg DLLs
+	if [[ "$GOOS" == "windows" ]]; then
+		if [[ ! -d "$FFMPEG_PREFIX/bin" ]]; then
+			# Fall back to system FFmpeg DLLs when no local FFmpeg build exists
+			for d in /mingw64/bin/avcodec-*.dll /mingw64/bin/avformat-*.dll /mingw64/bin/avutil-*.dll \
+				/mingw64/bin/avdevice-*.dll /mingw64/bin/avfilter-*.dll \
+				/mingw64/bin/swscale-*.dll /mingw64/bin/swresample-*.dll; do
+				[[ -f "$d" ]] && cp -av "$d" "$dest_lib/" 2>/dev/null || true
+			done
+		fi
+		# MSYS2 runtime deps (always needed regardless of FFmpeg source)
 		for d in \
 			/mingw64/bin/libwinpthread-1.dll \
 			/mingw64/bin/libgcc_s_seh-1.dll \
@@ -1211,11 +1226,8 @@ function bundle_shared_libs() {
 			/mingw64/bin/SDL2*.dll ; do
 			cp -av "$d" "$dest_lib/" 2>/dev/null || true
 		done
-	elif [[ -d "$FFMPEG_PREFIX/lib" && "$GOOS" != "android" ]]; then
-		# Linux & macOS
-		cp -av "$FFMPEG_PREFIX"/lib/lib*.so* "$dest_lib/" 2>/dev/null || true
-		cp -av "$FFMPEG_PREFIX"/lib/lib*.dylib "$dest_lib/" 2>/dev/null || true
 	fi
+
 	# Bundle MoltenVK on macOS
 	if [[ "$GOOS" == "darwin" ]]; then
 		local mvk="${MVK_DYLIB:-}"

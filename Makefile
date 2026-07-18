@@ -13,7 +13,6 @@
 #   make distclean          # Remove build artifacts + FFmpeg + screenpack
 #   make screenpack         # Clone/update Elecbyte screenpack
 #   make ffmpeg             # Build/check FFmpeg dependencies
-#   make bundle             # Copy runtime DLLs to lib/
 #   make install             # Assemble runnable build in install/ (screenpack + binary)
 #   make help               # Show all targets and options
 #
@@ -66,13 +65,15 @@ GOOS := windows
 
 # ─── Directories ─────────────────────────────────────────────────────────────
 BUILDDIR      := build
-OUTDIR        := .
-LIBDIR        := lib
-DELAYLIB_DIR  := $(BUILDDIR)/delaylib
-WINRES_DIR    := $(BUILDDIR)/winres
-FFMPEG_SRCDIR := $(BUILDDIR)/ffmpeg-src
-FFMPEG_PREFIX ?= $(CURDIR)/$(BUILDDIR)/ffmpeg
+BUILD_PREFIX := $(abspath $(BUILDDIR)/output)
 FFMPEG_REV    ?= release/7.1
+XMP_SRCDIR    := $(BUILDDIR)/xmp-src
+OUTDIR        := .
+WINRES_DIR    := $(BUILDDIR)/winres
+# FFmpeg installs into the SAME tree as XMP ($(BUILD_PREFIX)), so a
+# single PKG_CONFIG_PATH / -L covers both. Mirrors the proven static build.
+FFMPEG_PREFIX := $(BUILD_PREFIX)
+FFMPEG_LIBS   := $(addprefix $(BUILD_PREFIX)/lib/,libavformat.a libavcodec.a libavutil.a libswscale.a libswresample.a libavfilter.a)
 
 # ─── Install / Screenpack Distribution ────────────────────────────────────────
 INSTALLDIR         ?= install
@@ -84,7 +85,6 @@ SCREENPACK_EXTRACT := Ikemen-GO-Screenpack-$(SCREENPACK_TAG)
 # ─── Build Options ───────────────────────────────────────────────────────────
 DEBUG_BUILD   ?= 0
 IKEMEN_CPP    ?= 0
-BUILD_FFMPEG  ?= auto   # auto | yes | no
 
 # ─── Toolchain ───────────────────────────────────────────────────────────────
 export GOEXPERIMENT := arenas
@@ -95,11 +95,17 @@ PKG_CONFIG ?= pkg-config
 WINDRES     := $(shell command -v x86_64-w64-mingw32-windres 2>/dev/null || command -v windres 2>/dev/null || echo windres)
 
 # ─── pkg-config Packages ─────────────────────────────────────────────────────
-PKG_PKGS := libavformat libavcodec libavutil libswscale libswresample libavfilter libxmp sdl2
+# Static libraries (FFmpeg + XMP) are linked directly into the binary.
+# SDL2 is linked statically via -tags static (vendored _libs), so it is
+# not a pkg-config dependency at link time.
+STATIC_PKGS := libavformat libavcodec libavutil libswscale libswresample libavfilter libxmp
 
-# Prepend local FFmpeg to PKG_CONFIG_PATH if it exists
-ifneq ($(wildcard $(FFMPEG_PREFIX)/lib/pkgconfig),)
-  export PKG_CONFIG_PATH := $(FFMPEG_PREFIX)/lib/pkgconfig:/mingw64/lib/pkgconfig:$(PKG_CONFIG_PATH)
+# Local FFmpeg/XMP install into $(BUILD_PREFIX)/lib/pkgconfig. The
+# `binary`/`test*` recipes set PKG_CONFIG_PATH at run time to that dir
+# first and /mingw64 last (fallback for the shared SDL2 implib), so
+# pkg-config never resolves libav* to the system's full FFmpeg.
+ifneq ($(wildcard $(BUILD_PREFIX)/lib/pkgconfig),)
+  export PKG_CONFIG_PATH := $(BUILD_PREFIX)/lib/pkgconfig:$(PKG_CONFIG_PATH)
 endif
 
 # ─── SxS Version Sanitization ───────────────────────────────────────────────
@@ -123,16 +129,26 @@ BUILD_YEAR    := $(subst -,,$(firstword $(subst ., ,$(APP_BUILDTIME))))
 APP_COPYRIGHT ?= (c) $(COPY_START_YEAR)-$(BUILD_YEAR) Ikemen GO team (MIT)
 
 # ─── Go Build Flags ──────────────────────────────────────────────────────────
+# The `static` Go build tag activates the vendored static SDL2 in
+# packages/go-sdl2/sdl (sdl_cgo_static.go): it links -lSDL2_windows_amd64
+# from packages/go-sdl2/_libs plus the Win32 deps (setupapi/imm32/version/
+# oleaut32...), so SDL2 is compiled in — no SDL2.dll ships.
 ifeq ($(IKEMEN_CPP),1)
-  GO_TAGS := -tags ikemen_cpp
+  GO_TAGS := -tags ikemen_cpp static
 else
-  GO_TAGS :=
+  GO_TAGS := -tags static
 endif
 ifeq ($(DEBUG_BUILD),1)
   # The `debug` target enables the memory-analysis instrumentation (see
   # src/memdebug.go / src/memdebug_off.go, gated by the `debug` Go build tag).
   GO_TAGS += -tags debug
 endif
+
+# Fully static external link: -static pulls the MinGW runtime .a implibs
+# (libwinpthread.a, libgcc_eh.a, libstdc++.a) so no libwinpthread-1.dll /
+# libgcc_s_seh-1.dll / libstdc++-6.dll ships. --defsym aliases the old-MinGW
+# __ms_vsscanf (referenced by the prebuilt static SDL2) to current __mingw_vsscanf.
+EXTLDFLAGS := -static -Wl,--defsym,__ms_vsscanf=__mingw_vsscanf
 
 # Version stamping is common to both builds.
 LDFLAGS_BASE := \
@@ -141,25 +157,22 @@ LDFLAGS_BASE := \
 
 ifeq ($(DEBUG_BUILD),1)
   # Debug build: keep symbols/DWARF for debugging; console subsystem.
-  LDFLAGS_GO := $(LDFLAGS_BASE)
+  LDFLAGS_GO := $(LDFLAGS_BASE) -extldflags '$(EXTLDFLAGS)'
   BUILD_TYPE := debug
 else
   # Release build: GUI subsystem, strip symbols (-s) and DWARF (-w).
-  LDFLAGS_GO := -H windowsgui -s -w $(LDFLAGS_BASE)
+  LDFLAGS_GO := -H windowsgui -s -w $(LDFLAGS_BASE) -extldflags '$(EXTLDFLAGS)'
   BUILD_TYPE := release
 endif
 
 # ─── Derived File Targets ────────────────────────────────────────────────────
 BINARY       := $(OUTDIR)/$(BINNAME)
 SRC_SYSO     := src/rsrc_windows.syso
-DELAY_STAMP  := $(DELAYLIB_DIR)/.delaylibs_done
-BUNDLE_STAMP := $(LIBDIR)/.bundle_done
 
 # ─── Phony Targets ───────────────────────────────────────────────────────────
 .PHONY: all release debug win32 help \
-        deps-check check-sdl2 check-libxmp check-go-env \
-        ffdeps _build-ffmpeg \
-        winres delaylibs binary install \
+        deps-check check-go-env \
+        ffmpeg xmp winres binary install \
         screenpack \
         test test-debug test-bench \
         clean distclean FORCE
@@ -167,10 +180,10 @@ BUNDLE_STAMP := $(LIBDIR)/.bundle_done
 # ─── Default Target ──────────────────────────────────────────────────────────
 all: release
 
-release: deps-check check-sdl2 check-libxmp ffdeps binary bundle
+release: deps-check xmp ffmpeg binary
 	@echo "==> Build successful"
 	@echo "    Binary: $(BINARY)"
-	@test -d "$(LIBDIR)" && echo "    Runtime DLLs: $(LIBDIR)/" || true
+	@echo "    Fully static: only Windows system DLLs at runtime."
 
 # ===========================================================================
 # Convenience Targets
@@ -187,28 +200,29 @@ debug:
 
 .PHONY: test test-debug test-bench
 
+# Static libs resolve against the LOCAL pkgconfig only (never the
+# system FFmpeg). SDL2 is linked statically via -tags static (vendored
+# _libs), so no shared SDL2 entry is needed here.
+TEST_CGO = CGO_CFLAGS="$$( PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig" $(PKG_CONFIG) --cflags $(STATIC_PKGS) )" \
+	CGO_LDFLAGS="-L$(BUILD_PREFIX)/lib \
+		$$( PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig" $(PKG_CONFIG) --static --libs $(STATIC_PKGS) )"
+
 test: deps-check check-go-env
 	@echo "==> Running unit tests..."
 	IKEMEN_SKIP_DLL_CHECK=1 \
-	PKG_CONFIG_PATH="$(PKG_CONFIG_PATH)" \
-	CGO_CFLAGS="$$($(PKG_CONFIG) --cflags $(PKG_PKGS))" \
-	CGO_LDFLAGS="-L$$(pwd)/$(DELAYLIB_DIR) $$($(PKG_CONFIG) --libs $(PKG_PKGS))" \
+	$(TEST_CGO) \
 	go test -v $(GO_TAGS) -count=1 ./src -run 'Test'
 
 test-debug: deps-check check-go-env
 	@echo "==> Running unit tests with -tags debug (memory instrumentation)..."
 	IKEMEN_SKIP_DLL_CHECK=1 \
-	PKG_CONFIG_PATH="$(PKG_CONFIG_PATH)" \
-	CGO_CFLAGS="$$($(PKG_CONFIG) --cflags $(PKG_PKGS))" \
-	CGO_LDFLAGS="-L$$(pwd)/$(DELAYLIB_DIR) $$($(PKG_CONFIG) --libs $(PKG_PKGS))" \
+	$(TEST_CGO) \
 	go test -v $(GO_TAGS) -tags debug -count=1 ./src -run 'Test'
 
 test-bench: deps-check check-go-env
 	@echo "==> Running benchmarks..."
 	IKEMEN_SKIP_DLL_CHECK=1 \
-	PKG_CONFIG_PATH="$(PKG_CONFIG_PATH)" \
-	CGO_CFLAGS="$$($(PKG_CONFIG) --cflags $(PKG_PKGS))" \
-	CGO_LDFLAGS="-L$$(pwd)/$(DELAYLIB_DIR) $$($(PKG_CONFIG) --libs $(PKG_PKGS))" \
+	$(TEST_CGO) \
 	go test -v $(GO_TAGS) -bench=. -benchmem -count=1 ./src
 
 win32:
@@ -221,7 +235,7 @@ win32:
 deps-check:
 	@echo "==> Checking build dependencies..."
 	@missing=""; \
-	for tool in git make pkg-config gcc g++ nasm go gendef dlltool unzip; do \
+	for tool in git make pkg-config gcc g++ nasm go unzip; do \
 		command -v $$tool >/dev/null 2>&1 || missing="$$missing $$tool"; \
 	done; \
 	if [ -n "$$missing" ]; then \
@@ -231,8 +245,7 @@ deps-check:
 		echo "  pacman -S --noconfirm git make diffutils mingw-w64-x86_64-pkg-config \\" >&2; \
 		echo "    mingw-w64-x86_64-go mingw-w64-x86_64-toolchain \\" >&2; \
 		echo "    mingw-w64-x86_64-nasm mingw-w64-x86_64-yasm \\" >&2; \
-		echo "    mingw-w64-x86_64-tools-git mingw-w64-x86_64-libxmp \\" >&2; \
-		echo "    mingw-w64-x86_64-SDL2" >&2; \
+		echo "    mingw-w64-x86_64-tools-git" >&2; \
 		exit 1; \
 	fi
 	@# Safe path check for MSYS2/Cygwin
@@ -240,78 +253,46 @@ deps-check:
 	@case "$$(uname -s 2>/dev/null)" in \
 		MINGW* | MSYS* | CYGWIN*) \
 			case "$(CURDIR)" in \
-				*[!A-Za-z0-9._/-]*) \
+				*[!A-Za-z0-9._/:-]*) \
 					echo "ERROR: Repository path contains characters unsafe for MSYS2/autotools:" >&2; \
 					echo "  $(CURDIR)" >&2; \
-					echo "Use only letters, digits, '_', '-', '.'" >&2; \
+					echo "Use only letters, digits, ':', '_', '-', '.'" >&2; \
 					exit 1;; \
 			esac;; \
 	esac
 	@echo "    All dependencies found."
-
-check-sdl2:
-	@if ! $(PKG_CONFIG) --exists sdl2 2>/dev/null; then \
-		echo "ERROR: SDL2 dev package not found." >&2; \
-		echo "  Install: pacman -S mingw-w64-x86_64-SDL2" >&2; \
-		exit 1; \
-	fi
-
-check-libxmp:
-	@if ! $(PKG_CONFIG) --exists libxmp 2>/dev/null; then \
-		echo "ERROR: libxmp dev package not found." >&2; \
-		echo "  Install: pacman -S mingw-w64-x86_64-libxmp" >&2; \
-		exit 1; \
-	fi
 
 check-go-env:
 	@go version >/dev/null 2>&1 || \
 		{ echo "ERROR: 'go version' failed. Set GOROOT=/mingw64/lib/go" >&2; exit 1; }
 
 # ===========================================================================
-# FFmpeg Detection / Build
+# FFmpeg Static Build
+# ===========================================================================
+# FFmpeg Static Build — installs into $(BUILD_PREFIX) (shared with XMP)
 # ===========================================================================
 
-_FFMPEG_HAS_PC := $(shell $(PKG_CONFIG) --exists libavformat libavcodec libavutil libswresample libswscale libavfilter 2>/dev/null && echo yes)
-
-ifeq ($(BUILD_FFMPEG),yes)
-ffdeps: _build-ffmpeg
-else ifeq ($(BUILD_FFMPEG),no)
-ffdeps:
-	@if [ "$(_FFMPEG_HAS_PC)" != "yes" ]; then \
-		echo "ERROR: FFmpeg dev libraries not found (BUILD_FFMPEG=no)." >&2; \
-		echo "       Install distro dev packages, or re-run with BUILD_FFMPEG=yes" >&2; \
-		exit 1; \
-	fi
-	@echo "==> Using system FFmpeg."
-else
-ifeq ($(_FFMPEG_HAS_PC),yes)
-ffdeps:
-	@echo "==> Found FFmpeg via pkg-config; using it."
-else
-ffdeps: _build-ffmpeg
-endif
-endif
+FFMPEG_SRCDIR := $(BUILDDIR)/ffmpeg-src
 
 .PHONY: ffmpeg
-ffmpeg: ffdeps
 
-_build-ffmpeg:
-	@if [ -d "$(FFMPEG_SRCDIR)" ]; then \
-		echo "==> FFmpeg sources exist, skipping build."; \
-		exit 0; \
-	fi
-	@echo "==> Building minimal FFmpeg ($(FFMPEG_REV))..."
+ffmpeg: $(FFMPEG_LIBS)
+
+$(FFMPEG_LIBS):
+	@echo "==> Building minimal static FFmpeg ($(FFMPEG_REV))..."
 	mkdir -p $(BUILDDIR)
-	rm -rf $(FFMPEG_SRCDIR)
-	git clone --depth=1 -b "$(FFMPEG_REV)" https://github.com/FFmpeg/FFmpeg.git $(FFMPEG_SRCDIR)
+	if [ ! -d "$(FFMPEG_SRCDIR)" ]; then \
+		@echo "==> Cloning FFmpeg source ($(FFMPEG_REV))..."; \
+		git clone --depth=1 -b "$(FFMPEG_REV)" https://github.com/FFmpeg/FFmpeg.git $(FFMPEG_SRCDIR); \
+	fi
 	cd $(FFMPEG_SRCDIR) && \
 		./configure \
-			--prefix="$(FFMPEG_PREFIX)" \
+			--prefix="$(BUILD_PREFIX)" \
 			--install-name-dir=@rpath \
-			--enable-shared --disable-static \
+			--enable-static --disable-shared \
 			--disable-gpl --disable-nonfree \
 			--disable-debug --disable-doc --disable-programs --disable-everything \
-			--disable-autodetect \
+			--disable-autodetect --disable-avdevice --disable-pthreads \
 			--enable-avformat --enable-avcodec --enable-avutil --enable-swresample --enable-swscale \
 			--enable-avfilter --enable-filter=buffer,buffersink,format,scale,pad,crop \
 			--enable-protocol=file \
@@ -322,7 +303,7 @@ _build-ffmpeg:
 			--pkg-config="$$(which pkg-config)" && \
 		make -j"$$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)" && \
 		make install
-	@echo "==> FFmpeg built and installed to: $(FFMPEG_PREFIX)"
+	@echo "==> FFmpeg static libraries installed to: $(BUILD_PREFIX)"
 
 # ===========================================================================
 # Windows Resources (icon + manifest + version) — FORCE ensures fresh version
@@ -399,77 +380,27 @@ $(SRC_SYSO): $(WINRES_DIR)/Ikemen_GO.rc
 		-O coff -o $@
 
 # ===========================================================================
-# Delay-Load Import Libraries for MinGW
+# Go Binary — statically links FFmpeg, XMP, the MinGW runtime
+# (pthread/gcc/stdc++), and SDL2 (vendored _libs). So no
+# libwinpthread-1.dll, libgcc_s_seh-1.dll, libstdc++-6.dll, or
+# SDL2.dll ship — `ldd $(BINARY)` lists only Windows system DLLs.
 # ===========================================================================
 
-delaylibs: $(DELAY_STAMP)
-
-$(DELAY_STAMP):
-	@echo "==> Generating delay-load import libraries..."
-	mkdir -p $(DELAYLIB_DIR)
-	shopt -s nullglob
-	for d in "$(FFMPEG_PREFIX)"/bin/*.dll /mingw64/bin/libxmp*.dll /mingw64/bin/libwinpthread-1.dll /mingw64/bin/SDL2*.dll; do
-		[[ -f "$$d" ]] || continue
-		base="$$(basename "$$d")"
-		name="$${base%.dll}"
-		libname="$${name%%-*}"
-		libname="$${libname#lib}"
-		(cd "$(DELAYLIB_DIR)" && gendef "$$d" >/dev/null 2>&1)
-		dlltool --dllname "$$base" \
-			--def "$(DELAYLIB_DIR)/$${name}.def" \
-			--output-delaylib "$(DELAYLIB_DIR)/lib$${libname}.dll.a"
-		rm -f "$(DELAYLIB_DIR)/$${name}.def"
-	done
-	shopt -u nullglob
-	touch $@
-	@echo "==> Delay libraries ready."
-
-# ===========================================================================
-# Go Binary
-# ===========================================================================
-
-binary: check-go-env $(SRC_SYSO) $(DELAY_STAMP)
+binary: ffmpeg xmp check-go-env $(SRC_SYSO)
 	@echo "==> Building $(BINNAME) ($(BUILD_TYPE), GOARCH=$(GOARCH))..."
-	@_pc_path=""; \
-	if [ -d "$(FFMPEG_PREFIX)/lib/pkgconfig" ]; then \
-		_pc_path="$(FFMPEG_PREFIX)/lib/pkgconfig:"; \
-	fi && \
-	export PKG_CONFIG_PATH="$${_pc_path}$${PKG_CONFIG_PATH:-}" && \
-	export CGO_CFLAGS="$$($(PKG_CONFIG) --cflags $(PKG_PKGS))" && \
-	export CGO_LDFLAGS="-L$$(pwd)/$(DELAYLIB_DIR) $$($(PKG_CONFIG) --libs $(PKG_PKGS))" && \
+	@CGO_CFLAGS="$$( PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig" $(PKG_CONFIG) --cflags $(STATIC_PKGS) )" \
+	CGO_LDFLAGS="-L$(BUILD_PREFIX)/lib \
+		$$( PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig" $(PKG_CONFIG) --static --libs $(STATIC_PKGS) )" \
 	go build -trimpath -v $(GO_TAGS) \
 		-ldflags "$(LDFLAGS_GO)" \
 		-o "$(BINARY)" ./src
 	rm -f $(SRC_SYSO)
 
 # ===========================================================================
-# Bundle Shared DLLs
-# ===========================================================================
-
-bundle: $(BUNDLE_STAMP)
-
-$(BUNDLE_STAMP): $(BINARY)
-	@echo "==> Bundling runtime DLLs to $(LIBDIR)/..."
-	mkdir -p $(LIBDIR)
-	if [ -d "$(FFMPEG_PREFIX)/bin" ]; then
-		cp -av "$(FFMPEG_PREFIX)"/bin/*.dll "$(LIBDIR)/" 2>/dev/null || true
-	fi
-	for d in \
-		/mingw64/bin/libwinpthread-1.dll \
-		/mingw64/bin/libgcc_s_seh-1.dll \
-		/mingw64/bin/libstdc++-6.dll \
-		/mingw64/bin/libxmp*.dll \
-		/mingw64/bin/SDL2*.dll; do
-		[ -f "$$d" ] && cp -av "$$d" "$(LIBDIR)/" 2>/dev/null || true
-	done
-	@echo "==> Runtime DLLs bundled in $(LIBDIR)/"
-	touch $@
-
-# ===========================================================================
 # Install — assemble a runnable distribution in $(INSTALLDIR)
 # ===========================================================================
 
-install: binary bundle deps-check
+install: binary deps-check
 	@echo "==> Installing to $(INSTALLDIR)/..."
 	@if [ ! -f "$(SCREENPACK_DL)" ]; then \
 		echo "==> Downloading screenpack (tag $(SCREENPACK_TAG))..."; \
@@ -488,9 +419,6 @@ install: binary bundle deps-check
 	for d in data font external; do \
 		cp -rT "$$d" "$(INSTALLDIR)/$$d"; \
 	done
-	@echo "==> Copying runtime DLLs (lib/)..."
-	rm -rf "$(INSTALLDIR)/lib"
-	cp -r "$(LIBDIR)" "$(INSTALLDIR)/"
 	@echo "==> Removing extracted screenpack folder..."
 	rm -rf "$(INSTALLDIR)/$(SCREENPACK_EXTRACT)"
 	@echo "==> Copying binary $(BINNAME)..."
@@ -527,9 +455,6 @@ clean:
 	rm -f $(BINARY) 2>/dev/null || true
 	rm -f $(OUTDIR)/Ikemen_GO.exe $(OUTDIR)/Ikemen_GO_x86.exe $(OUTDIR)/Ikemen_CPP.exe $(OUTDIR)/Ikemen_GO_debug.exe 2>/dev/null || true
 	rm -f $(SRC_SYSO) 2>/dev/null || true
-	rm -f $(DELAY_STAMP) $(BUNDLE_STAMP) 2>/dev/null || true
-	rm -rf $(DELAYLIB_DIR) 2>/dev/null || true
-	rm -rf $(LIBDIR) 2>/dev/null || true
 	rm -rf $(WINRES_DIR) 2>/dev/null || true
 	@echo "==> Clean done."
 
@@ -537,6 +462,7 @@ distclean: clean
 	@echo "==> Deep cleaning..."
 	rm -rf $(FFMPEG_SRCDIR) 2>/dev/null || true
 	rm -rf $(FFMPEG_PREFIX) 2>/dev/null || true
+	rm -rf $(XMP_SRCDIR) 2>/dev/null || true
 	rm -rf $(SCREENPACK_DIR) 2>/dev/null || true
 	@echo "==> Distclean done."
 
@@ -547,38 +473,72 @@ FORCE:
 
 # ===========================================================================
 # Help
+# ===========================================================================	help:
+# 	@echo 'Ikemen-GO Windows Build (MSYS2 / MinGW64)'
+# 	@echo ''
+# 	@echo 'Targets:'
+# 	@echo '  all / release  Win64 release build (default, GUI subsystem)'
+# 	@echo '  debug          Win64 debug build -> Ikemen_GO_debug.exe (console + memory instrumentation)'
+# 	@echo '  win32          Win32 (x86) build'
+# 	@echo '  ffmpeg         Build static FFmpeg libraries'
+# 	@echo '  xmp            Build static XMP library from local source'
+# 	@echo '  screenpack     Clone/update Elecbyte screenpack'
+# 	@echo '  install        Assemble runnable build in install/ (screenpack + binary)'
+# 	@echo '  clean          Remove build artifacts'
+# 	@echo '  distclean      Remove artifacts + FFmpeg + XMP + screenpack'
+# 	@echo '  deps-check     Verify required tools are installed'
+# 	@echo '  help           Show this help'
+# 	@echo ''
+# 	@echo 'Note: FFmpeg, XMP, the MinGW runtime, and SDL2 are ALL linked'
+# 	@echo '      statically; the exe needs only Windows system DLLs at runtime.'
+# 	@echo ''
+# 	@echo 'Options:'
+# 	@echo '  ARCH=386           Build 32-bit (default: amd64)'
+# 	@echo '  DEBUG_BUILD=1      Debug build (console subsystem) + memory instrumentation'
+# 	@echo '  IKEMEN_CPP=1       Enable C++ backend (Go build tags)'
+# 	@echo '  APP_VERSION=X.Y    Set version string (default: nightly)'
+# 	@echo '  APP_BUILDTIME=X    Set build timestamp'
+# 	@echo ''
+# 	@echo 'Examples:'
+# 	@echo '  make                          # Win64 release'
+# 	@echo '  make debug                    # Win64 debug'
+# 	@echo '  make win32                    # Win32 release'
+# 	@echo '  make IKEMEN_CPP=1             # C++ backend'
+# 	@echo '  make APP_VERSION=v1.0.0       # Tagged build'
+# 	@echo '  make APP_VERSION=v1.0.0 DEBUG_BUILD=1 IKEMEN_CPP=1'
+
+# ===========================================================================
+# XMP Static Library Build
+# Builds libxmp from local source (build/xmp-src/) as a static library
+# and creates a pkg-config file so the linker can find it.
 # ===========================================================================
 
-help:
-	@echo 'Ikemen-GO Windows Build (MSYS2 / MinGW64)'
-	@echo ''
-	@echo 'Targets:'
-	@echo '  all / release  Win64 release build (default, GUI subsystem)'
-	@echo '  debug          Win64 debug build -> Ikemen_GO_debug.exe (console + memory instrumentation)'
-	@echo '  win32          Win32 (x86) build'
-	@echo '  ffmpeg         Build/check FFmpeg dependencies'
-	@echo '  screenpack     Clone/update Elecbyte screenpack'
-	@echo '  bundle         Copy shared DLLs to lib/'
-	@echo '  install        Assemble runnable build in install/ (screenpack + binary)'
-	@echo '  clean          Remove build artifacts'
-	@echo '  distclean      Remove artifacts + FFmpeg + screenpack'
-	@echo '  deps-check     Verify required tools are installed'
-	@echo '  help           Show this help'
-	@echo ''
-	@echo 'Options:'
-	@echo '  ARCH=386           Build 32-bit (default: amd64)'
-	@echo '  DEBUG_BUILD=1      Debug build (console subsystem) + memory instrumentation'
-	@echo '  IKEMEN_CPP=1       Enable C++ backend (Go build tags)'
-	@echo '  BUILD_FFMPEG=yes   Force local FFmpeg build'
-	@echo '  BUILD_FFMPEG=no    Require system FFmpeg only'
-	@echo '  APP_VERSION=X.Y    Set version string (default: nightly)'
-	@echo '  APP_BUILDTIME=X    Set build timestamp'
-	@echo ''
-	@echo 'Examples:'
-	@echo '  make                          # Win64 release'
-	@echo '  make debug                    # Win64 debug'
-	@echo '  make win32                    # Win32 release'
-	@echo '  make IKEMEN_CPP=1             # C++ backend'
-	@echo '  make BUILD_FFMPEG=yes         # Force local FFmpeg'
-	@echo '  make APP_VERSION=v1.0.0       # Tagged build'
-	@echo '  make APP_VERSION=v1.0.0 DEBUG_BUILD=1 IKEMEN_CPP=1'
+XMP_LIB  := $(BUILD_PREFIX)/lib/libxmp.a
+XMP_PC   := $(BUILD_PREFIX)/lib/pkgconfig/libxmp.pc
+
+xmp: $(XMP_LIB) $(XMP_PC)
+
+$(XMP_LIB): $(XMP_SRCDIR)/Makefile
+	@echo "==> Building libxmp statically from local source..."
+	mkdir -p $(BUILD_PREFIX)
+	cd $(XMP_SRCDIR) && \
+		$(MAKE) CC="$(CC)" AR="$(AR)" RANLIB="$(RANLIB)" OUTPUT_DIR="$(BUILD_PREFIX)" && \
+		$(MAKE) CC="$(CC)" AR="$(AR)" RANLIB="$(RANLIB)" OUTPUT_DIR="$(BUILD_PREFIX)" install
+
+$(XMP_PC): $(XMP_LIB)
+	@echo "==> Creating libxmp.pc for pkg-config..."
+	mkdir -p $(BUILD_PREFIX)/lib/pkgconfig
+	cat > $(XMP_PC) <<-PCEOF
+	prefix=$(BUILD_PREFIX)
+	exec_prefix=\$${prefix}
+	libdir=\$${exec_prefix}/lib
+	includedir=\$${prefix}/include
+
+	Name: libxmp
+	Description: XMP (Extended Module Player) static library
+	Version: 4.6.2
+	Libs: -L\$${libdir} -lxmp
+	Libs.private: -lm
+	Cflags: -I\$${includedir} -DLIBXMP_STATIC
+	PCEOF
+	@echo "==> libxmp.pc created."
