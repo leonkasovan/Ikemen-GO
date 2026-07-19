@@ -315,6 +315,7 @@ endif
         deps-check check-go-env \
         ffmpeg xmp sdl2 winres binary install \
         screenpack \
+        android clean-android \
         clean distclean FORCE
 
 # ============================================================================
@@ -697,6 +698,80 @@ screenpack:
 	@echo "==> Screenpack ready in $(SCREENPACK_DIR)"
 
 # ============================================================================
+# Android — arm64 shared library (libmain.so) via NDK + Go c-shared
+# ============================================================================
+# Builds android/app/libs/arm64-v8a/libmain.so, loaded by the Android app
+# (Java/JNI) at runtime. Uses the Android NDK's clang cross-compilers and a
+# prebuilt SDL2 for android-30 living under $(ANDROID_DEPS_PATH).
+#
+# Prerequisites (one-time host setup):
+#   - Android NDK r21+          (e.g. sdkmanager "ndk;27.1.12297006")
+#   - Android platform API 30   (sdkmanager "platforms;android-30")
+#   - JDK 8 recommended for the surrounding Gradle/APK build
+#   - SDL2 built for arm64-v8a / android-30 and installed into
+#     $(ANDROID_DEPS_PATH) (lib/, lib/pkgconfig/, include/, include/SDL2/):
+#       git clone --depth 1 --branch SDL2 https://github.com/libsdl-org/SDL.git SDL2
+#       cd SDL2 && mkdir build-android && cd build-android
+#       cmake -G "Unix Makefiles" .. \
+#         -DCMAKE_TOOLCHAIN_FILE="$(ANDROID_NDK_HOME)/build/cmake/android.toolchain.cmake" \
+#         -DANDROID_ABI="arm64-v8a" -DANDROID_PLATFORM=android-30 \
+#         -DCMAKE_INSTALL_PREFIX="$(ANDROID_DEPS_PATH)" \
+#         -DSDL_ANDROID_PACKAGE_NAME=org.ikemen_engine.ikemen_go \
+#         -DSDL_STATIC=OFF -DSDL_SHARED=ON -DCMAKE_BUILD_TYPE=Release \
+#         -DCMAKE_SHARED_LINKER_FLAGS="-Wl,-z,max-page-size=16384"
+#       cmake --build . -- -j8 && cmake --build . --target install
+#
+# Override paths on the command line if your NDK lives elsewhere, e.g.:
+#   make android ANDROID_NDK_HOME=/path/to/ndk
+#
+# Note: the android target is self-contained — it sets its own GOOS/GOARCH/CC
+# via target-specific assignments and does NOT use the native SDL2/FFmpeg/XMP
+# static libs built by `make release`.
+
+# --- Android configuration (override on the command line as needed) ---------
+ANDROID_NDK_HOME  ?= C:/Android/SDK/ndk/27.1.12297006
+ANDROID_DEPS_PATH ?= $(abspath $(BUILDDIR)/android-deps)
+ANDROID_HOST_TAG  ?= windows-x86_64
+ANDROID_API       ?= 30
+ANDROID_TARGET    := aarch64-linux-android$(ANDROID_API)
+ANDROID_TOOLCHAIN := $(ANDROID_NDK_HOME)/toolchains/llvm/prebuilt/$(ANDROID_HOST_TAG)
+ANDROID_CC        := $(ANDROID_TOOLCHAIN)/bin/$(ANDROID_TARGET)-clang
+ANDROID_CXX       := $(ANDROID_TOOLCHAIN)/bin/$(ANDROID_TARGET)-clang++
+ANDROID_OUTDIR    := android/app/libs/arm64-v8a
+ANDROID_BINARY    := $(ANDROID_OUTDIR)/libmain.so
+
+android:
+	@echo "==> Building Android shared library (libmain.so, arm64-v8a)..."
+	@if [ ! -d "$(ANDROID_TOOLCHAIN)" ]; then \
+		echo "ERROR: NDK toolchain not found: $(ANDROID_TOOLCHAIN)" >&2; \
+		echo "  Set ANDROID_NDK_HOME (and ANDROID_HOST_TAG for non-Windows hosts)." >&2; \
+		exit 1; \
+	fi
+	@if [ ! -d "$(ANDROID_DEPS_PATH)/lib" ]; then \
+		echo "ERROR: SDL2 android deps not found: $(ANDROID_DEPS_PATH)" >&2; \
+		echo "  Build SDL2 for android-30 first (see comments above the android target)." >&2; \
+		exit 1; \
+	fi
+	mkdir -p $(ANDROID_OUTDIR)
+	CGO_ENABLED=1 GOOS=android GOARCH=arm64 GOEXPERIMENT=arenas \
+	CC="$(ANDROID_CC)" CXX="$(ANDROID_CXX)" \
+	PKG_CONFIG_LIBDIR="$(ANDROID_DEPS_PATH)/lib/pkgconfig" \
+	PKG_CONFIG_SYSROOT_DIR="$(ANDROID_DEPS_PATH)" \
+	PKG_CONFIG_PATH= \
+	CGO_CFLAGS="-I$(ANDROID_DEPS_PATH)/include -I$(ANDROID_DEPS_PATH)/include/SDL2" \
+	CGO_LDFLAGS="-L$(ANDROID_DEPS_PATH)/lib -lSDL2 -lGLESv2 -lOpenSLES -llog -Wl,-z,max-page-size=16384" \
+	go build -buildmode=c-shared -trimpath -v -tags "mugen lite android gles2" \
+		-ldflags "-s -w $(LDFLAGS_BASE) -X 'runtime.godebugDefault=asyncpreemptoff=1,sigaltstack=0'" \
+		-o "$(ANDROID_BINARY)" ./src
+	@echo "==> Android build successful: $(ANDROID_BINARY)"
+
+clean-android:
+	@echo "==> Cleaning Android artifacts..."
+	rm -f $(ANDROID_BINARY) 2>/dev/null || true
+	rm -f $(ANDROID_OUTDIR)/libmain.h 2>/dev/null || true
+	@echo "==> Android clean done."
+
+# ============================================================================
 # Clean
 # ============================================================================
 
@@ -706,6 +781,7 @@ clean:
 	rm -f $(OUTDIR)/Ikemen_GO* 2>/dev/null || true
 	rm -f $(SRC_SYSO) 2>/dev/null || true
 	rm -rf $(WINRES_DIR) 2>/dev/null || true
+	rm -f $(ANDROID_BINARY) $(ANDROID_OUTDIR)/libmain.h 2>/dev/null || true
 	@echo "==> Clean done."
 
 distclean: clean
@@ -739,6 +815,8 @@ help:
 	@echo '  sdl2           Build static SDL2 library'
 	@echo '  screenpack     Clone/update Elecbyte screenpack'
 	@echo '  install        Assemble runnable build in install/ (screenpack + binary)'
+	@echo '  android        Build Android arm64 shared library (libmain.so)'
+	@echo '  clean-android  Remove Android build artifacts'
 	@echo '  clean          Remove build artifacts'
 	@echo '  distclean      Remove artifacts + external library sources'
 	@echo '  deps-check     Verify required tools are installed'
@@ -752,6 +830,8 @@ help:
 	@echo '  CONFIG=debug       Debug build + memory instrumentation (default: release)'
 	@echo '  APP_VERSION=X.Y    Set version string (default: nightly)'
 	@echo '  APP_BUILDTIME=X    Set build timestamp'
+	@echo '  ANDROID_NDK_HOME=  Path to Android NDK (for the android target)'
+	@echo '  ANDROID_DEPS_PATH= Path to prebuilt SDL2 android deps (default: build/android-deps)'
 	@echo ''
 	@echo 'Platform notes:'
 	@echo '  SDL2, FFmpeg, and XMP are built from source on all platforms.'
@@ -764,3 +844,4 @@ help:
 	@echo '  make debug                    # Native debug'
 	@echo '  make APP_VERSION=v1.0.0       # Tagged build'
 	@echo '  make APP_VERSION=v1.0.0 CONFIG=debug'
+	@echo '  make android                  # Android arm64 libmain.so'
