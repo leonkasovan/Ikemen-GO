@@ -17,11 +17,32 @@
   clock_gettime64 could not be located").
 - `PalAtlasSize` changed from a compile-time `const` to a runtime `var` initialized from config, enabling tuning without recompilation.
 - `debug.SetMemoryLimit` now reads from config instead of being hardcoded to 256 MB.
-- `PLANS.md` updated with completed palette atlas entries and corrected `CopyData` fix references.
+- **`debug.SetMemoryLimit` semantics corrected** (`main.go`, `config.go`, `defaultConfig.ini`) — `SetMemoryLimit` is a *soft GC ceiling*, not an OS page-return mechanism; setting it too low causes continuous GC thrashing. Comments were rewritten to reflect this, the config clamp floor was raised from 64 MB to 256 MB to prevent thrash, and the default `HeapMemoryLimit` was raised from 256 to 512 MB. Actual page return to the OS is now handled by `debug.FreeOSMemory()` after asset loading completes (`script.go`), which was verified to release ~169 MB back to the OS after a match.
+- `PLANS.md` updated with completed palette atlas entries, corrected `CopyData` fix references, the memory-limit/profiling review, and the per-frame buffer-pooling results.
 
 ### Added
 
-- **Palette texture atlas (GL33)** — Replaced ~150 separate `256×1` GL palette textures with a single shared `2048×2048` atlas texture. Each palette is a `256×1` sub-region, providing 16,384 slots per atlas. Palette slots use `gl.TexSubImage2D` for efficient sub-region writes and share the atlas serial number so the texture cache hits instantly after the first palette bind per frame, reducing GPU state changes from ~15-19 per frame to 1.
+- **Per-frame render vertex buffer pooling (GL33 + GLES32)** — `SetVertexData`
+  previously called `golang.org/x/mobile/exp/f32.Bytes`, allocating a fresh
+  `[]byte` on *every* quad of *every* sprite of *every* frame. Both renderers now
+  hold a reusable `vertexScratch []byte` field and encode floats directly with
+  `binary.LittleEndian.PutUint32` into it (growing only when needed). Reuse is
+  safe because `gl.BufferData` copies synchronously on the render thread.
+  Verified via `pprof -alloc_space`: `f32.Bytes`/`SetVertexData` allocations
+  eliminated entirely, and `drawQuadsUV`/`RenderSprite` flat allocations dropped
+  ~70–75%. This was the dominant always-on steady-state GC-pressure source.
+
+- **Per-callback audio buffer pooling** (`audio_sdl.go`) — `SDLSpeaker.FillAudio`
+  previously did `make([]byte, frames*4)` on every audio callback (~60×/sec).
+  Added a reusable `queueBuf` allocated once in `Init`; the fill now writes into
+  it and queues `buf[:n*4]`, which also fixes a latent correctness issue where a
+  short mixer read could emit stale samples from the reused buffer. Reuse is safe
+  because `FillAudio` runs in a single dedicated goroutine and `sdl.QueueAudio`
+  copies synchronously. Verified via `pprof`: `FillAudio` flat allocation
+  eliminated (the remaining churn under it is `beep.Mixer.Stream`, which is
+  internal to the gopxl/beep dependency).
+
+ Each palette is a `256×1` sub-region, providing 16,384 slots per atlas. Palette slots use `gl.TexSubImage2D` for efficient sub-region writes and share the atlas serial number so the texture cache hits instantly after the first palette bind per frame, reducing GPU state changes from ~15-19 per frame to 1.
 
 - **Palette texture atlas (GLES32)** — Same optimization ported to the OpenGL ES 3.2 backend for Android: atlas allocation, slot recycling via GC finalizer, and `palUV` uniform for per-slot UV lookup.
 
@@ -43,3 +64,16 @@
 - **Palette atlas config init order** — `PalAtlasSize` was read from config AFTER `sys.init()` created the atlas at the Go default (2048). `GetPalUV()` used the config value (256), producing wrong UV coordinates → black sprites/backgrounds when `PaletteAtlasSize < 2048`. Fixed by moving the config read before `sys.init()`.
 
 - **UV mismatch after atlas auto-resize** — `GetPalUV()` used the global `PalAtlasSize`, which changes after a resize. Old palette textures (binding the old, smaller atlas) computed UVs for the new, larger atlas — sampling only ~50% of palette colors → garbled sprites. Fixed by storing `atlasSize` per-texture at allocation time and using it in `GetPalUV()` instead of the global.
+
+- **Windows `pkg-config` path separator** (`Makefile`) — Windows `pkgconf`
+  splits search paths on `;`, not the Unix `:`, so the multi-path
+  `PKG_CONFIG_PATH` produced empty flags and broke the build. Switched to
+  `PKG_CONFIG_LIBDIR` with the correct separator for the platform.
+
+- **`.gitignore` re-including dependency source trees** — A recursive
+  `!build/**/*.sh` negation was re-including `.sh` files buried inside downloaded
+  dependency source trees (SDL, FFmpeg, libxmp, screenpack), which forced git to
+  surface those directories as untracked. Narrowed the negation to `!build/*.sh`
+  (our own build scripts live at the top of `build/`) and changed the dependency
+  ignores from `dir/*` to full-tree `dir/`, while keeping `build.sh`,
+  `build_android.sh`, and `bundle_run.sh` tracked.
