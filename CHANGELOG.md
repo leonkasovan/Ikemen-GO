@@ -42,7 +42,17 @@
   eliminated (the remaining churn under it is `beep.Mixer.Stream`, which is
   internal to the gopxl/beep dependency).
 
- Each palette is a `256×1` sub-region, providing 16,384 slots per atlas. Palette slots use `gl.TexSubImage2D` for efficient sub-region writes and share the atlas serial number so the texture cache hits instantly after the first palette bind per frame, reducing GPU state changes from ~15-19 per frame to 1.
+- **Lazy sprite texture creation — benchmarked** — The existing deferred
+  texture upload (sprites upload to the GPU on first render instead of eagerly
+  during SFF load) was validated with a controlled A/B on a fixed 4-character
+  scenario (`kfm`, `kfm_zaxis`, `kfm720`, `kfm_zss`, all AI 6, stage `stage3d`,
+  3 rounds). Measured against a forced-eager path on the same build:
+  **live GPU textures dropped ~61% (peak 2906 → 1119) and peak GPU texture
+  memory dropped ~18% (116.8 MB → 96.2 MB)**, with palette-atlas usage unchanged
+  (control). The saving is largest right after load and scales with roster and
+  animation-frame count.
+
+- **Palette texture atlas (GL33)** — Replaced ~150 separate `256×1` GL palette textures with a single shared `2048×2048` atlas texture. Each palette is a `256×1` sub-region, providing 16,384 slots per atlas. Palette slots use `gl.TexSubImage2D` for efficient sub-region writes and share the atlas serial number so the texture cache hits instantly after the first palette bind per frame, reducing GPU state changes from ~15-19 per frame to 1.
 
 - **Palette texture atlas (GLES32)** — Same optimization ported to the OpenGL ES 3.2 backend for Android: atlas allocation, slot recycling via GC finalizer, and `palUV` uniform for per-slot UV lookup.
 

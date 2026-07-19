@@ -355,6 +355,15 @@ if m.NumGC != lastGCStats.NumGC {
 ### 7.2 Completed (P1)
 
 - [x] **Lazy texture creation** (`Sprite.pendingData` fields in `image.go` + `ensureTex()` calls in `anim.go`, `render.go`, `font.go`, `char.go`) — GPU textures created on first render instead of eagerly during SFF loading. Eliminates ~220 MB of immediate GPU texture allocation for stage BG layers.
+  - **Benchmarked (2026-07-19)** via a controlled A/B on the same debug build: a temporary `IKEMEN_EAGER_TEX=1` toggle restored the pre-lazy eager path (queue upload during `SetPxl`/`SetRaw`), isolating lazy-vs-eager as the only variable. Fixed scenario: `-p1 kfm -p2 kfm_zaxis -p3 kfm720 -p4 kfm_zss` all `-ai 6`, `-s stage3d -rounds 3`. Metrics from the debug `[Mem] HEAP:` monitor (peak over the match):
+
+    | Metric | Eager (original) | Lazy (this opt.) | Δ |
+    |--------|------------------|------------------|-----|
+    | `texturesAlive` (live GPU textures) | 2906 | 1119 | **−61%** |
+    | `peakGPUBytes` (GPU texture memory) | 116.8 MB | 96.2 MB | **−17.6%** |
+    | `palSlots` peak (control) | 560 | 508 | ~same |
+
+    `texturesAlive` progression showed the gap is largest right after load (eager 2465 vs lazy 284) and stays well below eager through all 3 rounds — confirming textures are created only for sprites actually drawn. The benchmark toggle was reverted afterward (not committed).
 - [x] **Sprite-based font glyph atlas** (`render.go` + `font.go`) — Font glyph sprites packed into a `TextureAtlas` instead of individual GL textures. Added `UV` sub-texture support to `RenderParams` + `drawQuadsUV()`. Atlas index encoded in UV w-component for multi-atlas support. Eliminates ~94 individual GL textures per sprite-based font (replaced by 1-2 atlas textures).
 - [x] **SFF data release after atlas texture creation** (`font.go`) — After packing glyph pixel data into the atlas via `AddImage`, release the per-glyph `pendingData`/`pendingDepth` on the cloned font sprites. The CPU-side pixel buffer is no longer needed since the GPU atlas holds the data. Frees backing pixel arrays for each glyph in a sprite-based font.
 - [x] **Font atlas caching across screen transitions** (`font.go` + `image.go`) — Added `fontAtlasCache` global map to keep GPU atlas textures alive across `Fnt` GC cycles. On subsequent loads of the same font SFF, the atlas and UV map are reused instead of being rebuilt from scratch. Eliminates atlas rebuild cost (~14 fonts × 64KB GPU churn + CPU glyph re-upload) on every screen transition.
