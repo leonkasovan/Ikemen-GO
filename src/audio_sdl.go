@@ -28,6 +28,11 @@ type SDLSpeaker struct {
 	sampleRate beep.SampleRate
 	bufferSize int
 	buf        [][2]float64
+	// queueBuf is a reusable byte buffer for the S16 samples pushed to SDL,
+	// avoiding a per-fill []byte allocation on the audio thread. Only the
+	// single FillAudio goroutine touches it and sdl.QueueAudio copies
+	// synchronously, so reuse is safe.
+	queueBuf []byte
 }
 
 func floatToS16(v float64) int16 {
@@ -43,6 +48,7 @@ func (s *SDLSpeaker) Init(sampleRate beep.SampleRate, bufferSize int) error {
 	s.sampleRate = sampleRate
 	s.mixer = &beep.Mixer{}
 	s.buf = make([][2]float64, bufferSize)
+	s.queueBuf = make([]byte, bufferSize*4)
 	s.bufferSize = bufferSize
 
 	spec := sdl.AudioSpec{
@@ -83,7 +89,7 @@ func (s *SDLSpeaker) FillAudio() {
 	}
 
 	frames := s.bufferSize
-	buf := make([]byte, frames*4)
+	buf := s.queueBuf
 
 	s.mu.Lock()
 	n, _ := s.mixer.Stream(s.buf[:frames])
@@ -103,7 +109,7 @@ func (s *SDLSpeaker) FillAudio() {
 		buf[i*4+3] = byte(r >> 8)
 	}
 
-	sdl.QueueAudio(s.dev, buf)
+	sdl.QueueAudio(s.dev, buf[:n*4])
 }
 
 func (s *SDLSpeaker) Play(st beep.Streamer) {
