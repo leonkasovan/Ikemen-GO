@@ -315,7 +315,7 @@ endif
         deps-check check-go-env \
         ffmpeg xmp sdl2 winres binary install \
         screenpack \
-        android clean-android \
+        android android-apk check-android-tools clean-android \
         clean distclean FORCE
 
 # ============================================================================
@@ -740,6 +740,19 @@ ANDROID_CXX       := $(ANDROID_TOOLCHAIN)/bin/$(ANDROID_TARGET)-clang++
 ANDROID_OUTDIR    := android/app/libs/arm64-v8a
 ANDROID_BINARY    := $(ANDROID_OUTDIR)/libmain.so
 
+# --- Android APK packaging (ikemen-droid Gradle project) --------------------
+# The APK is produced from the external ikemen-droid app project (Gradle +
+# Java/JNI wrapper). ANDROID_APK_REPO may be a git URL (default) or a local
+# path to an existing checkout. ANDROID_SDK_ROOT must point at an Android SDK
+# with cmdline-tools + platform-tools installed (Gradle needs it).
+ANDROID_APK_REPO ?= https://github.com/Jesuszilla/ikemen-droid.git
+ANDROID_APK_REF  ?= main
+ANDROID_APK_DIR  ?= $(abspath $(BUILDDIR)/android-apk/ikemen-droid)
+ANDROID_APK_OUT  ?= $(abspath bin/ikemen-go.apk)
+ANDROID_SDK_ROOT ?= $(ANDROID_HOME)
+# gamecontrollerdb.txt is referenced by the Android app manifest.
+ANDROID_GCDB_URL ?= https://raw.githubusercontent.com/mdqinc/SDL_GameControllerDB/refs/heads/master/gamecontrollerdb.txt
+
 android:
 	@echo "==> Building Android shared library (libmain.so, arm64-v8a)..."
 	@if [ ! -d "$(ANDROID_TOOLCHAIN)" ]; then \
@@ -765,10 +778,127 @@ android:
 		-o "$(ANDROID_BINARY)" ./src
 	@echo "==> Android build successful: $(ANDROID_BINARY)"
 
+# --- Verify the host has everything needed for a full APK build -------------
+check-android-tools:
+	@echo "==> Checking Android APK build tools..."
+	@ok=1; \
+	if [ ! -d "$(ANDROID_TOOLCHAIN)" ]; then \
+		echo "  [X] NDK toolchain not found: $(ANDROID_TOOLCHAIN)" >&2; \
+		echo "      Set ANDROID_NDK_HOME (install via: sdkmanager \"ndk;27.1.12297006\")." >&2; \
+		ok=0; \
+	else echo "  [ok] NDK toolchain: $(ANDROID_TOOLCHAIN)"; fi; \
+	if [ ! -d "$(ANDROID_DEPS_PATH)/lib" ]; then \
+		echo "  [X] SDL2 android deps not found: $(ANDROID_DEPS_PATH)" >&2; \
+		echo "      Build SDL2 for android-30 first (see comments above the android target)." >&2; \
+		ok=0; \
+	else echo "  [ok] Android deps:  $(ANDROID_DEPS_PATH)"; fi; \
+	sdk="$(ANDROID_SDK_ROOT)"; \
+	if [ -z "$$sdk" ]; then sdk="$(ANDROID_HOME)"; fi; \
+	if [ -z "$$sdk" ] || [ ! -d "$$sdk" ]; then \
+		echo "  [X] Android SDK not found (set ANDROID_SDK_ROOT or ANDROID_HOME)." >&2; \
+		echo "      Needs cmdline-tools + platform-tools + platforms;android-$(ANDROID_API) + build-tools." >&2; \
+		ok=0; \
+	else echo "  [ok] Android SDK:   $$sdk"; fi; \
+	if ! command -v java >/dev/null 2>&1; then \
+		echo "  [X] java not found on PATH (JDK 17 recommended; 8 for older AGP)." >&2; \
+		ok=0; \
+	else echo "  [ok] java:          $$(java -version 2>&1 | head -n1)"; fi; \
+	for tool in git go; do \
+		command -v $$tool >/dev/null 2>&1 || { echo "  [X] $$tool not found on PATH." >&2; ok=0; }; \
+	done; \
+	if [ "$$ok" != "1" ]; then \
+		echo "ERROR: Missing Android APK prerequisites (see above)." >&2; \
+		exit 1; \
+	fi; \
+	echo "    All Android APK tools found."
+
+# --- Full APK build: lib + ikemen-droid Gradle project (no Docker) ----------
+# Clones/updates the ikemen-droid app project, stages libmain.so + dep .so
+# files into jniLibs/, stages engine assets per the app manifest.txt (with
+# screenpack fallback), then runs Gradle 'assembleDebug' and copies the APK to
+# $(ANDROID_APK_OUT). Requires the Android SDK (ANDROID_SDK_ROOT) + a JDK.
+android-apk: check-android-tools android screenpack
+	@echo "==> Building Android APK (no Docker)..."
+	@# Resolve the SDK root (ANDROID_SDK_ROOT preferred, else ANDROID_HOME).
+	sdk="$(ANDROID_SDK_ROOT)"; [ -n "$$sdk" ] || sdk="$(ANDROID_HOME)"; \
+	echo "==> Using Android SDK: $$sdk"; \
+	\
+	echo "==> Syncing ikemen-droid ($(ANDROID_APK_REF))..."; \
+	mkdir -p "$$(dirname "$(ANDROID_APK_DIR)")"; \
+	if [ -d "$(ANDROID_APK_REPO)" ]; then \
+		src="$$(cd "$(ANDROID_APK_REPO)" && pwd -P)"; \
+		if [ "$$src" != "$(ANDROID_APK_DIR)" ]; then \
+			rm -rf "$(ANDROID_APK_DIR)"; \
+			echo "    Using local checkout: $$src"; \
+			cp -a "$$src" "$(ANDROID_APK_DIR)"; \
+		fi; \
+	elif [ ! -d "$(ANDROID_APK_DIR)/.git" ]; then \
+		rm -rf "$(ANDROID_APK_DIR)"; \
+		git clone --depth=1 -b "$(ANDROID_APK_REF)" "$(ANDROID_APK_REPO)" "$(ANDROID_APK_DIR)"; \
+	else \
+		( cd "$(ANDROID_APK_DIR)" && \
+			git fetch --depth=1 origin "$(ANDROID_APK_REF)" && \
+			git checkout -f FETCH_HEAD ); \
+	fi; \
+	git config --global --add safe.directory "$(ANDROID_APK_DIR)" >/dev/null 2>&1 || true; \
+	\
+	echo "==> Ensuring runtime assets referenced by the app manifest..."; \
+	if [ ! -f "external/gamecontrollerdb.txt" ]; then \
+		echo "    Downloading gamecontrollerdb.txt..."; \
+		wget -q "$(ANDROID_GCDB_URL)" -O "external/gamecontrollerdb.txt"; \
+	fi; \
+	if [ ! -f "data/system.base.def" ]; then \
+		echo "    Generating data/system.base.def from defaultMotif.ini..."; \
+		mkdir -p data; \
+		cp -a "src/resources/defaultMotif.ini" "data/system.base.def"; \
+	fi; \
+	\
+	app_dir="$(ANDROID_APK_DIR)/app"; \
+	abi_dir="$$app_dir/src/main/jniLibs/arm64-v8a"; \
+	echo "==> Staging native libs into: $$abi_dir"; \
+	mkdir -p "$$abi_dir"; \
+	rm -f "$$abi_dir"/*.so* 2>/dev/null || true; \
+	cp -av "$(abspath $(ANDROID_BINARY))" "$$abi_dir/"; \
+	cp -av "$(ANDROID_DEPS_PATH)/lib/"*.so* "$$abi_dir/" 2>/dev/null || true; \
+	\
+	assets_dir="$$app_dir/src/main/assets"; \
+	manifest="$$assets_dir/manifest.txt"; \
+	if [ ! -f "$$manifest" ]; then \
+		echo "ERROR: ikemen-droid manifest not found at: $$manifest" >&2; exit 1; \
+	fi; \
+	echo "==> Staging assets into: $$assets_dir (from manifest.txt)"; \
+	find "$$assets_dir" -mindepth 1 -maxdepth 1 ! -name "manifest.txt" -exec rm -rf {} + 2>/dev/null || true; \
+	for p in $$(tr -s '[:space:]' ' ' < "$$manifest"); do \
+		[ -z "$$p" ] && continue; \
+		src="$(CURDIR)/$$p"; dst="$$assets_dir/$$p"; \
+		if [ ! -e "$$src" ] && [ -e "$(SCREENPACK_DIR)/$$p" ]; then src="$(SCREENPACK_DIR)/$$p"; fi; \
+		if [ -d "$$src" ]; then \
+			mkdir -p "$$dst"; cp -a "$$src/." "$$dst/" 2>/dev/null || true; \
+		elif [ -f "$$src" ]; then \
+			mkdir -p "$$(dirname "$$dst")"; cp -a "$$src" "$$dst" 2>/dev/null || true; \
+		else \
+			echo "    WARNING: asset path missing: $$p" >&2; \
+		fi; \
+	done; \
+	\
+	echo "==> Running Gradle (assembleDebug)..."; \
+	( cd "$(ANDROID_APK_DIR)" && \
+		printf "sdk.dir=%s\n" "$$sdk" > local.properties && \
+		chmod +x ./gradlew 2>/dev/null || true; \
+		./gradlew --no-daemon clean assembleDebug ); \
+	apk_src="$(ANDROID_APK_DIR)/app/build/outputs/apk/debug/app-debug.apk"; \
+	if [ ! -f "$$apk_src" ]; then \
+		echo "ERROR: Gradle finished but APK not found at: $$apk_src" >&2; exit 1; \
+	fi; \
+	mkdir -p "$$(dirname "$(ANDROID_APK_OUT)")"; \
+	cp -av "$$apk_src" "$(ANDROID_APK_OUT)"; \
+	echo "==> APK ready: $(ANDROID_APK_OUT)"
+
 clean-android:
 	@echo "==> Cleaning Android artifacts..."
 	rm -f $(ANDROID_BINARY) 2>/dev/null || true
 	rm -f $(ANDROID_OUTDIR)/libmain.h 2>/dev/null || true
+	rm -f $(ANDROID_APK_OUT) 2>/dev/null || true
 	@echo "==> Android clean done."
 
 # ============================================================================
@@ -816,6 +946,8 @@ help:
 	@echo '  screenpack     Clone/update Elecbyte screenpack'
 	@echo '  install        Assemble runnable build in install/ (screenpack + binary)'
 	@echo '  android        Build Android arm64 shared library (libmain.so)'
+	@echo '  android-apk    Build full Android APK (no Docker; needs SDK+JDK+NDK)'
+	@echo '  check-android-tools  Verify Android APK build prerequisites'
 	@echo '  clean-android  Remove Android build artifacts'
 	@echo '  clean          Remove build artifacts'
 	@echo '  distclean      Remove artifacts + external library sources'
@@ -832,6 +964,9 @@ help:
 	@echo '  APP_BUILDTIME=X    Set build timestamp'
 	@echo '  ANDROID_NDK_HOME=  Path to Android NDK (for the android target)'
 	@echo '  ANDROID_DEPS_PATH= Path to prebuilt SDL2 android deps (default: build/android-deps)'
+	@echo '  ANDROID_SDK_ROOT=  Path to Android SDK (for android-apk; else uses ANDROID_HOME)'
+	@echo '  ANDROID_APK_REPO=  ikemen-droid git URL or local path (for android-apk)'
+	@echo '  ANDROID_APK_OUT=   Output APK path (default: bin/ikemen-go.apk)'
 	@echo ''
 	@echo 'Platform notes:'
 	@echo '  SDL2, FFmpeg, and XMP are built from source on all platforms.'
@@ -845,3 +980,4 @@ help:
 	@echo '  make APP_VERSION=v1.0.0       # Tagged build'
 	@echo '  make APP_VERSION=v1.0.0 CONFIG=debug'
 	@echo '  make android                  # Android arm64 libmain.so'
+	@echo '  make android-apk              # Full Android APK (no Docker)'
