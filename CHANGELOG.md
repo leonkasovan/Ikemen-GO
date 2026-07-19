@@ -59,6 +59,19 @@
   for A/B benchmarking the lazy-texture optimization on the same build (it was
   used to produce the numbers above); leave at `0` for normal play.
 
+- **Never-drawn sprite telemetry (debug builds)** (`memdebug.go`,
+  `memdebug_off.go`, `image.go`, `system.go`) — Debug builds now count every
+  sprite whose pixel data is *staged* (`SetPxl`/`SetRaw`) versus *realized*
+  (uploaded to the GPU by `ensureTex`). At exit a one-shot `[Mem] FINAL:` line
+  reports staged vs drawn vs never-drawn sprite counts and bytes, quantifying
+  how much pixel data stayed resident in the Go heap and never reached GPU
+  memory. Example (1-round `kfm` vs `kfm`, `stage0-720`): 1606 staged (27 MB),
+  329 drawn (20 MB), **1277 never-drawn (79%, ~6 MB heap-only)** — direct
+  evidence of what lazy texture creation avoids uploading. The report is hooked
+  through a wrapper around Lua's `os.exit` so it fires on every exit path (the
+  scripts terminate via `os.exit`, bypassing `sys.shutdown`). No-ops in release
+  builds.
+
 - **Palette texture atlas (GL33)** — Replaced ~150 separate `256×1` GL palette textures with a single shared `2048×2048` atlas texture. Each palette is a `256×1` sub-region, providing 16,384 slots per atlas. Palette slots use `gl.TexSubImage2D` for efficient sub-region writes and share the atlas serial number so the texture cache hits instantly after the first palette bind per frame, reducing GPU state changes from ~15-19 per frame to 1.
 
 - **Palette texture atlas (GLES32)** — Same optimization ported to the OpenGL ES 3.2 backend for Android: atlas allocation, slot recycling via GC finalizer, and `palUV` uniform for per-slot UV lookup.

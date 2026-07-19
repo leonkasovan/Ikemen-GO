@@ -474,6 +474,27 @@ func (s *System) init(w, h int32) *lua.LState {
 	l := lua.NewState()
 	l.Options.IncludeGoStackTrace = true
 	l.OpenLibs()
+
+	// Wrap Lua's os.exit so the shutdown telemetry report always runs. The Lua
+	// scripts terminate the process via os.exit() (bypassing sys.shutdown), so
+	// this is the reliable hook point for the final memory/sprite-usage summary.
+	if osTbl, ok := l.GetGlobal("os").(*lua.LTable); ok {
+		origExit := osTbl.RawGetString("exit")
+		l.SetField(osTbl, "exit", l.NewFunction(func(l *lua.LState) int {
+			memReportFinal()
+			if fn, ok := origExit.(*lua.LFunction); ok {
+				nargs := l.GetTop() // args passed to our wrapper
+				l.Push(fn)
+				for i := 1; i <= nargs; i++ {
+					l.Push(l.Get(i))
+				}
+				l.Call(nargs, 0)
+			}
+			os.Exit(0)
+			return 0
+		}))
+	}
+
 	s.resetRemapInput()
 	for i := range s.stringPool {
 		s.stringPool[i] = *NewStringPool()
@@ -531,6 +552,7 @@ func (s *System) shutdown() {
 	if !sys.gameEnd {
 		sys.gameEnd = true
 	}
+	memReportFinal()
 	if sys.rollback.session != nil && sys.rollback.session.recording != nil {
 		sys.rollback.session.SaveReplay()
 	}

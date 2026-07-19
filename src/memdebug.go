@@ -22,7 +22,57 @@ var (
 	palSlotsMax     int64 // Peak palette atlas slots allocated
 	palSlotsTotal   int64 // Total palette atlas slots available
 	palhashCount    int64 // Number of sprites with computed palhash (8 bytes each)
+
+	// Lazy-texture evaluation counters. A sprite is "pending" once its pixel
+	// data is staged (SetPxl/SetRaw) and "realized" once ensureTex() actually
+	// uploads it to the GPU (i.e. it was drawn at least once). The difference
+	// at shutdown is the set of sprites that were loaded but never drawn — their
+	// pixel buffers stayed resident in the Go heap and never cost GPU memory.
+	memSpritePending      int64 // sprites whose pixel data was staged
+	memSpritePendingBytes int64 // total staged pixel bytes
+	memSpriteRealized     int64 // sprites whose texture was created (drawn)
+	memSpriteRealizedBytes int64 // total realized pixel bytes
 )
+
+// memSpriteStaged records that a sprite's CPU pixel buffer was staged for lazy
+// (or eager) upload. Called from Sprite.SetPxl / SetRaw.
+func memSpriteStaged(bytes int) {
+	atomic.AddInt64(&memSpritePending, 1)
+	atomic.AddInt64(&memSpritePendingBytes, int64(bytes))
+}
+
+// memSpriteDrawn records that a sprite's GPU texture was actually created from
+// its staged pixel data. Called from Sprite.ensureTex when it uploads.
+func memSpriteDrawn(bytes int) {
+	atomic.AddInt64(&memSpriteRealized, 1)
+	atomic.AddInt64(&memSpriteRealizedBytes, int64(bytes))
+}
+
+// memReportFinal logs a one-shot summary at shutdown, quantifying how many
+// staged sprites were never drawn (heap-resident, never uploaded to the GPU).
+func memReportFinal() {
+	pending := atomic.LoadInt64(&memSpritePending)
+	realized := atomic.LoadInt64(&memSpriteRealized)
+	pendingBytes := atomic.LoadInt64(&memSpritePendingBytes)
+	realizedBytes := atomic.LoadInt64(&memSpriteRealizedBytes)
+
+	neverDrawn := pending - realized
+	if neverDrawn < 0 {
+		neverDrawn = 0
+	}
+	neverDrawnBytes := pendingBytes - realizedBytes
+	if neverDrawnBytes < 0 {
+		neverDrawnBytes = 0
+	}
+	var pct int64
+	if pending > 0 {
+		pct = neverDrawn * 100 / pending
+	}
+	memLog("FINAL: staged sprites=%d (%dMB) | drawn=%d (%dMB) | never-drawn=%d (%d%%, ~%dMB retained in heap, never uploaded to GPU)",
+		pending, pendingBytes/1e6,
+		realized, realizedBytes/1e6,
+		neverDrawn, pct, neverDrawnBytes/1e6)
+}
 
 // memPalSlotSetTotal records the total number of palette slots in the atlas.
 // This is set once by createPalAtlas() during renderer init.

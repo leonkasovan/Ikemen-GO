@@ -17,4 +17,7 @@ func memPalSlotFree()                                        {}
 func memPalSlotSetTotal(total int64)                         {}
 func memPalhashAlloc()                                        {}
 func memMonitorStart()                                       {}
+func memSpriteStaged(bytes int)                              {}
+func memSpriteDrawn(bytes int)                               {}
+func memReportFinal()                                        {}
 
