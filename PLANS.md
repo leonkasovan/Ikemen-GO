@@ -671,13 +671,16 @@ during actual gameplay.
 | `src/resources/defaultConfig.ini` | Default 256 MB → 512 MB; rewrote comment to describe it accurately. |
 | `src/script.go` | Replaced the post-load `runtime.GC()` with `debug.FreeOSMemory()` (full GC **and** returns freed pages to OS) — directly targets the "Task Manager shows 1 GB after SFF load" report by trimming the `heapSys − heapAlloc` gap. |
 
-## Deferred follow-up — per-frame buffer pooling (NOT yet done)
+## Per-frame buffer pooling — #1 & #2 DONE, #3 deferred
 
-The `alloc_space` data contradicts the earlier "No Issues Found: `RenderSprite`
+The `alloc_space` data contradicted the earlier "No Issues Found: `RenderSprite`
 and `drawQuads` are allocation-free in the hot path" claim in the section above.
-`drawQuadsUV`, `RenderSprite.func1`, and `f32.Bytes` allocate fresh buffers
-**every frame**, and `beep.Mixer.Stream` / `SDLSpeaker.FillAudio` allocate on
-every audio callback. These are the dominant *steady-state* GC-pressure sources.
+`drawQuadsUV`, `RenderSprite.func1`, and `f32.Bytes` allocated fresh buffers
+**every frame**, and `SDLSpeaker.FillAudio` allocated on every audio callback.
+These were the dominant *steady-state* GC-pressure sources.
+
+**Status (2026-07-19): #1 (render) and #2 (audio) implemented, verified via
+pprof, committed, and pushed. #3 (video) intentionally deferred — see below.**
 
 ### Second alloc_space capture (2026-07-19, video-heavy session)
 
@@ -697,45 +700,73 @@ video plays:
 | `main.(*SDLSpeaker).FillAudio` (cum) | 7.5% | **per audio callback** | audio fill buffer |
 | `f32.Bytes` | 3.2% | **per draw** | vertex float→byte conv |
 
-### Ranked pooling opportunities — DO THESE IN ORDER
+### Ranked pooling opportunities
 
-**1st — Render vertex buffers (`drawQuadsUV` + `f32.Bytes` + `RenderSprite.func1`, ~18% combined). START HERE.**
-- Why first: allocates on *every* draw call of *every* sprite in *every* frame —
-  it is the constant, unavoidable steady-state pressure present in all gameplay
-  (no video required). Highest frequency, most predictable win.
+**✅ 1st — Render vertex buffers (`drawQuadsUV` + `f32.Bytes` + `RenderSprite.func1`, was ~18% combined). DONE (commit `4f53d191`).**
+- Why first: allocated on *every* draw call of *every* sprite in *every* frame —
+  the constant, unavoidable steady-state pressure present in all gameplay (no
+  video required). Highest frequency, most predictable win.
 - Lowest risk: buffers are consumed synchronously within the draw call on one
-  thread, so a reusable scratch `[]byte`/`[]float32` field on the renderer (or a
-  `sync.Pool`) is safe with no lifetime/ownership concerns.
-- Where: `src/render.go` `drawQuadsUV` / `RenderSprite`, and the
-  `golang.org/x/mobile/exp/f32.Bytes` conversion — reuse one renderer-owned
-  scratch buffer instead of allocating per quad.
+  thread, so a reusable scratch `[]byte` field on the renderer is safe with no
+  lifetime/ownership concerns.
+- **What was done:** Added a reusable `vertexScratch []byte` field to both
+  `Renderer_GL33` and `Renderer_GLES32`; `SetVertexData` now encodes floats
+  directly with `binary.LittleEndian.PutUint32` into that buffer (growing only
+  when needed) instead of calling `f32.Bytes` per quad. `gl.BufferData` copies
+  synchronously, so reuse is safe.
+- **Measured:** `f32.Bytes`/`SetVertexData` allocations eliminated entirely
+  (`go tool pprof -list SetVertexData` → "no matches found"); `drawQuadsUV` and
+  `RenderSprite` flat allocations dropped ~70–75%.
+- **Left as-is:** the variadic `...float32` slice in `SetVertexData` (small,
+  fixed 16 floats) and the one-time init/post-processing `f32.Bytes` calls.
 
-**2nd — Audio mix/fill buffers (`beep.Mixer.Stream` + `SDLSpeaker.FillAudio`, ~13% combined).**
-- Why second: also constant (runs every audio callback regardless of video), but
-  lower frequency than per-sprite draws and slightly more care needed because the
-  buffer crosses the audio callback boundary.
-- Where: `src/audio_sdl.go` / `SDLSpeaker.FillAudio` and the beep `Mixer.Stream`
-  path — reuse the fill/mix buffer per callback instead of allocating each fill.
+**✅ 2nd — Audio fill buffer (`SDLSpeaker.FillAudio`, was ~1.1% self). DONE (commit `ad1cc3da`).**
+- Why second: also constant (runs on the audio thread ~60×/sec regardless of
+  video), lower frequency than per-sprite draws.
+- **What was done:** The real per-fill allocation was `make([]byte, frames*4)`
+  in `FillAudio` (the float mix buffer `s.buf` was already pre-allocated). Added
+  a reusable `SDLSpeaker.queueBuf`, allocated once in `Init`. Safe: `FillAudio`
+  runs in a single dedicated goroutine and `sdl.QueueAudio` copies synchronously.
+  Also changed the queue to `buf[:n*4]` so a short mixer read no longer emits
+  stale samples from the reused buffer.
+- **Measured:** `FillAudio` flat allocation eliminated (0). The remaining
+  allocation under `FillAudio` is `beep.Mixer.Stream` — **dependency-internal
+  (gopxl/beep), not ours to pool** without forking the dependency, so left as-is.
 
-**3rd — Video frame buffers (`reisen._Cfunc_GoBytes`, up to 15.5% *when video plays*).**
-- Why third despite the high %: it is **conditional** — only large when a video
-  is actually playing (intros, attract mode, video-backed stages). Zero cost in
-  ordinary matches. Also the **highest risk / most invasive**: the allocation is
-  inside the `reisen` dependency (`vf.Image()` → `C.GoBytes`), and frames are
-  passed over `bgv.frameBuffer` (a channel) to the render goroutine, so a pooled
-  buffer would need double-buffering + careful handoff to avoid the producer
-  overwriting a frame the consumer is still uploading.
+**⏸️ 3rd — Video frame buffers (`reisen._Cfunc_GoBytes`, up to ~27% *when video plays*). DEFERRED.**
+- Why deferred despite the high %: it is **conditional** — only large when a
+  video is actually playing (intros, attract mode, video-backed stages). Zero
+  cost in ordinary matches. Also the **highest risk / most invasive**: the
+  allocation is inside the `reisen` dependency (`vf.Image()` → `C.GoBytes`), and
+  frames are passed over `bgv.frameBuffer` (a channel) to the render goroutine,
+  so a pooled buffer would need double-buffering + careful handoff to avoid the
+  producer overwriting a frame the consumer is still uploading to the GPU →
+  visible video corruption/tearing risk.
 - Where: `src/video_ffmpeg.go:366` (`bgv.frameBuffer <- vf.Image()`), and would
   likely require a reisen API change (or a local copy into a ping-pong buffer
   pair owned by `bgv`) to reuse the frame backing array across decodes.
+- **Recommendation:** leave as an opt-in future task; only pursue if profiling a
+  video-heavy scene shows it as a real problem in practice.
 
 ### Suggested sequence
-Do **1 (render)** first for the broadest always-on benefit and lowest risk,
-then **2 (audio)**, and only tackle **3 (video)** if video-heavy scenes show
-GC pressure in practice — its cross-goroutine handoff makes it the riskiest.
+Done: **1 (render)** first for the broadest always-on benefit and lowest risk,
+then **2 (audio)** — both landed and verified. **3 (video)** remains deferred;
+only tackle it if video-heavy scenes show GC pressure in practice, as its
+cross-goroutine channel handoff makes it the riskiest.
 
 **Verification for each step:** capture `alloc_space` before/after a fixed
 gameplay window; the targeted entry should drop toward zero, and `mallocgc` in
 the CPU profile should shrink further. For step 3, verify with a video-backed
 stage or attract-mode loop specifically.
+
+### Outcome (steady-state hot path)
+
+After #1 and #2, the per-frame **render and audio hot paths are no longer
+meaningful allocators**. A post-fix `alloc_space` is dominated entirely by
+expected one-time asset decode (`image.NewRGBA`/`NewNRGBA` + `png.Decode` via
+`loadSff`/`readV2`, and `reisen._Cfunc_GoBytes` for video). Combined with the
+earlier memory-limit work (`FreeOSMemory` returning ~169 MB to the OS after
+load), the engine's steady-state GC pressure is now driven only by asset loading
+and the two remaining dependency-internal sources (`beep.Mixer.Stream`, reisen
+video frames).
 
