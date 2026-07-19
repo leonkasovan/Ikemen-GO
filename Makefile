@@ -753,6 +753,19 @@ ANDROID_SDK_ROOT ?= $(ANDROID_HOME)
 # gamecontrollerdb.txt is referenced by the Android app manifest.
 ANDROID_GCDB_URL ?= https://raw.githubusercontent.com/mdqinc/SDL_GameControllerDB/refs/heads/master/gamecontrollerdb.txt
 
+# Gradle build type follows CONFIG: CONFIG=debug -> assembleDebug (debug APK),
+# otherwise assembleRelease (release APK). This mirrors the native build's
+# CONFIG=debug switch. Overridable via ANDROID_GRADLE_TASK if needed.
+ifeq ($(IS_DEBUG),1)
+  ANDROID_GRADLE_TASK ?= assembleDebug
+  ANDROID_APK_VARIANT := debug
+  ANDROID_APK_ARTIFACT := app-debug.apk
+else
+  ANDROID_GRADLE_TASK ?= assembleRelease
+  ANDROID_APK_VARIANT := release
+  ANDROID_APK_ARTIFACT := app-release.apk
+endif
+
 android:
 	@echo "==> Building Android shared library (libmain.so, arm64-v8a)..."
 	@if [ ! -d "$(ANDROID_TOOLCHAIN)" ]; then \
@@ -815,10 +828,12 @@ check-android-tools:
 # --- Full APK build: lib + ikemen-droid Gradle project (no Docker) ----------
 # Clones/updates the ikemen-droid app project, stages libmain.so + dep .so
 # files into jniLibs/, stages engine assets per the app manifest.txt (with
-# screenpack fallback), then runs Gradle 'assembleDebug' and copies the APK to
-# $(ANDROID_APK_OUT). Requires the Android SDK (ANDROID_SDK_ROOT) + a JDK.
+# screenpack fallback), then runs Gradle and copies the APK to
+# $(ANDROID_APK_OUT). CONFIG=debug builds a debug APK (assembleDebug); the
+# default builds a release APK (assembleRelease). Requires the Android SDK
+# (ANDROID_SDK_ROOT) + a JDK.
 android-apk: check-android-tools android screenpack
-	@echo "==> Building Android APK (no Docker)..."
+	@echo "==> Building Android APK ($(ANDROID_APK_VARIANT), no Docker)..."
 	@# Resolve the SDK root (ANDROID_SDK_ROOT preferred, else ANDROID_HOME).
 	sdk="$(ANDROID_SDK_ROOT)"; [ -n "$$sdk" ] || sdk="$(ANDROID_HOME)"; \
 	echo "==> Using Android SDK: $$sdk"; \
@@ -881,14 +896,18 @@ android-apk: check-android-tools android screenpack
 		fi; \
 	done; \
 	\
-	echo "==> Running Gradle (assembleDebug)..."; \
+	echo "==> Running Gradle ($(ANDROID_GRADLE_TASK))..."; \
 	( cd "$(ANDROID_APK_DIR)" && \
 		printf "sdk.dir=%s\n" "$$sdk" > local.properties && \
 		chmod +x ./gradlew 2>/dev/null || true; \
-		./gradlew --no-daemon clean assembleDebug ); \
-	apk_src="$(ANDROID_APK_DIR)/app/build/outputs/apk/debug/app-debug.apk"; \
+		./gradlew --no-daemon clean $(ANDROID_GRADLE_TASK) ); \
+	apk_dir="$(ANDROID_APK_DIR)/app/build/outputs/apk/$(ANDROID_APK_VARIANT)"; \
+	apk_src="$$apk_dir/$(ANDROID_APK_ARTIFACT)"; \
 	if [ ! -f "$$apk_src" ]; then \
-		echo "ERROR: Gradle finished but APK not found at: $$apk_src" >&2; exit 1; \
+		apk_src="$$(ls "$$apk_dir"/*.apk 2>/dev/null | head -n1)"; \
+	fi; \
+	if [ -z "$$apk_src" ] || [ ! -f "$$apk_src" ]; then \
+		echo "ERROR: Gradle finished but no APK found in: $$apk_dir" >&2; exit 1; \
 	fi; \
 	mkdir -p "$$(dirname "$(ANDROID_APK_OUT)")"; \
 	cp -av "$$apk_src" "$(ANDROID_APK_OUT)"; \
@@ -947,6 +966,7 @@ help:
 	@echo '  install        Assemble runnable build in install/ (screenpack + binary)'
 	@echo '  android        Build Android arm64 shared library (libmain.so)'
 	@echo '  android-apk    Build full Android APK (no Docker; needs SDK+JDK+NDK)'
+	@echo '                   release by default; CONFIG=debug -> debug APK'
 	@echo '  check-android-tools  Verify Android APK build prerequisites'
 	@echo '  clean-android  Remove Android build artifacts'
 	@echo '  clean          Remove build artifacts'
@@ -980,4 +1000,5 @@ help:
 	@echo '  make APP_VERSION=v1.0.0       # Tagged build'
 	@echo '  make APP_VERSION=v1.0.0 CONFIG=debug'
 	@echo '  make android                  # Android arm64 libmain.so'
-	@echo '  make android-apk              # Full Android APK (no Docker)'
+	@echo '  make android-apk              # Full Android APK (release, no Docker)'
+	@echo '  make android-apk CONFIG=debug # Full Android APK (debug)'
