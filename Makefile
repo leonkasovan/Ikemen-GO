@@ -240,6 +240,13 @@ else
   IS_DEBUG :=
 endif
 
+# Debug builds get a distinct binary name (Ikemen_GO_debug.exe / Ikemen_GO_debug)
+# so they never overwrite the release binary. $(basename) strips the extension
+# ('.exe' on Windows, none elsewhere) before appending the suffix + $(BINEXT).
+ifeq ($(IS_DEBUG),1)
+  BINNAME := $(basename $(BINNAME))_debug$(BINEXT)
+endif
+
 ifeq ($(HOST_OS),windows)
   ifeq ($(IS_DEBUG),1)
     GO_TAGS := -tags "static debug"
