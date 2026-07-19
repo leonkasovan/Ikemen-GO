@@ -766,6 +766,29 @@ else
   ANDROID_APK_ARTIFACT := app-release.apk
 endif
 
+# --- Optional APK signing ---------------------------------------------------
+# Signing runs only when ANDROID_KEYSTORE points at an existing keystore file.
+# If unset, the APK is copied as-is (a debug APK is already signed with the
+# Android debug key; a release APK will be unsigned and must be signed before
+# install). Signing uses the NDK/SDK build-tools zipalign + apksigner.
+#
+# Example:
+#   make android-apk \
+#     ANDROID_KEYSTORE=$HOME/keys/release.jks \
+#     ANDROID_KEY_ALIAS=release \
+#     ANDROID_KEYSTORE_PASS=env:KS_PASS \
+#     ANDROID_KEY_PASS=env:KEY_PASS
+#
+# Passwords accept apksigner's --ks-pass/--key-pass forms: 'env:VAR',
+# 'file:/path', or 'pass:literal'. Prefer env:/file: over pass: (avoid
+# leaking secrets on the command line / in process listings).
+ANDROID_KEYSTORE      ?=
+ANDROID_KEY_ALIAS     ?=
+ANDROID_KEYSTORE_PASS ?=
+ANDROID_KEY_PASS      ?= $(ANDROID_KEYSTORE_PASS)
+# Directory holding zipalign/apksigner. Auto-detected from the SDK if unset.
+ANDROID_BUILD_TOOLS   ?=
+
 android:
 	@echo "==> Building Android shared library (libmain.so, arm64-v8a)..."
 	@if [ ! -d "$(ANDROID_TOOLCHAIN)" ]; then \
@@ -911,7 +934,48 @@ android-apk: check-android-tools android screenpack
 	fi; \
 	mkdir -p "$$(dirname "$(ANDROID_APK_OUT)")"; \
 	cp -av "$$apk_src" "$(ANDROID_APK_OUT)"; \
-	echo "==> APK ready: $(ANDROID_APK_OUT)"
+	\
+	if [ -n "$(ANDROID_KEYSTORE)" ]; then \
+		if [ ! -f "$(ANDROID_KEYSTORE)" ]; then \
+			echo "ERROR: ANDROID_KEYSTORE not found: $(ANDROID_KEYSTORE)" >&2; exit 1; \
+		fi; \
+		if [ -z "$(ANDROID_KEY_ALIAS)" ]; then \
+			echo "ERROR: ANDROID_KEY_ALIAS is required when signing." >&2; exit 1; \
+		fi; \
+		bt="$(ANDROID_BUILD_TOOLS)"; \
+		if [ -z "$$bt" ]; then \
+			bt="$$(ls -d "$$sdk"/build-tools/*/ 2>/dev/null | sort -V | tail -n1)"; \
+			bt="$${bt%/}"; \
+		fi; \
+		if [ -z "$$bt" ] || [ ! -d "$$bt" ]; then \
+			echo "ERROR: Android build-tools not found (set ANDROID_BUILD_TOOLS)." >&2; exit 1; \
+		fi; \
+		zipalign="$$bt/zipalign"; [ -f "$$zipalign" ] || zipalign="$$bt/zipalign.exe"; \
+		apksigner="$$bt/apksigner"; [ -f "$$apksigner" ] || apksigner="$$bt/apksigner.bat"; \
+		if [ ! -f "$$zipalign" ]; then \
+			echo "ERROR: zipalign not found in build-tools: $$bt" >&2; exit 1; \
+		fi; \
+		if [ ! -f "$$apksigner" ]; then \
+			echo "ERROR: apksigner not found in build-tools: $$bt" >&2; exit 1; \
+		fi; \
+		echo "==> Signing APK (keystore: $(ANDROID_KEYSTORE), alias: $(ANDROID_KEY_ALIAS))..."; \
+		aligned="$(ANDROID_APK_OUT).aligned"; \
+		"$$zipalign" -f -p 4 "$(ANDROID_APK_OUT)" "$$aligned"; \
+		ks_pass_arg=""; key_pass_arg=""; \
+		[ -n "$(ANDROID_KEYSTORE_PASS)" ] && ks_pass_arg="--ks-pass $(ANDROID_KEYSTORE_PASS)"; \
+		[ -n "$(ANDROID_KEY_PASS)" ] && key_pass_arg="--key-pass $(ANDROID_KEY_PASS)"; \
+		"$$apksigner" sign \
+			--ks "$(ANDROID_KEYSTORE)" \
+			--ks-key-alias "$(ANDROID_KEY_ALIAS)" \
+			$$ks_pass_arg $$key_pass_arg \
+			--out "$(ANDROID_APK_OUT)" "$$aligned"; \
+		rm -f "$$aligned" "$$aligned.idsig" 2>/dev/null || true; \
+		"$$apksigner" verify --verbose "$(ANDROID_APK_OUT)" | head -n 5 || true; \
+		echo "==> APK signed: $(ANDROID_APK_OUT)"; \
+	else \
+		echo "==> APK ready (unsigned unless debug): $(ANDROID_APK_OUT)"; \
+		echo "    To sign, pass ANDROID_KEYSTORE=... ANDROID_KEY_ALIAS=... (see comments above android-apk)."; \
+	fi
 
 clean-android:
 	@echo "==> Cleaning Android artifacts..."
@@ -987,6 +1051,9 @@ help:
 	@echo '  ANDROID_SDK_ROOT=  Path to Android SDK (for android-apk; else uses ANDROID_HOME)'
 	@echo '  ANDROID_APK_REPO=  ikemen-droid git URL or local path (for android-apk)'
 	@echo '  ANDROID_APK_OUT=   Output APK path (default: bin/ikemen-go.apk)'
+	@echo '  ANDROID_KEYSTORE=  Keystore file to sign the APK (optional)'
+	@echo '  ANDROID_KEY_ALIAS= Key alias in the keystore (required if signing)'
+	@echo '  ANDROID_KEYSTORE_PASS= / ANDROID_KEY_PASS=  env:VAR / file:PATH / pass:LITERAL'
 	@echo ''
 	@echo 'Platform notes:'
 	@echo '  SDL2, FFmpeg, and XMP are built from source on all platforms.'
@@ -1002,3 +1069,4 @@ help:
 	@echo '  make android                  # Android arm64 libmain.so'
 	@echo '  make android-apk              # Full Android APK (release, no Docker)'
 	@echo '  make android-apk CONFIG=debug # Full Android APK (debug)'
+	@echo '  make android-apk ANDROID_KEYSTORE=rel.jks ANDROID_KEY_ALIAS=rel ANDROID_KEYSTORE_PASS=env:KS_PASS'
