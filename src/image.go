@@ -818,6 +818,14 @@ func (s *Sprite) SetPxl(px []byte) {
 	s.pendingFilter = false
 	s.pendingW = int32(s.Size[0])
 	s.pendingH = int32(s.Size[1])
+
+	// Debug switch: when [Debug] EagerSpriteTextures is enabled, upload the
+	// texture immediately (the pre-lazy behavior) instead of deferring to the
+	// first render via ensureTex(). Used for A/B benchmarking the lazy-texture
+	// optimization; leave disabled for normal play.
+	if sys.cfg.Debug.EagerSpriteTextures {
+		sys.mainThreadTask <- func() { s.ensureTex() }
+	}
 }
 
 func (s *Sprite) SetRaw(data []byte, sprWidth int32, sprHeight int32, sprDepth int32) {
@@ -831,6 +839,11 @@ func (s *Sprite) SetRaw(data []byte, sprWidth int32, sprHeight int32, sprDepth i
 	// size the GPU texture from the buffer, not s.Size.
 	s.pendingW = sprWidth
 	s.pendingH = sprHeight
+
+	// See SetPxl: eager upload under the debug switch.
+	if sys.cfg.Debug.EagerSpriteTextures {
+		sys.mainThreadTask <- func() { s.ensureTex() }
+	}
 }
 
 func (s *Sprite) readHeader(r io.Reader, ofs, size *uint32, link *uint16) error {

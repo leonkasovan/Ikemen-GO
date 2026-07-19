@@ -133,6 +133,7 @@ type Config struct {
 		ConsoleRows         int     `ini:"ConsoleRows"`
 		ClsnDarken          bool    `ini:"ClsnDarken"`
 		HeapMemoryLimit     int     `ini:"HeapMemoryLimit"`
+		EagerSpriteTextures bool    `ini:"EagerSpriteTextures"`
 		DumpLuaTables       bool    `ini:"DumpLuaTables"`
 		Font                string  `ini:"Font"`
 		FontScale           float32 `ini:"FontScale"`

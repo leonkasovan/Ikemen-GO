@@ -52,6 +52,13 @@
   (control). The saving is largest right after load and scales with roster and
   animation-frame count.
 
+- **`[Debug] EagerSpriteTextures` switch** (`config.go`, `image.go`,
+  `defaultConfig.ini`) — New config flag (default `0`) that forces the pre-lazy
+  eager texture-upload path in `Sprite.SetPxl`/`SetRaw`, so every sprite's GPU
+  texture is created during asset loading rather than on first render. Intended
+  for A/B benchmarking the lazy-texture optimization on the same build (it was
+  used to produce the numbers above); leave at `0` for normal play.
+
 - **Palette texture atlas (GL33)** — Replaced ~150 separate `256×1` GL palette textures with a single shared `2048×2048` atlas texture. Each palette is a `256×1` sub-region, providing 16,384 slots per atlas. Palette slots use `gl.TexSubImage2D` for efficient sub-region writes and share the atlas serial number so the texture cache hits instantly after the first palette bind per frame, reducing GPU state changes from ~15-19 per frame to 1.
 
 - **Palette texture atlas (GLES32)** — Same optimization ported to the OpenGL ES 3.2 backend for Android: atlas allocation, slot recycling via GC finalizer, and `palUV` uniform for per-slot UV lookup.
