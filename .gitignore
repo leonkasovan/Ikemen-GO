@@ -81,6 +81,7 @@ lib/*.so
 lib/*.so.*
 build/android-apk/
 build/android-deps/
+build/ffmpeg/
 
 # ============================
 # Temp / generated sources

@@ -404,7 +404,14 @@ SDL2_CMAKE_FLAGS := \
 	-DSDL_TESTS=OFF \
 	-DSDL_INSTALL_TESTS=OFF
 
+# CMake generator — Windows (MSYS2/MINGW64) defaults to "MSYS Makefiles"
+# which identifies the platform as Unix (UNIX=TRUE). We need "MinGW Makefiles"
+# instead, which sets WIN32=TRUE and correctly excludes Unix-specific sources
+# (e.g., src/core/unix/*.c).
+SDL2_CMAKE_GENERATOR :=
+
 ifeq ($(HOST_OS),windows)
+  SDL2_CMAKE_GENERATOR := -G "MinGW Makefiles"
   SDL2_CMAKE_FLAGS += \
 	-DSDL_OPENGL=ON \
 	-DSDL_OPENGLES=OFF \
@@ -469,6 +476,7 @@ $(BUILD_PREFIX)/lib/libSDL2.a:
 		unzip "$(BUILDDIR)/SDL-release-2.32.10.zip" -d "$(BUILDDIR)"; \
 	fi
 	cmake -S "$(SDL2_SRCDIR)" -B "$(SDL2_BUILDDIR)" \
+		$(SDL2_CMAKE_GENERATOR) \
 		$(SDL2_CMAKE_FLAGS)
 	cmake --build "$(SDL2_BUILDDIR)" --parallel
 	cmake --install "$(SDL2_BUILDDIR)"
@@ -485,14 +493,14 @@ ffmpeg: $(FFMPEG_LIBS)
 
 $(FFMPEG_LIBS):
 	@echo "==> Building static FFmpeg for $(HOST_OS)..."
-	mkdir -p $(BUILDDIR)
+	mkdir -p $(BUILDDIR) $(FFMPEG_BUILDDIR)
 	if [ ! -d "$(FFMPEG_SRCDIR)" ]; then \
 		echo "==> Downloading FFmpeg source ..."; \
 		wget "$(FFMPEG_SOURCE)" -O "$(BUILDDIR)/FFmpeg-n7.1.zip"; \
 		unzip "$(BUILDDIR)/FFmpeg-n7.1.zip" -d "$(BUILDDIR)"; \
 	fi
-	cd $(FFMPEG_SRCDIR) && \
-		./configure \
+	cd "$(FFMPEG_BUILDDIR)" && \
+		"$(FFMPEG_SRCDIR)/configure" \
 			--prefix="$(BUILD_PREFIX)" \
 			--enable-static --disable-shared \
 			--disable-gpl --disable-nonfree \
@@ -655,9 +663,9 @@ endif
 # ============================================================================
 # Install — assemble a runnable distribution
 # ============================================================================
-# Depends on `screenpack` which clones/updates the Elecbyte screenpack git repo.
-# Merges screenpack assets (chars, stages, sound, video) with engine data
-# (data, font, external) and copies the binary into $(INSTALLDIR).
+# Depends on `screenpack` which downloads/extracts the Elecbyte screenpack zip.
+# Merges screenpack directories (chars, stages, sound, video, data, external,
+# font) with engine data and copies the binary into $(INSTALLDIR).
 
 install: deps-check screenpack binary
 	@echo "==> Installing to $(INSTALLDIR)/..."
@@ -665,8 +673,8 @@ install: deps-check screenpack binary
 	mkdir -p "$(INSTALLDIR)"
 	@echo "==> Copying engine data: data font external"
 	cp -r data font external "$(INSTALLDIR)/"
-	@echo "==> Merging screenpack assets on top: chars stages sound video data"
-	for d in chars stages sound video data; do \
+	@echo "==> Merging screenpack items: chars stages sound video data external font"
+	for d in chars stages sound video data external font; do \
 		if [ -d "$(SCREENPACK_DIR)/$$d" ]; then \
 			mkdir -p "$(INSTALLDIR)/$$d"; \
 			cp -r "$(SCREENPACK_DIR)/$$d/." "$(INSTALLDIR)/$$d/" 2>/dev/null || true; \
@@ -677,24 +685,31 @@ install: deps-check screenpack binary
 	@echo "==> Install complete: $(INSTALLDIR)/"
 
 # ============================================================================
-# Screenpack Clone / Update
+# Screenpack Download / Update
 # ============================================================================
+# Downloads the Elecbyte screenpack as a zip archive from GitHub (avoids git
+# clone dependency for end users and skips git metadata overhead).
 
-SCREENPACK_REPO ?= https://github.com/ikemen-engine/Ikemen-GO-Screenpack.git
+SCREENPACK_REPO ?= https://github.com/ikemen-engine/Ikemen-GO-Screenpack
 SCREENPACK_REF  ?= master
 SCREENPACK_DIR   = $(BUILDDIR)/screenpack
 
+# GitHub archive URL — e.g. https://github.com/owner/repo/archive/refs/heads/master.zip
+SCREENPACK_ZIP_URL = $(SCREENPACK_REPO)/archive/refs/heads/$(SCREENPACK_REF).zip
+
 screenpack:
-	@echo "==> Ensuring Elecbyte screenpack..."
+	@echo "==> Downloading Elecbyte screenpack..."
 	mkdir -p $(BUILDDIR)
-	if [ ! -d "$(SCREENPACK_DIR)/.git" ]; then
-		rm -rf $(SCREENPACK_DIR)
-		git clone --depth=1 -b "$(SCREENPACK_REF)" "$(SCREENPACK_REPO)" "$(SCREENPACK_DIR)"
-	else
-		cd "$(SCREENPACK_DIR)" && \
-			git fetch --depth=1 origin "$(SCREENPACK_REF)" && \
-			git checkout -f FETCH_HEAD
-	fi
+	rm -rf "$(SCREENPACK_DIR)" "$(BUILDDIR)/screenpack-tmp"
+	wget "$(SCREENPACK_ZIP_URL)" -O "$(BUILDDIR)/screenpack.zip"
+	mkdir -p "$(BUILDDIR)/screenpack-tmp"
+	unzip "$(BUILDDIR)/screenpack.zip" -d "$(BUILDDIR)/screenpack-tmp"
+	# GitHub zips wrap contents in a top-level dir (e.g. Ikemen-GO-Screenpack-master/).
+	# Find the single subdirectory and move its contents up into SCREENPACK_DIR.
+	subdir="$$(find "$(BUILDDIR)/screenpack-tmp" -mindepth 1 -maxdepth 1 -type d | head -1)"; \
+	shopt -s dotglob; \
+	mv "$$subdir"/* "$(SCREENPACK_DIR)"/ 2>/dev/null || true
+	rm -rf "$(BUILDDIR)/screenpack-tmp" "$(BUILDDIR)/screenpack.zip"
 	@echo "==> Screenpack ready in $(SCREENPACK_DIR)"
 
 # ============================================================================
@@ -999,14 +1014,18 @@ clean:
 
 distclean: clean
 	@echo "==> Deep cleaning..."
-	rm -rf $(FFMPEG_SRCDIR) 2>/dev/null || true
-	rm -rf $(FFMPEG_BUILDDIR) 2>/dev/null || true
+	rm -rf $(FFMPEG_SRCDIR) $(FFMPEG_BUILDDIR) 2>/dev/null || true
+	# Remove stale dirs left by older Makefile versions (unmanaged here).
+	rm -rf "$(BUILDDIR)/ffmpeg" "$(BUILDDIR)/ffmpeg-src" 2>/dev/null || true
 	rm -rf $(BUILD_PREFIX) 2>/dev/null || true
-	rm -rf $(XMP_SRCDIR) 2>/dev/null || true
-	rm -rf $(XMP_BUILDDIR) 2>/dev/null || true
-	rm -rf $(SDL2_SRCDIR) 2>/dev/null || true
-	rm -rf $(SDL2_BUILDDIR) 2>/dev/null || true
+	rm -rf $(XMP_SRCDIR) $(XMP_BUILDDIR) 2>/dev/null || true
+	rm -rf $(SDL2_SRCDIR) $(SDL2_BUILDDIR) 2>/dev/null || true
 	rm -rf $(SCREENPACK_DIR) 2>/dev/null || true
+	# Remove downloaded source archives so distclean fully resets.
+	rm -f "$(BUILDDIR)/FFmpeg-n7.1.zip" \
+	      "$(BUILDDIR)/SDL-release-2.32.10.zip" \
+	      "$(BUILDDIR)/libxmp-4.7.1.zip" \
+	      "$(BUILDDIR)/screenpack.zip" 2>/dev/null || true
 	@echo "==> Distclean done."
 
 # ============================================================================
