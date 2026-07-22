@@ -37,6 +37,9 @@ SHELL       := /bin/bash
 .SHELLFLAGS := -euo pipefail -c
 .ONESHELL:
 
+# Include shared library URLs and download/extract macro
+include common.mk
+
 # ============================================================================
 # Host OS / Architecture Detection
 # ============================================================================
@@ -165,6 +168,9 @@ FFMPEG_LIBS := $(addprefix $(BUILD_PREFIX)/lib/, \
 
 # Install directory
 INSTALLDIR ?= install
+# SCREENPACK_DIR points to where screenpack is extracted — now directly into
+# $(INSTALLDIR) for a streamlined workflow.
+SCREENPACK_DIR := $(INSTALLDIR)
 
 # ============================================================================
 # Toolchain
@@ -315,7 +321,6 @@ endif
         deps-check check-go-env \
         ffmpeg xmp sdl2 winres binary install \
         screenpack \
-        android android-apk check-android-tools clean-android \
         clean distclean FORCE
 
 # ============================================================================
@@ -346,7 +351,7 @@ debug:
 deps-check:
 	@echo "==> Checking build dependencies..."
 	@missing=""; \
-	for tool in git make cmake pkg-config gcc g++ nasm go unzip wget; do \
+	for tool in git mingw32-make cmake pkg-config gcc g++ nasm go unzip wget; do \
 		command -v $$tool >/dev/null 2>&1 || missing="$$missing $$tool"; \
 	done; \
 	if [ -n "$$missing" ]; then \
@@ -389,10 +394,8 @@ check-go-env:
 
 # ============================================================================
 # SDL2 Static Build (CMake)
-# source: https://github.com/libsdl-org/SDL/archive/refs/tags/release-2.32.10.zip
+# URL defined in common.mk as $(SDL2_URL)
 # ============================================================================
-
-SDL2_SOURCE := https://github.com/libsdl-org/SDL/archive/refs/tags/release-2.32.10.zip
 
 # SDL2 CMake flags — platform-specific
 SDL2_CMAKE_FLAGS := \
@@ -470,11 +473,7 @@ sdl2: $(BUILD_PREFIX)/lib/libSDL2.a
 $(BUILD_PREFIX)/lib/libSDL2.a:
 	@echo "==> Building static SDL2 for $(HOST_OS)..."
 	mkdir -p $(BUILDDIR)
-	if [ ! -d "$(SDL2_SRCDIR)" ]; then \
-		echo "==> Downloading SDL2 source ..."; \
-		wget "$(SDL2_SOURCE)" -O "$(BUILDDIR)/SDL-release-2.32.10.zip"; \
-		unzip "$(BUILDDIR)/SDL-release-2.32.10.zip" -d "$(BUILDDIR)"; \
-	fi
+	$(call download_and_extract,$(SDL2_URL),$(BUILDDIR)/SDL2.zip,$(SDL2_SRCDIR))
 	cmake -S "$(SDL2_SRCDIR)" -B "$(SDL2_BUILDDIR)" \
 		$(SDL2_CMAKE_GENERATOR) \
 		$(SDL2_CMAKE_FLAGS)
@@ -484,21 +483,15 @@ $(BUILD_PREFIX)/lib/libSDL2.a:
 
 # ============================================================================
 # FFmpeg Static Build (autotools)
-# source: https://github.com/FFmpeg/FFmpeg/archive/refs/tags/n7.1.zip
+# URL defined in common.mk as $(FFMPEG_URL)
 # ============================================================================
-
-FFMPEG_SOURCE := https://github.com/FFmpeg/FFmpeg/archive/refs/tags/n7.1.zip
 
 ffmpeg: $(FFMPEG_LIBS)
 
 $(FFMPEG_LIBS):
 	@echo "==> Building static FFmpeg for $(HOST_OS)..."
 	mkdir -p $(BUILDDIR) $(FFMPEG_BUILDDIR)
-	if [ ! -d "$(FFMPEG_SRCDIR)" ]; then \
-		echo "==> Downloading FFmpeg source ..."; \
-		wget "$(FFMPEG_SOURCE)" -O "$(BUILDDIR)/FFmpeg-n7.1.zip"; \
-		unzip "$(BUILDDIR)/FFmpeg-n7.1.zip" -d "$(BUILDDIR)"; \
-	fi
+	$(call download_and_extract,$(FFMPEG_URL),$(BUILDDIR)/FFmpeg.zip,$(FFMPEG_SRCDIR))
 	cd "$(FFMPEG_BUILDDIR)" && \
 		"$(FFMPEG_SRCDIR)/configure" \
 			--prefix="$(BUILD_PREFIX)" \
@@ -521,10 +514,9 @@ $(FFMPEG_LIBS):
 
 # ============================================================================
 # XMP Static Library Build (CMake)
-# source: https://github.com/libxmp/libxmp/archive/refs/tags/libxmp-4.7.1.zip
+# URL defined in common.mk as $(XMP_URL)
 # ============================================================================
 
-XMP_SOURCE := https://github.com/libxmp/libxmp/archive/refs/tags/libxmp-4.7.1.zip
 XMP_LIB    := $(BUILD_PREFIX)/lib/libxmp.a
 
 xmp: $(XMP_LIB)
@@ -534,11 +526,7 @@ xmp: $(XMP_LIB)
 $(XMP_LIB):
 	@echo "==> Building static libxmp for $(HOST_OS)..."
 	mkdir -p $(BUILDDIR)
-	if [ ! -d "$(XMP_SRCDIR)" ]; then \
-		echo "==> Downloading XMP source ..."; \
-		wget "$(XMP_SOURCE)" -O "$(BUILDDIR)/libxmp-4.7.1.zip"; \
-		unzip "$(BUILDDIR)/libxmp-4.7.1.zip" -d "$(BUILDDIR)"; \
-	fi
+	$(call download_and_extract,$(XMP_URL),$(BUILDDIR)/libxmp.zip,$(XMP_SRCDIR))
 	cmake -S "$(XMP_SRCDIR)" -B "$(XMP_BUILDDIR)" \
 		-DCMAKE_INSTALL_PREFIX="$(BUILD_PREFIX)" \
 		-DBUILD_SHARED=OFF \
@@ -669,335 +657,26 @@ endif
 
 install: deps-check screenpack binary
 	@echo "==> Installing to $(INSTALLDIR)/..."
-	rm -rf "$(INSTALLDIR)"
 	mkdir -p "$(INSTALLDIR)"
 	@echo "==> Copying engine data: data font external"
 	cp -r data font external "$(INSTALLDIR)/"
-	@echo "==> Merging screenpack items: chars stages sound video data external font"
-	for d in chars stages sound video data external font; do \
-		if [ -d "$(SCREENPACK_DIR)/$$d" ]; then \
-			mkdir -p "$(INSTALLDIR)/$$d"; \
-			cp -r "$(SCREENPACK_DIR)/$$d/." "$(INSTALLDIR)/$$d/" 2>/dev/null || true; \
-		fi; \
-	done
 	@echo "==> Copying binary $(BINNAME)..."
 	cp -f "$(BINARY)" "$(INSTALLDIR)/"
 	@echo "==> Install complete: $(INSTALLDIR)/"
 
 # ============================================================================
-# Screenpack Download / Update
+# Screenpack Download / Extract
 # ============================================================================
-# Downloads the Elecbyte screenpack as a zip archive from GitHub (avoids git
-# clone dependency for end users and skips git metadata overhead).
-
-SCREENPACK_REPO ?= https://github.com/ikemen-engine/Ikemen-GO-Screenpack
-SCREENPACK_REF  ?= master
-SCREENPACK_DIR   = $(BUILDDIR)/screenpack
-
-# GitHub archive URL — e.g. https://github.com/owner/repo/archive/refs/heads/master.zip
-SCREENPACK_ZIP_URL = $(SCREENPACK_REPO)/archive/refs/heads/$(SCREENPACK_REF).zip
+# Downloads the Elecbyte screenpack as a zip archive and extracts it directly
+# into $(INSTALLDIR). The `install` target then overlays engine data and the
+# binary on top — no separate merge step needed.
+# URL defined in common.mk as $(SCREENPACK_URL).
 
 screenpack:
 	@echo "==> Downloading Elecbyte screenpack..."
 	mkdir -p $(BUILDDIR)
-	rm -rf "$(SCREENPACK_DIR)" "$(BUILDDIR)/screenpack-tmp"
-	wget "$(SCREENPACK_ZIP_URL)" -O "$(BUILDDIR)/screenpack.zip"
-	mkdir -p "$(BUILDDIR)/screenpack-tmp"
-	unzip "$(BUILDDIR)/screenpack.zip" -d "$(BUILDDIR)/screenpack-tmp"
-	# GitHub zips wrap contents in a top-level dir (e.g. Ikemen-GO-Screenpack-master/).
-	# Find the single subdirectory and move its contents up into SCREENPACK_DIR.
-	subdir="$$(find "$(BUILDDIR)/screenpack-tmp" -mindepth 1 -maxdepth 1 -type d | head -1)"; \
-	shopt -s dotglob; \
-	mv "$$subdir"/* "$(SCREENPACK_DIR)"/ 2>/dev/null || true
-	rm -rf "$(BUILDDIR)/screenpack-tmp" "$(BUILDDIR)/screenpack.zip"
-	@echo "==> Screenpack ready in $(SCREENPACK_DIR)"
-
-# ============================================================================
-# Android — arm64 shared library (libmain.so) via NDK + Go c-shared
-# ============================================================================
-# Builds android/app/libs/arm64-v8a/libmain.so, loaded by the Android app
-# (Java/JNI) at runtime. Uses the Android NDK's clang cross-compilers and a
-# prebuilt SDL2 for android-30 living under $(ANDROID_DEPS_PATH).
-#
-# Prerequisites (one-time host setup):
-#   - Android NDK r21+          (e.g. sdkmanager "ndk;27.1.12297006")
-#   - Android platform API 30   (sdkmanager "platforms;android-30")
-#   - JDK 8 recommended for the surrounding Gradle/APK build
-#   - SDL2 built for arm64-v8a / android-30 and installed into
-#     $(ANDROID_DEPS_PATH) (lib/, lib/pkgconfig/, include/, include/SDL2/):
-#       git clone --depth 1 --branch SDL2 https://github.com/libsdl-org/SDL.git SDL2
-#       cd SDL2 && mkdir build-android && cd build-android
-#       cmake -G "Unix Makefiles" .. \
-#         -DCMAKE_TOOLCHAIN_FILE="$(ANDROID_NDK_HOME)/build/cmake/android.toolchain.cmake" \
-#         -DANDROID_ABI="arm64-v8a" -DANDROID_PLATFORM=android-30 \
-#         -DCMAKE_INSTALL_PREFIX="$(ANDROID_DEPS_PATH)" \
-#         -DSDL_ANDROID_PACKAGE_NAME=org.ikemen_engine.ikemen_go \
-#         -DSDL_STATIC=OFF -DSDL_SHARED=ON -DCMAKE_BUILD_TYPE=Release \
-#         -DCMAKE_SHARED_LINKER_FLAGS="-Wl,-z,max-page-size=16384"
-#       cmake --build . -- -j8 && cmake --build . --target install
-#
-# Override paths on the command line if your NDK lives elsewhere, e.g.:
-#   make android ANDROID_NDK_HOME=/path/to/ndk
-#
-# Note: the android target is self-contained — it sets its own GOOS/GOARCH/CC
-# via target-specific assignments and does NOT use the native SDL2/FFmpeg/XMP
-# static libs built by `make release`.
-
-# --- Android configuration (override on the command line as needed) ---------
-ANDROID_NDK_HOME  ?= C:/Android/SDK/ndk/27.1.12297006
-ANDROID_DEPS_PATH ?= $(abspath $(BUILDDIR)/android-deps)
-ANDROID_HOST_TAG  ?= windows-x86_64
-ANDROID_API       ?= 30
-ANDROID_TARGET    := aarch64-linux-android$(ANDROID_API)
-ANDROID_TOOLCHAIN := $(ANDROID_NDK_HOME)/toolchains/llvm/prebuilt/$(ANDROID_HOST_TAG)
-ANDROID_CC        := $(ANDROID_TOOLCHAIN)/bin/$(ANDROID_TARGET)-clang
-ANDROID_CXX       := $(ANDROID_TOOLCHAIN)/bin/$(ANDROID_TARGET)-clang++
-ANDROID_OUTDIR    := android/app/libs/arm64-v8a
-ANDROID_BINARY    := $(ANDROID_OUTDIR)/libmain.so
-
-# --- Android APK packaging (ikemen-droid Gradle project) --------------------
-# The APK is produced from the external ikemen-droid app project (Gradle +
-# Java/JNI wrapper). ANDROID_APK_REPO may be a git URL (default) or a local
-# path to an existing checkout. ANDROID_SDK_ROOT must point at an Android SDK
-# with cmdline-tools + platform-tools installed (Gradle needs it).
-ANDROID_APK_REPO ?= https://github.com/Jesuszilla/ikemen-droid.git
-ANDROID_APK_REF  ?= main
-ANDROID_APK_DIR  ?= $(abspath $(BUILDDIR)/android-apk/ikemen-droid)
-ANDROID_APK_OUT  ?= $(abspath bin/ikemen-go.apk)
-ANDROID_SDK_ROOT ?= $(ANDROID_HOME)
-# gamecontrollerdb.txt is referenced by the Android app manifest.
-ANDROID_GCDB_URL ?= https://raw.githubusercontent.com/mdqinc/SDL_GameControllerDB/refs/heads/master/gamecontrollerdb.txt
-
-# Gradle build type follows CONFIG: CONFIG=debug -> assembleDebug (debug APK),
-# otherwise assembleRelease (release APK). This mirrors the native build's
-# CONFIG=debug switch. Overridable via ANDROID_GRADLE_TASK if needed.
-ifeq ($(IS_DEBUG),1)
-  ANDROID_GRADLE_TASK ?= assembleDebug
-  ANDROID_APK_VARIANT := debug
-  ANDROID_APK_ARTIFACT := app-debug.apk
-else
-  ANDROID_GRADLE_TASK ?= assembleRelease
-  ANDROID_APK_VARIANT := release
-  ANDROID_APK_ARTIFACT := app-release.apk
-endif
-
-# --- Optional APK signing ---------------------------------------------------
-# Signing runs only when ANDROID_KEYSTORE points at an existing keystore file.
-# If unset, the APK is copied as-is (a debug APK is already signed with the
-# Android debug key; a release APK will be unsigned and must be signed before
-# install). Signing uses the NDK/SDK build-tools zipalign + apksigner.
-#
-# Example:
-#   make android-apk \
-#     ANDROID_KEYSTORE=$HOME/keys/release.jks \
-#     ANDROID_KEY_ALIAS=release \
-#     ANDROID_KEYSTORE_PASS=env:KS_PASS \
-#     ANDROID_KEY_PASS=env:KEY_PASS
-#
-# Passwords accept apksigner's --ks-pass/--key-pass forms: 'env:VAR',
-# 'file:/path', or 'pass:literal'. Prefer env:/file: over pass: (avoid
-# leaking secrets on the command line / in process listings).
-ANDROID_KEYSTORE      ?=
-ANDROID_KEY_ALIAS     ?=
-ANDROID_KEYSTORE_PASS ?=
-ANDROID_KEY_PASS      ?= $(ANDROID_KEYSTORE_PASS)
-# Directory holding zipalign/apksigner. Auto-detected from the SDK if unset.
-ANDROID_BUILD_TOOLS   ?=
-
-android:
-	@echo "==> Building Android shared library (libmain.so, arm64-v8a)..."
-	@if [ ! -d "$(ANDROID_TOOLCHAIN)" ]; then \
-		echo "ERROR: NDK toolchain not found: $(ANDROID_TOOLCHAIN)" >&2; \
-		echo "  Set ANDROID_NDK_HOME (and ANDROID_HOST_TAG for non-Windows hosts)." >&2; \
-		exit 1; \
-	fi
-	@if [ ! -d "$(ANDROID_DEPS_PATH)/lib" ]; then \
-		echo "ERROR: SDL2 android deps not found: $(ANDROID_DEPS_PATH)" >&2; \
-		echo "  Build SDL2 for android-30 first (see comments above the android target)." >&2; \
-		exit 1; \
-	fi
-	mkdir -p $(ANDROID_OUTDIR)
-	CGO_ENABLED=1 GOOS=android GOARCH=arm64 GOEXPERIMENT=arenas \
-	CC="$(ANDROID_CC)" CXX="$(ANDROID_CXX)" \
-	PKG_CONFIG_LIBDIR="$(ANDROID_DEPS_PATH)/lib/pkgconfig" \
-	PKG_CONFIG_SYSROOT_DIR="$(ANDROID_DEPS_PATH)" \
-	PKG_CONFIG_PATH= \
-	CGO_CFLAGS="-I$(ANDROID_DEPS_PATH)/include -I$(ANDROID_DEPS_PATH)/include/SDL2" \
-	CGO_LDFLAGS="-L$(ANDROID_DEPS_PATH)/lib -lSDL2 -lGLESv2 -lOpenSLES -llog -Wl,-z,max-page-size=16384" \
-	go build -buildmode=c-shared -trimpath -v -tags "mugen lite android gles2" \
-		-ldflags "-s -w $(LDFLAGS_BASE) -X 'runtime.godebugDefault=asyncpreemptoff=1,sigaltstack=0'" \
-		-o "$(ANDROID_BINARY)" ./src
-	@echo "==> Android build successful: $(ANDROID_BINARY)"
-
-# --- Verify the host has everything needed for a full APK build -------------
-check-android-tools:
-	@echo "==> Checking Android APK build tools..."
-	@ok=1; \
-	if [ ! -d "$(ANDROID_TOOLCHAIN)" ]; then \
-		echo "  [X] NDK toolchain not found: $(ANDROID_TOOLCHAIN)" >&2; \
-		echo "      Set ANDROID_NDK_HOME (install via: sdkmanager \"ndk;27.1.12297006\")." >&2; \
-		ok=0; \
-	else echo "  [ok] NDK toolchain: $(ANDROID_TOOLCHAIN)"; fi; \
-	if [ ! -d "$(ANDROID_DEPS_PATH)/lib" ]; then \
-		echo "  [X] SDL2 android deps not found: $(ANDROID_DEPS_PATH)" >&2; \
-		echo "      Build SDL2 for android-30 first (see comments above the android target)." >&2; \
-		ok=0; \
-	else echo "  [ok] Android deps:  $(ANDROID_DEPS_PATH)"; fi; \
-	sdk="$(ANDROID_SDK_ROOT)"; \
-	if [ -z "$$sdk" ]; then sdk="$(ANDROID_HOME)"; fi; \
-	if [ -z "$$sdk" ] || [ ! -d "$$sdk" ]; then \
-		echo "  [X] Android SDK not found (set ANDROID_SDK_ROOT or ANDROID_HOME)." >&2; \
-		echo "      Needs cmdline-tools + platform-tools + platforms;android-$(ANDROID_API) + build-tools." >&2; \
-		ok=0; \
-	else echo "  [ok] Android SDK:   $$sdk"; fi; \
-	if ! command -v java >/dev/null 2>&1; then \
-		echo "  [X] java not found on PATH (JDK 17 recommended; 8 for older AGP)." >&2; \
-		ok=0; \
-	else echo "  [ok] java:          $$(java -version 2>&1 | head -n1)"; fi; \
-	for tool in git go; do \
-		command -v $$tool >/dev/null 2>&1 || { echo "  [X] $$tool not found on PATH." >&2; ok=0; }; \
-	done; \
-	if [ "$$ok" != "1" ]; then \
-		echo "ERROR: Missing Android APK prerequisites (see above)." >&2; \
-		exit 1; \
-	fi; \
-	echo "    All Android APK tools found."
-
-# --- Full APK build: lib + ikemen-droid Gradle project (no Docker) ----------
-# Clones/updates the ikemen-droid app project, stages libmain.so + dep .so
-# files into jniLibs/, stages engine assets per the app manifest.txt (with
-# screenpack fallback), then runs Gradle and copies the APK to
-# $(ANDROID_APK_OUT). CONFIG=debug builds a debug APK (assembleDebug); the
-# default builds a release APK (assembleRelease). Requires the Android SDK
-# (ANDROID_SDK_ROOT) + a JDK.
-android-apk: check-android-tools android screenpack
-	@echo "==> Building Android APK ($(ANDROID_APK_VARIANT), no Docker)..."
-	@# Resolve the SDK root (ANDROID_SDK_ROOT preferred, else ANDROID_HOME).
-	sdk="$(ANDROID_SDK_ROOT)"; [ -n "$$sdk" ] || sdk="$(ANDROID_HOME)"; \
-	echo "==> Using Android SDK: $$sdk"; \
-	\
-	echo "==> Syncing ikemen-droid ($(ANDROID_APK_REF))..."; \
-	mkdir -p "$$(dirname "$(ANDROID_APK_DIR)")"; \
-	if [ -d "$(ANDROID_APK_REPO)" ]; then \
-		src="$$(cd "$(ANDROID_APK_REPO)" && pwd -P)"; \
-		if [ "$$src" != "$(ANDROID_APK_DIR)" ]; then \
-			rm -rf "$(ANDROID_APK_DIR)"; \
-			echo "    Using local checkout: $$src"; \
-			cp -a "$$src" "$(ANDROID_APK_DIR)"; \
-		fi; \
-	elif [ ! -d "$(ANDROID_APK_DIR)/.git" ]; then \
-		rm -rf "$(ANDROID_APK_DIR)"; \
-		git clone --depth=1 -b "$(ANDROID_APK_REF)" "$(ANDROID_APK_REPO)" "$(ANDROID_APK_DIR)"; \
-	else \
-		( cd "$(ANDROID_APK_DIR)" && \
-			git fetch --depth=1 origin "$(ANDROID_APK_REF)" && \
-			git checkout -f FETCH_HEAD ); \
-	fi; \
-	git config --global --add safe.directory "$(ANDROID_APK_DIR)" >/dev/null 2>&1 || true; \
-	\
-	echo "==> Ensuring runtime assets referenced by the app manifest..."; \
-	if [ ! -f "external/gamecontrollerdb.txt" ]; then \
-		echo "    Downloading gamecontrollerdb.txt..."; \
-		wget -q "$(ANDROID_GCDB_URL)" -O "external/gamecontrollerdb.txt"; \
-	fi; \
-	if [ ! -f "data/system.base.def" ]; then \
-		echo "    Generating data/system.base.def from defaultMotif.ini..."; \
-		mkdir -p data; \
-		cp -a "src/resources/defaultMotif.ini" "data/system.base.def"; \
-	fi; \
-	\
-	app_dir="$(ANDROID_APK_DIR)/app"; \
-	abi_dir="$$app_dir/src/main/jniLibs/arm64-v8a"; \
-	echo "==> Staging native libs into: $$abi_dir"; \
-	mkdir -p "$$abi_dir"; \
-	rm -f "$$abi_dir"/*.so* 2>/dev/null || true; \
-	cp -av "$(abspath $(ANDROID_BINARY))" "$$abi_dir/"; \
-	cp -av "$(ANDROID_DEPS_PATH)/lib/"*.so* "$$abi_dir/" 2>/dev/null || true; \
-	\
-	assets_dir="$$app_dir/src/main/assets"; \
-	manifest="$$assets_dir/manifest.txt"; \
-	if [ ! -f "$$manifest" ]; then \
-		echo "ERROR: ikemen-droid manifest not found at: $$manifest" >&2; exit 1; \
-	fi; \
-	echo "==> Staging assets into: $$assets_dir (from manifest.txt)"; \
-	find "$$assets_dir" -mindepth 1 -maxdepth 1 ! -name "manifest.txt" -exec rm -rf {} + 2>/dev/null || true; \
-	for p in $$(tr -s '[:space:]' ' ' < "$$manifest"); do \
-		[ -z "$$p" ] && continue; \
-		src="$(CURDIR)/$$p"; dst="$$assets_dir/$$p"; \
-		if [ ! -e "$$src" ] && [ -e "$(SCREENPACK_DIR)/$$p" ]; then src="$(SCREENPACK_DIR)/$$p"; fi; \
-		if [ -d "$$src" ]; then \
-			mkdir -p "$$dst"; cp -a "$$src/." "$$dst/" 2>/dev/null || true; \
-		elif [ -f "$$src" ]; then \
-			mkdir -p "$$(dirname "$$dst")"; cp -a "$$src" "$$dst" 2>/dev/null || true; \
-		else \
-			echo "    WARNING: asset path missing: $$p" >&2; \
-		fi; \
-	done; \
-	\
-	echo "==> Running Gradle ($(ANDROID_GRADLE_TASK))..."; \
-	( cd "$(ANDROID_APK_DIR)" && \
-		printf "sdk.dir=%s\n" "$$sdk" > local.properties && \
-		chmod +x ./gradlew 2>/dev/null || true; \
-		./gradlew --no-daemon clean $(ANDROID_GRADLE_TASK) ); \
-	apk_dir="$(ANDROID_APK_DIR)/app/build/outputs/apk/$(ANDROID_APK_VARIANT)"; \
-	apk_src="$$apk_dir/$(ANDROID_APK_ARTIFACT)"; \
-	if [ ! -f "$$apk_src" ]; then \
-		apk_src="$$(ls "$$apk_dir"/*.apk 2>/dev/null | head -n1)"; \
-	fi; \
-	if [ -z "$$apk_src" ] || [ ! -f "$$apk_src" ]; then \
-		echo "ERROR: Gradle finished but no APK found in: $$apk_dir" >&2; exit 1; \
-	fi; \
-	mkdir -p "$$(dirname "$(ANDROID_APK_OUT)")"; \
-	cp -av "$$apk_src" "$(ANDROID_APK_OUT)"; \
-	\
-	if [ -n "$(ANDROID_KEYSTORE)" ]; then \
-		if [ ! -f "$(ANDROID_KEYSTORE)" ]; then \
-			echo "ERROR: ANDROID_KEYSTORE not found: $(ANDROID_KEYSTORE)" >&2; exit 1; \
-		fi; \
-		if [ -z "$(ANDROID_KEY_ALIAS)" ]; then \
-			echo "ERROR: ANDROID_KEY_ALIAS is required when signing." >&2; exit 1; \
-		fi; \
-		bt="$(ANDROID_BUILD_TOOLS)"; \
-		if [ -z "$$bt" ]; then \
-			bt="$$(ls -d "$$sdk"/build-tools/*/ 2>/dev/null | sort -V | tail -n1)"; \
-			bt="$${bt%/}"; \
-		fi; \
-		if [ -z "$$bt" ] || [ ! -d "$$bt" ]; then \
-			echo "ERROR: Android build-tools not found (set ANDROID_BUILD_TOOLS)." >&2; exit 1; \
-		fi; \
-		zipalign="$$bt/zipalign"; [ -f "$$zipalign" ] || zipalign="$$bt/zipalign.exe"; \
-		apksigner="$$bt/apksigner"; [ -f "$$apksigner" ] || apksigner="$$bt/apksigner.bat"; \
-		if [ ! -f "$$zipalign" ]; then \
-			echo "ERROR: zipalign not found in build-tools: $$bt" >&2; exit 1; \
-		fi; \
-		if [ ! -f "$$apksigner" ]; then \
-			echo "ERROR: apksigner not found in build-tools: $$bt" >&2; exit 1; \
-		fi; \
-		echo "==> Signing APK (keystore: $(ANDROID_KEYSTORE), alias: $(ANDROID_KEY_ALIAS))..."; \
-		aligned="$(ANDROID_APK_OUT).aligned"; \
-		"$$zipalign" -f -p 4 "$(ANDROID_APK_OUT)" "$$aligned"; \
-		ks_pass_arg=""; key_pass_arg=""; \
-		[ -n "$(ANDROID_KEYSTORE_PASS)" ] && ks_pass_arg="--ks-pass $(ANDROID_KEYSTORE_PASS)"; \
-		[ -n "$(ANDROID_KEY_PASS)" ] && key_pass_arg="--key-pass $(ANDROID_KEY_PASS)"; \
-		"$$apksigner" sign \
-			--ks "$(ANDROID_KEYSTORE)" \
-			--ks-key-alias "$(ANDROID_KEY_ALIAS)" \
-			$$ks_pass_arg $$key_pass_arg \
-			--out "$(ANDROID_APK_OUT)" "$$aligned"; \
-		rm -f "$$aligned" "$$aligned.idsig" 2>/dev/null || true; \
-		"$$apksigner" verify --verbose "$(ANDROID_APK_OUT)" | head -n 5 || true; \
-		echo "==> APK signed: $(ANDROID_APK_OUT)"; \
-	else \
-		echo "==> APK ready (unsigned unless debug): $(ANDROID_APK_OUT)"; \
-		echo "    To sign, pass ANDROID_KEYSTORE=... ANDROID_KEY_ALIAS=... (see comments above android-apk)."; \
-	fi
-
-clean-android:
-	@echo "==> Cleaning Android artifacts..."
-	rm -f $(ANDROID_BINARY) 2>/dev/null || true
-	rm -f $(ANDROID_OUTDIR)/libmain.h 2>/dev/null || true
-	rm -f $(ANDROID_APK_OUT) 2>/dev/null || true
-	@echo "==> Android clean done."
+	$(call download_and_extract,$(SCREENPACK_URL),$(BUILDDIR)/screenpack.zip,$(INSTALLDIR))
+	@echo "==> Screenpack ready in $(INSTALLDIR)"
 
 # ============================================================================
 # Clean
@@ -1009,7 +688,6 @@ clean:
 	rm -f $(OUTDIR)/Ikemen_GO* 2>/dev/null || true
 	rm -f $(SRC_SYSO) 2>/dev/null || true
 	rm -rf $(WINRES_DIR) 2>/dev/null || true
-	rm -f $(ANDROID_BINARY) $(ANDROID_OUTDIR)/libmain.h 2>/dev/null || true
 	@echo "==> Clean done."
 
 distclean: clean
@@ -1020,12 +698,16 @@ distclean: clean
 	rm -rf $(BUILD_PREFIX) 2>/dev/null || true
 	rm -rf $(XMP_SRCDIR) $(XMP_BUILDDIR) 2>/dev/null || true
 	rm -rf $(SDL2_SRCDIR) $(SDL2_BUILDDIR) 2>/dev/null || true
-	rm -rf $(SCREENPACK_DIR) 2>/dev/null || true
+	rm -rf $(INSTALLDIR) 2>/dev/null || true
 	# Remove downloaded source archives so distclean fully resets.
-	rm -f "$(BUILDDIR)/FFmpeg-n7.1.zip" \
-	      "$(BUILDDIR)/SDL-release-2.32.10.zip" \
-	      "$(BUILDDIR)/libxmp-4.7.1.zip" \
+	rm -f "$(BUILDDIR)/SDL2.zip" \
+	      "$(BUILDDIR)/FFmpeg.zip" \
+	      "$(BUILDDIR)/libxmp.zip" \
 	      "$(BUILDDIR)/screenpack.zip" 2>/dev/null || true
+	rm -rf "$(BUILDDIR)/SDL2.zip-extract" \
+	       "$(BUILDDIR)/FFmpeg.zip-extract" \
+	       "$(BUILDDIR)/libxmp.zip-extract" \
+	       "$(BUILDDIR)/screenpack.zip-extract" 2>/dev/null || true
 	@echo "==> Distclean done."
 
 # ============================================================================
@@ -1047,11 +729,6 @@ help:
 	@echo '  sdl2           Build static SDL2 library'
 	@echo '  screenpack     Clone/update Elecbyte screenpack'
 	@echo '  install        Assemble runnable build in install/ (screenpack + binary)'
-	@echo '  android        Build Android arm64 shared library (libmain.so)'
-	@echo '  android-apk    Build full Android APK (no Docker; needs SDK+JDK+NDK)'
-	@echo '                   release by default; CONFIG=debug -> debug APK'
-	@echo '  check-android-tools  Verify Android APK build prerequisites'
-	@echo '  clean-android  Remove Android build artifacts'
 	@echo '  clean          Remove build artifacts'
 	@echo '  distclean      Remove artifacts + external library sources'
 	@echo '  deps-check     Verify required tools are installed'
@@ -1065,14 +742,6 @@ help:
 	@echo '  CONFIG=debug       Debug build + memory instrumentation (default: release)'
 	@echo '  APP_VERSION=X.Y    Set version string (default: nightly)'
 	@echo '  APP_BUILDTIME=X    Set build timestamp'
-	@echo '  ANDROID_NDK_HOME=  Path to Android NDK (for the android target)'
-	@echo '  ANDROID_DEPS_PATH= Path to prebuilt SDL2 android deps (default: build/android-deps)'
-	@echo '  ANDROID_SDK_ROOT=  Path to Android SDK (for android-apk; else uses ANDROID_HOME)'
-	@echo '  ANDROID_APK_REPO=  ikemen-droid git URL or local path (for android-apk)'
-	@echo '  ANDROID_APK_OUT=   Output APK path (default: bin/ikemen-go.apk)'
-	@echo '  ANDROID_KEYSTORE=  Keystore file to sign the APK (optional)'
-	@echo '  ANDROID_KEY_ALIAS= Key alias in the keystore (required if signing)'
-	@echo '  ANDROID_KEYSTORE_PASS= / ANDROID_KEY_PASS=  env:VAR / file:PATH / pass:LITERAL'
 	@echo ''
 	@echo 'Platform notes:'
 	@echo '  SDL2, FFmpeg, and XMP are built from source on all platforms.'
@@ -1085,7 +754,4 @@ help:
 	@echo '  make debug                    # Native debug'
 	@echo '  make APP_VERSION=v1.0.0       # Tagged build'
 	@echo '  make APP_VERSION=v1.0.0 CONFIG=debug'
-	@echo '  make android                  # Android arm64 libmain.so'
-	@echo '  make android-apk              # Full Android APK (release, no Docker)'
-	@echo '  make android-apk CONFIG=debug # Full Android APK (debug)'
-	@echo '  make android-apk ANDROID_KEYSTORE=rel.jks ANDROID_KEY_ALIAS=rel ANDROID_KEYSTORE_PASS=env:KS_PASS'
+	@echo '  make install                  # Build + assemble runnable install/'
