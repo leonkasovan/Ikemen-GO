@@ -82,6 +82,10 @@ lib/*.so.*
 build/android-apk/
 build/android-deps/
 build/ffmpeg/
+# Android signing keystore (auto-generated; contains the release signing key + password)
+android/release.jks
+android/*.jks
+ikemen-droid-src/
 
 # ============================
 # Temp / generated sources
@@ -89,6 +93,7 @@ build/ffmpeg/
 src/lua_triggers.go
 external/script/wip/*
 external/script/version
+external/gamecontrollerdb.txt
 *.manifest
 *.cmd
 *.bat
@@ -117,3 +122,4 @@ external/script/.idea/*
 # macOS bundle
 # ============================
 /I.K.E.M.E.N-Go.app/
+

@@ -23,10 +23,14 @@
 #   8.  Android SDK cmdline-tools + platform + build-tools
 #   9.  Environment variables     (ANDROID_NDK_HOME, JAVA_HOME, etc.)
 #   10. libmain.so               (Go c-shared build via NDK clang)
-#   11. APK build + sign         (ikemen-droid Gradle project → bin/ikemen-go.apk)
+#   11. ikemen-droid source      (downloaded from IKEMEN_DROID_URL → IKEMEN_DROID_SRC)
+#   12. Screenpack assets        (downloaded from leonkasovan/Ikemen-GO-Screenpack → install/)
+#   13. APK build + sign         (ikemen-droid Gradle project → bin/ikemen-go.apk)
 #
 # Prerequisites:
-#   - ikemen-droid source cloned locally (set IKEMEN_DROID_SRC or place at ./ikemen-droid-src)
+#   - ikemen-droid source is downloaded automatically from IKEMEN_DROID_URL
+#     (override with IKEMEN_DROID_SRC to use an existing local checkout)
+#   - Screenpack assets are downloaded automatically (override with existing install/ dir)
 #   - The script builds libmain.so automatically (step 10)
 #
 # After running:
@@ -59,6 +63,7 @@ SDK_BUILD_TOOLS="${SDK_BUILD_TOOLS:-30.0.3}"
 # Extract numeric API level from SDK_PLATFORM (e.g., "android-30" -> "30")
 ANDROID_API="${SDK_PLATFORM##android-}"
 # Download URLs
+IKEMEN_DROID_URL="https://github.com/leonkasovan/ikemen-droid/archive/refs/heads/main.zip"
 NDK_URL="https://dl.google.com/android/repository/android-ndk-${NDK_VERSION}-windows.zip"
 CMDLINE_TOOLS_URL="https://dl.google.com/android/repository/commandlinetools-win-11076708_latest.zip"
 JDK11_URL="https://api.adoptium.net/v3/binary/latest/11/ga/windows/x64/jdk/hotspot/normal/eclipse"
@@ -90,8 +95,13 @@ ANDROID_APK_VARIANT="${ANDROID_APK_VARIANT:-release}"
 ANDROID_APK_ARTIFACT="${ANDROID_APK_ARTIFACT:-app-release.apk}"
 ANDROID11_AGP_VERSION="${ANDROID11_AGP_VERSION:-7.4.2}"
 # APK signing — set ANDROID_KEYSTORE to enable; passwords via env or pass: syntax.
+# If the file does not exist, the script auto-generates it with 'keytool'
+# using ANDROID_KEYSTORE_PASS / ANDROID_KEY_PASS (the 'pass:' prefix is stripped
+# for keytool, which expects the raw password).
 # WARNING: Do NOT commit passwords to version control. Use env:VAR or file:PATH.
-ANDROID_KEYSTORE="${ANDROID_KEYSTORE:-$(pwd)/ikemen-droid-src/release.jks}"
+#          Keep the generated keystore safe — a lost key cannot be recovered and
+#          the APK can no longer be updated on the Play Store / device.
+ANDROID_KEYSTORE="${ANDROID_KEYSTORE:-$(pwd)/android/release.jks}"
 ANDROID_KEY_ALIAS="${ANDROID_KEY_ALIAS:-androidkey}"
 ANDROID_KEYSTORE_PASS="${ANDROID_KEYSTORE_PASS:-pass:Secret14!}"
 ANDROID_KEY_PASS="${ANDROID_KEY_PASS:-$ANDROID_KEYSTORE_PASS}"
@@ -201,7 +211,7 @@ echo ""
 
 install_msys2_packages() {
   echo ""
-  echo "═══ Step 1/10 — Installing MSYS2 build tools ═══"
+  echo "═══ Step 1/13 — Installing MSYS2 build tools ═══"
 
   # First check which tools are already available on PATH
   local required_bins=(
@@ -286,7 +296,7 @@ install_msys2_packages() {
 
 install_jdk11() {
   echo ""
-  echo "═══ Step 2/10 — Installing JDK 11 (Eclipse Temurin) ═══"
+  echo "═══ Step 2/13 — Installing JDK 11 (Eclipse Temurin) ═══"
 
   # Check if JDK 11 is already on PATH via java -version
   if command -v java &>/dev/null; then
@@ -342,7 +352,7 @@ install_jdk11() {
 
 install_jdk17() {
   echo ""
-  echo "═══ Step 3/10 — Installing JDK 17 (for sdkmanager — requires Java 17+) ═══"
+  echo "═══ Step 3/13 — Installing JDK 17 (for sdkmanager — requires Java 17+) ═══"
 
   # Check if JDK 17 is already on PATH via java -version
   if command -v java &>/dev/null; then
@@ -399,7 +409,7 @@ install_jdk17() {
 
 install_ndk() {
   echo ""
-  echo "═══ Step 4/10 — Installing Android NDK ${NDK_VERSION} ═══"
+  echo "═══ Step 4/13 — Installing Android NDK ${NDK_VERSION} ═══"
 
   if [[ -d "$NDK_INSTALL_DIR/build/cmake" ]] && [[ -f "$NDK_INSTALL_DIR/build/cmake/android.toolchain.cmake" ]]; then
     echo "✅  NDK already installed at: $NDK_INSTALL_DIR"
@@ -444,7 +454,7 @@ install_ndk() {
 
 install_sdl2_android() {
   echo ""
-  echo "═══ Step 5/10 — Cross-compiling SDL2 for Android arm64-v8a ═══"
+  echo "═══ Step 5/13 — Cross-compiling SDL2 for Android arm64-v8a ═══"
 
   local sdl2_lib="$ANDROID_DEPS_PATH/lib/libSDL2.so"
   local sdl2_src="$(pwd)/build/SDL-${SDL2_VERSION}"
@@ -545,7 +555,7 @@ install_sdl2_android() {
 
 install_libxmp_android() {
   echo ""
-  echo "═══ Step 6/10 — Cross-compiling libxmp for Android arm64-v8a ═══"
+  echo "═══ Step 6/13 — Cross-compiling libxmp for Android arm64-v8a ═══"
 
   local xmp_lib="$ANDROID_DEPS_PATH/lib/libxmp.so"
   local xmp_src="$(pwd)/build/libxmp-${XMP_VERSION}"
@@ -632,7 +642,7 @@ install_libxmp_android() {
 
 install_ffmpeg_android() {
   echo ""
-  echo "═══ Step 7/10 — Cross-compiling FFmpeg for Android arm64-v8a ═══"
+  echo "═══ Step 7/13 — Cross-compiling FFmpeg for Android arm64-v8a ═══"
 
   local ffmpeg_pc="$ANDROID_DEPS_PATH/lib/pkgconfig/libavformat.pc"
   local ffmpeg_src="$(pwd)/build/FFmpeg-${FFMPEG_VERSION}"
@@ -772,7 +782,7 @@ create_dummy_gl_pc() {
 
 install_sdk() {
   echo ""
-  echo "═══ Step 8/10 — Installing Android SDK (${SDK_PLATFORM} + build-tools ${SDK_BUILD_TOOLS}) ═══"
+  echo "═══ Step 8/13 — Installing Android SDK (${SDK_PLATFORM} + build-tools ${SDK_BUILD_TOOLS}) ═══"
 
   if [[ -d "$SDK_INSTALL_DIR/platforms/$SDK_PLATFORM" ]] && \
      [[ -d "$SDK_INSTALL_DIR/build-tools/$SDK_BUILD_TOOLS" ]]; then
@@ -872,7 +882,7 @@ install_sdk() {
 
 setup_env() {
   echo ""
-  echo "═══ Step 9/10 — Setting up environment variables ═══"
+  echo "═══ Step 9/13 — Setting up environment variables ═══"
 
   local bashrc="$HOME/.bashrc"
   local marker="# >>> Ikemen-GO Android 11 toolchain >>>"
@@ -921,7 +931,7 @@ setup_env() {
 }
 
 # ────────────────────────────────────────────────────────────────────────────
-# Summary & verification
+# Step 10 — Installation summary & verification
 # ────────────────────────────────────────────────────────────────────────────
 
 verify_installation() {
@@ -1070,7 +1080,7 @@ verify_installation() {
 
 build_libmain() {
   echo ""
-  echo "═══ Step 10/11 — Building libmain.so (arm64-v8a) ═══"
+  echo "═══ Step 11/13 — Building libmain.so (arm64-v8a) ═══"
 
   # --- Validate NDK ---
   local toolchain="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/windows-x86_64"
@@ -1128,17 +1138,155 @@ build_libmain() {
 }
 
 # ────────────────────────────────────────────────────────────────────────────
-# Step 11 — Build APK from local ikemen-droid source
+# Step 12 — Download ikemen-droid source (for APK build)
+# ────────────────────────────────────────────────────────────────────────────
+
+download_ikemen_droid_source() {
+  echo ""
+  echo "═══ Step 12/13 — Downloading ikemen-droid source ═══"
+
+  # If source already exists, skip
+  if [[ -d "$IKEMEN_DROID_SRC" ]]; then
+    echo "  ✅  ikemen-droid source already present at: $IKEMEN_DROID_SRC"
+    return
+  fi
+
+  if ! confirm "Download ikemen-droid source from $IKEMEN_DROID_URL to $IKEMEN_DROID_SRC?"; then
+    echo "  Skipped — you'll need to provide the source manually before the APK build."
+    return
+  fi
+
+  local tmp_zip="/tmp/ikemen-droid.zip"
+  echo "==> Downloading ikemen-droid source..."
+  echo "    URL: $IKEMEN_DROID_URL"
+  wget -q --show-progress "$IKEMEN_DROID_URL" -O "$tmp_zip"
+
+  echo "==> Extracting to $IKEMEN_DROID_SRC..."
+  mkdir -p "$(dirname "$IKEMEN_DROID_SRC")"
+  unzip -q "$tmp_zip" -d "/tmp/ikemen-droid-extract"
+  local subdir
+  subdir="$(find "/tmp/ikemen-droid-extract" -mindepth 1 -maxdepth 1 -type d | head -1)"
+  mv "$subdir" "$IKEMEN_DROID_SRC"
+  rm -rf "/tmp/ikemen-droid-extract" "$tmp_zip"
+
+  echo "✅  ikemen-droid source downloaded to: $IKEMEN_DROID_SRC"
+}
+
+# ────────────────────────────────────────────────────────────────────────────
+# Step 13 — Download screenpack assets (for APK runtime)
+# ────────────────────────────────────────────────────────────────────────────
+
+download_screenpack() {
+  echo ""
+  echo "═══ Step 13/14 — Downloading screenpack assets ═══"
+
+  local screenpack_url="https://github.com/leonkasovan/Ikemen-GO-Screenpack/archive/refs/heads/master.zip"
+  local screenpack_dir="$(pwd)/install"
+  local marker_file="$screenpack_dir/.screenpack_done"
+
+  # If already downloaded, skip
+  if [[ -f "$marker_file" ]]; then
+    echo "  ✅  Screenpack already present at: $screenpack_dir"
+    return
+  fi
+
+  if ! confirm "Download screenpack from $screenpack_url to $screenpack_dir?"; then
+    echo "  Skipped — APK may miss runtime assets (chars, stages, sounds, etc.)."
+    return
+  fi
+
+  local tmp_zip="/tmp/screenpack.zip"
+  echo "==> Downloading screenpack..."
+  echo "    URL: $screenpack_url"
+  wget -q --show-progress "$screenpack_url" -O "$tmp_zip"
+
+  echo "==> Extracting to $screenpack_dir..."
+  mkdir -p "$screenpack_dir"
+  unzip -q "$tmp_zip" -d "/tmp/screenpack-extract"
+  local subdir
+  subdir="$(find "/tmp/screenpack-extract" -mindepth 1 -maxdepth 1 -type d | head -1)"
+  # Move contents into install/ (overwrite/merge)
+  cp -a "$subdir"/. "$screenpack_dir/"
+  rm -rf "/tmp/screenpack-extract" "$tmp_zip"
+
+  # Mark as done
+  touch "$marker_file"
+  echo "✅  Screenpack downloaded to: $screenpack_dir"
+}
+
+# ────────────────────────────────────────────────────────────────────────────
+# Helper — ensure an Android signing keystore exists (auto-generate if missing)
+# ────────────────────────────────────────────────────────────────────────────
+
+ensure_android_keystore() {
+  # Keystore explicitly disabled?
+  if [[ -z "$ANDROID_KEYSTORE" ]]; then
+    echo "  ℹ️  ANDROID_KEYSTORE not set — APK will be left unsigned."
+    return 1
+  fi
+
+  # Already exists?
+  if [[ -f "$ANDROID_KEYSTORE" ]]; then
+    echo "  ✅  Keystore already present: $ANDROID_KEYSTORE"
+    return 0
+  fi
+
+  # Locate keytool (JDK 11 is on PATH by this point in build_apk)
+  local kt
+  kt="$(command -v keytool 2>/dev/null || true)"
+  [[ -z "$kt" && -x "$JAVA_HOME/bin/keytool" ]] && kt="$JAVA_HOME/bin/keytool"
+  if [[ -z "$kt" ]]; then
+    echo "  ⚠️  keytool not found — cannot auto-generate keystore; APK will be unsigned."
+    return 1
+  fi
+
+  # apksigner uses the 'pass:' prefix; keytool needs the raw password.
+  local store_pass key_pass
+  case "$ANDROID_KEYSTORE_PASS" in
+    pass:*) store_pass="${ANDROID_KEYSTORE_PASS#pass:}" ;;
+    *)      store_pass="$ANDROID_KEYSTORE_PASS" ;;
+  esac
+  case "$ANDROID_KEY_PASS" in
+    pass:*) key_pass="${ANDROID_KEY_PASS#pass:}" ;;
+    *)      key_pass="$ANDROID_KEY_PASS" ;;
+  esac
+
+  echo "==> Generating Android release keystore: $ANDROID_KEYSTORE"
+  mkdir -p "$(dirname "$ANDROID_KEYSTORE")"
+  "$kt" -genkeypair -v \
+    -keystore "$ANDROID_KEYSTORE" \
+    -alias "$ANDROID_KEY_ALIAS" \
+    -keyalg RSA -keysize 2048 -validity 10000 \
+    -storepass "$store_pass" -keypass "$key_pass" \
+    -dname "CN=Ikemen GO, OU=Engine, O=Ikemen, L=Unknown, ST=Unknown, C=US" \
+    2>&1 | tail -n 2
+
+  if [[ -f "$ANDROID_KEYSTORE" ]]; then
+    echo "✅  Keystore generated: $ANDROID_KEYSTORE"
+    return 0
+  fi
+  echo "  ⚠️  Keystore generation failed — APK will be unsigned."
+  return 1
+}
+
+# ────────────────────────────────────────────────────────────────────────────
+# Step 14 — Build APK from local ikemen-droid source
 # ────────────────────────────────────────────────────────────────────────────
 
 build_apk() {
   echo ""
-  echo "═══ Step 11/11 — Building Android APK ═══"
+  echo "═══ Step 14/14 — Building Android APK ═══"
+
+  # --- Ensure ikemen-droid source is available (download if missing) ---
+  if [[ ! -d "$IKEMEN_DROID_SRC" ]]; then
+    echo "  ikemen-droid source not found at: $IKEMEN_DROID_SRC"
+    download_ikemen_droid_source
+  fi
 
   # --- Validate prerequisites ---
   if [[ ! -d "$IKEMEN_DROID_SRC" ]]; then
     echo "❌  ikemen-droid source not found: $IKEMEN_DROID_SRC"
-    echo "   Clone it first: git clone <repo> $IKEMEN_DROID_SRC"
+    echo "   Set IKEMEN_DROID_SRC or IKEMEN_DROID_URL and re-run."
     exit 1
   fi
 
@@ -1177,11 +1325,18 @@ build_apk() {
   echo "==> Syncing ikemen-droid..."
   local src_real
   src_real="$(cd "$IKEMEN_DROID_SRC" && pwd -P)"
+  local dst_parent
+  dst_parent="$(dirname "$IKEMEN_DROID_DIR")"
   local dst_real
-  dst_real="$(cd "$(dirname "$IKEMEN_DROID_DIR")" 2>/dev/null && pwd -P 2>/dev/null)/$(basename "$IKEMEN_DROID_DIR")"
+  if [[ -d "$dst_parent" ]]; then
+    dst_real="$(cd "$dst_parent" && pwd -P)/$(basename "$IKEMEN_DROID_DIR")"
+  else
+    dst_real="$IKEMEN_DROID_DIR"
+  fi
 
   if [[ "$src_real" != "$dst_real" ]]; then
     rm -rf "$IKEMEN_DROID_DIR"
+    mkdir -p "$dst_parent"
     echo "    Copying from: $IKEMEN_DROID_SRC"
     cp -a "$IKEMEN_DROID_SRC" "$IKEMEN_DROID_DIR"
   else
@@ -1208,6 +1363,19 @@ build_apk() {
     echo "    Generating data/system.base.def from defaultMotif.ini..."
     mkdir -p data
     cp -a "src/resources/defaultMotif.ini" "data/system.base.def"
+  fi
+
+  # --- Generate manifest.txt from actual screenpack files in install/ ---
+  echo ""
+  echo "==> Generating manifest.txt from screenpack in install/..."
+  local manifest_gen="$IKEMEN_DROID_DIR/app/src/main/assets/manifest.txt"
+  local screenpack_root="$(pwd)/install"
+  if [[ -d "$screenpack_root" ]]; then
+    # Create manifest from all files under install/ (relative paths)
+    (cd "$screenpack_root" && find . -type f ! -name ".screenpack_done" | sed 's|^\./||' | sort) > "$manifest_gen"
+    echo "    Generated manifest.txt with $(wc -l < "$manifest_gen") entries"
+  else
+    echo "    ⚠️  install/ not found — keeping original manifest.txt"
   fi
 
   # --- Stage native libs ---
@@ -1274,6 +1442,9 @@ build_apk() {
   fi
   mkdir -p "$(dirname "$APK_OUTPUT")"
   cp -av "$apk_src" "$APK_OUTPUT"
+
+  # --- Ensure signing keystore exists (auto-generate if missing) ---
+  ensure_android_keystore
 
   # --- Sign APK if keystore is provided ---
   if [[ -n "$ANDROID_KEYSTORE" ]] && [[ -f "$ANDROID_KEYSTORE" ]]; then
@@ -1383,4 +1554,6 @@ install_sdk
 setup_env
 verify_installation
 build_libmain
+download_ikemen_droid_source
+download_screenpack
 build_apk

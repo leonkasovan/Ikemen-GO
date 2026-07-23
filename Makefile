@@ -37,8 +37,11 @@ SHELL       := /bin/bash
 .SHELLFLAGS := -euo pipefail -c
 .ONESHELL:
 
-# Include shared library URLs and download/extract macro
-include common.mk
+# Library source URLs (downloaded as zip archives from GitHub)
+SDL2_URL    := https://github.com/libsdl-org/SDL/archive/refs/tags/release-2.32.10.zip
+FFMPEG_URL  := https://github.com/FFmpeg/FFmpeg/archive/refs/tags/n7.1.zip
+XMP_URL     := https://github.com/libxmp/libxmp/archive/refs/tags/libxmp-4.7.1.zip
+SCREENPACK_URL := https://github.com/ikemen-engine/Ikemen-GO-Screenpack/archive/refs/heads/master.zip
 
 # ============================================================================
 # Host OS / Architecture Detection
@@ -394,7 +397,7 @@ check-go-env:
 
 # ============================================================================
 # SDL2 Static Build (CMake)
-# URL defined in common.mk as $(SDL2_URL)
+# URL defined above as $(SDL2_URL)
 # ============================================================================
 
 # SDL2 CMake flags — platform-specific
@@ -473,7 +476,24 @@ sdl2: $(BUILD_PREFIX)/lib/libSDL2.a
 $(BUILD_PREFIX)/lib/libSDL2.a:
 	@echo "==> Building static SDL2 for $(HOST_OS)..."
 	mkdir -p $(BUILDDIR)
-	$(call download_and_extract,$(SDL2_URL),$(BUILDDIR)/SDL2.zip,$(SDL2_SRCDIR))
+	if [ ! -d "$(SDL2_SRCDIR)" ]; then
+		echo "==> Downloading $(SDL2_URL)..."
+		if [ ! -f "$(BUILDDIR)/SDL2.zip" ]; then
+			wget -q "$(SDL2_URL)" -O "$(BUILDDIR)/SDL2.zip"
+		else
+			echo "==> Using existing zip: $(BUILDDIR)/SDL2.zip"
+		fi
+		tmp="$(BUILDDIR)/SDL2.zip-extract"
+		rm -rf "$$tmp"
+		mkdir -p "$$tmp"
+		unzip -q "$(BUILDDIR)/SDL2.zip" -d "$$tmp"
+		subdir="$$(find "$$tmp" -mindepth 1 -maxdepth 1 -type d | head -1)"
+		rm -rf "$(SDL2_SRCDIR)"
+		mkdir -p "$(SDL2_SRCDIR)"
+		shopt -s dotglob
+		mv "$$subdir"/* "$(SDL2_SRCDIR)"/ 2>/dev/null || true
+		rm -rf "$$tmp" "$(BUILDDIR)/SDL2.zip"
+	fi
 	cmake -S "$(SDL2_SRCDIR)" -B "$(SDL2_BUILDDIR)" \
 		$(SDL2_CMAKE_GENERATOR) \
 		$(SDL2_CMAKE_FLAGS)
@@ -483,7 +503,7 @@ $(BUILD_PREFIX)/lib/libSDL2.a:
 
 # ============================================================================
 # FFmpeg Static Build (autotools)
-# URL defined in common.mk as $(FFMPEG_URL)
+# URL defined above as $(FFMPEG_URL)
 # ============================================================================
 
 ffmpeg: $(FFMPEG_LIBS)
@@ -491,9 +511,26 @@ ffmpeg: $(FFMPEG_LIBS)
 $(FFMPEG_LIBS):
 	@echo "==> Building static FFmpeg for $(HOST_OS)..."
 	mkdir -p $(BUILDDIR) $(FFMPEG_BUILDDIR)
-	$(call download_and_extract,$(FFMPEG_URL),$(BUILDDIR)/FFmpeg.zip,$(FFMPEG_SRCDIR))
+	if [ ! -d "$(FFMPEG_SRCDIR)" ]; then
+		echo "==> Downloading $(FFMPEG_URL)..."
+		if [ ! -f "$(BUILDDIR)/FFmpeg.zip" ]; then
+			wget -q "$(FFMPEG_URL)" -O "$(BUILDDIR)/FFmpeg.zip"
+		else
+			echo "==> Using existing zip: $(BUILDDIR)/FFmpeg.zip"
+		fi
+		tmp="$(BUILDDIR)/FFmpeg.zip-extract"
+		rm -rf "$$tmp"
+		mkdir -p "$$tmp"
+		unzip -q "$(BUILDDIR)/FFmpeg.zip" -d "$$tmp"
+		subdir="$$(find "$$tmp" -mindepth 1 -maxdepth 1 -type d | head -1)"
+		rm -rf "$(FFMPEG_SRCDIR)"
+		mkdir -p "$(FFMPEG_SRCDIR)"
+		shopt -s dotglob
+		mv "$$subdir"/* "$(FFMPEG_SRCDIR)"/ 2>/dev/null || true
+		rm -rf "$$tmp" "$(BUILDDIR)/FFmpeg.zip"
+	fi
 	cd "$(FFMPEG_BUILDDIR)" && \
-		"$(FFMPEG_SRCDIR)/configure" \
+		"$(CURDIR)/$(FFMPEG_SRCDIR)/configure" \
 			--prefix="$(BUILD_PREFIX)" \
 			--enable-static --disable-shared \
 			--disable-gpl --disable-nonfree \
@@ -514,7 +551,7 @@ $(FFMPEG_LIBS):
 
 # ============================================================================
 # XMP Static Library Build (CMake)
-# URL defined in common.mk as $(XMP_URL)
+# URL defined above as $(XMP_URL)
 # ============================================================================
 
 XMP_LIB    := $(BUILD_PREFIX)/lib/libxmp.a
@@ -526,7 +563,24 @@ xmp: $(XMP_LIB)
 $(XMP_LIB):
 	@echo "==> Building static libxmp for $(HOST_OS)..."
 	mkdir -p $(BUILDDIR)
-	$(call download_and_extract,$(XMP_URL),$(BUILDDIR)/libxmp.zip,$(XMP_SRCDIR))
+	if [ ! -d "$(XMP_SRCDIR)" ]; then
+		echo "==> Downloading $(XMP_URL)..."
+		if [ ! -f "$(BUILDDIR)/libxmp.zip" ]; then
+			wget -q "$(XMP_URL)" -O "$(BUILDDIR)/libxmp.zip"
+		else
+			echo "==> Using existing zip: $(BUILDDIR)/libxmp.zip"
+		fi
+		tmp="$(BUILDDIR)/libxmp.zip-extract"
+		rm -rf "$$tmp"
+		mkdir -p "$$tmp"
+		unzip -q "$(BUILDDIR)/libxmp.zip" -d "$$tmp"
+		subdir="$$(find "$$tmp" -mindepth 1 -maxdepth 1 -type d | head -1)"
+		rm -rf "$(XMP_SRCDIR)"
+		mkdir -p "$(XMP_SRCDIR)"
+		shopt -s dotglob
+		mv "$$subdir"/* "$(XMP_SRCDIR)"/ 2>/dev/null || true
+		rm -rf "$$tmp" "$(BUILDDIR)/libxmp.zip"
+	fi
 	cmake -S "$(XMP_SRCDIR)" -B "$(XMP_BUILDDIR)" \
 		-DCMAKE_INSTALL_PREFIX="$(BUILD_PREFIX)" \
 		-DBUILD_SHARED=OFF \
@@ -670,12 +724,29 @@ install: deps-check screenpack binary
 # Downloads the Elecbyte screenpack as a zip archive and extracts it directly
 # into $(INSTALLDIR). The `install` target then overlays engine data and the
 # binary on top — no separate merge step needed.
-# URL defined in common.mk as $(SCREENPACK_URL).
+# URL defined above as $(SCREENPACK_URL).
 
 screenpack:
 	@echo "==> Downloading Elecbyte screenpack..."
 	mkdir -p $(BUILDDIR)
-	$(call download_and_extract,$(SCREENPACK_URL),$(BUILDDIR)/screenpack.zip,$(INSTALLDIR))
+	if [ ! -d "$(INSTALLDIR)" ]; then
+		echo "==> Downloading $(SCREENPACK_URL)..."
+		if [ ! -f "$(BUILDDIR)/screenpack.zip" ]; then
+			wget -q "$(SCREENPACK_URL)" -O "$(BUILDDIR)/screenpack.zip"
+		else
+			echo "==> Using existing zip: $(BUILDDIR)/screenpack.zip"
+		fi
+		tmp="$(BUILDDIR)/screenpack.zip-extract"
+		rm -rf "$$tmp"
+		mkdir -p "$$tmp"
+		unzip -q "$(BUILDDIR)/screenpack.zip" -d "$$tmp"
+		subdir="$$(find "$$tmp" -mindepth 1 -maxdepth 1 -type d | head -1)"
+		rm -rf "$(INSTALLDIR)"
+		mkdir -p "$(INSTALLDIR)"
+		shopt -s dotglob
+		mv "$$subdir"/* "$(INSTALLDIR)"/ 2>/dev/null || true
+		rm -rf "$$tmp" "$(BUILDDIR)/screenpack.zip"
+	fi
 	@echo "==> Screenpack ready in $(INSTALLDIR)"
 
 # ============================================================================
