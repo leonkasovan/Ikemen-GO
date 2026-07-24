@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # =============================================================================
-# build-android.sh — Android SDK/NDK setup + APK build (API 30+)
+# generate_android_via_native.sh — Android SDK/NDK setup + APK build (API 30+)
 #
 # Downloads, installs, and builds everything needed for Ikemen-GO's Android
 # target on Windows (MSYS2 / MINGW64). Produces a ready-to-install APK.
 #
 # Default target: Android 11 (API 30). Override for other API levels:
-#   ./build-android.sh --yes                              # Android 11 (API 30)
+#   ./tools/generate_android_via_native.sh --yes                              # Android 11 (API 30)
 #   SDK_PLATFORM=android-33 SDK_BUILD_TOOLS=33.0.1 \
-#     ./build-android.sh --yes                            # Android 13 (API 33)
+#     ./tools/generate_android_via_native.sh --yes                            # Android 13 (API 33)
 #   SDK_PLATFORM=android-34 SDK_BUILD_TOOLS=34.0.0 \
-#     ./build-android.sh --yes                            # Android 14 (API 34)
+#     ./tools/generate_android_via_native.sh --yes                            # Android 14 (API 34)
 #
 # What gets installed:
 #   1.  MSYS2 build tools        (make, cmake, gcc, g++, nasm, pkg-config, git, etc.)
@@ -24,22 +24,22 @@
 #   9.  Environment variables     (ANDROID_NDK_HOME, JAVA_HOME, etc.)
 #   10. libmain.so               (Go c-shared build via NDK clang)
 #   11. ikemen-droid source      (downloaded from IKEMEN_DROID_URL → IKEMEN_DROID_SRC)
-#   12. Screenpack assets        (downloaded from leonkasovan/Ikemen-GO-Screenpack → install/)
+#   12. Screenpack assets        (downloaded from leonkasovan/Ikemen-GO-Screenpack → deploy/)
 #   13. APK build + sign         (ikemen-droid Gradle project → bin/ikemen-go.apk)
 #
 # Prerequisites:
 #   - ikemen-droid source is downloaded automatically from IKEMEN_DROID_URL
 #     (override with IKEMEN_DROID_SRC to use an existing local checkout)
-#   - Screenpack assets are downloaded automatically (override with existing install/ dir)
+#   - Screenpack assets are downloaded automatically (override with existing deploy/ dir)
 #   - The script builds libmain.so automatically (step 10)
 #
 # After running:
 #   bin/ikemen-go.apk            # ready to install on Android device
 #
 # Usage:
-#   ./build-android.sh              # interactive (asks before each step)
-#   ./build-android.sh --yes        # non-interactive, auto-confirm all
-#   ./build-android.sh --help       # show this header
+#   ./tools/generate_android_via_native.sh              # interactive (asks before each step)
+#   ./tools/generate_android_via_native.sh --yes        # non-interactive, auto-confirm all
+#   ./tools/generate_android_via_native.sh --help       # show this header
 # =============================================================================
 
 set -euo pipefail
@@ -1066,7 +1066,7 @@ verify_installation() {
     echo "  The script will now build libmain.so and the APK automatically."
     echo "  Or run steps manually:"
     echo "    source ~/.bashrc"
-    echo "    ./build-android.sh --yes"
+    echo "    ./tools/generate_android_via_native.sh --yes"
   else
     echo "⚠️  Some tools are missing or incomplete (see ❌ above)."
     echo "   Check the output above and re-run the script if needed."
@@ -1181,7 +1181,7 @@ download_screenpack() {
   echo "═══ Step 13/14 — Downloading screenpack assets ═══"
 
   local screenpack_url="https://github.com/leonkasovan/Ikemen-GO-Screenpack/archive/refs/heads/master.zip"
-  local screenpack_dir="$(pwd)/install"
+  local screenpack_dir="$(pwd)/deploy"
   local marker_file="$screenpack_dir/.screenpack_done"
 
   # If already downloaded, skip
@@ -1205,7 +1205,7 @@ download_screenpack() {
   unzip -q "$tmp_zip" -d "/tmp/screenpack-extract"
   local subdir
   subdir="$(find "/tmp/screenpack-extract" -mindepth 1 -maxdepth 1 -type d | head -1)"
-  # Move contents into install/ (overwrite/merge)
+  # Move contents into deploy/ (overwrite/merge)
   cp -a "$subdir"/. "$screenpack_dir/"
   rm -rf "/tmp/screenpack-extract" "$tmp_zip"
 
@@ -1365,17 +1365,17 @@ build_apk() {
     cp -a "src/resources/defaultMotif.ini" "data/system.base.def"
   fi
 
-  # --- Generate manifest.txt from actual screenpack files in install/ ---
+  # --- Generate manifest.txt from actual screenpack files in deploy/ ---
   echo ""
-  echo "==> Generating manifest.txt from screenpack in install/..."
+  echo "==> Generating manifest.txt from screenpack in deploy/..."
   local manifest_gen="$IKEMEN_DROID_DIR/app/src/main/assets/manifest.txt"
-  local screenpack_root="$(pwd)/install"
+  local screenpack_root="$(pwd)/deploy"
   if [[ -d "$screenpack_root" ]]; then
-    # Create manifest from all files under install/ (relative paths)
+    # Create manifest from all files under deploy/ (relative paths)
     (cd "$screenpack_root" && find . -type f ! -name ".screenpack_done" | sed 's|^\./||' | sort) > "$manifest_gen"
     echo "    Generated manifest.txt with $(wc -l < "$manifest_gen") entries"
   else
-    echo "    ⚠️  install/ not found — keeping original manifest.txt"
+    echo "    ⚠️  deploy/ not found — keeping original manifest.txt"
   fi
 
   # --- Stage native libs ---
@@ -1403,7 +1403,7 @@ build_apk() {
     local src_path="$(pwd)/$p"
     local dst_path="$assets_dir/$p"
     # Fallback to install dir (screenpack)
-    [[ ! -e "$src_path" ]] && [[ -e "$(pwd)/install/$p" ]] && src_path="$(pwd)/install/$p"
+    [[ ! -e "$src_path" ]] && [[ -e "$(pwd)/deploy/$p" ]] && src_path="$(pwd)/deploy/$p"
     if [[ -d "$src_path" ]]; then
       mkdir -p "$dst_path"
       cp -a "$src_path/." "$dst_path/" 2>/dev/null || true

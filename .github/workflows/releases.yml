@@ -331,7 +331,7 @@ jobs:
         run: |
           go env -w GO111MODULE=on
           go mod download
-          ./build/build.sh ${{ matrix.cfg.build_target }}
+          ./tools/build.sh ${{ matrix.cfg.build_target }}
           if [ "$RUNNER_OS" = "macOS" ]; then
             make appbundle BINNAME=bin/${{ matrix.cfg.bin }}
           fi
@@ -351,8 +351,8 @@ jobs:
           docker compose version
           echo
           echo "==> Building Android (APK via Docker Compose)..."
-          chmod +x build/build_android.sh
-          ./build/build_android.sh
+          chmod +x tools/generate_android_via_docker.sh
+          ./tools/generate_android_via_docker.sh
           echo
           echo "==> Outputs:"
           ls -lah bin/ lib/ || true
@@ -373,7 +373,7 @@ jobs:
         run: |
           go env -w GO111MODULE=on
           go mod download
-          ./build/build.sh ${{ matrix.cfg.build_target }}
+          ./tools/build.sh ${{ matrix.cfg.build_target }}
 
       - name: Prepare FFmpeg artifacts
         if: ${{ matrix.cfg.runner_os == 'linux' }}
@@ -494,7 +494,7 @@ jobs:
           if [ "$RUNNER_OS" = "Windows" ]; then
             "/c/Program Files/7-Zip/7z.exe" a ../$ARTIFACT_NAME *
           else
-            cp ../build/Ikemen_GO.command .
+            cp ../tools/Ikemen_GO.command .
             zip -r ../$ARTIFACT_NAME *
           fi
           echo "Successfully prepared assets for deployment"

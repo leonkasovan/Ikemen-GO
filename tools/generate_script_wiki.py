@@ -8,7 +8,7 @@ Patches the existing wiki page in place:
 - Trigger Functions names from triggerFunctions()
 
 Example:
-    python3 build/wiki/generate_script_wiki.py \
+    python3 tools/generate_script_wiki.py \
       --source src/script.go \
       --wiki-page wiki/Lua.md
 """

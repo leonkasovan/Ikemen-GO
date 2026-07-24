@@ -30,7 +30,7 @@ case "$OSTYPE" in
 				exec "$BIN"
 			fi
 		done
-		echo "Ikemen_GO_Linux not found in the top directory. Build it with: ./build/build.sh Linux" >&2
+		echo "Ikemen_GO_Linux not found in the top directory. Build it with: ./tools/build.sh Linux" >&2
 		exit 1
 	;;
 	*)

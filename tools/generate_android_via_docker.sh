@@ -3,14 +3,14 @@ set -euo pipefail
 
 # Build Android APK via Docker Compose.
 # Usage:
-#   ./build/build_android.sh
-#   ./build/build_android.sh --no-build
-#   APP_VERSION=my-build APP_BUILDTIME=2026.01.13 ./build/build_android.sh
+#   ./tools/generate_android_via_docker.sh
+#   ./tools/generate_android_via_docker.sh --no-build
+#   APP_VERSION=my-build APP_BUILDTIME=2026.01.13 ./tools/generate_android_via_docker.sh
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
 cd "$REPO_ROOT"
 
-COMPOSE_FILE="$REPO_ROOT/build/docker/android/docker-compose.yml"
+COMPOSE_FILE="$REPO_ROOT/tools/docker/android/docker-compose.yml"
 
 pause_always_windows() {
   local status="${1:-0}"
@@ -51,7 +51,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     -h|--help)
       cat <<'EOF'
-Usage: ./build/build_android.sh [--no-build] [--build-only]
+Usage: ./tools/generate_android_via_docker.sh [--no-build] [--build-only]
 
 Builds the Docker image and runs the android-build container to produce:
   - bin/ikemen-go.apk

@@ -104,6 +104,7 @@
   `!build/**/*.sh` negation was re-including `.sh` files buried inside downloaded
   dependency source trees (SDL, FFmpeg, libxmp, screenpack), which forced git to
   surface those directories as untracked. Narrowed the negation to `!build/*.sh`
-  (our own build scripts live at the top of `build/`) and changed the dependency
+  (our own build scripts lived at the top of `build/`) and changed the dependency
   ignores from `dir/*` to full-tree `dir/`, while keeping `build.sh`,
-  `build_android.sh`, and `bundle_run.sh` tracked.
+  `generate_android_via_docker.sh`, and `bundle_run.sh` tracked at the time.
+  *(Later moved to `tools/` in a subsequent refactor.)*

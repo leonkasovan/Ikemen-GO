@@ -12,7 +12,7 @@ services:
     image: ikemen-go-android-builder:ubuntu-22.04
     working_dir: /work
     volumes:
-      # Mount the repo root (this compose file lives in build/docker/android)
+      # Mount the repo root (this compose file lives in tools/docker/android)
       - ../../..:/work
       # Cache Go modules/build to speed up rebuilds
       - go-mod-cache:/go/pkg/mod
@@ -34,7 +34,7 @@ services:
         set -euo pipefail;
         go env -w GO111MODULE=on;
         go mod download;
-        ./build/build.sh Android;
+        ./tools/build.sh Android;
         echo;
         echo '==> Outputs:';
         ls -lah bin/ lib/ || true;

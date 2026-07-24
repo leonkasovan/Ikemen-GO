@@ -17,7 +17,7 @@ On **Linux/macOS**, system libraries (glibc, X11, frameworks) stay dynamically l
 git clone https://github.com/ikemen-engine/Ikemen-GO.git
 cd Ikemen-GO
 make                    # native build (release)
-make install            # assemble runnable distribution in install/
+make install            # assemble runnable distribution in deploy/
 ```
 
 > The first build downloads and compiles SDL2, FFmpeg, and libxmp from source.
@@ -58,13 +58,15 @@ pacman -S --noconfirm wget unzip
 
 | Command              | Description |
 |----------------------|-------------|
-| `make` / `make release` | Win64 release build → `Ikemen_GO.exe` (GUI subsystem) |
-| `make CONFIG=debug`  | Win64 debug build (console + memory instrumentation) |
+| `make` / `make release` | Release build → binary (GUI subsystem on Windows) |
+| `make CONFIG=debug`  | Debug build (console + memory instrumentation) |
 | `make ffmpeg`        | Build FFmpeg libraries only |
 | `make xmp`           | Build libxmp only |
 | `make sdl2`          | Build SDL2 only |
-| `make screenpack`    | Clone/update Elecbyte screenpack in `build/screenpack/` |
-| `make install`       | Assemble runnable build in `install/` (screenpack + binary) |
+| `make screenpack`    | Clone/update Elecbyte screenpack into `deploy/` |
+| `make install`       | Release build + screenpack → `deploy/` |
+| `make install CONFIG=debug` | Debug build + screenpack → `deploy/` |
+| `make appbundle`     | Create macOS `.app` bundle (I.K.E.M.E.N-Go.app) |
 | `make clean`         | Remove binary and build artifacts |
 | `make distclean`     | Remove binary, artifacts, and downloaded library sources |
 | `make deps-check`    | Verify required tools are installed |
@@ -81,12 +83,13 @@ pacman -S --noconfirm wget unzip
 ### Examples
 
 ```bash
-make                          # Win64 release
-make CONFIG=debug             # Win64 debug
-make ARCH=386                 # Win32 release
+make                          # Release
+make CONFIG=debug             # Debug build (console + memory instrumentation)
+make install                  # Release → deploy/
+make install CONFIG=debug     # Debug → deploy/
+make ARCH=386                 # 32-bit build
 make APP_VERSION=v1.0.0       # Tagged build
 make APP_VERSION=v1.0.0 CONFIG=debug
-make install                  # Build + assemble runnable install/
 ```
 
 ### Run
@@ -116,9 +119,10 @@ sudo apt update && sudo apt install -y \
 
 ### Build
 
-```bash
-make                          # Native release → Ikemen_GO
+```bashmake                          # Native release → Ikemen_GO
 make CONFIG=debug             # Debug build
+make install                  # Release → deploy/
+make install CONFIG=debug     # Debug → deploy/
 ```
 
 The Makefile detects your architecture and builds natively (x86-64 or ARM64).
@@ -146,9 +150,11 @@ brew install git make cmake pkg-config go nasm wget molten-vk
 
 ### Build
 
-```bash
-make                          # Native release → Ikemen_GO
+```bashmake                          # Native release → Ikemen_GO
 make CONFIG=debug             # Debug build
+make install                  # Release → deploy/
+make install CONFIG=debug     # Debug → deploy/
+make appbundle                # Create I.K.E.M.E.N-Go.app
 ```
 
 The Makefile detects your architecture — Apple Silicon → arm64, Intel → amd64.
@@ -159,7 +165,7 @@ The Makefile detects your architecture — Apple Silicon → arm64, Intel → am
 ./Ikemen_GO
 ```
 
-You can also double-click **`build/Ikemen_GO.command`**.
+You can also double-click **`tools/Ikemen_GO.command`**.
 
 ---
 
@@ -175,14 +181,14 @@ No Android Studio required.
 ### Build (from repo root)
 
 ```bash
-./build/build_android.sh
+./tools/generate_android_via_docker.sh
 ```
 
 Or run Docker Compose directly:
 
 ```bash
-docker compose -f build/docker/android/docker-compose.yml build
-docker compose -f build/docker/android/docker-compose.yml run --rm android-build
+docker compose -f tools/docker/android/docker-compose.yml build
+docker compose -f tools/docker/android/docker-compose.yml run --rm android-build
 ```
 
 ### Outputs

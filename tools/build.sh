@@ -755,7 +755,7 @@ function patch_go_sdl2_android() {
 			echo "ERROR: Cannot patch go-sdl2; directory is not writable:" >&2
 			echo "  $d" >&2
 			echo "If you want to use vendor/, run 'go mod vendor' and re-run the build." >&2
-			echo "Otherwise, fix module cache perms (or build via Docker ./build/build_android.sh)." >&2
+			echo "Otherwise, fix module cache perms (or build via Docker ./tools/generate_android_via_docker.sh)." >&2
 			exit 1
 		fi
 

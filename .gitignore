@@ -27,8 +27,10 @@ build/screenpack/
 *.o
 *.a
 Ikemen_GO
-Ikemen_GO.command
+/Ikemen_GO.command
 install/*
+# Output directory for `make install` (renamed from install/ to deploy/)
+deploy/*
 
 # ============================
 # Archives / temp
@@ -85,6 +87,8 @@ build/ffmpeg/
 # Android signing keystore (auto-generated; contains the release signing key + password)
 android/release.jks
 android/*.jks
+# Generated Go c-shared header (not needed for APK)
+android/app/libs/arm64-v8a/libmain.h
 ikemen-droid-src/
 
 # ============================
@@ -98,10 +102,10 @@ external/gamecontrollerdb.txt
 *.cmd
 *.bat
 *.sh
-# Keep only our own build scripts (top-level build/), NOT scripts inside the
+# Keep only our own build scripts in tools/, NOT scripts inside the
 # downloaded dependency source trees (SDL/FFmpeg/libxmp), which would otherwise
-# be re-included by a recursive !build/**/*.sh and make git recurse into them.
-!build/*.sh
+# be re-included by a recursive !tools/**/*.sh and make git recurse into them.
+!tools/*.sh
 save/*
 
 # ============================

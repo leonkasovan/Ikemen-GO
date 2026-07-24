@@ -12,7 +12,7 @@
 #   make clean              # Remove build artifacts
 #   make distclean          # Remove build artifacts + external lib sources
 #   make screenpack         # Clone/update Elecbyte screenpack
-#   make install            # Assemble runnable build in install/
+#   make install            # Assemble runnable build in deploy/
 #   make help               # Show all targets and options
 #
 # Prerequisites:
@@ -170,7 +170,7 @@ FFMPEG_LIBS := $(addprefix $(BUILD_PREFIX)/lib/, \
   libswscale.a libswresample.a libavfilter.a)
 
 # Install directory
-INSTALLDIR ?= install
+INSTALLDIR ?= deploy
 # SCREENPACK_DIR points to where screenpack is extracted — now directly into
 # $(INSTALLDIR) for a streamlined workflow.
 SCREENPACK_DIR := $(INSTALLDIR)
@@ -322,7 +322,7 @@ endif
 
 .PHONY: all release debug help \
         deps-check check-go-env \
-        ffmpeg xmp sdl2 winres binary install \
+        ffmpeg xmp sdl2 winres binary install appbundle \
         screenpack \
         clean distclean FORCE
 
@@ -719,6 +719,36 @@ install: deps-check screenpack binary
 	@echo "==> Install complete: $(INSTALLDIR)/"
 
 # ============================================================================
+# macOS App Bundle
+# ============================================================================
+# Creates I.K.E.M.E.N-Go.app from the built binary, Info.plist, and
+# bundle_run.sh. Called from CI after the binary is built:
+#   make appbundle BINNAME=bin/Ikemen_GO_MacOSARM
+#
+# The app bundle structure:
+#   I.K.E.M.E.N-Go.app/
+#     Contents/
+#       Info.plist
+#       MacOS/
+#         bundle_run.sh
+#         <binary>
+
+APPDIR := I.K.E.M.E.N-Go.app
+
+appbundle:
+	@echo "==> Creating macOS app bundle: $(APPDIR)..."
+	rm -rf "$(APPDIR)"
+	mkdir -p "$(APPDIR)/Contents/MacOS"
+	mkdir -p "$(APPDIR)/Contents/Resources"
+	cp tools/Info.plist "$(APPDIR)/Contents/Info.plist"
+	cp tools/bundle_run.sh "$(APPDIR)/Contents/MacOS/bundle_run.sh"
+	chmod +x "$(APPDIR)/Contents/MacOS/bundle_run.sh"
+	cp -f "$(BINARY)" "$(APPDIR)/Contents/MacOS/$(notdir $(BINARY))"
+	chmod +x "$(APPDIR)/Contents/MacOS/$(notdir $(BINARY))"
+	@echo "==> App bundle created: $(APPDIR)"
+	@echo "    Binary: $(APPDIR)/Contents/MacOS/$(notdir $(BINARY))"
+
+# ============================================================================
 # Screenpack Download / Extract
 # ============================================================================
 # Downloads the Elecbyte screenpack as a zip archive and extracts it directly
@@ -759,6 +789,7 @@ clean:
 	rm -f $(OUTDIR)/Ikemen_GO* 2>/dev/null || true
 	rm -f $(SRC_SYSO) 2>/dev/null || true
 	rm -rf $(WINRES_DIR) 2>/dev/null || true
+	rm -rf $(APPDIR) 2>/dev/null || true
 	@echo "==> Clean done."
 
 distclean: clean
@@ -798,8 +829,8 @@ help:
 	@echo '  ffmpeg         Build static FFmpeg libraries'
 	@echo '  xmp            Build static XMP library'
 	@echo '  sdl2           Build static SDL2 library'
-	@echo '  screenpack     Clone/update Elecbyte screenpack'
-	@echo '  install        Assemble runnable build in install/ (screenpack + binary)'
+	@echo '  screenpack     Clone/update Elecbyte screenpack'  @echo '  install        Assemble runnable build in deploy/ (screenpack + binary)'
+	@echo '  appbundle      Create macOS .app bundle (I.K.E.M.E.N-Go.app)'
 	@echo '  clean          Remove build artifacts'
 	@echo '  distclean      Remove artifacts + external library sources'
 	@echo '  deps-check     Verify required tools are installed'
@@ -824,5 +855,4 @@ help:
 	@echo '  make                          # Native release'
 	@echo '  make debug                    # Native debug'
 	@echo '  make APP_VERSION=v1.0.0       # Tagged build'
-	@echo '  make APP_VERSION=v1.0.0 CONFIG=debug'
-	@echo '  make install                  # Build + assemble runnable install/'
+	@echo '  make APP_VERSION=v1.0.0 CONFIG=debug'  @echo '  make install                  # Build + assemble runnable deploy/'

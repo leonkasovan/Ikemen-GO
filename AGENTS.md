@@ -54,7 +54,7 @@ Makefile and linked statically into the binary.
 | `make xmp` | Build libxmp |
 | `make sdl2` | Build SDL2 |
 | `make screenpack` | Clone/update screenpack |
-| `make install` | Assemble runnable install/ |
+| `make install` | Assemble runnable deploy/ |
 | `make clean` | Remove build artifacts |
 | `make distclean` | Remove artifacts + library sources |
 
