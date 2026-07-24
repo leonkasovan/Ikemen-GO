@@ -18,18 +18,18 @@
 # Prerequisites:
 #   Windows (MSYS2 MINGW64 shell):
 #     pacman -Syu --noconfirm
-#     pacman -S --noconfirm git make mingw-w64-x86_64-pkg-config \
+#     pacman -S --noconfirm make mingw-w64-x86_64-pkg-config \
 #       mingw-w64-x86_64-go mingw-w64-x86_64-toolchain \
 #       mingw-w64-x86_64-nasm mingw-w64-x86_64-cmake
 #     pacman -S --noconfirm wget unzip
 #   Linux (Debian/Ubuntu):
 #     sudo apt update && sudo apt install -y \
-#       git make cmake pkg-config golang-go gcc g++ nasm \
+#       make cmake pkg-config golang-go gcc g++ nasm \
 #       wget unzip libx11-dev libxext-dev libxrandr-dev \
 #       libxcursor-dev libxi-dev libxinerama-dev libxss-dev \
 #       libxxf86vm-dev libasound2-dev libgl1-mesa-dev
 #   macOS (Homebrew):
-#     brew install git make cmake pkg-config go nasm wget \
+#     brew install make cmake pkg-config go nasm wget \
 #       molten-vk
 # ============================================================================
 
@@ -75,7 +75,10 @@ endif
 # ============================================================================
 
 ifeq ($(HOST_OS),windows)
-  export PATH    := /mingw64/bin:$(PATH)
+  # /usr/bin first: MSYS2's make.exe handles .ONESHELL + env propagation
+  # correctly; the MinGW native make.exe in /mingw64/bin does not.
+  # /mingw64/bin still on PATH for gcc, g++, pkgconf, etc.
+  export PATH    := /usr/bin:/mingw64/bin:$(PATH)
   export GOROOT ?= /mingw64/lib/go
   # Default GOPATH for environments where it isn't set (MSYS2, CI, etc.)
   export GOPATH  ?= $(HOME)/go
@@ -159,9 +162,8 @@ SDL2_SRCDIR   := $(BUILDDIR)/SDL-release-2.32.10
 FFMPEG_SRCDIR := $(BUILDDIR)/FFmpeg-n7.1
 XMP_SRCDIR    := $(BUILDDIR)/libxmp-libxmp-4.7.1
 
-# External library build directories (separate from source)
+# External library build directories (separate from source, used by CMake builds)
 SDL2_BUILDDIR    := $(BUILDDIR)/build-sdl2
-FFMPEG_BUILDDIR  := $(BUILDDIR)/build-ffmpeg
 XMP_BUILDDIR     := $(BUILDDIR)/build-xmp
 
 # FFmpeg static library targets
@@ -197,8 +199,6 @@ endif
 # On Windows, SDL2 is linked via sdl_cgo_static.go (-tags static).
 # On Linux/macOS, SDL2 is linked via pkg-config (sdl_cgo.go, !static tag),
 # so its .pc file is patched post-install to include private dependencies.
-
-STATIC_PKGS := libavformat libavcodec libavutil libswscale libswresample libavfilter libxmp
 
 # Local library install into $(BUILD_PREFIX)/lib/pkgconfig. Set at parse time
 # so sub-make invocations inherit it; recipes override it at run time too
@@ -354,7 +354,7 @@ debug:
 deps-check:
 	@echo "==> Checking build dependencies..."
 	@missing=""; \
-	for tool in git mingw32-make cmake pkg-config gcc g++ nasm go unzip wget; do \
+	for tool in make cmake pkg-config gcc g++ nasm go unzip wget; do \
 		command -v $$tool >/dev/null 2>&1 || missing="$$missing $$tool"; \
 	done; \
 	if [ -n "$$missing" ]; then \
@@ -363,18 +363,18 @@ deps-check:
 			windows) \
 				echo "Install from the MINGW64 shell:" >&2; \
 				echo "  pacman -Syu --noconfirm" >&2; \
-				echo "  pacman -S --noconfirm git make mingw-w64-x86_64-pkg-config \\" >&2; \
+				echo "  pacman -S --noconfirm make mingw-w64-x86_64-pkg-config \\" >&2; \
 				echo "    mingw-w64-x86_64-go mingw-w64-x86_64-toolchain \\" >&2; \
 				echo "    mingw-w64-x86_64-nasm mingw-w64-x86_64-cmake" >&2; \
 				echo "  pacman -S --noconfirm wget unzip" >&2;; \
 			linux) \
 				echo "Install (Debian/Ubuntu):" >&2; \
 				echo "  sudo apt update && sudo apt install -y \\" >&2; \
-				echo "    git make cmake pkg-config golang-go gcc g++ nasm \\" >&2; \
+				echo "    make cmake pkg-config golang-go gcc g++ nasm \\" >&2; \
 				echo "    wget unzip" >&2;; \
 			darwin) \
 				echo "Install with Homebrew:" >&2; \
-				echo "  brew install git make cmake pkg-config go nasm wget" >&2;; \
+				echo "  brew install make cmake pkg-config go nasm wget" >&2;; \
 		esac; \
 		exit 1; \
 	fi
@@ -410,14 +410,14 @@ SDL2_CMAKE_FLAGS := \
 	-DSDL_TESTS=OFF \
 	-DSDL_INSTALL_TESTS=OFF
 
-# CMake generator — Windows (MSYS2/MINGW64) defaults to "MSYS Makefiles"
-# which identifies the platform as Unix (UNIX=TRUE). We need "MinGW Makefiles"
-# instead, which sets WIN32=TRUE and correctly excludes Unix-specific sources
-# (e.g., src/core/unix/*.c).
+# CMake generator — "MSYS Makefiles" generates MSYS2-compatible Makefiles
+# (forward-slash paths). "MinGW Makefiles" generates Windows backslash paths
+# that only work with mingw32-make. We set WIN32=TRUE explicitly to exclude
+# Unix-specific sources (src/core/unix/*.c).
 SDL2_CMAKE_GENERATOR :=
 
 ifeq ($(HOST_OS),windows)
-  SDL2_CMAKE_GENERATOR := -G "MinGW Makefiles"
+  SDL2_CMAKE_GENERATOR := -G "MSYS Makefiles" -DWIN32=TRUE
   SDL2_CMAKE_FLAGS += \
 	-DSDL_OPENGL=ON \
 	-DSDL_OPENGLES=OFF \
@@ -510,7 +510,7 @@ ffmpeg: $(FFMPEG_LIBS)
 
 $(FFMPEG_LIBS):
 	@echo "==> Building static FFmpeg for $(HOST_OS)..."
-	mkdir -p $(BUILDDIR) $(FFMPEG_BUILDDIR)
+	mkdir -p $(BUILDDIR)
 	if [ ! -d "$(FFMPEG_SRCDIR)" ]; then
 		echo "==> Downloading $(FFMPEG_URL)..."
 		if [ ! -f "$(BUILDDIR)/FFmpeg.zip" ]; then
@@ -529,8 +529,8 @@ $(FFMPEG_LIBS):
 		mv "$$subdir"/* "$(FFMPEG_SRCDIR)"/ 2>/dev/null || true
 		rm -rf "$$tmp" "$(BUILDDIR)/FFmpeg.zip"
 	fi
-	cd "$(FFMPEG_BUILDDIR)" && \
-		"$(CURDIR)/$(FFMPEG_SRCDIR)/configure" \
+	cd "$(FFMPEG_SRCDIR)" && \
+		./configure \
 			--prefix="$(BUILD_PREFIX)" \
 			--enable-static --disable-shared \
 			--disable-gpl --disable-nonfree \
@@ -545,8 +545,15 @@ $(FFMPEG_LIBS):
 			--enable-parser=vp8,vp9,opus,vorbis \
 			--cc="$(CC)" \
 			--pkg-config="$$(which pkg-config)" && \
-		make -j"$$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)" && \
+		make -j2 && \
 		make install
+	@# Verify local FFmpeg libraries were installed — fail immediately if not,
+	@# otherwise pkg-config falls back to the system FFmpeg (ggml, whisper,
+	@# shaderc, ...) and the static link breaks.
+	@test -f "$(BUILD_PREFIX)/lib/libavformat.a" && \
+		test -f "$(BUILD_PREFIX)/lib/libavcodec.a" && \
+		test -f "$(BUILD_PREFIX)/lib/libavutil.a" || \
+		{ echo "ERROR: FFmpeg install failed — local .a files missing in $(BUILD_PREFIX)/lib/" >&2; exit 1; }
 	@echo "==> FFmpeg static libraries installed to: $(BUILD_PREFIX)"
 
 # ============================================================================
@@ -669,6 +676,15 @@ $(SRC_SYSO): $(WINRES_DIR)/Ikemen_GO.rc
 endif # HOST_OS == windows
 
 # ============================================================================
+# CGo Flags — computed inside the recipe at build time (after ffmpeg/xmp
+# install their .pc files). PKG_CONFIG_LIBDIR is set per-call so that only
+# our local .pc files are found — blocking system FFmpeg (ggml, whisper,
+# shaderc, rsvg, ...) from leaking into the static link line.
+# ============================================================================
+
+_CGO_PKGS := libavformat libavcodec libavutil libswscale libswresample libavfilter libxmp
+
+# ============================================================================
 # Go Binary
 # ============================================================================
 
@@ -677,24 +693,24 @@ ifeq ($(HOST_OS),windows)
 binary: winres
 endif
 	@echo "==> Building $(BINNAME) ($(CONFIG), GOOS=$(GOOS) GOARCH=$(GOARCH))..."
-	@# Windows: pkgconf.exe splits paths on ';' and mishandles ':' (drive
-	@# letters), so pin PKG_CONFIG_LIBDIR to ONLY our local dir — this both
-	@# fixes the separator issue and blocks the system MSYS2 FFmpeg (ggml,
-	@# whisper, shaderc, ...) from leaking into the static link line.
-	@# Linux/macOS: prepend our dir to PKG_CONFIG_PATH (Unix ':' separator).
+	@# Clear stale Go build cache (old CGo objects may reference system FFmpeg)
+	GOROOT="$(GOROOT)" "$(GOROOT)/bin/go" clean -cache 2>/dev/null; true
 ifeq ($(HOST_OS),windows)
-	@export PKG_CONFIG_LIBDIR="$(BUILD_PREFIX)/lib/pkgconfig"; \
-	CGO_CFLAGS="-DLIBXMP_STATIC $$( $(PKG_CONFIG) --cflags $(STATIC_PKGS) )" \
-	CGO_LDFLAGS="-L$(BUILD_PREFIX)/lib \
-		$$( $(PKG_CONFIG) --static --libs $(STATIC_PKGS) )" \
+	@# Compute CGo flags inside the recipe so .pc files exist (built by ffmpeg/xmp).
+	@# PKG_CONFIG_LIBDIR isolates from /mingw64/lib/pkgconfig (system FFmpeg).
+	_CGO_CFLAGS=$$( PKG_CONFIG_LIBDIR="$(BUILD_PREFIX)/lib/pkgconfig" $(PKG_CONFIG) --cflags $(_CGO_PKGS) ) ; \
+	_CGO_LDFLAGS="-L$(BUILD_PREFIX)/lib $$( PKG_CONFIG_LIBDIR="$(BUILD_PREFIX)/lib/pkgconfig" $(PKG_CONFIG) --static --libs $(_CGO_PKGS) )" ; \
+	PKG_CONFIG_LIBDIR="$(BUILD_PREFIX)/lib/pkgconfig" \
+	CGO_CFLAGS="-DLIBXMP_STATIC $$_CGO_CFLAGS" \
+	CGO_LDFLAGS="$$_CGO_LDFLAGS" \
 	go build -trimpath -v $(GO_TAGS) \
 		-ldflags "$(LDFLAGS_GO)" \
 		-o "$(BINARY)" ./src
 else
-	@export PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig$(if $(PKG_CONFIG_PATH),:$(PKG_CONFIG_PATH),)"; \
-	CGO_CFLAGS="-DLIBXMP_STATIC $$( $(PKG_CONFIG) --cflags $(STATIC_PKGS) )" \
-	CGO_LDFLAGS="-L$(BUILD_PREFIX)/lib \
-		$$( $(PKG_CONFIG) --static --libs $(STATIC_PKGS) )" \
+	@_CGO_CFLAGS=$$( PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig$(if $(PKG_CONFIG_PATH),:$(PKG_CONFIG_PATH),)" $(PKG_CONFIG) --cflags $(_CGO_PKGS) ) ; \
+	_CGO_LDFLAGS="-L$(BUILD_PREFIX)/lib $$( PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig$(if $(PKG_CONFIG_PATH),:$(PKG_CONFIG_PATH),)" $(PKG_CONFIG) --static --libs $(_CGO_PKGS) )" ; \
+	CGO_CFLAGS="-DLIBXMP_STATIC $$_CGO_CFLAGS" \
+	CGO_LDFLAGS="$$_CGO_LDFLAGS" \
 	go build -trimpath -v $(GO_TAGS) \
 		-ldflags "$(LDFLAGS_GO)" \
 		-o "$(BINARY)" ./src

@@ -13,9 +13,9 @@
 #     ./tools/generate_android_via_native.sh --yes                            # Android 14 (API 34)
 #
 # What gets installed:
-#   1.  MSYS2 build tools        (make, cmake, gcc, g++, nasm, pkg-config, git, etc.)
+#   1.  MSYS2 build tools        (make, cmake, gcc, g++, nasm, pkg-config, etc.)
 #   2.  Go 1.22+                 (mingw-w64-x86_64-go via pacman)
-#   3.  Eclipse Temurin JDK 11   (for Gradle / AGP 7.4.2)
+#   3.  Eclipse Temurin JDK 17   (for Gradle / sdkmanager)
 #   4.  Android NDK r27d          (cross-compiler for arm64-v8a)
 #   5.  SDL2 cross-compiled      for Android arm64-v8a (into build/android-deps/)
 #   6.  libxmp cross-compiled    for Android arm64-v8a
@@ -54,7 +54,6 @@ ANDROID_HOME_DIR="${ANDROID_HOME_DIR:-/c/Android/SDK}"
 # Individual component paths (derived from ANDROID_HOME_DIR by default)
 NDK_INSTALL_DIR="${NDK_INSTALL_DIR:-${ANDROID_HOME_DIR}/ndk/r27d}"
 SDK_INSTALL_DIR="${SDK_INSTALL_DIR:-${ANDROID_HOME_DIR}}"
-JDK_INSTALL_DIR="${JDK_INSTALL_DIR:-/c/Android/jdk-11}"
 
 # Versions
 NDK_VERSION="${NDK_VERSION:-r27d}"
@@ -66,13 +65,7 @@ ANDROID_API="${SDK_PLATFORM##android-}"
 IKEMEN_DROID_URL="https://github.com/leonkasovan/ikemen-droid/archive/refs/heads/main.zip"
 NDK_URL="https://dl.google.com/android/repository/android-ndk-${NDK_VERSION}-windows.zip"
 CMDLINE_TOOLS_URL="https://dl.google.com/android/repository/commandlinetools-win-11076708_latest.zip"
-JDK11_URL="https://api.adoptium.net/v3/binary/latest/11/ga/windows/x64/jdk/hotspot/normal/eclipse"
 JDK17_URL="https://api.adoptium.net/v3/binary/latest/17/ga/windows/x64/jdk/hotspot/normal/eclipse"
-# NB: JDK 17 is downloaded alongside JDK 11 because the latest Android SDK
-#     cmdline-tools (build 11076708+) require Java 17+ to run sdkmanager.
-#     We install JDK 11 as the default JAVA_HOME (for Gradle + AGP 7.4.2)
-#     and use JDK 17 exclusively for executing sdkmanager commands.
-#
 # Note: Go is installed via pacman (mingw-w64-x86_64-go) on MSYS2, not downloaded.
 JDK17_INSTALL_DIR="${JDK17_INSTALL_DIR:-/c/Android/jdk-17}"
 
@@ -93,7 +86,6 @@ APK_OUTPUT="${APK_OUTPUT:-$(pwd)/build/ikemen-go.apk}"
 ANDROID_GRADLE_TASK="${ANDROID_GRADLE_TASK:-assembleRelease}"
 ANDROID_APK_VARIANT="${ANDROID_APK_VARIANT:-release}"
 ANDROID_APK_ARTIFACT="${ANDROID_APK_ARTIFACT:-app-release.apk}"
-ANDROID11_AGP_VERSION="${ANDROID11_AGP_VERSION:-7.4.2}"
 # APK signing — set ANDROID_KEYSTORE to enable; passwords via env or pass: syntax.
 # If the file does not exist, the script auto-generates it with 'keytool'
 # using ANDROID_KEYSTORE_PASS / ANDROID_KEY_PASS (the 'pass:' prefix is stripped
@@ -114,8 +106,34 @@ ANDROID_DEPS_PATH="${ANDROID_DEPS_PATH:-$(pwd)/build/android-deps}"
 # SDK / JDK paths — used by build_apk; may come from .bashrc or set explicitly
 ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME_DIR}}"
 ANDROID_HOME="${ANDROID_HOME:-${ANDROID_HOME_DIR}}"
-JAVA_HOME="${JAVA_HOME:-$JDK_INSTALL_DIR}"
+JAVA_HOME="${JAVA_HOME:-$JDK17_INSTALL_DIR}"
 ANDROID_GCDB_URL="${ANDROID_GCDB_URL:-https://raw.githubusercontent.com/mdqinc/SDL_GameControllerDB/refs/heads/master/gamecontrollerdb.txt}"
+
+# Auto-detect GOROOT for MSYS2 MinGW Go if not already set
+if [[ -z "${GOROOT:-}" ]]; then
+  _go_bin="$(command -v go 2>/dev/null || true)"
+  if [[ -n "$_go_bin" ]]; then
+    _go_bin="$(cygpath -u "$_go_bin" 2>/dev/null || echo "$_go_bin")"
+    # Go binary is at GOROOT/bin/go; resolve upwards
+    _candidate="$(dirname "$(dirname "$_go_bin")")"
+    if [[ -d "$_candidate/lib/go" ]]; then
+      GOROOT="$_candidate/lib/go"
+    elif [[ -d "$_candidate/go" ]]; then
+      GOROOT="$_candidate/go"
+    elif [[ -d "$_candidate" ]] && [[ -f "$_candidate/bin/go" ]]; then
+      GOROOT="$_candidate"
+    fi
+  fi
+  # Fallback: standard MSYS2 MinGW64 path
+  if [[ -z "${GOROOT:-}" ]] && [[ -d "/mingw64/lib/go" ]]; then
+    GOROOT="/mingw64/lib/go"
+  fi
+  if [[ -n "${GOROOT:-}" ]]; then
+    export GOROOT
+  fi
+fi
+export GOPATH="${GOPATH:-$HOME/go}"
+export GOCACHE="${GOCACHE:-$HOME/.cache/go-build}"
 
 # ────────────────────────────────────────────────────────────────────────────
 # Help & flags
@@ -211,18 +229,17 @@ echo ""
 
 install_msys2_packages() {
   echo ""
-  echo "═══ Step 1/13 — Installing MSYS2 build tools ═══"
+  echo "═══ Step 1/12 — Installing MSYS2 build tools ═══"
 
   # First check which tools are already available on PATH
   local required_bins=(
-    git make gcc g++ go cmake nasm pkg-config
-    wget unzip python3 diff
+    make gcc g++ go cmake nasm pkg-config
+    wget unzip
   )
   local missing=( $(check_tools_on_path "${required_bins[@]}") )
 
   if [[ ${#missing[@]} -eq 0 ]]; then
     echo "  ✅  All tools already present on system PATH."
-    echo "         $(git --version 2>&1)"
     echo "         $(make --version 2>&1 | head -n1)"
     echo "         $(gcc --version 2>&1 | head -n1)"
     echo "         $(go version 2>&1)"
@@ -235,7 +252,6 @@ install_msys2_packages() {
   # Map binary names to pacman package names
   local packages=()
   local pkg_map=(
-    git:git
     make:make
     pkg-config:mingw-w64-x86_64-pkg-config
     go:mingw-w64-x86_64-go
@@ -245,8 +261,6 @@ install_msys2_packages() {
     cmake:mingw-w64-x86_64-cmake
     wget:wget
     unzip:unzip
-    python3:python3
-    diff:diffutils
   )
   for entry in "${pkg_map[@]}"; do
     local bin="${entry%%:*}"
@@ -291,68 +305,14 @@ install_msys2_packages() {
 }
 
 # ────────────────────────────────────────────────────────────────────────────
-# Step 2 — Install JDK 11 (Eclipse Temurin)
+# Step 2 — Install JDK 17 (Eclipse Temurin)
 # ────────────────────────────────────────────────────────────────────────────
-
-install_jdk11() {
-  echo ""
-  echo "═══ Step 2/13 — Installing JDK 11 (Eclipse Temurin) ═══"
-
-  # Check if JDK 11 is already on PATH via java -version
-  if command -v java &>/dev/null; then
-    local jver
-    jver="$(java -version 2>&1 | head -n1)"
-    local major
-    major="$(java_major_version "$(command -v java)")"
-    if [[ "$major" -eq 11 ]]; then
-      echo "  ✅  JDK 11 already on system PATH:"
-      echo "         $jver"
-      echo "         $(command -v java)"
-      return
-    fi
-  fi
-
-  # Fallback: check the canonical install directory
-  if [[ -f "$JDK_INSTALL_DIR/bin/java.exe" ]]; then
-    local major
-    major="$(java_major_version "$JDK_INSTALL_DIR/bin/java.exe")"
-    if [[ "$major" -eq 11 ]]; then
-      echo "  ✅  JDK 11 already installed at: $JDK_INSTALL_DIR"
-      return
-    fi
-  fi
-
-  if ! confirm "Download and install JDK 11 to $JDK_INSTALL_DIR?"; then
-    echo "  Skipped."
-    return
-  fi
-
-  local tmp_zip="/tmp/jdk11-windows.zip"
-  echo "==> Downloading JDK 11 from Adoptium API..."
-  echo "    URL: $JDK11_URL"
-  wget -q --show-progress "$JDK11_URL" -O "$tmp_zip"
-
-  echo "==> Extracting to $JDK_INSTALL_DIR..."
-  rm -rf "$JDK_INSTALL_DIR"
-  mkdir -p "$(dirname "$JDK_INSTALL_DIR")"
-  unzip -q "$tmp_zip" -d "/tmp/jdk11-extract"
-  # The zip contains a top-level dir like "jdk-11.0.xx+8"; move contents up
-  local subdir
-  subdir="$(find "/tmp/jdk11-extract" -mindepth 1 -maxdepth 1 -type d | head -1)"
-  mv "$subdir" "$JDK_INSTALL_DIR"
-  rm -rf "/tmp/jdk11-extract" "$tmp_zip"
-
-  echo "✅  JDK 11 installed to: $JDK_INSTALL_DIR"
-  echo "    java version: $("$JDK_INSTALL_DIR/bin/java.exe" -version 2>&1 | head -n1)"
-}
-
-# ────────────────────────────────────────────────────────────────────────────
-# Step 2b — Install JDK 17 (for sdkmanager — cmdline-tools requires Java 17+)
+# Step 2 — Install JDK 17 (Eclipse Temurin)
 # ────────────────────────────────────────────────────────────────────────────
 
 install_jdk17() {
   echo ""
-  echo "═══ Step 3/13 — Installing JDK 17 (for sdkmanager — requires Java 17+) ═══"
+  echo "═══ Step 2/12 — Installing JDK 17 (Eclipse Temurin) ═══"
 
   # Check if JDK 17 is already on PATH via java -version
   if command -v java &>/dev/null; then
@@ -409,7 +369,7 @@ install_jdk17() {
 
 install_ndk() {
   echo ""
-  echo "═══ Step 4/13 — Installing Android NDK ${NDK_VERSION} ═══"
+  echo "═══ Step 3/12 — Installing Android NDK ${NDK_VERSION} ═══"
 
   if [[ -d "$NDK_INSTALL_DIR/build/cmake" ]] && [[ -f "$NDK_INSTALL_DIR/build/cmake/android.toolchain.cmake" ]]; then
     echo "✅  NDK already installed at: $NDK_INSTALL_DIR"
@@ -454,7 +414,7 @@ install_ndk() {
 
 install_sdl2_android() {
   echo ""
-  echo "═══ Step 5/13 — Cross-compiling SDL2 for Android arm64-v8a ═══"
+  echo "═══ Step 5/12 — Cross-compiling SDL2 for Android arm64-v8a ═══"
 
   local sdl2_lib="$ANDROID_DEPS_PATH/lib/libSDL2.so"
   local sdl2_src="$(pwd)/build/SDL-${SDL2_VERSION}"
@@ -509,7 +469,7 @@ install_sdl2_android() {
 
   # --- Configure with cmake + NDK toolchain ---
   echo "==> Configuring SDL2 for arm64-v8a / ${SDK_PLATFORM}..."
-  (cd "$sdl2_build" && cmake -G "Unix Makefiles" "$sdl2_src" \
+  (cd "$sdl2_build" && cmake -G "Unix Makefiles" "$sdl2_src" -Wno-dev \
     -DCMAKE_TOOLCHAIN_FILE="$tc_file" \
     -DANDROID_ABI="arm64-v8a" \
     -DANDROID_PLATFORM="${SDK_PLATFORM}" \
@@ -555,7 +515,7 @@ install_sdl2_android() {
 
 install_libxmp_android() {
   echo ""
-  echo "═══ Step 6/13 — Cross-compiling libxmp for Android arm64-v8a ═══"
+  echo "═══ Step 6/12 — Cross-compiling libxmp for Android arm64-v8a ═══"
 
   local xmp_lib="$ANDROID_DEPS_PATH/lib/libxmp.so"
   local xmp_src="$(pwd)/build/libxmp-${XMP_VERSION}"
@@ -602,7 +562,7 @@ install_libxmp_android() {
   jobs="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
 
   echo "==> Configuring libxmp for arm64-v8a / ${SDK_PLATFORM}..."
-  (cd "$xmp_build" && cmake "$xmp_src" \
+  (cd "$xmp_build" && cmake "$xmp_src" -Wno-dev \
     -Wno-deprecated \
     -DCMAKE_TOOLCHAIN_FILE="$tc_file" \
     -DANDROID_ABI="arm64-v8a" \
@@ -642,7 +602,7 @@ install_libxmp_android() {
 
 install_ffmpeg_android() {
   echo ""
-  echo "═══ Step 7/13 — Cross-compiling FFmpeg for Android arm64-v8a ═══"
+  echo "═══ Step 7/12 — Cross-compiling FFmpeg for Android arm64-v8a ═══"
 
   local ffmpeg_pc="$ANDROID_DEPS_PATH/lib/pkgconfig/libavformat.pc"
   local ffmpeg_src="$(pwd)/build/FFmpeg-${FFMPEG_VERSION}"
@@ -782,7 +742,7 @@ create_dummy_gl_pc() {
 
 install_sdk() {
   echo ""
-  echo "═══ Step 8/13 — Installing Android SDK (${SDK_PLATFORM} + build-tools ${SDK_BUILD_TOOLS}) ═══"
+  echo "═══ Step 8/12 — Installing Android SDK (${SDK_PLATFORM} + build-tools ${SDK_BUILD_TOOLS}) ═══"
 
   if [[ -d "$SDK_INSTALL_DIR/platforms/$SDK_PLATFORM" ]] && \
      [[ -d "$SDK_INSTALL_DIR/build-tools/$SDK_BUILD_TOOLS" ]]; then
@@ -812,13 +772,8 @@ install_sdk() {
     export JAVA_HOME="$JDK17_INSTALL_DIR"
     export PATH="$JDK17_INSTALL_DIR/bin:$PATH"
     echo "    Using JDK 17 (fallback): $("$JDK17_INSTALL_DIR/bin/java" -version 2>&1 | head -n1)"
-  elif [[ -x "$JDK_INSTALL_DIR/bin/java" ]]; then
-    export JAVA_HOME="$JDK_INSTALL_DIR"
-    export PATH="$JDK_INSTALL_DIR/bin:$PATH"
-    echo "    ⚠️  Using JDK 11 — sdkmanager may fail if cmdline-tools requires JDK 17+"
-    echo "    Java: $("$JDK_INSTALL_DIR/bin/java" -version 2>&1 | head -n1)"
   else
-    echo "ERROR: No JDK found. Install JDK first or set JAVA_HOME."
+    echo "ERROR: No JDK found. Install JDK 17 first or set JAVA_HOME."
     exit 1
   fi
   # Verify java is available
@@ -882,7 +837,7 @@ install_sdk() {
 
 setup_env() {
   echo ""
-  echo "═══ Step 9/13 — Setting up environment variables ═══"
+  echo "═══ Step 9/12 — Setting up environment variables ═══"
 
   local bashrc="$HOME/.bashrc"
   local marker="# >>> Ikemen-GO Android 11 toolchain >>>"
@@ -912,8 +867,8 @@ setup_env() {
 	export ANDROID_HOME="$SDK_INSTALL_DIR"
 	# Prebuilt SDL2 android deps path (for android target)
 	export ANDROID_DEPS_PATH="$(cygpath -m "$ANDROID_DEPS_PATH")"
-	# JDK 11 (required for Gradle + AGP 7.4.2)
-	export JAVA_HOME="$JDK_INSTALL_DIR"
+	# JDK 17 (default JAVA_HOME)
+	export JAVA_HOME="$JDK17_INSTALL_DIR"
 	# Prepend to PATH
 	export PATH="\$JAVA_HOME/bin:\$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:\$ANDROID_SDK_ROOT/platform-tools:\$PATH"
 	$end_marker
@@ -925,7 +880,7 @@ setup_env() {
   echo "      ANDROID_NDK_HOME    = $NDK_INSTALL_DIR"
   echo "      ANDROID_SDK_ROOT    = $SDK_INSTALL_DIR"
   echo "      ANDROID_DEPS_PATH   = $ANDROID_DEPS_PATH"
-  echo "      JAVA_HOME           = $JDK_INSTALL_DIR"
+  echo "      JAVA_HOME           = $JDK17_INSTALL_DIR"
   echo ""
   echo "    Run 'source ~/.bashrc' or restart your shell to apply."
 }
@@ -944,7 +899,7 @@ verify_installation() {
 
   echo ""
   echo "── Build tools ──"
-  for tool in git make cmake gcc g++ nasm pkg-config go wget unzip python3; do
+  for tool in make cmake gcc g++ nasm pkg-config go wget unzip; do
     if command -v "$tool" &>/dev/null; then
       echo "  ✅  $tool"
     else
@@ -963,26 +918,15 @@ verify_installation() {
   fi
 
   echo ""
-  echo "── JDK 11 ──"
-  if [[ -f "$JDK_INSTALL_DIR/bin/java.exe" ]]; then
-    local jver
-    jver="$("$JDK_INSTALL_DIR/bin/java.exe" -version 2>&1 | head -n1)"
-    echo "  ✅  $jver"
-    echo "      Path: $JDK_INSTALL_DIR"
-  else
-    echo "  ❌  JDK 11 not found at $JDK_INSTALL_DIR"
-    all_ok=false
-  fi
-
-  echo ""
-  echo "── JDK 17 (for sdkmanager) ──"
+  echo "── JDK 17 ──"
   if [[ -f "$JDK17_INSTALL_DIR/bin/java.exe" ]]; then
-    local jver17
-    jver17="$("$JDK17_INSTALL_DIR/bin/java.exe" -version 2>&1 | head -n1)"
-    echo "  ✅  $jver17"
+    local jver
+    jver="$("$JDK17_INSTALL_DIR/bin/java.exe" -version 2>&1 | head -n1)"
+    echo "  ✅  $jver"
     echo "      Path: $JDK17_INSTALL_DIR"
   else
-    echo "  ⚠️  JDK 17 not found — sdkmanager may fail with cmdline-tools 11076708+"
+    echo "  ❌  JDK 17 not found at $JDK17_INSTALL_DIR"
+    all_ok=false
   fi
 
   echo ""
@@ -1080,7 +1024,7 @@ verify_installation() {
 
 build_libmain() {
   echo ""
-  echo "═══ Step 11/13 — Building libmain.so (arm64-v8a) ═══"
+  echo "═══ Step 11/12 — Building libmain.so (arm64-v8a) ═══"
 
   # --- Validate NDK ---
   local toolchain="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/windows-x86_64"
@@ -1143,7 +1087,7 @@ build_libmain() {
 
 download_ikemen_droid_source() {
   echo ""
-  echo "═══ Step 12/13 — Downloading ikemen-droid source ═══"
+  echo "═══ Step 12/12 — Downloading ikemen-droid source ═══"
 
   # If source already exists, skip
   if [[ -d "$IKEMEN_DROID_SRC" ]]; then
@@ -1178,7 +1122,7 @@ download_ikemen_droid_source() {
 
 download_screenpack() {
   echo ""
-  echo "═══ Step 13/14 — Downloading screenpack assets ═══"
+  echo "═══ Step 13/12 — Downloading screenpack assets ═══"
 
   local screenpack_url="https://github.com/leonkasovan/Ikemen-GO-Screenpack/archive/refs/heads/master.zip"
   local screenpack_dir="$(pwd)/deploy"
@@ -1231,7 +1175,7 @@ ensure_android_keystore() {
     return 0
   fi
 
-  # Locate keytool (JDK 11 is on PATH by this point in build_apk)
+  # Locate keytool (JDK 17 is on PATH by this point in build_apk)
   local kt
   kt="$(command -v keytool 2>/dev/null || true)"
   [[ -z "$kt" && -x "$JAVA_HOME/bin/keytool" ]] && kt="$JAVA_HOME/bin/keytool"
@@ -1275,7 +1219,7 @@ ensure_android_keystore() {
 
 build_apk() {
   echo ""
-  echo "═══ Step 14/14 — Building Android APK ═══"
+  echo "═══ Step 14/12 — Building Android APK ═══"
 
   # --- Ensure ikemen-droid source is available (download if missing) ---
   if [[ ! -d "$IKEMEN_DROID_SRC" ]]; then
@@ -1308,7 +1252,7 @@ build_apk() {
   export PATH="$JAVA_HOME/bin:$PATH"
   local java_bin="$JAVA_HOME/bin/java"
   if [[ ! -x "$java_bin" ]] && ! command -v java &>/dev/null; then
-    echo "❌  java not found. Set JAVA_HOME or install JDK 11."
+    echo "❌  java not found. Set JAVA_HOME or install JDK 17."
     exit 1
   fi
 
@@ -1343,13 +1287,14 @@ build_apk() {
     echo "    Source and dest are the same, skipping copy."
   fi
 
-  # --- Patch AGP to 7.4.2 for JDK 11 compatibility ---
+  # --- AGP version ---
+  # Gradle 8.1.1 requires JDK 17+ to run, so AGP 8.1.1 (already in
+  # build.gradle) works as-is. No downgrade needed.
   echo ""
-  echo "==> Patching AGP to $ANDROID11_AGP_VERSION (JDK 11 compatible)..."
+  echo "==> Using AGP version from build.gradle:"
   local bf="$IKEMEN_DROID_DIR/build.gradle"
   if [[ -f "$bf" ]]; then
-    sed -i 's/com\.android\.tools\.build:gradle:[0-9.]*\b/com.android.tools.build:gradle:'"$ANDROID11_AGP_VERSION"'/' "$bf"
-    echo "    Patched: $(grep 'com.android.tools.build:gradle' "$bf" | head -1)"
+    grep 'com.android.tools.build:gradle' "$bf" | head -1 | sed 's/^/    /'
   fi
 
   # --- Ensure runtime assets ---
@@ -1421,6 +1366,14 @@ build_apk() {
   (
     cd "$IKEMEN_DROID_DIR"
     printf "sdk.dir=%s\n" "$sdk" > local.properties
+    # Gradle 8.x requires Java 17+ to run; use JDK 17 for the build
+    local gradle_java="${SDKMANAGER_JAVA_HOME:-$JDK17_INSTALL_DIR}"
+    if [[ ! -x "$gradle_java/bin/java" ]]; then
+      gradle_java="$JDK17_INSTALL_DIR"
+    fi
+    export JAVA_HOME="$gradle_java"
+    export PATH="$gradle_java/bin:$PATH"
+    echo "    Using Java: $(java -version 2>&1 | head -n1)"
     chmod +x ./gradlew 2>/dev/null || true
     ./gradlew --no-daemon clean "$ANDROID_GRADLE_TASK"
   )
@@ -1525,7 +1478,7 @@ echo ""
 check_disk_space
 
 echo "Install paths:"
-echo "  JDK 11:         $JDK_INSTALL_DIR"
+echo "  JDK 17:         $JDK17_INSTALL_DIR"
 echo "  Android NDK:    $NDK_INSTALL_DIR"
 echo "  SDL2 android:   $ANDROID_DEPS_PATH"
 echo "  Android SDK:    $SDK_INSTALL_DIR"
@@ -1544,7 +1497,7 @@ if ! confirm "Proceed with full Android 11 toolchain setup + APK build?"; then
 fi
 
 install_msys2_packages
-install_jdk11
+install_jdk17
 install_jdk17
 install_ndk
 install_sdl2_android
