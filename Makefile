@@ -41,7 +41,7 @@ SHELL       := /bin/bash
 SDL2_URL    := https://github.com/libsdl-org/SDL/archive/refs/tags/release-2.32.10.zip
 FFMPEG_URL  := https://github.com/FFmpeg/FFmpeg/archive/refs/tags/n7.1.zip
 XMP_URL     := https://github.com/libxmp/libxmp/archive/refs/tags/libxmp-4.7.1.zip
-SCREENPACK_URL := https://github.com/ikemen-engine/Ikemen-GO-Screenpack/archive/refs/heads/master.zip
+SCREENPACK_URL := https://github.com/leonkasovan/Ikemen-GO-Screenpack/archive/refs/heads/master.zip
 
 # ============================================================================
 # Host OS / Architecture Detection
@@ -151,7 +151,7 @@ export GOOS GOARCH CC CXX
 
 BUILDDIR      := build
 BUILD_PREFIX  := $(abspath $(BUILDDIR)/output)
-OUTDIR        := .
+OUTDIR        := $(BUILDDIR)
 WINRES_DIR    := $(BUILDDIR)/winres
 
 # External library source directories
@@ -723,7 +723,7 @@ install: deps-check screenpack binary
 # ============================================================================
 # Creates I.K.E.M.E.N-Go.app from the built binary, Info.plist, and
 # bundle_run.sh. Called from CI after the binary is built:
-#   make appbundle BINNAME=bin/Ikemen_GO_MacOSARM
+#   make appbundle BINNAME=Ikemen_GO_MacOSARM
 #
 # The app bundle structure:
 #   I.K.E.M.E.N-Go.app/
@@ -785,31 +785,14 @@ screenpack:
 
 clean:
 	@echo "==> Cleaning build artifacts..."
-	rm -f $(BINARY) 2>/dev/null || true
-	rm -f $(OUTDIR)/Ikemen_GO* 2>/dev/null || true
-	rm -f $(SRC_SYSO) 2>/dev/null || true
-	rm -rf $(WINRES_DIR) 2>/dev/null || true
+	rm -rf $(BUILDDIR) 2>/dev/null || true
 	rm -rf $(APPDIR) 2>/dev/null || true
 	@echo "==> Clean done."
 
 distclean: clean
-	@echo "==> Deep cleaning..."
-	rm -rf $(FFMPEG_SRCDIR) $(FFMPEG_BUILDDIR) 2>/dev/null || true
-	# Remove stale dirs left by older Makefile versions (unmanaged here).
-	rm -rf "$(BUILDDIR)/ffmpeg" "$(BUILDDIR)/ffmpeg-src" 2>/dev/null || true
-	rm -rf $(BUILD_PREFIX) 2>/dev/null || true
-	rm -rf $(XMP_SRCDIR) $(XMP_BUILDDIR) 2>/dev/null || true
-	rm -rf $(SDL2_SRCDIR) $(SDL2_BUILDDIR) 2>/dev/null || true
+	@echo "==> Deep cleaning — removing all build artifacts and external lib sources..."
+	rm -rf $(BUILDDIR) 2>/dev/null || true
 	rm -rf $(INSTALLDIR) 2>/dev/null || true
-	# Remove downloaded source archives so distclean fully resets.
-	rm -f "$(BUILDDIR)/SDL2.zip" \
-	      "$(BUILDDIR)/FFmpeg.zip" \
-	      "$(BUILDDIR)/libxmp.zip" \
-	      "$(BUILDDIR)/screenpack.zip" 2>/dev/null || true
-	rm -rf "$(BUILDDIR)/SDL2.zip-extract" \
-	       "$(BUILDDIR)/FFmpeg.zip-extract" \
-	       "$(BUILDDIR)/libxmp.zip-extract" \
-	       "$(BUILDDIR)/screenpack.zip-extract" 2>/dev/null || true
 	@echo "==> Distclean done."
 
 # ============================================================================

@@ -68,8 +68,7 @@ DEBUG_BUILD="${DEBUG_BUILD:-0}"
 binName="Default"
 targetOS="${1:-}"
 currentOS="Unknown"
-OUTDIR="bin"         # may be overridden below
-LIBDIR="lib"         # runtime libs live here at repo root
+OUTDIR="build"         # may be overridden below
 BUILDDIR="build"
 DELAYLIB_DIR="$BUILDDIR/delaylib"
 FFMPEG_SRCDIR="$BUILDDIR/ffmpeg-src"
@@ -85,7 +84,7 @@ BUILD_ANDROID_APK="${BUILD_ANDROID_APK:-1}"  # 1=yes, 0=no
 ANDROID_APK_REPO="${ANDROID_APK_REPO:-https://github.com/Jesuszilla/ikemen-droid.git}"
 ANDROID_APK_REF="${ANDROID_APK_REF:-main}"
 ANDROID_APK_DIR="$REPO_ROOT/$BUILDDIR/android-apk/ikemen-droid"
-ANDROID_APK_OUT="${ANDROID_APK_OUT:-$REPO_ROOT/bin/ikemen-go.apk}"
+ANDROID_APK_OUT="${ANDROID_APK_OUT:-$REPO_ROOT/build/ikemen-go.apk}"
 
 # FFmpeg config
 FFMPEG_REV="${FFMPEG_REV:-release/7.1}"
@@ -308,19 +307,18 @@ function main() {
 
 	# Decide output location:
 	# - Non-macOS: binary in top-level (.) and runtime libs in ./lib
-	# - macOS: app bundle uses bin/ later from Makefile
-	# - Android: ALWAYS put outputs in bin/ (so we get bin/libmain.so + bin/libmain.h)
+	# - All platforms: outputs in build/
+	# - Android: ALSO puts outputs in build/ (so we get build/libmain.so + build/libmain.h)
 	case "$(tolower "${targetOS}")" in
-		android) OUTDIR="bin" ;;
+		android) OUTDIR="build" ;;
 		*)
 			case "$OSTYPE" in
-				darwin*) OUTDIR="bin" ;;
-				*)       OUTDIR="."  ;;
+				darwin*) OUTDIR="build" ;;
+				*)       OUTDIR="build"  ;;
 			esac
 		;;
 	esac
 	mkdir -p "$OUTDIR"
-	mkdir -p "$LIBDIR"
 
 	# Make sure Go toolchain is usable
 	ensure_go_env
@@ -840,9 +838,9 @@ function stage_android_apk_libs() {
 
 	echo "==> Staging native libs into: $abi_dir"
 	# Engine
-	cp -av "$REPO_ROOT/bin/libmain.so" "$abi_dir/"
-	# Deps (only .so, ignore Windows DLLs)
-	cp -av "$REPO_ROOT/lib/"*.so* "$abi_dir/" 2>/dev/null || true
+	cp -av "$REPO_ROOT/build/libmain.so" "$abi_dir/"
+	# Deps from cross-compiled Android libraries (SDL2, FFmpeg, libxmp)
+	cp -av "$ANDROID_DEPS_PATH/lib/"*.so* "$abi_dir/" 2>/dev/null || true
 }
 
 function stage_android_apk_assets() {
@@ -1025,15 +1023,11 @@ function build() {
 		-o "$OUTDIR/$binName" ./src
 	fi
 
-	# bundle libs
-	bundle_shared_libs
-
 	# For Android, optionally build the APK via ikemen-droid
 	build_android_apk
 
 	echo "==> Build successful"
 	echo "    Binary: $OUTDIR/$binName"
-	[[ -d "$LIBDIR" ]] && echo "    Runtime libs (if any): $LIBDIR/"
 }
 
 function buildWin() {
@@ -1065,15 +1059,11 @@ function buildWin() {
 		  -o "$OUTDIR/$binName" ./src
 	fi
 
-	# bundle libs
-	bundle_shared_libs
-
 	# Clean embedded resource object
 	rm -f src/rsrc_windows.syso 2>/dev/null || true
 
 	echo "==> Build successful (Windows)"
 	echo "    Binary: $OUTDIR/$binName"
-	[[ -d "$LIBDIR" ]] && echo "    Runtime DLLs: $LIBDIR/"
 }
 
 # Convert an arbitrary tag (e.g. "v1.2.3", "1.2", "nightly") to a valid
@@ -1187,81 +1177,6 @@ EOF
 	  -I build/winres -I external/icons \
 	  -i build/winres/Ikemen_GO.rc \
 	  -O coff -o src/rsrc_windows.syso
-}
-
-# Copy FFmpeg shared libs next to produced binary for easy runtime
-function bundle_shared_libs() {
-	local dest_lib="$LIBDIR"
-	#check dest_lib first so we don't re-copy if already done (e.g. from a previous build)
-	if compgen -G "$dest_lib/*" > /dev/null 2>/dev/null; then
-		echo "==> Shared libs already bundled in $dest_lib, skipping copy (delete that directory to force re-copy)"
-		return 0
-	fi
-	mkdir -p "$dest_lib"
-	if [[ -d "$FFMPEG_PREFIX/bin" ]]; then
-		# Windows
-		cp -av "$FFMPEG_PREFIX"/bin/*.dll "$dest_lib/" 2>/dev/null || true
-	elif [[ -d "$FFMPEG_PREFIX/lib" && "$GOOS" != "android" ]]; then
-		# Linux & macOS
-		cp -av "$FFMPEG_PREFIX"/lib/lib*.so* "$dest_lib/" 2>/dev/null || true
-		cp -av "$FFMPEG_PREFIX"/lib/lib*.dylib "$dest_lib/" 2>/dev/null || true
-	fi
-
-	# On Windows, always copy support DLLs and, if no local FFmpeg build exists, system FFmpeg DLLs
-	if [[ "$GOOS" == "windows" ]]; then
-		if [[ ! -d "$FFMPEG_PREFIX/bin" ]]; then
-			# Fall back to system FFmpeg DLLs when no local FFmpeg build exists
-			for d in /mingw64/bin/avcodec-*.dll /mingw64/bin/avformat-*.dll /mingw64/bin/avutil-*.dll \
-				/mingw64/bin/avdevice-*.dll /mingw64/bin/avfilter-*.dll \
-				/mingw64/bin/swscale-*.dll /mingw64/bin/swresample-*.dll; do
-				[[ -f "$d" ]] && cp -av "$d" "$dest_lib/" 2>/dev/null || true
-			done
-		fi
-		# MSYS2 runtime deps (always needed regardless of FFmpeg source)
-		for d in \
-			/mingw64/bin/libwinpthread-1.dll \
-			/mingw64/bin/libgcc_s_seh-1.dll \
-			/mingw64/bin/libstdc++-6.dll \
-			/mingw64/bin/libxmp*.dll \
-			/mingw64/bin/SDL2*.dll ; do
-			cp -av "$d" "$dest_lib/" 2>/dev/null || true
-		done
-	fi
-
-	# Bundle MoltenVK on macOS
-	if [[ "$GOOS" == "darwin" ]]; then
-		local mvk="${MVK_DYLIB:-}"
-		if [[ -z "$mvk" ]]; then
-			for d in \
-				"/opt/homebrew/lib/libMoltenVK.dylib" \
-				"/usr/local/lib/libMoltenVK.dylib"; do
-				[[ -f "$d" ]] && { mvk="$d"; break; }
-			done
-		fi
-		[[ -n "$mvk" ]] && cp -av "$mvk" "$dest_lib/" 2>/dev/null || true
-	fi
-	# Android specific bundling
-	if [[ "$GOOS" == "android" ]]; then
-		echo "==> Bundling Android dependencies from $ANDROID_DEPS_PATH..."
-		cp -av "$ANDROID_DEPS_PATH"/lib/*.so* "$dest_lib/" 2>/dev/null || true
-	fi
-	# Always try to bundle libxmp for portable runtime on Linux/macOS.
-	# (Windows and Android were handled above.)
-	if [[ "$GOOS" != "windows" && "$GOOS" != "android" ]]; then
-		# Prefer pkg-config to locate the correct lib directory.
-		local pc libdir libdir_sdl2
-		pc="${PKG_CONFIG:-pkg-config}"
-		libdir="$($pc --variable=libdir libxmp 2>/dev/null || true)"
-		if [[ -n "$libdir" && -d "$libdir" ]]; then
-			cp -av "${libdir}"/libxmp*.so*   "$dest_lib/" 2>/dev/null || true
-			cp -av "${libdir}"/libxmp*.dylib "$dest_lib/" 2>/dev/null || true
-		fi
-		libdir_sdl2="$($pc --variable=libdir sdl2 2>/dev/null || true)"
-		if [[ -n "$libdir_sdl2" && -d "$libdir_sdl2" ]]; then
-			cp -av "${libdir_sdl2}"/libSDL2*.so*   "$dest_lib/" 2>/dev/null || true
-			cp -av "${libdir_sdl2}"/libSDL2*.dylib "$dest_lib/" 2>/dev/null || true
-		fi
-	fi
 }
 
 # Determine the target OS.

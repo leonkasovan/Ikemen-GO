@@ -25,7 +25,7 @@
 #   10. libmain.so               (Go c-shared build via NDK clang)
 #   11. ikemen-droid source      (downloaded from IKEMEN_DROID_URL → IKEMEN_DROID_SRC)
 #   12. Screenpack assets        (downloaded from leonkasovan/Ikemen-GO-Screenpack → deploy/)
-#   13. APK build + sign         (ikemen-droid Gradle project → bin/ikemen-go.apk)
+#   13. APK build + sign         (ikemen-droid Gradle project → build/ikemen-go.apk)
 #
 # Prerequisites:
 #   - ikemen-droid source is downloaded automatically from IKEMEN_DROID_URL
@@ -34,7 +34,7 @@
 #   - The script builds libmain.so automatically (step 10)
 #
 # After running:
-#   bin/ikemen-go.apk            # ready to install on Android device
+#   build/ikemen-go.apk            # ready to install on Android device
 #
 # Usage:
 #   ./tools/generate_android_via_native.sh              # interactive (asks before each step)
@@ -89,7 +89,7 @@ FFMPEG_URL="${FFMPEG_URL:-https://github.com/FFmpeg/FFmpeg/archive/refs/tags/${F
 IKEMEN_DROID_SRC="${IKEMEN_DROID_SRC:-$(pwd)/ikemen-droid-src}"
 IKEMEN_DROID_DIR="${IKEMEN_DROID_DIR:-$(pwd)/build/android-apk/ikemen-droid}"
 ANDROID_BINARY="${ANDROID_BINARY:-$(pwd)/android/app/libs/arm64-v8a/libmain.so}"
-APK_OUTPUT="${APK_OUTPUT:-$(pwd)/bin/ikemen-go.apk}"
+APK_OUTPUT="${APK_OUTPUT:-$(pwd)/build/ikemen-go.apk}"
 ANDROID_GRADLE_TASK="${ANDROID_GRADLE_TASK:-assembleRelease}"
 ANDROID_APK_VARIANT="${ANDROID_APK_VARIANT:-release}"
 ANDROID_APK_ARTIFACT="${ANDROID_APK_ARTIFACT:-app-release.apk}"

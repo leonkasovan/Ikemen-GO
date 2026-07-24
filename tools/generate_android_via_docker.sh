@@ -54,9 +54,8 @@ while [[ $# -gt 0 ]]; do
 Usage: ./tools/generate_android_via_docker.sh [--no-build] [--build-only]
 
 Builds the Docker image and runs the android-build container to produce:
-  - bin/ikemen-go.apk
-  - bin/libmain.so, bin/libmain.h
-  - lib/*.so
+  - build/ikemen-go.apk
+  - build/libmain.so, build/libmain.h
 
 Environment overrides (optional):
   APP_VERSION, APP_BUILDTIME, ANDROID_APK_REPO, ANDROID_APK_REF, BUILD_ANDROID_APK

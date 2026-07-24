@@ -67,8 +67,8 @@ pacman -S --noconfirm wget unzip
 | `make install`       | Release build + screenpack → `deploy/` |
 | `make install CONFIG=debug` | Debug build + screenpack → `deploy/` |
 | `make appbundle`     | Create macOS `.app` bundle (I.K.E.M.E.N-Go.app) |
-| `make clean`         | Remove binary and build artifacts |
-| `make distclean`     | Remove binary, artifacts, and downloaded library sources |
+| `make clean`         | Remove entire `build/` directory (binary, libs, downloaded sources, everything) |
+| `make distclean`     | Remove `build/` + `deploy/` — full reset to pristine checkout |
 | `make deps-check`    | Verify required tools are installed |
 
 ### Options
@@ -195,9 +195,8 @@ docker compose -f tools/docker/android/docker-compose.yml run --rm android-build
 
 | File | Description |
 |------|-------------|
-| `bin/ikemen-go.apk` | Installable APK |
-| `bin/libmain.so` + `bin/libmain.h` | Engine shared library + header |
-| `lib/*.so` | Android runtime deps (SDL2, FFmpeg, libxmp) |
+| `build/ikemen-go.apk` | Installable APK |
+| `build/libmain.so` + `build/libmain.h` | Engine shared library + header |
 | `build/android-apk/ikemen-droid` | Cloned Android wrapper project |
 
 ### Configuration
@@ -206,13 +205,13 @@ docker compose -f tools/docker/android/docker-compose.yml run --rm android-build
 APP_VERSION=my-build APP_BUILDTIME=2026.01.13 \
 ANDROID_APK_REPO=https://github.com/Jesuszilla/ikemen-droid.git \
 ANDROID_APK_REF=main \
-docker compose -f build/android/docker-compose.yml run --rm android-build
+docker compose -f tools/docker/android/docker-compose.yml run --rm android-build
 ```
 
 Skip APK packaging (only build `.so` + deps):
 
 ```bash
-BUILD_ANDROID_APK=0 docker compose -f build/android/docker-compose.yml run --rm android-build
+BUILD_ANDROID_APK=0 docker compose -f tools/docker/android/docker-compose.yml run --rm android-build
 ```
 
 ### Customizing the Android wrapper
@@ -221,6 +220,65 @@ The APK is built from the `ikemen-droid` wrapper project, cloned into:
 `build/android-apk/ikemen-droid`
 
 To use a custom fork, set `ANDROID_APK_REPO` and `ANDROID_APK_REF`.
+
+---
+
+## Android (APK via native setup on Windows)
+
+This builds the engine **and** produces a ready-to-install **APK** by installing
+and configuring everything natively on your machine (JDK, NDK, SDK, cross-compilers).
+Requires MSYS2 MINGW64 on Windows.
+
+### Requirements
+
+- MSYS2 MINGW64 shell on Windows
+- ~10 GB free disk space
+- Good internet connection (downloads NDK ~1.5 GB plus SDK, JDK, library sources)
+
+### Build (from repo root)
+
+```bash
+./tools/generate_android_via_native.sh --yes
+```
+
+Run without `--yes` for interactive mode (asks before each step).
+
+### What this does
+
+The script runs 14 steps automatically:
+
+1. Installs MSYS2 build tools (make, cmake, gcc, nasm, etc.)
+2. Installs JDK 11 (Eclipse Temurin) for Gradle
+3. Installs JDK 17 for sdkmanager
+4. Installs Android NDK r27d (cross-compiler)
+5. Cross-compiles SDL2 for Android arm64-v8a
+6. Cross-compiles libxmp for Android arm64-v8a
+7. Cross-compiles FFmpeg for Android arm64-v8a
+8. Installs Android SDK (platform + build-tools)
+9. Sets up environment variables in `~/.bashrc`
+10. Builds `libmain.so` (Go c-shared library)
+11. Downloads ikemen-droid source
+12. Downloads screenpack assets
+13. Builds and signs the APK
+
+### Outputs
+
+| File | Description |
+|------|-------------|
+| `build/ikemen-go.apk` | Installable (signed) APK |
+| `build/android-deps/` | Cross-compiled library dependencies |
+| `android/release.jks` | Auto-generated signing keystore |
+
+### Customization
+
+Override any setting via environment variables:
+
+```bash
+SDK_PLATFORM=android-33 SDK_BUILD_TOOLS=33.0.1 \
+  ./tools/generate_android_via_native.sh --yes
+```
+
+See the script header for all overridable variables.
 
 ---
 

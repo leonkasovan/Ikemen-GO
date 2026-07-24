@@ -37,15 +37,15 @@ services:
         ./tools/build.sh Android;
         echo;
         echo '==> Outputs:';
-        ls -lah bin/ lib/ || true;
+        ls -lah build/ || true;
         echo;
         echo '==> Sanity checks:';
-        test -f bin/libmain.so;
-        file bin/libmain.so || true;
-        (command -v readelf >/dev/null && readelf -d bin/libmain.so | sed -n 's/.*(NEEDED).*/&/p') || true;
+        test -f build/libmain.so;
+        file build/libmain.so || true;
+        (command -v readelf >/dev/null && readelf -d build/libmain.so | sed -n 's/.*(NEEDED).*/&/p') || true;
         echo;
         echo '==> APK:';
-        ls -lah bin/*.apk 2>/dev/null || true;
+        ls -lah build/*.apk 2>/dev/null || true;
       "
 
 volumes:
