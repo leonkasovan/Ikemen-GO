@@ -109,9 +109,10 @@ ANDROID_KEY_PASS="${ANDROID_KEY_PASS:-$ANDROID_KEYSTORE_PASS}"
 # We compute it at script start so it's absolute.
 ANDROID_DEPS_PATH="${ANDROID_DEPS_PATH:-$(pwd)/build/android-deps}"
 
-# SDK / JDK paths — used by build_apk; may come from .bashrc or set explicitly
+# SDK / NDK / JDK paths — used by build_apk & build_libmain; may come from .bashrc or set explicitly
 ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME_DIR}}"
 ANDROID_HOME="${ANDROID_HOME:-${ANDROID_HOME_DIR}}"
+ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-${NDK_INSTALL_DIR}}"
 JAVA_HOME="${JAVA_HOME:-$JDK17_INSTALL_DIR}"
 ANDROID_GCDB_URL="${ANDROID_GCDB_URL:-https://raw.githubusercontent.com/mdqinc/SDL_GameControllerDB/refs/heads/master/gamecontrollerdb.txt}"
 
@@ -405,7 +406,7 @@ install_ndk() {
   local toolchain="$NDK_INSTALL_DIR/toolchains/llvm/prebuilt/windows-x86_64"
   if [[ -d "$toolchain" ]]; then
     echo "    Toolchain: $toolchain"
-    local cc="$toolchain/bin/aarch64-linux-android30-clang.cmd"
+    local cc="$toolchain/bin/aarch64-linux-android${ANDROID_API}-clang.cmd"
     if [[ -f "$cc" ]]; then
       echo "    Cross-compiler: $($cc --version 2>&1 | head -n1)"
     fi
@@ -887,6 +888,13 @@ setup_env() {
   echo "      JAVA_HOME           = $JDK17_INSTALL_DIR"
   echo ""
   echo "    Run 'source ~/.bashrc' or restart your shell to apply."
+
+  # Also export the variables immediately so the current script session can
+  # use them without sourcing .bashrc (needed by build_libmain and build_apk).
+  export ANDROID_NDK_HOME="$NDK_INSTALL_DIR"
+  export ANDROID_SDK_ROOT="$SDK_INSTALL_DIR"
+  export ANDROID_HOME="$SDK_INSTALL_DIR"
+  export JAVA_HOME="$JDK17_INSTALL_DIR"
 }
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -939,11 +947,11 @@ verify_installation() {
   if [[ -d "$tc" ]]; then
     echo "  ✅  NDK $NDK_VERSION"
     echo "      Path: $NDK_INSTALL_DIR"
-    local cc="$tc/bin/aarch64-linux-android30-clang.cmd"
+    local cc="$tc/bin/aarch64-linux-android${ANDROID_API}-clang.cmd"
     if [[ -f "$cc" ]]; then
       echo "      Cross-compiler: present"
     else
-      echo "      ⚠️  Cross-compiler not found (aarch64-linux-android30-clang)"
+      echo "      ⚠️  Cross-compiler not found (aarch64-linux-android${ANDROID_API}-clang)"
     fi
   else
     echo "  ❌  NDK toolchain not found at $tc"
