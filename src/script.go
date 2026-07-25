@@ -5028,6 +5028,7 @@ func systemScriptInit(l *lua.LState) {
 			fmt.Printf("Warning: %v\n", err.Error())
 			return 0
 		}
+		sys.storyboard.Close()
 		sys.storyboard = *s
 		lv := toLValue(l, s)
 		l.Push(lv)

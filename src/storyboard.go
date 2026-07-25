@@ -588,6 +588,30 @@ func (s *Storyboard) init() {
 	s.initialized = true
 }
 
+// Close stops and releases all video backgrounds across every scene.
+// Must be called before the storyboard is discarded (e.g. before replacing
+// sys.storyboard) to stop the FFmpeg decode goroutines and free C-side
+// resources. Without this, video decoders leak memory and run forever.
+func (s *Storyboard) Close() {
+	if s.Scene == nil {
+		return
+	}
+	count := 0
+	for _, sceneProps := range s.Scene {
+		if sceneProps.Bg.BGDef == nil {
+			continue
+		}
+		for _, bg := range sceneProps.Bg.BGDef.bg {
+			if bg != nil && bg._type == BG_Video && bg.video != nil {
+				bg.video.Close()
+				bg.video = nil
+				count++
+			}
+		}
+	}
+	Logcat(fmt.Sprintf("STORYBOARD CLOSE: %d video(s) closed", count))
+}
+
 func (s *Storyboard) step() {
 	sys.stepCommandLists()
 	sceneKey := s.sceneKeys[s.currentSceneIndex]
@@ -789,6 +813,7 @@ func (s *Storyboard) step() {
 					cl.BufReset()
 				}
 			}
+			s.Close()
 			s.active = false
 			s.loadEnding = false
 			return
@@ -808,6 +833,7 @@ func (s *Storyboard) step() {
 			if s.musicPlaying && s.SceneDef.StopMusic {
 				sys.bgm.Stop()
 			}
+			s.Close()
 			s.active = false
 			// Do not force-reset fadeOut here; it will self-reset after its last draw.
 			return

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image"
 	"math"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -111,13 +112,16 @@ func drainFrames(ch <-chan *image.RGBA) {
 			if !ok {
 				return
 			}
+			// keep draining
 		default:
+			// nothing available right now — done
 			return
 		}
 	}
 }
 
 func (bgv *bgVideo) Open(filename string, volume int, sm BgVideoScaleMode, sf BgVideoScaleFilter, loop bool) error {
+	Logcat(fmt.Sprintf("VIDEO OPEN: %s (loop=%v)", filename, loop))
 	// fmt.Println("Opening media file:", filename)
 	m, err := reisen.NewMedia(filename)
 	if err != nil {
@@ -259,6 +263,11 @@ func (bgv *bgVideo) Open(filename string, volume int, sm BgVideoScaleMode, sf Bg
 			break
 		}
 	finish:
+		// Drain queued frames/audio before closing so buffered image data
+		// (which can be ~8 MB per 1080p frame) is released immediately instead
+		// of stranded in the channel buffer until GC.
+		drainAudio(bgv.audioBuffer)
+		drainFrames(bgv.frameBuffer)
 		// Cleanup only when we actually finish (i.e., not looping forever).
 		bgv.videoStream.Close()
 		if bgv.audioStream != nil {
@@ -277,6 +286,10 @@ func (bgv *bgVideo) Open(filename string, volume int, sm BgVideoScaleMode, sf Bg
 		close(bgv.frameBuffer)
 		close(bgv.audioBuffer)
 		close(bgv.errs)
+		// Eagerly release video frame memory back to the OS after playback ends.
+		// Video frames are ~8 MB each at 1080p; 10 buffered + residual decode
+		// allocations can total 30–80 MB. Waiting for Go GC is too slow.
+		debug.FreeOSMemory()
 	})
 
 	return nil
@@ -694,6 +707,7 @@ func (bgv *bgVideo) MixerCleared() {
 
 // Close stops decoding and frees resources. Safe to call multiple times.
 func (bgv *bgVideo) Close() {
+	Logcat("VIDEO CLOSE: shutting down decoder")
 	// Quiesce producers and renderer first.
 	bgv.SetPlaying(false)
 	bgv.SetVisible(false)

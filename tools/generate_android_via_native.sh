@@ -81,10 +81,17 @@ FFMPEG_URL="${FFMPEG_URL:-https://github.com/FFmpeg/FFmpeg/archive/refs/tags/${F
 # ikemen-droid APK build
 IKEMEN_DROID_DIR="${IKEMEN_DROID_DIR:-$(pwd)/build/android-apk/ikemen-droid}"
 ANDROID_BINARY="${ANDROID_BINARY:-$(pwd)/android/app/libs/arm64-v8a/libmain.so}"
-APK_OUTPUT="${APK_OUTPUT:-$(pwd)/build/ikemen-go.apk}"
-ANDROID_GRADLE_TASK="${ANDROID_GRADLE_TASK:-assembleRelease}"
-ANDROID_APK_VARIANT="${ANDROID_APK_VARIANT:-release}"
-ANDROID_APK_ARTIFACT="${ANDROID_APK_ARTIFACT:-app-release.apk}"
+CONFIG="${CONFIG:-release}"
+APK_OUTPUT="${APK_OUTPUT:-$(pwd)/build/ikemen-go${CONFIG:+-${CONFIG}}.apk}"
+if [[ "$CONFIG" == "debug" ]]; then
+  ANDROID_GRADLE_TASK="${ANDROID_GRADLE_TASK:-assembleDebug}"
+  ANDROID_APK_VARIANT="${ANDROID_APK_VARIANT:-debug}"
+  ANDROID_APK_ARTIFACT="${ANDROID_APK_ARTIFACT:-app-debug.apk}"
+else
+  ANDROID_GRADLE_TASK="${ANDROID_GRADLE_TASK:-assembleRelease}"
+  ANDROID_APK_VARIANT="${ANDROID_APK_VARIANT:-release}"
+  ANDROID_APK_ARTIFACT="${ANDROID_APK_ARTIFACT:-app-release.apk}"
+fi
 # APK signing — set ANDROID_KEYSTORE to enable; passwords via env or pass: syntax.
 # If the file does not exist, the script auto-generates it with 'keytool'
 # using ANDROID_KEYSTORE_PASS / ANDROID_KEY_PASS (the 'pass:' prefix is stripped
@@ -1060,6 +1067,13 @@ build_libmain() {
   echo "  GOOS=android GOARCH=arm64 CC=$cc"
   echo "  Output: $ANDROID_BINARY"
 
+  local go_tags="mugen lite android gles2"
+  local go_ldflags="-s -w -X 'main.Version=nightly' -X 'runtime.godebugDefault=asyncpreemptoff=1,sigaltstack=0'"
+  if [[ "$CONFIG" == "debug" ]]; then
+    go_tags="$go_tags debug"
+    go_ldflags="-X 'main.Version=nightly' -X 'runtime.godebugDefault=asyncpreemptoff=1,sigaltstack=0'"
+  fi
+
   CGO_ENABLED=1 GOOS=android GOARCH=arm64 GOEXPERIMENT=arenas \
   CC="$cc" CXX="$cxx" \
   PKG_CONFIG_LIBDIR="$ANDROID_DEPS_PATH/lib/pkgconfig" \
@@ -1067,8 +1081,8 @@ build_libmain() {
   PKG_CONFIG_PATH= \
   CGO_CFLAGS="-I$deps_include -I$deps_include/SDL2" \
   CGO_LDFLAGS="-L$deps_lib -lSDL2 -lGLESv2 -lOpenSLES -llog -Wl,-z,max-page-size=16384" \
-  go build -buildmode=c-shared -trimpath -v -tags "mugen lite android gles2" \
-    -ldflags "-s -w -X 'main.Version=nightly' -X 'runtime.godebugDefault=asyncpreemptoff=1,sigaltstack=0'" \
+  go build -buildmode=c-shared -trimpath -v -tags "$go_tags" \
+    -ldflags "$go_ldflags" \
     -o "$ANDROID_BINARY" ./src
 
   if [[ ! -f "$ANDROID_BINARY" ]]; then

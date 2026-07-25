@@ -248,26 +248,74 @@ Run without `--yes` for interactive mode (asks before each step).
 The script runs 14 steps automatically:
 
 1. Installs MSYS2 build tools (make, cmake, gcc, nasm, etc.)
-2. Installs JDK 11 (Eclipse Temurin) for Gradle
-3. Installs JDK 17 for sdkmanager
-4. Installs Android NDK r27d (cross-compiler)
-5. Cross-compiles SDL2 for Android arm64-v8a
-6. Cross-compiles libxmp for Android arm64-v8a
-7. Cross-compiles FFmpeg for Android arm64-v8a
-8. Installs Android SDK (platform + build-tools)
-9. Sets up environment variables in `~/.bashrc`
-10. Builds `libmain.so` (Go c-shared library)
-11. Downloads ikemen-droid source
-12. Downloads screenpack assets
-13. Builds and signs the APK
+2. Installs JDK 17 (Eclipse Temurin) for Gradle / sdkmanager
+3. Installs Android NDK r27d (cross-compiler)
+4. Cross-compiles SDL2 for Android arm64-v8a
+5. Cross-compiles libxmp for Android arm64-v8a
+6. Cross-compiles FFmpeg for Android arm64-v8a
+7. Installs Android SDK (platform + build-tools)
+8. Sets up environment variables in `~/.bashrc`
+9. Builds `libmain.so` (Go c-shared library)
+10. Downloads ikemen-droid source
+11. Downloads screenpack assets
+12. Builds and signs the APK
 
 ### Outputs
 
 | File | Description |
 |------|-------------|
-| `build/ikemen-go.apk` | Installable (signed) APK |
+| `build/ikemen-go.apk` | Installable signed APK (release) |
+| `build/ikemen-go-debug.apk` | Installable debug APK (see below) |
 | `build/android-deps/` | Cross-compiled library dependencies |
 | `android/release.jks` | Auto-generated signing keystore |
+
+### Build variants
+
+| Build | Command | APK | Go `debug` tag | PProf |
+|-------|---------|-----|----------------|-------|
+| **Release** | `./tools/generate_android_via_native.sh --yes` | `build/ikemen-go.apk` | off | no-op |
+| **Debug** | `CONFIG=debug ./tools/generate_android_via_native.sh --yes` | `build/ikemen-go-debug.apk` | on | `:6060` |
+
+### Debugging with ADB
+
+```bash
+# Install debug APK
+adb install -r build/ikemen-go-debug.apk
+
+# Stream engine logcat output
+adb logcat -s ikemen
+
+# Stream asset extraction + engine logs
+adb logcat -s AssetExtractor SDLActivity ikemen AndroidRuntime
+```
+
+### Profiling with pprof (debug build only)
+
+The `debug` build tag activates an HTTP pprof server on `localhost:6060` inside the
+app process. Use it from your PC:
+
+```bash
+# 1. Forward device port to your machine
+#    (adjust adb path for your SDK install location)
+/c/Android/SDK/platform-tools/adb.exe forward tcp:6060 tcp:6060
+
+# 2. On MSYS2, trimmed Go needs explicit GOROOT:
+export GOROOT=/mingw64/lib/go
+
+# 3. Capture profiles
+GOROOT=/mingw64/lib/go go tool pprof http://localhost:6060/debug/pprof/heap              # heap snapshot
+GOROOT=/mingw64/lib/go go tool pprof http://localhost:6060/debug/pprof/profile?seconds=30  # 30s CPU
+GOROOT=/mingw64/lib/go go tool pprof http://localhost:6060/debug/pprof/goroutine          # goroutine stack
+GOROOT=/mingw64/lib/go go tool pprof http://localhost:6060/debug/pprof/block              # blocking profiles
+
+# Interactive commands once inside pprof:
+#   top      — show top memory/cpu consumers
+#   web      — open flame graph in browser
+#   list fn  — show source lines for a function
+```
+
+The pprof server is compiled out entirely in release builds (`!debug` tag) —
+zero overhead.
 
 ### Customization
 

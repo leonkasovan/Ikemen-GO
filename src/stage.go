@@ -1950,11 +1950,14 @@ func (s *Stage) reset() {
 
 // destroy stops any background video media so the stage can be safely discarded.
 func (s *Stage) destroy() {
+	count := 0
 	for _, b := range s.bg {
 		if b != nil && b._type == BG_Video && b.video != nil {
 			b.video.Close()
+			count++
 		}
 	}
+	Logcat(fmt.Sprintf("STAGE DESTROY: %d video(s) closed", count))
 }
 
 func (s *Stage) warn() string {

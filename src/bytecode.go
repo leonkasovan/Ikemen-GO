@@ -12902,6 +12902,7 @@ func (sc storyboard) Run(c *Char, _ []int32) bool {
 			if err != nil {
 				panic(err)
 			}
+			sys.storyboard.Close()
 			sys.storyboard = *s
 			sys.storyboard.init()
 		}
