@@ -23,13 +23,13 @@
 #   8.  Android SDK cmdline-tools + platform + build-tools
 #   9.  Environment variables     (ANDROID_NDK_HOME, JAVA_HOME, etc.)
 #   10. libmain.so               (Go c-shared build via NDK clang)
-#   11. ikemen-droid source      (downloaded from IKEMEN_DROID_URL → IKEMEN_DROID_SRC)
+#   11. ikemen-droid source      (downloaded from IKEMEN_DROID_URL → IKEMEN_DROID_DIR)
 #   12. Screenpack assets        (downloaded from leonkasovan/Ikemen-GO-Screenpack → deploy/)
 #   13. APK build + sign         (ikemen-droid Gradle project → build/ikemen-go.apk)
 #
 # Prerequisites:
 #   - ikemen-droid source is downloaded automatically from IKEMEN_DROID_URL
-#     (override with IKEMEN_DROID_SRC to use an existing local checkout)
+#     (override with IKEMEN_DROID_DIR to use an existing local checkout)
 #   - Screenpack assets are downloaded automatically (override with existing deploy/ dir)
 #   - The script builds libmain.so automatically (step 10)
 #
@@ -79,7 +79,6 @@ XMP_URL="${XMP_URL:-https://github.com/libxmp/libxmp/archive/refs/tags/${XMP_VER
 FFMPEG_VERSION="${FFMPEG_VERSION:-n7.1}"
 FFMPEG_URL="${FFMPEG_URL:-https://github.com/FFmpeg/FFmpeg/archive/refs/tags/${FFMPEG_VERSION}.zip}"
 # ikemen-droid APK build
-IKEMEN_DROID_SRC="${IKEMEN_DROID_SRC:-$(pwd)/ikemen-droid-src}"
 IKEMEN_DROID_DIR="${IKEMEN_DROID_DIR:-$(pwd)/build/android-apk/ikemen-droid}"
 ANDROID_BINARY="${ANDROID_BINARY:-$(pwd)/android/app/libs/arm64-v8a/libmain.so}"
 APK_OUTPUT="${APK_OUTPUT:-$(pwd)/build/ikemen-go.apk}"
@@ -197,7 +196,7 @@ java_major_version() {
 # ────────────────────────────────────────────────────────────────────────────
 
 echo "╔══════════════════════════════════════════════════════════╗"
-echo "║   Ikemen-GO Android 11 — Environment Setup Script      ║"
+echo "║   Ikemen-GO Android 11 — Environment Setup Script        ║"
 echo "╚══════════════════════════════════════════════════════════╝"
 echo ""
 
@@ -304,8 +303,6 @@ install_msys2_packages() {
   fi
 }
 
-# ────────────────────────────────────────────────────────────────────────────
-# Step 2 — Install JDK 17 (Eclipse Temurin)
 # ────────────────────────────────────────────────────────────────────────────
 # Step 2 — Install JDK 17 (Eclipse Temurin)
 # ────────────────────────────────────────────────────────────────────────────
@@ -746,7 +743,7 @@ install_sdk() {
 
   if [[ -d "$SDK_INSTALL_DIR/platforms/$SDK_PLATFORM" ]] && \
      [[ -d "$SDK_INSTALL_DIR/build-tools/$SDK_BUILD_TOOLS" ]]; then
-    echo "✅  Android SDK already installed at: $SDK_INSTALL_DIR"
+    echo "  ✅  Android SDK already installed at: $SDK_INSTALL_DIR"
     return
   fi
 
@@ -874,7 +871,7 @@ setup_env() {
 	$end_marker
 	EOF
 
-  echo "✅  Environment variables written to: $bashrc"
+  echo "  ✅  Environment variables written to: $bashrc"
   echo ""
   echo "    Key variables:"
   echo "      ANDROID_NDK_HOME    = $NDK_INSTALL_DIR"
@@ -892,7 +889,7 @@ setup_env() {
 verify_installation() {
   echo ""
   echo "╔══════════════════════════════════════════════════════════╗"
-  echo "║                 Installation Summary                    ║"
+  echo "║                 Installation Summary                     ║"
   echo "╚══════════════════════════════════════════════════════════╝"
 
   local all_ok=true
@@ -1090,12 +1087,12 @@ download_ikemen_droid_source() {
   echo "═══ Step 12/12 — Downloading ikemen-droid source ═══"
 
   # If source already exists, skip
-  if [[ -d "$IKEMEN_DROID_SRC" ]]; then
-    echo "  ✅  ikemen-droid source already present at: $IKEMEN_DROID_SRC"
+  if [[ -d "$IKEMEN_DROID_DIR" ]]; then
+    echo "  ✅  ikemen-droid source already present at: $IKEMEN_DROID_DIR"
     return
   fi
 
-  if ! confirm "Download ikemen-droid source from $IKEMEN_DROID_URL to $IKEMEN_DROID_SRC?"; then
+  if ! confirm "Download ikemen-droid source from $IKEMEN_DROID_URL to $IKEMEN_DROID_DIR?"; then
     echo "  Skipped — you'll need to provide the source manually before the APK build."
     return
   fi
@@ -1105,15 +1102,15 @@ download_ikemen_droid_source() {
   echo "    URL: $IKEMEN_DROID_URL"
   wget -q --show-progress "$IKEMEN_DROID_URL" -O "$tmp_zip"
 
-  echo "==> Extracting to $IKEMEN_DROID_SRC..."
-  mkdir -p "$(dirname "$IKEMEN_DROID_SRC")"
+  echo "==> Extracting to $IKEMEN_DROID_DIR..."
+  mkdir -p "$(dirname "$IKEMEN_DROID_DIR")"
   unzip -q "$tmp_zip" -d "/tmp/ikemen-droid-extract"
   local subdir
   subdir="$(find "/tmp/ikemen-droid-extract" -mindepth 1 -maxdepth 1 -type d | head -1)"
-  mv "$subdir" "$IKEMEN_DROID_SRC"
+  mv "$subdir" "$IKEMEN_DROID_DIR"
   rm -rf "/tmp/ikemen-droid-extract" "$tmp_zip"
 
-  echo "✅  ikemen-droid source downloaded to: $IKEMEN_DROID_SRC"
+  echo "✅  ikemen-droid source downloaded to: $IKEMEN_DROID_DIR"
 }
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -1222,15 +1219,15 @@ build_apk() {
   echo "═══ Step 14/12 — Building Android APK ═══"
 
   # --- Ensure ikemen-droid source is available (download if missing) ---
-  if [[ ! -d "$IKEMEN_DROID_SRC" ]]; then
-    echo "  ikemen-droid source not found at: $IKEMEN_DROID_SRC"
+  if [[ ! -d "$IKEMEN_DROID_DIR" ]]; then
+    echo "  ikemen-droid source not found at: $IKEMEN_DROID_DIR"
     download_ikemen_droid_source
   fi
 
   # --- Validate prerequisites ---
-  if [[ ! -d "$IKEMEN_DROID_SRC" ]]; then
-    echo "❌  ikemen-droid source not found: $IKEMEN_DROID_SRC"
-    echo "   Set IKEMEN_DROID_SRC or IKEMEN_DROID_URL and re-run."
+  if [[ ! -d "$IKEMEN_DROID_DIR" ]]; then
+    echo "❌  ikemen-droid source not found: $IKEMEN_DROID_DIR"
+    echo "   Set IKEMEN_DROID_DIR or IKEMEN_DROID_URL and re-run."
     exit 1
   fi
 
@@ -1264,28 +1261,9 @@ build_apk() {
   echo "  SDK:  $sdk"
   echo "  JDK:  $JAVA_HOME"
 
-  # --- Copy ikemen-droid source to build dir ---
+  # --- ikemen-droid source is already at IKEMEN_DROID_DIR (no copy needed) ---
   echo ""
-  echo "==> Syncing ikemen-droid..."
-  local src_real
-  src_real="$(cd "$IKEMEN_DROID_SRC" && pwd -P)"
-  local dst_parent
-  dst_parent="$(dirname "$IKEMEN_DROID_DIR")"
-  local dst_real
-  if [[ -d "$dst_parent" ]]; then
-    dst_real="$(cd "$dst_parent" && pwd -P)/$(basename "$IKEMEN_DROID_DIR")"
-  else
-    dst_real="$IKEMEN_DROID_DIR"
-  fi
-
-  if [[ "$src_real" != "$dst_real" ]]; then
-    rm -rf "$IKEMEN_DROID_DIR"
-    mkdir -p "$dst_parent"
-    echo "    Copying from: $IKEMEN_DROID_SRC"
-    cp -a "$IKEMEN_DROID_SRC" "$IKEMEN_DROID_DIR"
-  else
-    echo "    Source and dest are the same, skipping copy."
-  fi
+  echo "==> Using ikemen-droid at: $IKEMEN_DROID_DIR"
 
   # --- AGP version ---
   # Gradle 8.1.1 requires JDK 17+ to run, so AGP 8.1.1 (already in
@@ -1302,7 +1280,7 @@ build_apk() {
   echo "==> Ensuring runtime assets..."
   if [[ ! -f "external/gamecontrollerdb.txt" ]]; then
     echo "    Downloading gamecontrollerdb.txt..."
-    wget -q "https://raw.githubusercontent.com/mdqinc/SDL_GameControllerDB/refs/heads/master/gamecontrollerdb.txt" -O "external/gamecontrollerdb.txt"
+    wget -q "$ANDROID_GCDB_URL" -O "external/gamecontrollerdb.txt"
   fi
   if [[ ! -f "data/system.base.def" ]]; then
     echo "    Generating data/system.base.def from defaultMotif.ini..."
@@ -1310,18 +1288,35 @@ build_apk() {
     cp -a "src/resources/defaultMotif.ini" "data/system.base.def"
   fi
 
-  # --- Generate manifest.txt from actual screenpack files in deploy/ ---
+  # --- Generate manifest.txt ---
+  # Mirrors the Makefile "install" target: screenpack (deploy/) + engine dirs
+  # (data/, font/, external/). Engine files overlay on top of screenpack.
   echo ""
-  echo "==> Generating manifest.txt from screenpack in deploy/..."
+  echo "==> Generating manifest.txt (screenpack + engine data/font/external)..."
   local manifest_gen="$IKEMEN_DROID_DIR/app/src/main/assets/manifest.txt"
   local screenpack_root="$(pwd)/deploy"
+  local tmp_manifest="/tmp/ikemen-manifest.txt"
+  : > "$tmp_manifest"
+  # 1) Screenpack files from deploy/
   if [[ -d "$screenpack_root" ]]; then
-    # Create manifest from all files under deploy/ (relative paths)
-    (cd "$screenpack_root" && find . -type f ! -name ".screenpack_done" | sed 's|^\./||' | sort) > "$manifest_gen"
-    echo "    Generated manifest.txt with $(wc -l < "$manifest_gen") entries"
+    (cd "$screenpack_root" && find . -type f ! -name ".screenpack_done" | sed 's|^\./||' | sort) >> "$tmp_manifest"
+    echo "    Screenpack: $(grep -c . "$tmp_manifest") entries from deploy/"
   else
-    echo "    ⚠️  deploy/ not found — keeping original manifest.txt"
+    echo "    ⚠️  deploy/ not found — no screenpack files"
   fi
+  # 2) Engine files: data/, font/, external/ (mirrors Makefile install target)
+  for engine_dir in data font external; do
+    if [[ -d "$engine_dir" ]]; then
+      (cd "$engine_dir" && find . -type f | sed 's|^\./||' | sort) | while read -r f; do
+        echo "${engine_dir}/${f}"
+      done >> "$tmp_manifest"
+      echo "    Engine: ${engine_dir}/ included"
+    fi
+  done
+  # Deduplicate and sort (engine overlay wins for shared paths)
+  sort -u "$tmp_manifest" > "$manifest_gen"
+  rm -f "$tmp_manifest"
+  echo "    Generated manifest.txt with $(wc -l < "$manifest_gen") entries"
 
   # --- Stage native libs ---
   local app_dir="$IKEMEN_DROID_DIR/app"
@@ -1449,40 +1444,16 @@ build_apk() {
 }
 
 # ────────────────────────────────────────────────────────────────────────────
-# Disk space preflight (soft warning, exits gracefully on error)
-# ────────────────────────────────────────────────────────────────────────────
-
-check_disk_space() {
-  local free_kb=""
-  # Try to get free space; if df/cygpath fail, skip the check entirely.
-  free_kb="$(df /c 2>/dev/null | awk 'NR==2{print $4}' || true)"
-  if [[ -z "$free_kb" || ! "$free_kb" =~ ^[0-9]+$ ]]; then
-    echo "⚠️  Could not check free disk space (skipping)."
-    return 0
-  fi
-  if [[ "$free_kb" -lt 10485760 ]]; then
-    echo "⚠️  WARNING: Less than 10 GB free on C: drive (~5 GB needed for NDK + SDK + JDK)."
-    echo "   Free space: $((free_kb / 1024 / 1024)) GB"
-    if ! confirm "Continue anyway?"; then
-      echo "Aborted. Free up disk space and re-run."
-      exit 0
-    fi
-  fi
-}
-
-# ────────────────────────────────────────────────────────────────────────────
 # Main
 # ────────────────────────────────────────────────────────────────────────────
 
 echo ""
-check_disk_space
-
 echo "Install paths:"
 echo "  JDK 17:         $JDK17_INSTALL_DIR"
 echo "  Android NDK:    $NDK_INSTALL_DIR"
 echo "  SDL2 android:   $ANDROID_DEPS_PATH"
 echo "  Android SDK:    $SDK_INSTALL_DIR"
-echo "  ikemen-droid:   $IKEMEN_DROID_SRC"
+echo "  ikemen-droid:   $IKEMEN_DROID_DIR"
 echo "  APK output:     $APK_OUTPUT"
 if [[ -n "$ANDROID_KEYSTORE" ]] && [[ -f "$ANDROID_KEYSTORE" ]]; then
   echo "  Keystore:       $ANDROID_KEYSTORE (alias: $ANDROID_KEY_ALIAS)"
@@ -1498,7 +1469,6 @@ fi
 
 install_msys2_packages
 install_jdk17
-install_jdk17
 install_ndk
 install_sdl2_android
 install_libxmp_android
@@ -1510,3 +1480,4 @@ build_libmain
 download_ikemen_droid_source
 download_screenpack
 build_apk
+

@@ -71,7 +71,6 @@ resources/*
 # ============================
 bin/
 android/
-ikemen-droid-src/
 
 # ============================
 # Temp / generated sources
