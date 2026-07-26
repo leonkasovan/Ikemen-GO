@@ -1360,7 +1360,7 @@ func (s *Sprite) CachePalTex(pal []uint32) Texture {
 	// per-frame SetData spam (newTexture=false) since it's driven by animated
 	// PalFX and is expected visual behaviour, not a memory concern.
 	if s.PalTex == nil {
-		memLog("PalTex cache miss: sprite=%p colors=%d newTexture=true", s, len(pal))
+		memLog("PalTex cache miss: sprite=%p (Group=%d,Num=%d) colors=%d newTexture=true", s, s.Group, s.Number, len(pal))
 		s.PalTex = NewTextureFromPalette(pal)
 	} else {
 		s.PalTex.SetData(Pal32ToBytes(pal))
@@ -1695,7 +1695,7 @@ func loadSff(filename string, char bool, isMainThread bool, isActPal bool) (*Sff
 			prev = spriteList[i]
 		}
 		if s.sprites[[2]uint16{spriteList[i].Group, spriteList[i].Number}] != nil {
-			LogMessage("WARNING: Duplicate sprite key in %v: %v,%v (index %v ignored)", filename, spriteList[i].Group, spriteList[i].Number, i)
+			LogMessage("[WARN] Duplicate sprite key in %v: %v,%v (index %v ignored)", filename, spriteList[i].Group, spriteList[i].Number, i)
 		} else {
 			s.sprites[[2]uint16{spriteList[i].Group, spriteList[i].Number}] = spriteList[i]
 		}
@@ -2112,7 +2112,7 @@ func (s *Sff) loadPalettes(f io.ReadSeeker, lofs uint32) error {
 			// Duplicate key
 			idx = old
 			pal = s.palList.Get(old)
-			LogMessage("WARNING: Duplicate palette key in %v: %v,%v (%v/%v)", s.filename, gn[0], gn[1], i+1, s.header.NumberOfPalettes)
+			LogMessage("[WARN] Duplicate palette key in %v: %v,%v (%v/%v)", s.filename, gn[0], gn[1], i+1, s.header.NumberOfPalettes)
 		} else if plSize == 0 {
 			// Linked palette
 			idx = int(link)

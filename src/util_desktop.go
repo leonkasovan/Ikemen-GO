@@ -1,20 +1,13 @@
-//go:build !raw && !android && !armdevice
+//go:build !android && !armdevice
 
 package main
 
 import (
 	"fmt"
-	"io"
-	"os"
 
 	findfont "github.com/flopp/go-findfont"
 	"github.com/sqweek/dialog"
 )
-
-// Log writer implementation
-func NewLogWriter() io.Writer {
-	return os.Stderr
-}
 
 // Message box implementation
 func ShowInfoDialog(message, title string) {
@@ -78,6 +71,4 @@ func selectRenderer(cfgVal string) (Renderer, FontRenderer) {
 	return gfx, gfxFont
 }
 
-func Logcat(s string) {
-	fmt.Println(s)
-}
+

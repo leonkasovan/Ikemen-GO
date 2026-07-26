@@ -151,7 +151,19 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 	return &Window{window, s.cfg.Config.WindowTitle, int(x), int(y), w, h, fullscreen, false}, nil
 }
 
+func calculateFPS() {
+	now := sdl.GetPerformanceCounter()
+	freq := float32(sdl.GetPerformanceFrequency())
+	diff := float32(now - sys.gameFPSprevcount)
+	if diff > 0 {
+		instantFPS := freq / diff
+		sys.gameFPS = (sys.gameFPS * 0.95) + (instantFPS * 0.05)
+	}
+	sys.gameFPSprevcount = now
+}
+
 func (w *Window) SwapBuffers() {
+	calculateFPS()
 	w.Window.GLSwap()
 }
 
@@ -347,18 +359,16 @@ func attachController(deviceIndex int) {
 	input.controllerstate[slot].HasRumble = controller.HasRumble()
 }
 
+var fpsLogTick int32
+
 func (w *Window) UpdateDebugFPS() {
-	now := sdl.GetPerformanceCounter()
-	freq := float32(sdl.GetPerformanceFrequency())
-	diff := float32(now - sys.gameFPSprevcount)
-
-	if diff > 0 {
-		instantFPS := freq / diff
-		// Use an EMA to apply smoothing
-		sys.gameFPS = (sys.gameFPS * 0.95) + (float32(instantFPS) * 0.05)
+	if DebugMem {
+		fpsLogTick++
+		if fpsLogTick >= 60 {
+			LogDebug("[FPS] %.1f", sys.gameFPS)
+			fpsLogTick = 0
+		}
 	}
-
-	sys.gameFPSprevcount = now
 }
 
 func (w *Window) pollEvents() {

@@ -34,6 +34,7 @@
 #       molten-vk
 # ============================================================================
 
+CONFIG ?= release
 SHELL       := /bin/bash
 .SHELLFLAGS := -euo pipefail -c
 .ONESHELL:

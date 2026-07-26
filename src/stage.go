@@ -1957,7 +1957,7 @@ func (s *Stage) destroy() {
 			count++
 		}
 	}
-	Logcat(fmt.Sprintf("STAGE DESTROY: %d video(s) closed", count))
+	LogDebug("STAGE DESTROY: %d video(s) closed", count)
 }
 
 func (s *Stage) warn() string {

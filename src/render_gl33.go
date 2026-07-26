@@ -204,7 +204,7 @@ func (r *Renderer_GL33) generateTexture(width, height, depth int32, filter bool)
 		serial: textureSerialNumber,
 	}
 
-	memTextureCreated(width, height, depth, h, textureSerialNumber)
+	memTextureCreated("", width, height, depth, h, textureSerialNumber)
 
 	runtime.SetFinalizer(tex, func(t *Texture_GL33) {
 		if t.handle == 0 {
@@ -347,7 +347,7 @@ func (r *Renderer_GL33) newPaletteTexture() Texture {
 		atlasSize: r.palAtlasSize,
 	}
 
-	memTextureCreated(256, 1, 32, r.palAtlas.handle, r.palAtlas.serial)
+	memTextureCreated("palSlot", 256, 1, 32, r.palAtlas.handle, r.palAtlas.serial)
 
 	// When the texture is garbage collected (or explicitly released), return the
 	// slot to the free list and decrement the usage counter.

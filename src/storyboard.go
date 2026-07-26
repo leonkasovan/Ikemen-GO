@@ -609,7 +609,7 @@ func (s *Storyboard) Close() {
 			}
 		}
 	}
-	Logcat(fmt.Sprintf("STORYBOARD CLOSE: %d video(s) closed", count))
+	LogDebug("STORYBOARD CLOSE: %d video(s) closed", count)
 }
 
 func (s *Storyboard) step() {

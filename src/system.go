@@ -379,7 +379,7 @@ func (s *System) init(w, h int32) *lua.LState {
 
 	// Select the renderer first so we can fall back to default before doing anything
 	// This is the only time we should check s.cfg.Video.RenderMode
-	Logcat("Check A: Selecting Renderer")
+	LogMessage("Check A: Selecting Renderer")
 	gfx, gfxFont = selectRenderer(s.cfg.Video.RenderMode)
 
 	// Check the actual render name in case the config file was set up incorrectly
@@ -458,13 +458,13 @@ func (s *System) init(w, h int32) *lua.LState {
 	// PS: The "\x00" is what is know as Null Terminator.
 
 	// Init renderer
-	Logcat("Check B: Initializing GFX")
+	LogMessage("Check B: Initializing GFX")
 	gfx.Init()
 	s.window.SetSwapInterval(s.cfg.Video.VSync) // VSync must be set after Init(), or our config.ini will be ignored
 
-	Logcat("Check C: Initializing GFX Font")
+	LogMessage("Check C: Initializing GFX Font")
 	gfxFont.Init(gfx)
-	Logcat("Check D: We are GOOD")
+	LogMessage("Check D: We are GOOD")
 	gfx.BeginFrame(false)
 
 	// And the audio.
@@ -549,6 +549,7 @@ func (s *System) init(w, h int32) *lua.LState {
 }
 
 func (s *System) shutdown() {
+	LogMessage("[PHASE] Engine shutdown")
 	if !sys.gameEnd {
 		sys.gameEnd = true
 	}
@@ -816,6 +817,7 @@ func (s *System) await(fps int) bool {
 			s.window.SwapBuffers()
 		} else {
 			gfx.Await()
+			calculateFPS()
 		}
 		s.window.UpdateDebugFPS()
 		if s.isTakingScreenshot {
@@ -1015,6 +1017,7 @@ func (s *System) loaderReset() {
 }
 
 func (s *System) loadStart() {
+	LogMessage("[PHASE] Pre-match load begins — characters and stage")
 	s.loaderReset()
 	s.loader.runTread()
 }
@@ -3742,6 +3745,7 @@ func (s *System) drawDebugText() {
 // Called to start each match, on hard reset with shift+F4,
 // and at the start of any round where a new character tags in for turns mode
 func (s *System) runMatch() (reload bool) {
+	LogMessage("[PHASE] Starting match #%d, round #%d", s.matchNo, s.roundNo)
 	// Reset variables
 	s.matchTime = 0
 	s.fightLoopEnd = false
@@ -4141,6 +4145,7 @@ func (s *System) runNextRound() bool {
 			}
 
 			// Otherwise match is over
+			LogMessage("[PHASE] Match #%d ended (winner: team %d)", s.matchNo, s.winnerTeam())
 			s.postMatchFlg = true
 			s.fightLoopEnd = true
 			s.resetMatchData(false)
@@ -5874,6 +5879,8 @@ func (l *Loader) loadCharacter(pn int, attached bool) int {
 		}
 	}
 
+	LogMessage("[PHASE] Loader: loading player %d (attached=%v) — %s", pn, attached, filepath.Base(cdef))
+
 	for _, ffx := range sys.ffx {
 		prefixToDecrement := true
 		for _, fxPath := range sys.cgi[pn].fxPath {
@@ -6154,6 +6161,7 @@ func (l *Loader) loadStage() bool {
 		if sdefOW != "" {
 			def = sdefOW
 		}
+		LogMessage("[PHASE] Loader: loading stage — %s", filepath.Base(def))
 		if sys.stage != nil && sys.stage.def == def && sys.stage.mainstage && !sys.stage.reload {
 			tstr = fmt.Sprintf("Cached stage loaded: %v", def)
 			return true
@@ -6184,6 +6192,7 @@ func (l *Loader) load() {
 		l.loadExit <- l.state
 	}()
 
+	LogMessage("[PHASE] Loader running")
 	stagedTurns := sys.turnsPreloadActive()
 
 	// Load any config-driven Common FX not already cached. External modules may

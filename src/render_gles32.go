@@ -45,20 +45,20 @@ func (r *Renderer_GLES32) newShaderProgram(vert, frag, geo, name string, crashWh
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	Logcat("GLES: [LOCKED] Starting: " + name)
+	LogDebug("[GLES] [LOCKED] Starting: %s", name)
 	var vertObj, fragObj, prog uint32
 
 	vertObj, err = r.compileShader(gl.VERTEX_SHADER, vert)
 	if err != nil {
 		return nil, err
 	}
-	Logcat("GLES: Vertex Obj created: " + name)
+	LogDebug("[GLES] Vertex Obj created: %s", name)
 
 	fragObj, err = r.compileShader(gl.FRAGMENT_SHADER, frag)
 	if err != nil {
 		return nil, err
 	}
-	Logcat("GLES: Frag Obj created: " + name)
+	LogDebug("[GLES] Frag Obj created: %s", name)
 
 	// Activate the shader if it's there
 	if len(geo) > 0 {
@@ -70,20 +70,20 @@ func (r *Renderer_GLES32) newShaderProgram(vert, frag, geo, name string, crashWh
 			}
 		}
 	} else {
-		Logcat("GLES: Entering linkProgram...")
+		LogDebug("[GLES] Entering linkProgram...")
 		prog, err = r.linkProgram(vertObj, fragObj)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	Logcat("GLES: Program linked, creating struct...")
+	LogDebug("[GLES] Program linked, creating struct...")
 	s = &ShaderProgram_GLES32{program: prog, name: name}
 	s.attributes = make(map[string]int32)
 	s.uniforms = make(map[string]int32)
 	s.textures = make(map[string]int)
 
-	Logcat("GLES: Shader initialization complete for: " + name)
+	LogDebug("[GLES] Shader initialization complete for: %s", name)
 	return s, nil
 }
 
@@ -96,7 +96,7 @@ func (s *ShaderProgram_GLES32) RegisterAttributes(names ...string) {
 		cstr := gl.Str(name + "\x00")
 		loc := gl.GetAttribLocation(s.program, cstr)
 		s.attributes[name] = loc
-		Logcat(fmt.Sprintf("GLES: Attribute [%s] mapped to %d", name, loc))
+		LogDebug("[GLES] Attribute [%s] mapped to %d", name, loc)
 	}
 }
 
@@ -105,7 +105,7 @@ func (s *ShaderProgram_GLES32) RegisterUniforms(names ...string) {
 		cstr := gl.Str(name + "\x00")
 		loc := gl.GetUniformLocation(s.program, cstr)
 		s.uniforms[name] = loc
-		Logcat(fmt.Sprintf("GLES: Uniform [%s] mapped to %d", name, loc))
+		LogDebug("[GLES] Uniform [%s] mapped to %d", name, loc)
 	}
 }
 
@@ -115,7 +115,7 @@ func (s *ShaderProgram_GLES32) RegisterTextures(names ...string) {
 		loc := gl.GetUniformLocation(s.program, cstr)
 		s.uniforms[name] = loc
 		s.textures[name] = len(s.textures)
-		Logcat(fmt.Sprintf("GLES: Texture [%s] mapped to %d", name, loc))
+		LogDebug("[GLES] Texture [%s] mapped to %d", name, loc)
 	}
 }
 
@@ -140,8 +140,8 @@ func (r *Renderer_GLES32) compileShader(shaderType uint32, src string) (uint32, 
 		typeName = "FRAGMENT"
 	}
 
-	Logcat(fmt.Sprintf("GLES: Compiling %s Shader...", typeName))
-	// Logcat("DEBUG SHADER SRC:\n" + fullSrc) // Keep for emergencies
+	LogDebug("[GLES] Compiling %s Shader...", typeName)
+	// LogDebug("[GLES] DEBUG SHADER SRC:\n%s", fullSrc) // Keep for emergencies
 
 	// 2. MEMORY PINNING
 	csource, free := gl.Strs(fullSrc)
@@ -162,13 +162,13 @@ func (r *Renderer_GLES32) compileShader(shaderType uint32, src string) (uint32, 
 			logBytes := make([]byte, logLength)
 			gl.GetShaderInfoLog(shader, logLength, nil, (*uint8)(unsafe.Pointer(&logBytes[0])))
 			err := fmt.Errorf("GLES %s Shader Err: %s", typeName, string(logBytes))
-			Logcat("GLES Error: " + err.Error())
+			LogError("[GLES] Error: %v", err)
 			return 0, err
 		}
 		return 0, fmt.Errorf("GLES %s Shader Err: Unknown error", typeName)
 	}
 
-	Logcat(fmt.Sprintf("GLES: %s ready.", typeName))
+	LogDebug("[GLES] %s ready.", typeName)
 	return shader, nil
 }
 
@@ -183,7 +183,7 @@ func (r *Renderer_GLES32) linkProgram(params ...uint32) (program uint32, err err
 	// 	gl.ProgramParameteri(program, gl.GEOMETRY_OUTPUT_TYPE, gl.TRIANGLE_STRIP)
 	// 	gl.ProgramParameteri(program, gl.GEOMETRY_VERTICES_OUT, 3*6)
 	// }
-	Logcat("GLES: Linking program...")
+	LogDebug("[GLES] Linking program...")
 	gl.LinkProgram(program)
 	// Mark shaders for deletion when the program is deleted
 	for _, param := range params {
@@ -203,12 +203,12 @@ func (r *Renderer_GLES32) linkProgram(params ...uint32) (program uint32, err err
 		} else {
 			err = fmt.Errorf("Unknown link error")
 		}
-		Logcat("GLES: " + err.Error())
+		LogError("[GLES] Error: %v", err)
 		gl.DeleteProgram(program)
 		return 0, err
 	}
 
-	Logcat("GLES: Link Successful!")
+	LogDebug("[GLES] Link Successful!")
 	return program, nil
 }
 
@@ -529,7 +529,7 @@ func (t *Texture_GLES32) SetSubData(data []byte, x, y, width, height, stride int
 	}
 
 	if err := gl.GetError(); err != 0 {
-		Logcat(fmt.Sprintf("GL ERROR in SetSubData: %v | w:%d h:%d s:%d", err, width, height, stride))
+		LogError("GL ERROR in SetSubData: %v | w:%d h:%d s:%d", err, width, height, stride)
 	}
 
 	if rowLength != 0 {
@@ -725,6 +725,7 @@ type Renderer_GLES32 struct {
 
 	enableModel  bool
 	enableShadow bool
+	debugMode    bool
 
 	// Palette atlas
 	palAtlas      *Texture_GLES32   // Shared atlas texture for all palettes
@@ -856,10 +857,10 @@ func (r *Renderer_GLES32) Init() {
 	if runtime.GOOS != "android" {
 		LogMessage("Using OpenGL %v (%v)", gl.GoStr(gl.GetString(gl.VERSION)), gl.GoStr(gl.GetString(gl.RENDERER)))
 	} else {
-		Logcat(fmt.Sprintf("Using OpenGL %v (%v)", gl.GoStr(gl.GetString(gl.VERSION)), gl.GoStr(gl.GetString(gl.RENDERER))))
+		LogMessage("[GLES] Using OpenGL %v (%v)", gl.GoStr(gl.GetString(gl.VERSION)), gl.GoStr(gl.GetString(gl.RENDERER)))
 	}
 
-	// Logcat("GLES: Querying Max Samples")
+	// LogDebug("[GLES] Querying Max Samples")
 	// var maxSamples int32
 	// gl.GetIntegerv(gl.MAX_SAMPLES, &maxSamples)
 	// if sys.msaa > maxSamples {
@@ -867,7 +868,7 @@ func (r *Renderer_GLES32) Init() {
 	// 	sys.msaa = maxSamples
 	// }
 	sys.msaa = 0
-	Logcat("GLES: Past MSAA check")
+	LogDebug("[GLES] Past MSAA check")
 
 	r.customShaders = make(map[uint32]*ShaderProgram_GLES32)
 	r.customShaderMap = make(map[string]uint32)
@@ -880,39 +881,43 @@ func (r *Renderer_GLES32) Init() {
 	r.enableModel = sys.cfg.Video.EnableModel
 	r.enableShadow = sys.cfg.Video.EnableModelShadow
 
+	if sys.cfg.Video.RendererDebugMode {
+		r.EnableDebug()
+	}
+
 	// Generate VAO's
 	gl.GenVertexArrays(1, &r.spriteVAO)
 	gl.GenVertexArrays(1, &r.modelVAO)
 	gl.GenVertexArrays(1, &r.modelEnvVAO)
 	gl.GenVertexArrays(1, &r.postVAO)
-	Logcat("GLES: Sprite, model and post VAO's generated")
+	LogDebug("[GLES] Sprite, model and post VAO's generated")
 
-	//Logcat("GLES: VAO Bound")
+	//LogDebug("[GLES] VAO Bound")
 
 	// Generate buffers
 	gl.GenBuffers(1, &r.vertexBuffer)
-	Logcat("GLES: VertexBuffer Generated")
+	LogDebug("[GLES] VertexBuffer Generated")
 
 	gl.GenBuffers(1, &r.modelVertexBuffer[0])
 	gl.GenBuffers(1, &r.modelVertexBuffer[1])
-	Logcat("GLES: ModelVertexBuffers Generated")
+	LogDebug("[GLES] ModelVertexBuffers Generated")
 
 	gl.GenBuffers(1, &r.modelIndexBuffer[0])
 	gl.GenBuffers(1, &r.modelIndexBuffer[1])
-	Logcat("GLES: ModelIndexBuffers Generated")
+	LogDebug("[GLES] ModelIndexBuffers Generated")
 
 	gl.GenBuffers(1, &r.postVertBuffer)
-	Logcat("GLES: PostVertBuffer Generated")
+	LogDebug("[GLES] PostVertBuffer Generated")
 
 	// Initialize post-processing vertex buffer
 	gl.BindBuffer(gl.ARRAY_BUFFER, r.postVertBuffer)
-	Logcat(fmt.Sprintf("GLES: Data Size: %d", len(postVertData)))
+	LogDebug("[GLES] Data Size: %d", len(postVertData))
 
 	if len(postVertData) > 0 {
 		gl.BufferData(gl.ARRAY_BUFFER, len(postVertData), unsafe.Pointer(&postVertData[0]), gl.STATIC_DRAW)
-		Logcat("GLES: PostVertBuffer Data Uploaded")
+		LogDebug("[GLES] PostVertBuffer Data Uploaded")
 	} else {
-		Logcat("GLES: ERROR - postVertData is empty!")
+		LogError("[GLES] Error: postVertData is empty!")
 	}
 
 	// Unbind for safety
@@ -1005,7 +1010,7 @@ func (r *Renderer_GLES32) Init() {
 
 	// Don't change this from gl.RGBA.
 	// It breaks mixing between subtractive and additive.
-	Logcat("GLES: Creating RGBA Textures")
+	LogDebug("[GLES] Creating RGBA Textures")
 	gl.TexImage2D(
 		gl.TEXTURE_2D,
 		0,
@@ -1191,9 +1196,9 @@ func (r *Renderer_GLES32) InitStateCache() {
 	var maxTex int32
 	gl.GetIntegerv(gl.MAX_TEXTURE_IMAGE_UNITS, &maxTex)
 
-	//if r.debugMode {
-	//	fmt.Printf("[GL Debug] GPU supports up to %d textures\n", maxTex)
-	//}
+	if r.debugMode {
+		LogMessage("[GL Debug] GPU supports up to %d textures", maxTex)
+	}
 
 	// Initialize sprite texture cache
 	r.texCacheTexSerial = make([]uint64, maxTex)
@@ -1208,7 +1213,32 @@ func (r *Renderer_GLES32) InitStateCache() {
 }
 
 func (r *Renderer_GLES32) EnableDebug() {
-	// Do nothing yet
+	r.debugMode = true
+	gl.Enable(gl.DEBUG_OUTPUT)
+	gl.Enable(gl.DEBUG_OUTPUT_SYNCHRONOUS)
+
+	gl.DebugMessageCallback(func(
+		source uint32,
+		gltype uint32,
+		id uint32,
+		severity uint32,
+		length int32,
+		message string,
+		userParam unsafe.Pointer) {
+
+		if severity == gl.DEBUG_SEVERITY_NOTIFICATION {
+			return
+		}
+
+		LogMessage("[GL Debug] %s", message)
+
+		// Crash here so the log catches it
+		if severity == gl.DEBUG_SEVERITY_HIGH {
+			panic("Critical OpenGL Error Detected!")
+		}
+	}, nil)
+
+	LogMessage("[GL Debug] OpenGL ES debug mode enabled")
 }
 
 func (r *Renderer_GLES32) IsModelEnabled() bool {
@@ -2031,9 +2061,9 @@ func (r *Renderer_GLES32) SetUniformMatrix(name string, value []float32) {
 func (r *Renderer_GLES32) SetModelUniformI(name string, val int) {
 	loc, ok := r.modelShader.uniforms[name]
 	if !ok || loc < 0 {
-		//if r.debugMode {
-		//	fmt.Printf("[GL Debug] Model uniform '%s' not registered\n", name)
-		//}
+		if r.debugMode {
+			LogMessage("[GL Debug] Model uniform '%s' not registered", name)
+		}
 		return
 	}
 	r.SetUniformISub(loc, int32(val))
@@ -2042,9 +2072,9 @@ func (r *Renderer_GLES32) SetModelUniformI(name string, val int) {
 func (r *Renderer_GLES32) SetModelUniformF(name string, values ...float32) {
 	loc, ok := r.modelShader.uniforms[name]
 	if !ok || loc < 0 {
-		//if r.debugMode {
-		//	fmt.Printf("[GL Debug] Model uniform '%s' not registered\n", name)
-		//}
+		if r.debugMode {
+			LogMessage("[GL Debug] Model uniform '%s' not registered", name)
+		}
 		return
 	}
 	r.SetUniformFSub(loc, values...)
@@ -2053,9 +2083,9 @@ func (r *Renderer_GLES32) SetModelUniformF(name string, values ...float32) {
 func (r *Renderer_GLES32) SetModelUniformFv(name string, values []float32) {
 	loc, ok := r.modelShader.uniforms[name]
 	if !ok || loc < 0 {
-		//if r.debugMode {
-		//	fmt.Printf("[GL Debug] Model uniform '%s' not registered\n", name)
-		//}
+		if r.debugMode {
+			LogMessage("[GL Debug] Model uniform '%s' not registered", name)
+		}
 		return
 	}
 	r.SetUniformFvSub(loc, values)
@@ -2064,9 +2094,9 @@ func (r *Renderer_GLES32) SetModelUniformFv(name string, values []float32) {
 func (r *Renderer_GLES32) SetModelUniformMatrix(name string, value []float32) {
 	loc, ok := r.modelShader.uniforms[name]
 	if !ok || loc < 0 {
-		//if r.debugMode {
-		//	fmt.Printf("[GL Debug] Model uniform '%s' not registered\n", name)
-		//}
+		if r.debugMode {
+			LogMessage("[GL Debug] Model uniform '%s' not registered", name)
+		}
 		return
 	}
 	gl.UniformMatrix4fv(loc, 1, false, &value[0])
@@ -2075,9 +2105,9 @@ func (r *Renderer_GLES32) SetModelUniformMatrix(name string, value []float32) {
 func (r *Renderer_GLES32) SetModelUniformMatrix3(name string, value []float32) {
 	loc, ok := r.modelShader.uniforms[name]
 	if !ok || loc < 0 {
-		//if r.debugMode {
-		//	fmt.Printf("[GL Debug] Model uniform '%s' not registered\n", name)
-		//}
+		if r.debugMode {
+			LogMessage("[GL Debug] Model uniform '%s' not registered", name)
+		}
 		return
 	}
 	gl.UniformMatrix3fv(loc, 1, false, &value[0])
@@ -2086,9 +2116,9 @@ func (r *Renderer_GLES32) SetModelUniformMatrix3(name string, value []float32) {
 func (r *Renderer_GLES32) SetShadowMapUniformI(name string, val int) {
 	loc, ok := r.shadowMapShader.uniforms[name]
 	if !ok || loc < 0 {
-		//if r.debugMode {
-		//	fmt.Printf("[GL Debug] Shadow uniform '%s' not registered\n", name)
-		//}
+		if r.debugMode {
+			LogMessage("[GL Debug] Shadow uniform '%s' not registered", name)
+		}
 		return
 	}
 	r.SetUniformISub(loc, int32(val))
@@ -2097,9 +2127,9 @@ func (r *Renderer_GLES32) SetShadowMapUniformI(name string, val int) {
 func (r *Renderer_GLES32) SetShadowMapUniformF(name string, values ...float32) {
 	loc, ok := r.shadowMapShader.uniforms[name]
 	if !ok || loc < 0 {
-		//if r.debugMode {
-		//	fmt.Printf("[GL Debug] Shadow uniform '%s' not registered\n", name)
-		//}
+		if r.debugMode {
+			LogMessage("[GL Debug] Shadow uniform '%s' not registered", name)
+		}
 		return
 	}
 	r.SetUniformFSub(loc, values...)
@@ -2108,9 +2138,9 @@ func (r *Renderer_GLES32) SetShadowMapUniformF(name string, values ...float32) {
 func (r *Renderer_GLES32) SetShadowMapUniformFv(name string, values []float32) {
 	loc, ok := r.shadowMapShader.uniforms[name]
 	if !ok || loc < 0 {
-		//if r.debugMode {
-		//	fmt.Printf("[GL Debug] Shadow uniform '%s' not registered\n", name)
-		//}
+		if r.debugMode {
+			LogMessage("[GL Debug] Shadow uniform '%s' not registered", name)
+		}
 		return
 	}
 	r.SetUniformFvSub(loc, values)
@@ -2119,9 +2149,9 @@ func (r *Renderer_GLES32) SetShadowMapUniformFv(name string, values []float32) {
 func (r *Renderer_GLES32) SetShadowMapUniformMatrix(name string, value []float32) {
 	loc, ok := r.shadowMapShader.uniforms[name]
 	if !ok || loc < 0 {
-		//if r.debugMode {
-		//	fmt.Printf("[GL Debug] Shadow uniform '%s' not registered\n", name)
-		//}
+		if r.debugMode {
+			LogMessage("[GL Debug] Shadow uniform '%s' not registered", name)
+		}
 		return
 	}
 	gl.UniformMatrix4fv(loc, 1, false, &value[0])
@@ -2130,9 +2160,9 @@ func (r *Renderer_GLES32) SetShadowMapUniformMatrix(name string, value []float32
 func (r *Renderer_GLES32) SetShadowMapUniformMatrix3(name string, value []float32) {
 	loc, ok := r.shadowMapShader.uniforms[name]
 	if !ok || loc < 0 {
-		//if r.debugMode {
-		//	fmt.Printf("[GL Debug] Shadow uniform '%s' not registered\n", name)
-		//}
+		if r.debugMode {
+			LogMessage("[GL Debug] Shadow uniform '%s' not registered", name)
+		}
 		return
 	}
 	gl.UniformMatrix3fv(loc, 1, false, &value[0])
@@ -2444,7 +2474,7 @@ func (r *Renderer_GLES32) LoadCustomSpriteShader(shaderName string, shaderData [
 
 	shader, err := r.newShaderProgram(vertShader, fragSource, "", "Custom Shader: "+shaderName, false)
 	if err != nil {
-		Logcat(fmt.Sprintf("[GLES Error] Failed to compile custom shader %s: %v", shaderName, err))
+		LogError("[GLES] Error: Failed to compile custom shader %s: %v", shaderName, err)
 		return 0
 	}
 
@@ -2475,7 +2505,7 @@ func (r *Renderer_GLES32) UnloadCustomSpriteShader(shaderName string) {
 			}
 		}
 		delete(r.customShaderMap, shaderName)
-		//Logcat(fmt.Sprintf("Unloaded Custom GLES Shader: %s", shaderName))
+		//LogDebug("Unloaded Custom GLES Shader: %s", shaderName)
 	}
 }
 

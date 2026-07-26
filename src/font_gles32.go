@@ -430,12 +430,12 @@ func (f *Font_GLES32) GenerateGlyphs(low, high rune) error {
 				c2.SetDst(rgba)
 				c2.SetSrc(fg)
 				if _, err := c2.DrawString(string(ch), pt); err != nil {
-					Logcat(fmt.Sprintf("GLES: ERROR DRAWING STRING: %v", err.Error()))
+					LogError("[GLES] Error drawing string: %v", err)
 					return err
 				}
 			}
 		}
-		// Logcat(fmt.Sprintf("Char: %c | Box: %dx%d | Dot: %v | Bounds: %v\n", ch, gw, gh, pt, gBnd))
+		// LogDebug("Char: %c | Box: %dx%d | Dot: %v | Bounds: %v", ch, gw, gh, pt, gBnd)
 
 		var uv [4]float32
 		textureIndex := 0
@@ -476,7 +476,7 @@ func (f *Font_GLES32) GenerateGlyphs(low, high rune) error {
 
 		char.uv = uv
 		char.textureID = texAtlas.texture.(*Texture_GLES32).handle
-		// Logcat(fmt.Sprintf("GLES: Texture ID: %v", texAtlas.texture.(*Texture_GLES32).handle))
+		// LogDebug("[GLES] Texture ID: %v", texAtlas.texture.(*Texture_GLES32).handle)
 
 		//add char to fontChar list
 		f.fontChar[ch] = char
@@ -513,7 +513,7 @@ func (r *FontRenderer_GLES32) LoadTrueTypeFont(reader io.Reader, scale int32, lo
 
 	err = f.GenerateGlyphs(low, high)
 	if err != nil {
-		Logcat(fmt.Sprintf("Error generating glyphs: %v", err.Error()))
+		LogError("Error generating glyphs: %v", err)
 		return nil, err
 	}
 
@@ -524,7 +524,7 @@ func (r *FontRenderer_GLES32) LoadTrueTypeFont(reader io.Reader, scale int32, lo
 func (r *FontRenderer_GLES32) newProgram(version uint, vertexSrc, fragmentSrc string) {
 	var err error
 	if r.shaderProgram, err = gfx.(*Renderer_GLES32).newShaderProgram(vertexSrc, fragmentSrc, "", "font shader", true); err != nil {
-		Logcat(fmt.Sprintf("Error loading font shader: %v", err.Error()))
+		LogError("Error loading font shader: %v", err)
 	}
 	r.shaderProgram.RegisterUniforms("textColor", "resolution", "tex", "palAdd", "palMul", "palGray", "palHue", "palNeg")
 }

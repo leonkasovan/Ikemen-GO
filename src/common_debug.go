@@ -3,6 +3,9 @@
 package main
 
 import (
+	"fmt"
+	"net/http"
+	_ "net/http/pprof"
 	"runtime"
 	"sync/atomic"
 	"time"
@@ -12,6 +15,9 @@ import (
 // It gates the [Mem] logging used for the asset-loading / drawing
 // memory analysis described in PLANS.md.
 const DebugMem = true
+
+// ProfilePort is the port the pprof HTTP server listens on in debug builds.
+const ProfilePort = 6060
 
 // Live counters for the GL33 asset-texture pool.
 var (
@@ -90,11 +96,12 @@ func memBpp(depth int32) int32 {
 
 // memLog writes a [Mem] prefixed line to the engine log (stderr).
 func memLog(format string, a ...any) {
-	LogMessage("[Mem] "+format, a...)
+	LogDebug("[Mem] "+format, a...)
 }
 
 // memTextureCreated records a GL asset-texture allocation (generateTexture).
-func memTextureCreated(width, height, depth int32, handle uint32, serial uint64) {
+// tag is a short descriptor (e.g. "palSlot") to identify the texture type.
+func memTextureCreated(tag string, width, height, depth int32, handle uint32, serial uint64) {
 	n := atomic.AddInt64(&memTextureAlive, 1)
 	bytes := uint64(width) * uint64(height) * uint64(memBpp(depth))
 	newTotal := atomic.AddUint64(&memGPUBytes, bytes)
@@ -105,8 +112,13 @@ func memTextureCreated(width, height, depth int32, handle uint32, serial uint64)
 			break
 		}
 	}
-	memLog("Texture created: %dx%dx%d handle=%d serial=%d alive=%d gpuBytes=%d",
-		width, height, depth, handle, serial, n, newTotal)
+	if tag != "" {
+		memLog("Texture created: %dx%dx%d handle=%d serial=%d alive=%d gpuBytes=%d [%s]",
+			width, height, depth, handle, serial, n, newTotal, tag)
+	} else {
+		memLog("Texture created: %dx%dx%d handle=%d serial=%d alive=%d gpuBytes=%d",
+			width, height, depth, handle, serial, n, newTotal)
+	}
 }
 
 // memTextureFreed records a GL asset-texture deallocation (finalizer).
@@ -184,7 +196,7 @@ func memMonitorStart() {
 					m.HeapObjects, runtime.NumGoroutine(), atomic.LoadInt64(&memTextureAlive))
 				lastNumGC = m.NumGC
 			}
-					used := atomic.LoadInt64(&palSlotsUsed)
+			used := atomic.LoadInt64(&palSlotsUsed)
 			peak := atomic.LoadInt64(&palSlotsMax)
 			total := atomic.LoadInt64(&palSlotsTotal)
 			paltemps := atomic.LoadInt64(&palhashCount)
@@ -197,12 +209,30 @@ func memMonitorStart() {
 				atomic.LoadUint64(&memGPUBytesPeak))
 			// Warn if palette slot usage exceeds the atlas capacity
 			if total > 0 && used >= total {
-				memLog("WARNING: Palette atlas exhausted! Used %d of %d slots — consider increasing PaletteAtlasSize",
+				memLog("[WARN] Palette atlas exhausted! Used %d of %d slots — consider increasing PaletteAtlasSize",
 					used, total)
 			} else if total > 0 && used >= total*90/100 {
-				memLog("WARNING: Palette atlas nearly full! Used %d of %d slots (%d%%)",
+				memLog("[WARN] Palette atlas nearly full! Used %d of %d slots (%d%%)",
 					used, total, used*100/total)
 			}
+		}
+	}()
+}
+
+// startProfiler launches a pprof HTTP server on localhost:ProfilePort so you
+// can capture heap and CPU profiles with:
+//
+//	go tool pprof http://localhost:6060/debug/pprof/heap
+//	go tool pprof http://localhost:6060/debug/pprof/profile?seconds=30
+//
+// Only built with -tags debug; release builds stub this out entirely.
+func startProfiler() {
+	addr := fmt.Sprintf("localhost:%d", ProfilePort)
+	LogMessage("[PProf] heap profile server on http://%s/debug/pprof/heap", addr)
+	LogMessage("[PProf] run: go tool pprof http://%s/debug/pprof/heap", addr)
+	go func() {
+		if err := http.ListenAndServe(addr, nil); err != nil {
+			LogMessage("[PProf] server error: %v", err)
 		}
 	}()
 }

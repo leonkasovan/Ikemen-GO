@@ -10,17 +10,10 @@ package main
 import "C"
 import (
 	"fmt"
-	"io"
-	"os"
 	"unsafe"
 
 	findfont "github.com/flopp/go-findfont"
 )
-
-// Log writer implementation
-func NewLogWriter() io.Writer {
-	return os.Stderr
-}
 
 // Message box implementation using stderr
 func ShowInfoDialog(message, title string) {
@@ -72,6 +65,3 @@ func selectRenderer(cfgVal string) (Renderer, FontRenderer) {
 	return &Renderer_GLES32{}, &FontRenderer_GLES32{}
 }
 
-func Logcat(s string) {
-	fmt.Println(s)
-}

@@ -68,7 +68,7 @@ func realMain() {
 	}()
 
 	if runtime.GOOS == "android" {
-		Logcat("Inside realMain...")
+		LogDebug("Inside realMain...")
 		runtime.LockOSThread()
 		sdl.GLSetAttribute(sdl.GL_CONTEXT_PROFILE_MASK, sdl.GL_CONTEXT_PROFILE_ES)
 		sdl.GLSetAttribute(sdl.GL_CONTEXT_MAJOR_VERSION, 3)
@@ -88,13 +88,13 @@ func realMain() {
 			panic("FATAL: Android baseDir not set")
 		}
 
-		Logcat("sys.baseDir is: " + sys.baseDir)
+		LogDebug("sys.baseDir is: %s", sys.baseDir)
 
 		// Check if the directory even exists to Go
 		if info, err := os.Stat(sys.baseDir); err != nil {
-			Logcat(fmt.Sprintf("LOG: STAT ERROR: %v\n", err))
+			LogError("[INIT] STAT ERROR: %v", err)
 		} else {
-			Logcat(fmt.Sprintf("LOG: STAT OK: %s is a dir: %v\n", sys.baseDir, info.IsDir()))
+			LogDebug("[INIT] STAT OK: %s is a dir: %v", sys.baseDir, info.IsDir())
 		}
 
 		// FIX 1: Explicitly initialize os.Args before processCommandLine
@@ -103,18 +103,18 @@ func realMain() {
 		}
 
 		if err := os.Chdir(sys.baseDir); err != nil {
-			Logcat(fmt.Sprintf("LOG: CHDIR FAILED: %v\n", err))
+			LogError("[INIT] CHDIR FAILED: %v", err)
 			// Don't panic yet, let's see if we can continue
 		} else {
-			Logcat("LOG: CHDIR SUCCESSFUL")
+			LogDebug("[INIT] CHDIR SUCCESSFUL")
 		}
 
 		// Init SDL NOW
 		if err := sdl.Init(sdl.INIT_AUDIO | sdl.INIT_VIDEO | sdl.INIT_EVENTS | sdl.INIT_TIMER); err != nil {
-			Logcat("LOG: SDL Init Failed: " + err.Error())
+			LogError("[INIT] SDL Init Failed: %v", err)
 			return
 		}
-		Logcat("LOG: SDL Init SUCCESS")
+		LogDebug("[INIT] SDL Init SUCCESS")
 	} else {
 		sys.baseDir = "./"
 	}
@@ -154,7 +154,7 @@ func realMain() {
 	if runtime.GOOS == "android" {
 		sdl.InitSubSystem(sdl.INIT_JOYSTICK)
 		sdl.InitSubSystem(sdl.INIT_GAMECONTROLLER)
-		Logcat("LOG: Subsystems initialized!")
+		LogDebug("[INIT] Subsystems initialized!")
 	}
 
 	// Init the SDL LUT's
@@ -166,10 +166,10 @@ func realMain() {
 		configPath = val
 	}
 
-	// Logcat("LOG: Loading config from: " + configPath)
+	// LogDebug("[INIT] Loading config from: %s", configPath)
 	cfg, err := loadConfig(configPath)
 	if err != nil {
-		Logcat("LOG: loadConfig failed: " + err.Error())
+		LogError("[INIT] loadConfig failed: %v", err)
 		// For Android, let's see exactly what failed
 		panic(err)
 	}
@@ -178,7 +178,7 @@ func realMain() {
 		cfg.Video.RenderMode = "OpenGL ES 3.2"
 	}
 	sys.cfg = *cfg
-	// Logcat("LOG: Config Loaded. System Script: " + sys.cfg.Config.System)
+	// LogDebug("[INIT] Config Loaded. System Script: %s", sys.cfg.Config.System)
 
 	if sys.cfg.Debug.DumpLuaTables {
 		os.MkdirAll(filepath.Join(sys.baseDir, "debug"), permission)
@@ -187,7 +187,7 @@ func realMain() {
 	// Check Lua file path
 	ftemp, err := os.Open(sys.cfg.Config.System)
 	if err != nil {
-		Logcat("LOG: LUA OPEN FAILED: " + err.Error())
+		LogError("[INIT] LUA OPEN FAILED: %v", err)
 		panic(err)
 	}
 	ftemp.Close()
@@ -216,6 +216,7 @@ func realMain() {
 	// Begin processing game using its lua scripts
 	memMonitorStart()
 	startProfiler()
+	LogMessage("[PHASE] Lua system script start — screen selection / menu / intro")
 	if err := sys.luaLState.DoFile(sys.cfg.Config.System); err != nil {
 		if strings.Contains(err.Error(), "<game end>") {
 			handleExit()

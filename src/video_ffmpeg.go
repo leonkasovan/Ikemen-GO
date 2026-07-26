@@ -121,7 +121,7 @@ func drainFrames(ch <-chan *image.RGBA) {
 }
 
 func (bgv *bgVideo) Open(filename string, volume int, sm BgVideoScaleMode, sf BgVideoScaleFilter, loop bool) error {
-	Logcat(fmt.Sprintf("VIDEO OPEN: %s (loop=%v)", filename, loop))
+	LogDebug("VIDEO OPEN: %s (loop=%v)", filename, loop)
 	// fmt.Println("Opening media file:", filename)
 	m, err := reisen.NewMedia(filename)
 	if err != nil {
@@ -707,7 +707,7 @@ func (bgv *bgVideo) MixerCleared() {
 
 // Close stops decoding and frees resources. Safe to call multiple times.
 func (bgv *bgVideo) Close() {
-	Logcat("VIDEO CLOSE: shutting down decoder")
+	LogDebug("VIDEO CLOSE: shutting down decoder")
 	// Quiesce producers and renderer first.
 	bgv.SetPlaying(false)
 	bgv.SetVisible(false)

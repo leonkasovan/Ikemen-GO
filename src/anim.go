@@ -691,7 +691,7 @@ func (a *Animation) UpdateSprite() {
 						a.sff.debugMissing = make(map[[2]uint16]bool)
 					}
 					if !a.sff.debugMissing[key] {
-						LogMessage("WARNING: Animation missing sprite %v,%v from %v", group, number, a.sff.filename)
+						LogMessage("[WARN] Animation missing sprite %v,%v from %v", group, number, a.sff.filename)
 						a.sff.debugMissing[key] = true
 					}
 				}
@@ -1168,14 +1168,14 @@ func (at AnimationTable) readAction(sff *Sff, pal *PaletteList, lines []string, 
 		no, a, err := ReadAction(sff, pal, lines, i)
 		// Animation errors do not crash Mugen. But we can log them
 		if log && err != nil {
-			LogMessage("WARNING: Action %v in %v: %v", no, at.filename, err.Error())
+			LogMessage("[WARN] Action %v in %v: %v", no, at.filename, err.Error())
 		}
 		if a != nil {
 			// In case of duplicate action numbers, just use the first one
 			// Even if first one is "Copy Action"
 			if existing := at.anims[no]; existing != nil {
 				if log {
-					LogMessage("WARNING: Duplicate action key in %v: %v (ignored)", at.filename, no)
+					LogMessage("[WARN] Duplicate action key in %v: %v (ignored)", at.filename, no)
 				}
 				return existing
 			}
@@ -1186,7 +1186,7 @@ func (at AnimationTable) readAction(sff *Sff, pal *PaletteList, lines []string, 
 			logged := false
 			for len(a.frames) == 0 && *i < len(lines) && a.copyAction < 0 {
 				if !logged && log {
-					LogMessage("WARNING: Action %v in %v has no valid frames", no, at.filename)
+					LogMessage("[WARN] Action %v in %v has no valid frames", no, at.filename)
 					logged = true
 				}
 				if a2 := at.readAction(sff, pal, lines, i, log); a2 != nil {

@@ -567,7 +567,7 @@ func (bgm *Bgm) UpdateVolume() {
 	}
 	// TODO: Throw a debug warning if this triggers
 	if bgm.bgmVolume > sys.cfg.Sound.MaxBGMVolume {
-		LogMessage("WARNING: BGM volume set beyond expected range (value: %v). Clamped to MaxBgmVolume", bgm.bgmVolume)
+		LogMessage("[WARN] BGM volume set beyond expected range (value: %v). Clamped to MaxBgmVolume", bgm.bgmVolume)
 		bgm.bgmVolume = sys.cfg.Sound.MaxBGMVolume
 	}
 
@@ -860,7 +860,7 @@ func LoadSndFiltered(filename string, keepItem func([2]int32) bool, max uint32) 
 		if keepItem(num) {
 			_, exists := s.table[num]
 			if exists {
-				LogMessage("WARNING: Duplicate sound key in %v: %v,%v (index %v ignored)", filename, num[0], num[1], i)
+				LogMessage("[WARN] Duplicate sound key in %v: %v,%v (index %v ignored)", filename, num[0], num[1], i)
 			} else {
 				tmp, err := readSound(f, subFileLength)
 				if err != nil {

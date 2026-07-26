@@ -35,8 +35,6 @@ static void prepare_go_runtime() {
 import "C"
 import (
 	"fmt"
-	"io"
-	"os"
 	"path/filepath"
 	"runtime"
 	"unsafe"
@@ -50,12 +48,6 @@ var (
 )
 
 func init() {
-}
-
-// Log writer implementation
-// On Android, writing to Stderr usually redirects to Logcat
-func NewLogWriter() io.Writer {
-	return os.Stderr
 }
 
 // TTF font loading
@@ -80,7 +72,7 @@ func LoadFntTtf(f *Fnt, fontfile string, filename string, height int32) {
 		if found, err := findfont.Find(fileDir); err == nil {
 			fileDir = found
 		} else {
-			Logcat(fmt.Sprintf("Font search failed for %s, trying direct path...", filename))
+			LogDebug("Font search failed for %s, trying direct path...", filename)
 		}
 	}
 
@@ -95,7 +87,7 @@ func LoadFntTtf(f *Fnt, fontfile string, filename string, height int32) {
 	ttf, err := gfxFont.LoadFont(fileDir, height, int(sys.gameWidth), int(sys.gameHeight))
 	if err != nil {
 		// Instead of a pure panic, log exactly where it looked
-		Logcat(fmt.Sprintf("ERROR: Failed to load TTF from %s", fileDir))
+		LogError("[ERROR] Failed to load TTF from %s", fileDir)
 		panic(fmt.Errorf("failed to load ttf font %v: %w", fileDir, err))
 	}
 
@@ -111,11 +103,11 @@ func LoadFntTtf(f *Fnt, fontfile string, filename string, height int32) {
 // Message box implementation
 // Android doesn't have a simple "dialog" package like desktop.
 func ShowInfoDialog(message, title string) {
-	Logcat(fmt.Sprintf("INFO [%s]: %s", title, message))
+	LogMessage("INFO [%s]: %s", title, message)
 }
 
 func ShowErrorDialog(message string) {
-	Logcat(fmt.Sprintf("CRITICAL ERROR: %s", message))
+	LogError("CRITICAL ERROR: %s", message)
 }
 
 //export SDL_main
@@ -125,7 +117,7 @@ func SDL_main(argc C.int, argv **C.char) C.int {
 	// Wait for JNI to tell us the path is ready
 	<-extractionDone
 
-	Logcat("SDL_main: Path ready, jumping to realMain")
+	LogDebug("SDL_main: Path ready, jumping to realMain")
 
 	// Set the baseDir before starting
 	sys.baseDir = baseDir
@@ -162,14 +154,10 @@ func Java_org_libsdl_app_SDLActivity_nativeOnSDLReady(env *C.JNIEnv, clazz C.jcl
 	// Signal the Go thread to wake up
 	select {
 	case extractionDone <- true:
-		Logcat("JNI: Signal sent to Go")
+		LogDebug("JNI: Signal sent to Go")
 	default:
-		Logcat("JNI: Signal already sent")
+		LogDebug("JNI: Signal already sent")
 	}
 }
 
-func Logcat(s string) {
-	cs := C.CString(s)
-	C.__android_log_write(C.ANDROID_LOG_INFO, C.CString("ikemen"), cs)
-	C.free(unsafe.Pointer(cs))
-}
+

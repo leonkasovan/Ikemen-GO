@@ -863,13 +863,7 @@ func (e Error) Error() string {
 	return string(e)
 }
 
-// Replaces sys.errLog print calls because those only worked on Windows if Ikemen was built with a paired terminal
-func LogMessage(format string, a ...any) {
-	//now := time.Now().Format("15:04:05")
-	msg := fmt.Sprintf(format, a...)
-	//fmt.Fprintf(os.Stderr, "[%s] %s\n", now, msg)
-	fmt.Fprintf(os.Stderr, "%s\n", msg)
-}
+
 
 type IniSection map[string]string
 
