@@ -910,13 +910,12 @@ func (s *Sprite) readPcxHeader(r io.ReadSeeker, offset int64) error {
 	return nil
 }
 
-func (s *Sprite) RlePcxDecode(rle []byte) (p []byte) {
-	if len(rle) == 0 || s.rle <= 0 {
-		return rle
+func (s *Sprite) rlePcxDecodeInto(rle []byte, dst []byte) {
+	if len(rle) == 0 || s.rle <= 0 || len(dst) == 0 {
+		return
 	}
-	p = make([]byte, int(s.Size[0])*int(s.Size[1]))
 	i, j, k, w := 0, 0, 0, int(s.Size[0])
-	for j < len(p) {
+	for j < len(dst) {
 		n, d := 1, rle[i]
 		if i < len(rle)-1 {
 			i++
@@ -929,8 +928,8 @@ func (s *Sprite) RlePcxDecode(rle []byte) (p []byte) {
 			}
 		}
 		for ; n > 0; n-- {
-			if k < w && j < len(p) {
-				p[j] = d
+			if k < w && j < len(dst) {
+				dst[j] = d
 				j++
 			}
 			k++
@@ -941,6 +940,14 @@ func (s *Sprite) RlePcxDecode(rle []byte) (p []byte) {
 		}
 	}
 	s.rle = 0
+}
+
+func (s *Sprite) RlePcxDecode(rle []byte) (p []byte) {
+	if len(rle) == 0 || s.rle <= 0 {
+		return rle
+	}
+	p = make([]byte, int(s.Size[0])*int(s.Size[1]))
+	s.rlePcxDecodeInto(rle, p)
 	return
 }
 
@@ -1022,7 +1029,15 @@ func (s *Sprite) read(f io.ReadSeeker, sh *SffHeader, offset int64, datasize uin
 			pal[i] = uint32(alpha)<<24 | uint32(rgb[2])<<16 | uint32(rgb[1])<<8 | uint32(rgb[0])
 		}
 	}
-	s.SetPxl(s.RlePcxDecode(px))
+	// Guard: preserve original RlePcxDecode behavior for empty RLE data
+	// (returns the original slice, SetPxl sees empty px and returns early).
+	if len(px) == 0 || s.rle <= 0 {
+		s.SetPxl(px)
+	} else {
+		dst := make([]byte, int(s.Size[0])*int(s.Size[1]))
+		s.rlePcxDecodeInto(px, dst)
+		s.SetPxl(dst)
+	}
 	return nil
 }
 
@@ -1076,13 +1091,12 @@ func (s *Sprite) readHeaderV2(r io.Reader, ofs *uint32, size *uint32,
 	return nil
 }
 
-func (s *Sprite) Rle8Decode(rle []byte) (p []byte) {
-	if len(rle) == 0 {
-		return rle
+func (s *Sprite) rle8DecodeInto(rle []byte, dst []byte) {
+	if len(rle) == 0 || len(dst) == 0 {
+		return
 	}
-	p = make([]byte, int(s.Size[0])*int(s.Size[1]))
 	i, j := 0, 0
-	for j < len(p) {
+	for j < len(dst) {
 		n, d := 1, rle[i]
 		if i < len(rle)-1 {
 			i++
@@ -1095,22 +1109,29 @@ func (s *Sprite) Rle8Decode(rle []byte) (p []byte) {
 			}
 		}
 		for ; n > 0; n-- {
-			if j < len(p) {
-				p[j] = d
+			if j < len(dst) {
+				dst[j] = d
 				j++
 			}
 		}
 	}
-	return
 }
 
-func (s *Sprite) Rle5Decode(rle []byte) (p []byte) {
+func (s *Sprite) Rle8Decode(rle []byte) (p []byte) {
 	if len(rle) == 0 {
 		return rle
 	}
 	p = make([]byte, int(s.Size[0])*int(s.Size[1]))
+	s.rle8DecodeInto(rle, p)
+	return
+}
+
+func (s *Sprite) rle5DecodeInto(rle []byte, dst []byte) {
+	if len(rle) == 0 || len(dst) == 0 {
+		return
+	}
 	i, j := 0, 0
-	for j < len(p) {
+	for j < len(dst) {
 		rl := int(rle[i])
 		if i < len(rle)-1 {
 			i++
@@ -1127,8 +1148,8 @@ func (s *Sprite) Rle5Decode(rle []byte) (p []byte) {
 			i++
 		}
 		for {
-			if j < len(p) {
-				p[j] = c
+			if j < len(dst) {
+				dst[j] = c
 				j++
 			}
 			rl--
@@ -1145,20 +1166,27 @@ func (s *Sprite) Rle5Decode(rle []byte) (p []byte) {
 			}
 		}
 	}
-	return
 }
 
-func (s *Sprite) Lz5Decode(rle []byte) (p []byte) {
+func (s *Sprite) Rle5Decode(rle []byte) (p []byte) {
 	if len(rle) == 0 {
 		return rle
 	}
 	p = make([]byte, int(s.Size[0])*int(s.Size[1]))
+	s.rle5DecodeInto(rle, p)
+	return
+}
+
+func (s *Sprite) lz5DecodeInto(rle []byte, dst []byte) {
+	if len(rle) == 0 || len(dst) == 0 {
+		return
+	}
 	i, j, n := 0, 0, 0
 	ct, cts, rb, rbc := rle[i], uint(0), byte(0), uint(0)
 	if i < len(rle)-1 {
 		i++
 	}
-	for j < len(p) {
+	for j < len(dst) {
 		d := int(rle[i])
 		if i < len(rle)-1 {
 			i++
@@ -1188,8 +1216,8 @@ func (s *Sprite) Lz5Decode(rle []byte) (p []byte) {
 				}
 			}
 			for {
-				if j < len(p) {
-					p[j] = p[j-d]
+				if j < len(dst) {
+					dst[j] = dst[j-d]
 					j++
 				}
 				n--
@@ -1208,8 +1236,8 @@ func (s *Sprite) Lz5Decode(rle []byte) (p []byte) {
 				d &= 0x1f
 			}
 			for ; n > 0; n-- {
-				if j < len(p) {
-					p[j] = byte(d)
+				if j < len(dst) {
+					dst[j] = byte(d)
 					j++
 				}
 			}
@@ -1222,6 +1250,14 @@ func (s *Sprite) Lz5Decode(rle []byte) (p []byte) {
 			}
 		}
 	}
+}
+
+func (s *Sprite) Lz5Decode(rle []byte) (p []byte) {
+	if len(rle) == 0 {
+		return rle
+	}
+	p = make([]byte, int(s.Size[0])*int(s.Size[1]))
+	s.lz5DecodeInto(rle, p)
 	return
 }
 
@@ -1267,11 +1303,17 @@ func (s *Sprite) readV2(f io.ReadSeeker, offset int64, datasize uint32) error {
 
 		switch format {
 		case 2:
-			px = s.Rle8Decode(px)
+			dst := make([]byte, int(s.Size[0])*int(s.Size[1]))
+			s.rle8DecodeInto(px, dst)
+			px = dst
 		case 3:
-			px = s.Rle5Decode(px)
+			dst := make([]byte, int(s.Size[0])*int(s.Size[1]))
+			s.rle5DecodeInto(px, dst)
+			px = dst
 		case 4:
-			px = s.Lz5Decode(px)
+			dst := make([]byte, int(s.Size[0])*int(s.Size[1]))
+			s.lz5DecodeInto(px, dst)
+			px = dst
 		case 10:
 			img, err := png.Decode(f)
 			if err != nil {
@@ -1722,49 +1764,51 @@ func loadSff(filename string, char bool, isMainThread bool, isActPal bool) (*Sff
 	// are almost always rendered, so the GPU memory tradeoff is worthwhile.
 	// Small sprites (font glyphs, UI elements, etc.) remain lazy so they don't
 	// waste GPU memory if never displayed.
+	//
+	// Uploads are staggered to avoid blocking the main thread for hundreds of
+	// milliseconds: the main-thread path yields periodically to drain the task
+	// queue and poll window events; the loader path enqueues individual sprite
+	// tasks so the frame loop processes one per call to runMainThreadTask().
 	const largeSpriteThreshold int64 = 128 * 1024
+	const batchSize = 10
 	ensureStart := time.Now()
 	largeCount := 0
+
+	// Collect large sprites first (shared between paths).
+	var largeSprites []*Sprite
+	for _, spr := range s.sprites {
+		if spr.pendingDepth != 0 && len(spr.pendingData) > 0 {
+			bpp := int64(spr.pendingDepth) / 8
+			if bpp < 1 {
+				bpp = 1
+			}
+			if int64(spr.pendingW)*int64(spr.pendingH)*bpp > largeSpriteThreshold {
+				largeSprites = append(largeSprites, spr)
+			}
+		}
+	}
+	largeCount = len(largeSprites)
+
 	if isMainThread {
-		for _, spr := range s.sprites {
-			if spr.pendingDepth != 0 && len(spr.pendingData) > 0 {
-				bpp := int64(spr.pendingDepth) / 8
-				if bpp < 1 {
-					bpp = 1
-				}
-				if int64(spr.pendingW)*int64(spr.pendingH)*bpp > largeSpriteThreshold {
-					largeCount++
-					spr.ensureTex()
+		// Upload in batches, yielding between batches so the window stays
+		// responsive and the main-thread task queue doesn't starve.
+		for i, spr := range largeSprites {
+			spr.ensureTex()
+			if (i+1)%batchSize == 0 {
+				sys.runMainThreadTask()
+				if loadingCanceled() {
+					return nil, ErrLoadingCanceled
 				}
 			}
 		}
 		memLog("SFF eager ensureTex: %d large sprites uploaded in %v", largeCount, time.Since(ensureStart))
 	} else {
-		// Count large sprites here before the closure (capture by value)
-		for _, spr := range s.sprites {
-			if spr.pendingDepth != 0 && len(spr.pendingData) > 0 {
-				bpp := int64(spr.pendingDepth) / 8
-				if bpp < 1 {
-					bpp = 1
-				}
-				if int64(spr.pendingW)*int64(spr.pendingH)*bpp > largeSpriteThreshold {
-					largeCount++
-				}
-			}
-		}
+		// Enqueue individual sprite uploads so the main thread can process
+		// one per frame (via runMainThreadTask) rather than one giant batch.
 		memLog("SFF eager ensureTex: %d large sprites queued for main thread in %v", largeCount, time.Since(ensureStart))
-		sys.mainThreadTask <- func() {
-			for _, spr := range s.sprites {
-				if spr.pendingDepth != 0 && len(spr.pendingData) > 0 {
-					bpp := int64(spr.pendingDepth) / 8
-					if bpp < 1 {
-						bpp = 1
-					}
-					if int64(spr.pendingW)*int64(spr.pendingH)*bpp > largeSpriteThreshold {
-						spr.ensureTex()
-					}
-				}
-			}
+		for _, spr := range largeSprites {
+			s := spr // capture
+			sys.mainThreadTask <- func() { s.ensureTex() }
 		}
 	}
 
