@@ -1,14 +1,20 @@
-//go:build !raw && !android && !armdevice
+//go:build armdevice
 
 package main
 
+/*
+#cgo LDFLAGS: -lEGL
+#include <EGL/egl.h>
+#include <stdlib.h>
+*/
+import "C"
 import (
 	"fmt"
 	"io"
 	"os"
+	"unsafe"
 
 	findfont "github.com/flopp/go-findfont"
-	"github.com/sqweek/dialog"
 )
 
 // Log writer implementation
@@ -16,16 +22,15 @@ func NewLogWriter() io.Writer {
 	return os.Stderr
 }
 
-// Message box implementation
+// Message box implementation using stderr
 func ShowInfoDialog(message, title string) {
-	dialog.Message(message).Title(title).Info()
+	print(title + "\n\n" + message)
 }
 
 func ShowErrorDialog(message string) {
-	dialog.Message(message).Title("I.K.E.M.E.N Error").Error()
+	print("I.K.E.M.E.N Error\n\n" + message)
 }
 
-// TTF font loading
 func LoadFntTtf(f *Fnt, fontfile string, filename string, height int32) {
 	// Search in local directory
 	fileDir := SearchFile(filename, []string{fontfile, sys.motif.Def, "", "data/"}, "font/")
@@ -57,25 +62,14 @@ func LoadFntTtf(f *Fnt, fontfile string, filename string, height int32) {
 	}
 }
 
+func eglGetProcAddress(name string) unsafe.Pointer {
+	cname := C.CString(name)
+	defer C.free(unsafe.Pointer(cname))
+	return unsafe.Pointer(C.eglGetProcAddress(cname))
+}
+
 func selectRenderer(cfgVal string) (Renderer, FontRenderer) {
-	var gfx Renderer
-	var gfxFont FontRenderer
-
-	// Now we proceed to init the render.
-	switch cfgVal {
-	case "OpenGL 3.3":
-		gfx = &Renderer_GL33{}
-		gfxFont = &FontRenderer_GL33{}
-	case "Vulkan 1.3":
-		gfx = &Renderer_VK{}
-		gfxFont = &FontRenderer_VK{}
-	default:
-		fmt.Printf("Error: Invalid RenderMode '%s'. Defaulting to OpenGL 3.3.\n", cfgVal)
-		gfx = &Renderer_GL33{}
-		gfxFont = &FontRenderer_GL33{}
-	}
-
-	return gfx, gfxFont
+	return &Renderer_GLES32{}, &FontRenderer_GLES32{}
 }
 
 func Logcat(s string) {

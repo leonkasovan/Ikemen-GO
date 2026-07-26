@@ -25,7 +25,8 @@
 #   Linux (Debian/Ubuntu):
 #     sudo apt update && sudo apt install -y \
 #       make cmake pkg-config golang-go gcc g++ nasm \
-#       wget unzip libx11-dev libxext-dev libxrandr-dev \
+#       wget unzip libsdl2-dev \
+#       libx11-dev libxext-dev libxrandr-dev \
 #       libxcursor-dev libxi-dev libxinerama-dev libxss-dev \
 #       libxxf86vm-dev libasound2-dev libgl1-mesa-dev
 #   macOS (Homebrew):
@@ -85,6 +86,9 @@ ifeq ($(HOST_OS),windows)
   # Go build cache location — needed because %LocalAppData% may be unset
   # in non-interactive MSYS2 shells.
   export GOCACHE ?= $(HOME)/.cache/go-build
+else
+  # Linux / macOS — common Go installation paths (manual install or non-default)
+  export PATH := $(PATH):/usr/local/go/bin
 endif
 
 # ============================================================================
@@ -186,6 +190,13 @@ export CGO_ENABLED  := 1
 
 PKG_CONFIG ?= pkg-config
 
+# Tools required for building — nasm is an x86 assembler, not available/needed on ARM64
+ifeq ($(HOST_ARCH),arm64)
+  BUILD_TOOLS := make cmake pkg-config gcc g++ go unzip wget
+else
+  BUILD_TOOLS := make cmake pkg-config gcc g++ nasm go unzip wget
+endif
+
 # Windows resource compiler (only used on Windows)
 ifeq ($(HOST_OS),windows)
   WINDRES := $(shell command -v x86_64-w64-mingw32-windres 2>/dev/null \
@@ -281,11 +292,28 @@ else
   else
     LDFLAGS_GO := -s -w $(LDFLAGS_BASE) -extldflags '$(EXTLDFLAGS)'
   endif
+  ifeq ($(HOST_ARCH),arm64)
+    ifeq ($(HOST_OS),linux)
+      GO_TAGS += -tags armdevice
+    endif
+  endif
+endif
+
+# ============================================================================
+# Derived File Targets
+# ============================================================================
+
+BINARY   := $(OUTDIR)/$(BINNAME)
+
+ifeq ($(HOST_OS),windows)
+  SRC_SYSO := src/rsrc_windows.syso
 endif
 
 # ============================================================================
 # SxS Version Sanitization (Windows only)
 # ============================================================================
+
+ifeq ($(HOST_OS),windows)
 
 _sxs_clean = $(shell v='$(strip $(subst v,,$(subst V,,$(1))))'; \
   [[ "$$v" =~ ^[0-9.]+$$ ]] || { echo "0.0.0.0"; exit; }; \
@@ -306,15 +334,8 @@ _sxs_build := $(word 4,$(subst ., ,$(SXS_VERSION)))
 BUILD_YEAR    := $(subst -,,$(firstword $(subst ., ,$(APP_BUILDTIME))))
 APP_COPYRIGHT ?= (c) $(COPY_START_YEAR)-$(BUILD_YEAR) Ikemen GO team (MIT)
 
-# ============================================================================
-# Derived File Targets
-# ============================================================================
-
-BINARY   := $(OUTDIR)/$(BINNAME)
-
-ifeq ($(HOST_OS),windows)
-  SRC_SYSO := src/rsrc_windows.syso
 endif
+
 
 # ============================================================================
 # Phony Targets
@@ -354,7 +375,7 @@ debug:
 deps-check:
 	@echo "==> Checking build dependencies..."
 	@missing=""; \
-	for tool in make cmake pkg-config gcc g++ nasm go unzip wget; do \
+	for tool in $(BUILD_TOOLS); do \
 		command -v $$tool >/dev/null 2>&1 || missing="$$missing $$tool"; \
 	done; \
 	if [ -n "$$missing" ]; then \
@@ -368,10 +389,17 @@ deps-check:
 				echo "    mingw-w64-x86_64-nasm mingw-w64-x86_64-cmake" >&2; \
 				echo "  pacman -S --noconfirm wget unzip" >&2;; \
 			linux) \
-				echo "Install (Debian/Ubuntu):" >&2; \
-				echo "  sudo apt update && sudo apt install -y \\" >&2; \
-				echo "    make cmake pkg-config golang-go gcc g++ nasm \\" >&2; \
-				echo "    wget unzip" >&2;; \
+				if [ "$(HOST_ARCH)" = "arm64" ]; then \
+					echo "Install (Debian/Ubuntu ARM64):" >&2; \
+					echo "  sudo apt update && sudo apt install -y \\" >&2; \
+					echo "    make cmake pkg-config golang-go gcc g++ \\" >&2; \
+					echo "    wget unzip libsdl2-dev libegl1-mesa-dev" >&2; \
+				else \
+					echo "Install (Debian/Ubuntu):" >&2; \
+					echo "  sudo apt update && sudo apt install -y \\" >&2; \
+					echo "    make cmake pkg-config golang-go gcc g++ nasm \\" >&2; \
+					echo "    wget unzip" >&2; \
+				fi;; \
 			darwin) \
 				echo "Install with Homebrew:" >&2; \
 				echo "  brew install make cmake pkg-config go nasm wget" >&2;; \
@@ -448,31 +476,9 @@ else ifeq ($(HOST_OS),darwin)
 	-DSDL_WAYLAND=OFF
 endif
 
-sdl2: $(BUILD_PREFIX)/lib/libSDL2.a
-	@# Post-install steps per platform:
-	@# Windows: copy .a to arch-specific name expected by sdl_cgo_static.go.
-	@# Linux/macOS: patch sdl2.pc to include private deps so pkg-config (used
-	@# by sdl_cgo.go with !static tag) produces a complete link line.
-	@case "$(HOST_OS)" in \
-		windows) \
-			# Patch sdl2.pc to use the static library directly.
-			sed -i 's/-lSDL2\b/-l:libSDL2.a/g' "$(BUILD_PREFIX)/lib/pkgconfig/sdl2.pc"; \
-			# Remove shared import lib so downstream doesn't pull SDL2.dll.
-			rm -f "$(BUILD_PREFIX)/lib/libSDL2.dll.a"; \
-			# Copy with arch-specific names expected by sdl_cgo_static.go.
-			cp "$(BUILD_PREFIX)/lib/libSDL2.a" "$(BUILD_PREFIX)/lib/libSDL2_windows_$(GOARCH).a"; \
-			cp "$(BUILD_PREFIX)/lib/libSDL2main.a" "$(BUILD_PREFIX)/lib/libSDL2main_windows_$(GOARCH).a";; \
-		linux|darwin) \
-			# CGo runs 'pkg-config --libs sdl2' (without --static). Move
-			# Libs.private into Libs so the link line is complete.
-			pc="$(BUILD_PREFIX)/lib/pkgconfig/sdl2.pc"; \
-			priv="$$(grep '^Libs.private:' "$$pc" | sed 's/^Libs.private: *//')"; \
-			if [ -n "$$priv" ]; then \
-				sed -i "s/^\(Libs:.*\)/\1 $$priv/" "$$pc"; \
-				sed -i '/^Libs.private:/d' "$$pc"; \
-			fi;; \
-	esac
-
+# SDL2: built from source on Windows, system lib on Linux/macOS.
+# NOTE: No ifeq/else/endif around targets — GNU Make 4.2.1 + .ONESHELL
+# peeks at tab-indented lines inside false conditionals and chokes.
 $(BUILD_PREFIX)/lib/libSDL2.a:
 	@echo "==> Building static SDL2 for $(HOST_OS)..."
 	mkdir -p $(BUILDDIR)
@@ -499,7 +505,29 @@ $(BUILD_PREFIX)/lib/libSDL2.a:
 		$(SDL2_CMAKE_FLAGS)
 	cmake --build "$(SDL2_BUILDDIR)" --parallel
 	cmake --install "$(SDL2_BUILDDIR)"
+	case "$(HOST_OS)" in \
+		windows) \
+			sed -i 's/-lSDL2\b/-l:libSDL2.a/g' "$(BUILD_PREFIX)/lib/pkgconfig/sdl2.pc"; \
+			rm -f "$(BUILD_PREFIX)/lib/libSDL2.dll.a"; \
+			cp "$(BUILD_PREFIX)/lib/libSDL2.a" "$(BUILD_PREFIX)/lib/libSDL2_windows_$(GOARCH).a"; \
+			cp "$(BUILD_PREFIX)/lib/libSDL2main.a" "$(BUILD_PREFIX)/lib/libSDL2main_windows_$(GOARCH).a";; \
+	esac
 	@echo "==> SDL2 static library installed to: $(BUILD_PREFIX)"
+
+sdl2:
+	@case "$(HOST_OS)" in \
+		windows) \
+			$(MAKE) --no-print-directory $(BUILD_PREFIX)/lib/libSDL2.a; \
+			echo "    SDL2 $$(PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig" $(PKG_CONFIG) --modversion sdl2) found";; \
+		*) \
+			pkg-config --exists sdl2 || { \
+				echo "ERROR: SDL2 development library not found." >&2; \
+				echo "  Install with: sudo apt install libsdl2-dev" >&2; \
+				exit 1; \
+			}; \
+			echo "==> Using system SDL2..."; \
+			echo "    SDL2 $$(PKG_CONFIG_PATH="/usr/local/lib/pkgconfig" $(PKG_CONFIG) --modversion sdl2) found";; \
+	esac
 
 # ============================================================================
 # FFmpeg Static Build (autotools)
@@ -536,6 +564,7 @@ $(FFMPEG_LIBS):
 			--disable-gpl --disable-nonfree \
 			--disable-debug --disable-doc --disable-programs --disable-everything \
 			--disable-autodetect --disable-avdevice --disable-pthreads \
+			$(if $(filter arm64,$(HOST_ARCH)),--disable-x86asm,) \
 			--enable-avformat --enable-avcodec --enable-avutil \
 			--enable-swresample --enable-swscale \
 			--enable-avfilter --enable-filter=buffer,buffersink,format,scale,pad,crop \
@@ -564,8 +593,8 @@ $(FFMPEG_LIBS):
 XMP_LIB    := $(BUILD_PREFIX)/lib/libxmp.a
 
 xmp: $(XMP_LIB)
-	# Remove any shared import lib (Windows-specific, no-op elsewhere).
-	rm -f "$(BUILD_PREFIX)/lib/libxmp.dll.a"
+	@# Remove any shared import lib (Windows-specific, no-op elsewhere).
+	@rm -f "$(BUILD_PREFIX)/lib/libxmp.dll.a"
 
 $(XMP_LIB):
 	@echo "==> Building static libxmp for $(HOST_OS)..."
@@ -599,11 +628,13 @@ $(XMP_LIB):
 # ============================================================================
 # Windows Resources (icon + manifest + version) — Windows only
 # ============================================================================
-
-ifeq ($(HOST_OS),windows)
+# Targets defined unconditionally to avoid .ONESHELL + Make 4.2.1 parse bug.
+# Recipes bail out on non-Windows via shell guard.
 
 # FORCE ensures the .rc is regenerated on every build so version info is fresh.
 $(WINRES_DIR)/Ikemen_GO.rc: FORCE
+	@# Windows resource generation — no-op on non-Windows
+	@[ "$(HOST_OS)" = "windows" ] || exit 0
 	@echo "==> Generating Windows version resources..."
 	mkdir -p $(WINRES_DIR)
 	SXS="$(SXS_VERSION)"; \
@@ -663,17 +694,15 @@ $(WINRES_DIR)/Ikemen_GO.rc: FORCE
 	RCEOF
 
 .PHONY: winres
-winres: $(SRC_SYSO)
-
-$(SRC_SYSO): $(WINRES_DIR)/Ikemen_GO.rc
+winres: $(WINRES_DIR)/Ikemen_GO.rc
+	@# Windows resource embedding — no-op on non-Windows
+	@[ "$(HOST_OS)" = "windows" ] || exit 0
 	@echo "==> Embedding Windows resources (icon + manifest)..."
 	mkdir -p src
 	"$(WINDRES)" --use-temp-file --target=$(WRTARGET) \
 		-I $(WINRES_DIR) -I external/icons \
 		-i $(WINRES_DIR)/Ikemen_GO.rc \
-		-O coff -o $@
-
-endif # HOST_OS == windows
+		-O coff -o $(SRC_SYSO)
 
 # ============================================================================
 # CGo Flags — computed inside the recipe at build time (after ffmpeg/xmp
@@ -694,27 +723,28 @@ binary: winres
 endif
 	@echo "==> Building $(BINNAME) ($(CONFIG), GOOS=$(GOOS) GOARCH=$(GOARCH))..."
 	@# Clear stale Go build cache (old CGo objects may reference system FFmpeg)
-	GOROOT="$(GOROOT)" "$(GOROOT)/bin/go" clean -cache 2>/dev/null; true
-ifeq ($(HOST_OS),windows)
-	@# Compute CGo flags inside the recipe so .pc files exist (built by ffmpeg/xmp).
-	@# PKG_CONFIG_LIBDIR isolates from /mingw64/lib/pkgconfig (system FFmpeg).
-	_CGO_CFLAGS=$$( PKG_CONFIG_LIBDIR="$(BUILD_PREFIX)/lib/pkgconfig" $(PKG_CONFIG) --cflags $(_CGO_PKGS) ) ; \
-	_CGO_LDFLAGS="-L$(BUILD_PREFIX)/lib $$( PKG_CONFIG_LIBDIR="$(BUILD_PREFIX)/lib/pkgconfig" $(PKG_CONFIG) --static --libs $(_CGO_PKGS) )" ; \
-	PKG_CONFIG_LIBDIR="$(BUILD_PREFIX)/lib/pkgconfig" \
-	CGO_CFLAGS="-DLIBXMP_STATIC $$_CGO_CFLAGS" \
-	CGO_LDFLAGS="$$_CGO_LDFLAGS" \
-	go build -trimpath -v $(GO_TAGS) \
-		-ldflags "$(LDFLAGS_GO)" \
-		-o "$(BINARY)" ./src
-else
-	@_CGO_CFLAGS=$$( PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig$(if $(PKG_CONFIG_PATH),:$(PKG_CONFIG_PATH),)" $(PKG_CONFIG) --cflags $(_CGO_PKGS) ) ; \
-	_CGO_LDFLAGS="-L$(BUILD_PREFIX)/lib $$( PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig$(if $(PKG_CONFIG_PATH),:$(PKG_CONFIG_PATH),)" $(PKG_CONFIG) --static --libs $(_CGO_PKGS) )" ; \
-	CGO_CFLAGS="-DLIBXMP_STATIC $$_CGO_CFLAGS" \
-	CGO_LDFLAGS="$$_CGO_LDFLAGS" \
-	go build -trimpath -v $(GO_TAGS) \
-		-ldflags "$(LDFLAGS_GO)" \
-		-o "$(BINARY)" ./src
-endif
+	GOROOT="$(GOROOT)" "$(GOROOT)/bin/go" clean -cache 2>/dev/null || true
+	case "$(HOST_OS)" in \
+		windows) \
+			_CGO_CFLAGS=$$( PKG_CONFIG_LIBDIR="$(BUILD_PREFIX)/lib/pkgconfig" $(PKG_CONFIG) --cflags $(_CGO_PKGS) ) ; \
+			_CGO_LDFLAGS="-L$(BUILD_PREFIX)/lib $$( PKG_CONFIG_LIBDIR="$(BUILD_PREFIX)/lib/pkgconfig" $(PKG_CONFIG) --static --libs $(_CGO_PKGS) )" ; \
+			PKG_CONFIG_LIBDIR="$(BUILD_PREFIX)/lib/pkgconfig" \
+			CGO_CFLAGS="-DLIBXMP_STATIC $$_CGO_CFLAGS" \
+			CGO_LDFLAGS="$$_CGO_LDFLAGS" \
+			go build -trimpath -v $(GO_TAGS) \
+				-ldflags "$(LDFLAGS_GO)" \
+				-o "$(BINARY)" ./src;; \
+		*) \
+			_CGO_CFLAGS=$$( PKG_CONFIG_LIBDIR= PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig:/usr/local/lib/pkgconfig$(if $(PKG_CONFIG_PATH),:$(PKG_CONFIG_PATH),)" $(PKG_CONFIG) --cflags $(_CGO_PKGS) ) ; \
+			_CGO_LDFLAGS="-L$(BUILD_PREFIX)/lib $$( PKG_CONFIG_LIBDIR= PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig:/usr/local/lib/pkgconfig$(if $(PKG_CONFIG_PATH),:$(PKG_CONFIG_PATH),)" $(PKG_CONFIG) --static --libs $(_CGO_PKGS) )" ; \
+			PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig:/usr/local/lib/pkgconfig$(if $(PKG_CONFIG_PATH),:$(PKG_CONFIG_PATH),)" \
+			PKG_CONFIG_LIBDIR= \
+			CGO_CFLAGS="-DLIBXMP_STATIC $$_CGO_CFLAGS" \
+			CGO_LDFLAGS="$$_CGO_LDFLAGS" \
+			go build -trimpath -v $(GO_TAGS) \
+				-ldflags "$(LDFLAGS_GO)" \
+				-o "$(BINARY)" ./src;; \
+	esac
 	@# Clean up Windows resource object after build
 	rm -f $(SRC_SYSO) 2>/dev/null || true
 
@@ -827,8 +857,9 @@ help:
 	@echo '  debug          Debug build (console + memory instrumentation)'
 	@echo '  ffmpeg         Build static FFmpeg libraries'
 	@echo '  xmp            Build static XMP library'
-	@echo '  sdl2           Build static SDL2 library'
-	@echo '  screenpack     Clone/update Elecbyte screenpack'  @echo '  install        Assemble runnable build in deploy/ (screenpack + binary)'
+	@echo '  sdl2           Build SDL2 library (static on Windows, system lib on Linux/macOS)'
+	@echo '  screenpack     Clone/update Elecbyte screenpack'
+	@echo '  install        Assemble runnable build in deploy/ (screenpack + binary)'
 	@echo '  appbundle      Create macOS .app bundle (I.K.E.M.E.N-Go.app)'
 	@echo '  clean          Remove build artifacts'
 	@echo '  distclean      Remove artifacts + external library sources'
@@ -845,7 +876,8 @@ help:
 	@echo '  APP_BUILDTIME=X    Set build timestamp'
 	@echo ''
 	@echo 'Platform notes:'
-	@echo '  SDL2, FFmpeg, and XMP are built from source on all platforms.'
+	@echo '  SDL2: Built from source (Windows) or system lib (Linux/macOS).'
+	@echo '  FFmpeg/XMP: Built from source on all platforms.'
 	@echo '  Windows: Fully static binary (no external DLLs at runtime).'
 	@echo '  Linux:   SDL2/FFmpeg/XMP compiled in; system libs dynamic.'
 	@echo '  macOS:   SDL2/FFmpeg/XMP compiled in; system frameworks dynamic.'
@@ -854,4 +886,5 @@ help:
 	@echo '  make                          # Native release'
 	@echo '  make debug                    # Native debug'
 	@echo '  make APP_VERSION=v1.0.0       # Tagged build'
-	@echo '  make APP_VERSION=v1.0.0 CONFIG=debug'  @echo '  make install                  # Build + assemble runnable deploy/'
+	@echo '  make APP_VERSION=v1.0.0 CONFIG=debug'
+	@echo '  make install                  # Build + assemble runnable deploy/'

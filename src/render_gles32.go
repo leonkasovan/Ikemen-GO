@@ -2,7 +2,7 @@
 // for GLES 3.2 which is the main version that runs on modern
 // Android (ARM). Work adapted from Leon Kasovan
 
-//go:build android
+//go:build android || armdevice
 
 package main
 
