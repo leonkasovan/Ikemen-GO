@@ -38,6 +38,11 @@ var (
 	memSpritePendingBytes int64 // total staged pixel bytes
 	memSpriteRealized     int64 // sprites whose texture was created (drawn)
 	memSpriteRealizedBytes int64 // total realized pixel bytes
+
+	// palSlotLogCounter throttles per-palSlot texture creation logs during
+	// match-load bursts. Only the first allocation and every 10th thereafter
+	// are logged; the rest are suppressed until the count resets.
+	palSlotLogCounter int32
 )
 
 // memSpriteStaged records that a sprite's CPU pixel buffer was staged for lazy
@@ -112,12 +117,22 @@ func memTextureCreated(tag string, width, height, depth int32, handle uint32, se
 			break
 		}
 	}
-	if tag != "" {
-		memLog("Texture created: %dx%dx%d handle=%d serial=%d alive=%d gpuBytes=%d [%s]",
-			width, height, depth, handle, serial, n, newTotal, tag)
-	} else {
-		memLog("Texture created: %dx%dx%d handle=%d serial=%d alive=%d gpuBytes=%d",
-			width, height, depth, handle, serial, n, newTotal)
+	// Suppress per-palSlot logging during match-load bursts.
+	// PalSlot textures are 256x1x32 (1 KB each); individually they are not
+	// interesting — only the total count matters. Log the 1st then every 10th.
+	logIt := true
+	if tag == "palSlot" {
+		c := atomic.AddInt32(&palSlotLogCounter, 1)
+		logIt = c == 1 || c%10 == 0
+	}
+	if logIt {
+		if tag != "" {
+			memLog("Texture created: %dx%dx%d handle=%d serial=%d alive=%d gpuBytes=%d [%s]",
+				width, height, depth, handle, serial, n, newTotal, tag)
+		} else {
+			memLog("Texture created: %dx%dx%d handle=%d serial=%d alive=%d gpuBytes=%d",
+				width, height, depth, handle, serial, n, newTotal)
+		}
 	}
 }
 
