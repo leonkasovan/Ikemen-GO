@@ -5,27 +5,33 @@
 # Downloads, installs, and builds everything needed for Ikemen-GO's Android
 # target on Windows (MSYS2 / MINGW64). Produces a ready-to-install APK.
 #
-# Default target: Android 11 (API 30). Override for other API levels:
-#   ./tools/generate_android_via_native.sh --yes                              # Android 11 (API 30)
+# Default target: Android 11 (API 30). Override for other API levels or ABI:
+#   ./tools/generate_android_via_native.sh --yes                              # Android 11 (API 30), arm64-v8a
 #   SDK_PLATFORM=android-33 SDK_BUILD_TOOLS=33.0.1 \
 #     ./tools/generate_android_via_native.sh --yes                            # Android 13 (API 33)
 #   SDK_PLATFORM=android-34 SDK_BUILD_TOOLS=34.0.0 \
 #     ./tools/generate_android_via_native.sh --yes                            # Android 14 (API 34)
+#   ANDROID_ABI=armeabi-v7a \
+#     ./tools/generate_android_via_native.sh --yes                            # 32-bit ARM (armeabi-v7a)
 #
 # What gets installed:
 #   1.  MSYS2 build tools        (make, cmake, gcc, g++, nasm, pkg-config, etc.)
 #   2.  Go 1.22+                 (mingw-w64-x86_64-go via pacman)
 #   3.  Eclipse Temurin JDK 17   (for Gradle / sdkmanager)
-#   4.  Android NDK r27d          (cross-compiler for arm64-v8a)
-#   5.  SDL2 cross-compiled      for Android arm64-v8a (into build/android-deps/)
-#   6.  libxmp cross-compiled    for Android arm64-v8a
-#   7.  FFmpeg cross-compiled    for Android arm64-v8a (minimal: VP9/Opus/Vorbis)
+#   4.  Android NDK r27d          (cross-compiler for selected ABI)
+#   5.  SDL2 cross-compiled      for Android (into build/android-deps-<ABI>/)
+#   6.  libxmp cross-compiled    for Android
+#   7.  FFmpeg cross-compiled    for Android (minimal: VP9/Opus/Vorbis)
 #   8.  Android SDK cmdline-tools + platform + build-tools
 #   9.  Environment variables     (ANDROID_NDK_HOME, JAVA_HOME, etc.)
 #   10. libmain.so               (Go c-shared build via NDK clang)
 #   11. ikemen-droid source      (downloaded from IKEMEN_DROID_URL → IKEMEN_DROID_DIR)
 #   12. Screenpack assets        (downloaded from leonkasovan/Ikemen-GO-Screenpack → deploy/)
-#   13. APK build + sign         (ikemen-droid Gradle project → build/ikemen-go.apk)
+#   13. APK build + sign         (ikemen-droid Gradle project → build/ikemen-go-<ABI>.apk)
+#
+# Override the target ABI:
+#   ANDROID_ABI=arm64-v8a    ./tools/generate_android_via_native.sh --yes      # 64-bit ARM (default)
+#   ANDROID_ABI=armeabi-v7a  ./tools/generate_android_via_native.sh --yes      # 32-bit ARM
 #
 # Prerequisites:
 #   - ikemen-droid source is downloaded automatically from IKEMEN_DROID_URL
@@ -34,7 +40,9 @@
 #   - The script builds libmain.so automatically (step 10)
 #
 # After running:
-#   build/ikemen-go.apk            # ready to install on Android device
+#   build/ikemen-go-${ANDROID_ABI}.apk   # ready to install on Android device
+#   e.g. build/ikemen-go-arm64-v8a.apk   # 64-bit ARM
+#   e.g. build/ikemen-go-armeabi-v7a.apk # 32-bit ARM
 #
 # Usage:
 #   ./tools/generate_android_via_native.sh              # interactive (asks before each step)
@@ -80,9 +88,7 @@ FFMPEG_VERSION="${FFMPEG_VERSION:-n7.1}"
 FFMPEG_URL="${FFMPEG_URL:-https://github.com/FFmpeg/FFmpeg/archive/refs/tags/${FFMPEG_VERSION}.zip}"
 # ikemen-droid APK build
 IKEMEN_DROID_DIR="${IKEMEN_DROID_DIR:-$(pwd)/build/android-apk/ikemen-droid}"
-ANDROID_BINARY="${ANDROID_BINARY:-$(pwd)/android/app/libs/arm64-v8a/libmain.so}"
 CONFIG="${CONFIG:-release}"
-APK_OUTPUT="${APK_OUTPUT:-$(pwd)/build/ikemen-go${CONFIG:+-${CONFIG}}.apk}"
 if [[ "$CONFIG" == "debug" ]]; then
   ANDROID_GRADLE_TASK="${ANDROID_GRADLE_TASK:-assembleDebug}"
   ANDROID_APK_VARIANT="${ANDROID_APK_VARIANT:-debug}"
@@ -104,17 +110,52 @@ ANDROID_KEY_ALIAS="${ANDROID_KEY_ALIAS:-androidkey}"
 ANDROID_KEYSTORE_PASS="${ANDROID_KEYSTORE_PASS:-pass:Secret14!}"
 ANDROID_KEY_PASS="${ANDROID_KEY_PASS:-$ANDROID_KEYSTORE_PASS}"
 
-# Path where SDL2 will be cross-compiled and installed for Android arm64-v8a.
-# Must match ANDROID_DEPS_PATH in the Makefile (build/android-deps).
-# We compute it at script start so it's absolute.
-ANDROID_DEPS_PATH="${ANDROID_DEPS_PATH:-$(pwd)/build/android-deps}"
-
 # SDK / NDK / JDK paths — used by build_apk & build_libmain; may come from .bashrc or set explicitly
 ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME_DIR}}"
 ANDROID_HOME="${ANDROID_HOME:-${ANDROID_HOME_DIR}}"
 ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-${NDK_INSTALL_DIR}}"
 JAVA_HOME="${JAVA_HOME:-$JDK17_INSTALL_DIR}"
 ANDROID_GCDB_URL="${ANDROID_GCDB_URL:-https://raw.githubusercontent.com/mdqinc/SDL_GameControllerDB/refs/heads/master/gamecontrollerdb.txt}"
+
+# ────────────────────────────────────────────────────────────────────────────
+# Android ABI selection — controls arch-specific compiler, flags, and paths
+# ────────────────────────────────────────────────────────────────────────────
+
+# Target ABI: arm64-v8a (64-bit) or armeabi-v7a (32-bit)
+ANDROID_ABI="${ANDROID_ABI:-arm64-v8a}"
+
+# Derive Go arch, NDK target triple, FFmpeg arch, and jniLibs directory from ABI
+case "${ANDROID_ABI}" in
+  arm64-v8a)
+    GO_ANDROID_ARCH="arm64"
+    NDK_TARGET_TRIPLE="aarch64-linux-android"
+    FFMPEG_ARCH="aarch64"
+    JNILIBS_DIR="arm64-v8a"
+    CGO_EXTRA_CFLAGS=""
+    CGO_EXTRA_LDFLAGS=""
+    FFMPEG_EXTRA_CFLAGS=""
+    FFMPEG_EXTRA_LDFLAGS=""
+    ;;
+  armeabi-v7a)
+    GO_ANDROID_ARCH="arm"
+    NDK_TARGET_TRIPLE="armv7a-linux-androideabi"
+    FFMPEG_ARCH="arm"
+    JNILIBS_DIR="armeabi-v7a"
+    CGO_EXTRA_CFLAGS="-march=armv7-a -mfloat-abi=softfp -mfpu=neon"
+    CGO_EXTRA_LDFLAGS="-march=armv7-a"
+    FFMPEG_EXTRA_CFLAGS="-march=armv7-a -mfloat-abi=softfp -mfpu=neon"
+    FFMPEG_EXTRA_LDFLAGS=""
+    ;;
+  *)
+    echo "ERROR: Unknown ANDROID_ABI='${ANDROID_ABI}'. Must be 'arm64-v8a' or 'armeabi-v7a'."
+    exit 1
+    ;;
+esac
+
+# Paths that depend on ANDROID_ABI / JNILIBS_DIR (must come after ABI case statement)
+ANDROID_BINARY="${ANDROID_BINARY:-$(pwd)/android/app/libs/${JNILIBS_DIR}/libmain.so}"
+APK_OUTPUT="${APK_OUTPUT:-$(pwd)/build/ikemen-go-${ANDROID_ABI}${CONFIG:+-${CONFIG}}.apk}"
+ANDROID_DEPS_PATH="${ANDROID_DEPS_PATH:-$(pwd)/build/android-deps-${ANDROID_ABI}}"
 
 # Auto-detect GOROOT for MSYS2 MinGW Go if not already set
 if [[ -z "${GOROOT:-}" ]]; then
@@ -406,9 +447,9 @@ install_ndk() {
   local toolchain="$NDK_INSTALL_DIR/toolchains/llvm/prebuilt/windows-x86_64"
   if [[ -d "$toolchain" ]]; then
     echo "    Toolchain: $toolchain"
-    local cc="$toolchain/bin/aarch64-linux-android${ANDROID_API}-clang.cmd"
+    local cc="$toolchain/bin/${NDK_TARGET_TRIPLE}${ANDROID_API}-clang.cmd"
     if [[ -f "$cc" ]]; then
-      echo "    Cross-compiler: $($cc --version 2>&1 | head -n1)"
+      echo "    Cross-compiler (${ANDROID_ABI}): $($cc --version 2>&1 | head -n1)"
     fi
   fi
 }
@@ -419,15 +460,15 @@ install_ndk() {
 
 install_sdl2_android() {
   echo ""
-  echo "═══ Step 5/12 — Cross-compiling SDL2 for Android arm64-v8a ═══"
+  echo "═══ Step 5/12 — Cross-compiling SDL2 for Android ${ANDROID_ABI} ═══"
 
   local sdl2_lib="$ANDROID_DEPS_PATH/lib/libSDL2.so"
   local sdl2_src="$(pwd)/build/SDL-${SDL2_VERSION}"
-  local sdl2_build="$(pwd)/build/SDL-${SDL2_VERSION}-android"
+  local sdl2_build="$(pwd)/build/SDL-${SDL2_VERSION}-android-${ANDROID_ABI}"
 
   # Check if already built
   if [[ -f "$sdl2_lib" ]]; then
-    echo "  ✅  SDL2 already cross-compiled for Android:"
+    echo "  ✅  SDL2 already cross-compiled for Android (${ANDROID_ABI}):"
     echo "      $sdl2_lib"
     echo "      $(${sdl2_lib%lib/libSDL2.so}bin/sdl2-config --version 2>/dev/null || echo "version unknown") "
     return
@@ -441,7 +482,7 @@ install_sdl2_android() {
     exit 1
   fi
 
-  if ! confirm "Cross-compile SDL2 ${SDL2_VERSION} for Android arm64-v8a? (This may take 5-15 minutes)"; then
+  if ! confirm "Cross-compile SDL2 ${SDL2_VERSION} for Android ${ANDROID_ABI}? (This may take 5-15 minutes)"; then
     echo "  Skipped — you'll need to build it manually before running build_libmain."
     return
   fi
@@ -473,10 +514,10 @@ install_sdl2_android() {
   jobs="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
 
   # --- Configure with cmake + NDK toolchain ---
-  echo "==> Configuring SDL2 for arm64-v8a / ${SDK_PLATFORM}..."
+  echo "==> Configuring SDL2 for ${ANDROID_ABI} / ${SDK_PLATFORM}..."
   (cd "$sdl2_build" && cmake -G "Unix Makefiles" "$sdl2_src" -Wno-dev \
     -DCMAKE_TOOLCHAIN_FILE="$tc_file" \
-    -DANDROID_ABI="arm64-v8a" \
+    -DANDROID_ABI="${ANDROID_ABI}" \
     -DANDROID_PLATFORM="${SDK_PLATFORM}" \
     -DCMAKE_INSTALL_PREFIX="$ANDROID_DEPS_PATH" \
     -DSDL_ANDROID_PACKAGE_NAME=org.ikemen_engine.ikemen_go \
@@ -505,7 +546,7 @@ install_sdl2_android() {
 
   # --- Verify ---
   if [[ -f "$sdl2_lib" ]]; then
-    echo "✅  SDL2 cross-compiled for Android arm64-v8a:"
+    echo "✅  SDL2 cross-compiled for Android ${ANDROID_ABI}:"
     echo "      Library: $sdl2_lib"
     ls -lh "$sdl2_lib" 2>/dev/null | awk '{print "      Size: " $5}'
   else
@@ -520,15 +561,15 @@ install_sdl2_android() {
 
 install_libxmp_android() {
   echo ""
-  echo "═══ Step 6/12 — Cross-compiling libxmp for Android arm64-v8a ═══"
+  echo "═══ Step 6/12 — Cross-compiling libxmp for Android ${ANDROID_ABI} ═══"
 
   local xmp_lib="$ANDROID_DEPS_PATH/lib/libxmp.so"
   local xmp_src="$(pwd)/build/libxmp-${XMP_VERSION}"
-  local xmp_build="$(pwd)/build/libxmp-${XMP_VERSION}-android"
+  local xmp_build="$(pwd)/build/libxmp-${XMP_VERSION}-android-${ANDROID_ABI}"
 
   # Check if already built
   if [[ -f "$xmp_lib" ]]; then
-    echo "  ✅  libxmp already cross-compiled for Android:"
+    echo "  ✅  libxmp already cross-compiled for Android (${ANDROID_ABI}):"
     ls -lh "$xmp_lib" 2>/dev/null | awk '{print "      Size: " $5", Path: " $NF}'
     return
   fi
@@ -540,7 +581,7 @@ install_libxmp_android() {
     exit 1
   fi
 
-  if ! confirm "Cross-compile libxmp ${XMP_VERSION} for Android arm64-v8a? (Quick build)"; then
+  if ! confirm "Cross-compile libxmp ${XMP_VERSION} for Android ${ANDROID_ABI}? (Quick build)"; then
     echo "  Skipped — you'll need to build it manually."
     return
   fi
@@ -566,11 +607,11 @@ install_libxmp_android() {
   local jobs
   jobs="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
 
-  echo "==> Configuring libxmp for arm64-v8a / ${SDK_PLATFORM}..."
+  echo "==> Configuring libxmp for ${ANDROID_ABI} / ${SDK_PLATFORM}..."
   (cd "$xmp_build" && cmake "$xmp_src" -Wno-dev \
     -Wno-deprecated \
     -DCMAKE_TOOLCHAIN_FILE="$tc_file" \
-    -DANDROID_ABI="arm64-v8a" \
+    -DANDROID_ABI="${ANDROID_ABI}" \
     -DANDROID_PLATFORM="${SDK_PLATFORM}" \
     -DCMAKE_INSTALL_PREFIX="$ANDROID_DEPS_PATH" \
     -DBUILD_STATIC=OFF \
@@ -593,7 +634,7 @@ install_libxmp_android() {
   }
 
   if [[ -f "$xmp_lib" ]]; then
-    echo "✅  libxmp cross-compiled for Android:"
+    echo "✅  libxmp cross-compiled for Android (${ANDROID_ABI}):"
     ls -lh "$xmp_lib" 2>/dev/null | awk '{print "      Size: " $5}'
   else
     echo "❌  libxmp.so not found after install at: $xmp_lib"
@@ -607,14 +648,14 @@ install_libxmp_android() {
 
 install_ffmpeg_android() {
   echo ""
-  echo "═══ Step 7/12 — Cross-compiling FFmpeg for Android arm64-v8a ═══"
+  echo "═══ Step 7/12 — Cross-compiling FFmpeg for Android ${ANDROID_ABI} ═══"
 
   local ffmpeg_pc="$ANDROID_DEPS_PATH/lib/pkgconfig/libavformat.pc"
   local ffmpeg_src="$(pwd)/build/FFmpeg-${FFMPEG_VERSION}"
 
   # Check if already built
   if [[ -f "$ffmpeg_pc" ]]; then
-    echo "  ✅  FFmpeg already cross-compiled for Android:"
+    echo "  ✅  FFmpeg already cross-compiled for Android (${ANDROID_ABI}):"
     echo "      pkgconfig: $ffmpeg_pc"
     return
   fi
@@ -626,7 +667,7 @@ install_ffmpeg_android() {
     exit 1
   fi
 
-  if ! confirm "Cross-compile FFmpeg ${FFMPEG_VERSION} for Android arm64-v8a? (This may take 15-30 minutes)"; then
+  if ! confirm "Cross-compile FFmpeg ${FFMPEG_VERSION} for Android ${ANDROID_ABI}? (This may take 15-30 minutes)"; then
     echo "  Skipped — you'll need to build it manually."
     return
   fi
@@ -658,16 +699,16 @@ install_ffmpeg_android() {
   fi
 
   # Setup NDK cross-compiler paths
-  local arch="aarch64"
+  local arch="${FFMPEG_ARCH}"
   local api="$ANDROID_API"
-  local cc_compiler="$toolchain/bin/${arch}-linux-android${api}-clang"
+  local cc_compiler="$toolchain/bin/${NDK_TARGET_TRIPLE}${api}-clang"
   local ar_tool="$toolchain/bin/llvm-ar"
   local nm_tool="$toolchain/bin/llvm-nm"
   local strip_tool="$toolchain/bin/llvm-strip"
   local jobs
   jobs="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
 
-  echo "==> Configuring FFmpeg for aarch64 / ${SDK_PLATFORM} (in-tree)..."
+  echo "==> Configuring FFmpeg for ${FFMPEG_ARCH} / ${SDK_PLATFORM} / ${ANDROID_ABI} (in-tree)..."
   # FFmpeg uses autotools; configure + build in-tree (inside source dir)
   (cd "$ffmpeg_src" && ./configure \
     --prefix="$ANDROID_DEPS_PATH" \
@@ -678,8 +719,8 @@ install_ffmpeg_android() {
     --ar="$ar_tool" \
     --nm="$nm_tool" \
     --strip="$strip_tool" \
-    --extra-cflags="-fPIC" \
-    --extra-ldflags="-Wl,-z,max-page-size=16384" \
+    --extra-cflags="-fPIC ${FFMPEG_EXTRA_CFLAGS}" \
+    --extra-ldflags="-Wl,-z,max-page-size=16384 ${FFMPEG_EXTRA_LDFLAGS}" \
     --enable-shared --disable-static \
     --disable-gpl --disable-nonfree \
     --disable-debug --disable-doc --disable-programs --disable-everything \
@@ -713,7 +754,7 @@ install_ffmpeg_android() {
   create_dummy_gl_pc
 
   if [[ -f "$ffmpeg_pc" ]]; then
-    echo "✅  FFmpeg cross-compiled for Android:"
+    echo "✅  FFmpeg cross-compiled for Android (${ANDROID_ABI}):"
     echo "      pkgconfig: $ffmpeg_pc"
     ls -lh "$ANDROID_DEPS_PATH/lib/libavformat.so" 2>/dev/null | awk '{print "      Size: " $5}'
   else
@@ -947,11 +988,11 @@ verify_installation() {
   if [[ -d "$tc" ]]; then
     echo "  ✅  NDK $NDK_VERSION"
     echo "      Path: $NDK_INSTALL_DIR"
-    local cc="$tc/bin/aarch64-linux-android${ANDROID_API}-clang.cmd"
+    local cc="$tc/bin/${NDK_TARGET_TRIPLE}${ANDROID_API}-clang.cmd"
     if [[ -f "$cc" ]]; then
-      echo "      Cross-compiler: present"
+      echo "      Cross-compiler (${ANDROID_ABI}): present"
     else
-      echo "      ⚠️  Cross-compiler not found (aarch64-linux-android${ANDROID_API}-clang)"
+      echo "      ⚠️  Cross-compiler not found (${NDK_TARGET_TRIPLE}${ANDROID_API}-clang)"
     fi
   else
     echo "  ❌  NDK toolchain not found at $tc"
@@ -961,7 +1002,7 @@ verify_installation() {
   echo ""
   echo "── SDL2 Android deps ──"
   if [[ -f "$ANDROID_DEPS_PATH/lib/libSDL2.so" ]]; then
-    echo "  ✅  SDL2 cross-compiled for arm64-v8a"
+    echo "  ✅  SDL2 cross-compiled for ${ANDROID_ABI}"
     local sdl2_size
     sdl2_size="$(ls -lh "$ANDROID_DEPS_PATH/lib/libSDL2.so" 2>/dev/null | awk '{print $5}')"
     echo "      Size: ${sdl2_size:-unknown}, Path: $ANDROID_DEPS_PATH"
@@ -975,7 +1016,7 @@ verify_installation() {
   echo "── libxmp Android deps ──"
   local xmp_pc="$ANDROID_DEPS_PATH/lib/pkgconfig/libxmp.pc"
   if [[ -f "$xmp_pc" ]]; then
-    echo "  ✅  libxmp cross-compiled for arm64-v8a"
+    echo "  ✅  libxmp cross-compiled for ${ANDROID_ABI}"
     echo "      pkgconfig: $xmp_pc"
   else
     echo "  ❌  libxmp not found at: $ANDROID_DEPS_PATH"
@@ -986,7 +1027,7 @@ verify_installation() {
   echo "── FFmpeg Android deps ──"
   local ffmpeg_pc="$ANDROID_DEPS_PATH/lib/pkgconfig/libavformat.pc"
   if [[ -f "$ffmpeg_pc" ]]; then
-    echo "  ✅  FFmpeg cross-compiled for arm64-v8a"
+    echo "  ✅  FFmpeg cross-compiled for ${ANDROID_ABI}"
     echo "      pkgconfig: $ffmpeg_pc"
   else
     echo "  ❌  FFmpeg not found at: $ANDROID_DEPS_PATH"
@@ -1036,7 +1077,7 @@ verify_installation() {
 
 build_libmain() {
   echo ""
-  echo "═══ Step 11/12 — Building libmain.so (arm64-v8a) ═══"
+  echo "═══ Step 11/12 — Building libmain.so (${ANDROID_ABI}) ═══"
 
   # --- Validate NDK ---
   local toolchain="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/windows-x86_64"
@@ -1054,7 +1095,7 @@ build_libmain() {
   fi
 
   # --- Derive compiler paths ---
-  local android_target="aarch64-linux-android${ANDROID_API}"
+  local android_target="${NDK_TARGET_TRIPLE}${ANDROID_API}"
   local cc="$toolchain/bin/${android_target}-clang"
   local cxx="$toolchain/bin/${android_target}-clang++"
   if [[ ! -x "$cc" ]]; then
@@ -1072,7 +1113,7 @@ build_libmain() {
 
   # --- Build ---
   mkdir -p "$(dirname "$ANDROID_BINARY")"
-  echo "  GOOS=android GOARCH=arm64 CC=$cc"
+  echo "  GOOS=android GOARCH=${GO_ANDROID_ARCH} CC=$cc"
   echo "  Output: $ANDROID_BINARY"
 
   local go_tags="mugen lite android gles2"
@@ -1082,13 +1123,13 @@ build_libmain() {
     go_ldflags="-X 'main.Version=nightly' -X 'runtime.godebugDefault=asyncpreemptoff=1,sigaltstack=0'"
   fi
 
-  CGO_ENABLED=1 GOOS=android GOARCH=arm64 GOEXPERIMENT=arenas \
+  CGO_ENABLED=1 GOOS=android GOARCH=${GO_ANDROID_ARCH} GOEXPERIMENT=arenas \
   CC="$cc" CXX="$cxx" \
   PKG_CONFIG_LIBDIR="$ANDROID_DEPS_PATH/lib/pkgconfig" \
   PKG_CONFIG_SYSROOT_DIR="$ANDROID_DEPS_PATH" \
   PKG_CONFIG_PATH= \
-  CGO_CFLAGS="-I$deps_include -I$deps_include/SDL2" \
-  CGO_LDFLAGS="-L$deps_lib -lSDL2 -lGLESv2 -lOpenSLES -llog -Wl,-z,max-page-size=16384" \
+  CGO_CFLAGS="-I$deps_include -I$deps_include/SDL2 ${CGO_EXTRA_CFLAGS}" \
+  CGO_LDFLAGS="-L$deps_lib -lSDL2 -lGLESv2 -lOpenSLES -llog -Wl,-z,max-page-size=16384 ${CGO_EXTRA_LDFLAGS}" \
   go build -buildmode=c-shared -trimpath -v -tags "$go_tags" \
     -ldflags "$go_ldflags" \
     -o "$ANDROID_BINARY" ./src
@@ -1342,7 +1383,7 @@ build_apk() {
 
   # --- Stage native libs ---
   local app_dir="$IKEMEN_DROID_DIR/app"
-  local abi_dir="$app_dir/src/main/jniLibs/arm64-v8a"
+  local abi_dir="$app_dir/src/main/jniLibs/${JNILIBS_DIR}"
   echo ""
   echo "==> Staging native libs into: $abi_dir"
   mkdir -p "$abi_dir"

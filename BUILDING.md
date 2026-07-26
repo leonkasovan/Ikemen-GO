@@ -250,9 +250,9 @@ The script runs 14 steps automatically:
 1. Installs MSYS2 build tools (make, cmake, gcc, nasm, etc.)
 2. Installs JDK 17 (Eclipse Temurin) for Gradle / sdkmanager
 3. Installs Android NDK r27d (cross-compiler)
-4. Cross-compiles SDL2 for Android arm64-v8a
-5. Cross-compiles libxmp for Android arm64-v8a
-6. Cross-compiles FFmpeg for Android arm64-v8a
+4. Cross-compiles SDL2 for Android (selected ABI)
+5. Cross-compiles libxmp for Android (selected ABI)
+6. Cross-compiles FFmpeg for Android (selected ABI)
 7. Installs Android SDK (platform + build-tools)
 8. Sets up environment variables in `~/.bashrc`
 9. Builds `libmain.so` (Go c-shared library)
@@ -264,9 +264,9 @@ The script runs 14 steps automatically:
 
 | File | Description |
 |------|-------------|
-| `build/ikemen-go.apk` | Installable signed APK (release) |
-| `build/ikemen-go-debug.apk` | Installable debug APK (see below) |
-| `build/android-deps/` | Cross-compiled library dependencies |
+| `build/ikemen-go-<ABI>.apk` | Installable signed APK (release), e.g. `ikemen-go-arm64-v8a.apk` |
+| `build/ikemen-go-<ABI>-debug.apk` | Installable debug APK (see below), e.g. `ikemen-go-armeabi-v7a-debug.apk` |
+| `build/android-deps-<ABI>/` | Cross-compiled library dependencies per ABI |
 | `android/release.jks` | Auto-generated signing keystore |
 
 ### Build variants
@@ -317,16 +317,36 @@ GOROOT=/mingw64/lib/go go tool pprof http://localhost:6060/debug/pprof/block    
 The pprof server is compiled out entirely in release builds (`!debug` tag) —
 zero overhead.
 
+### Target ABI selection
+
+By default the script builds for **arm64-v8a** (64-bit ARM). To target older
+32-bit ARM devices, set `ANDROID_ABI=armeabi-v7a`:
+
+```bash
+ANDROID_ABI=armeabi-v7a ./tools/generate_android_via_native.sh --yes
+```
+
+When you change the ABI, all native dependencies (SDL2, libxmp, FFmpeg) are
+rebuilt from scratch into a separate directory (`build/android-deps-<ABI>/`).
+
 ### Customization
 
 Override any setting via environment variables:
 
 ```bash
+# Target a different Android API level
 SDK_PLATFORM=android-33 SDK_BUILD_TOOLS=33.0.1 \
   ./tools/generate_android_via_native.sh --yes
+
+# Target 32-bit ARM devices
+ANDROID_ABI=armeabi-v7a ./tools/generate_android_via_native.sh --yes
+
+# Build a debug APK
+CONFIG=debug ./tools/generate_android_via_native.sh --yes
 ```
 
-See the script header for all overridable variables.
+See the script header for all overridable variables (including `NDK_VERSION`,
+`SDL2_VERSION`, `FFMPEG_VERSION`, `XMP_VERSION`, and more).
 
 ---
 
