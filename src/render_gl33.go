@@ -729,6 +729,11 @@ type GL33State struct {
 	texCacheTexSerial   []uint64 // Unit to serial number. Sized per GPU
 	texCacheLastUsed    []uint64 // Timer value when the slot was last used. Sized per GPU
 	texCacheTimer       uint64   // Increments on every texture access
+
+	// FBO binding cache — avoids redundant gl.BindFramebuffer calls (hot path perf).
+	curDrawFbo          uint32   // Currently bound DRAW_FRAMEBUFFER
+	curReadFbo          uint32   // Currently bound READ_FRAMEBUFFER
+
 	uniformICache       map[uint32]int32
 	uniformF1Cache      map[uint32]float32
 	uniformF2Cache      map[uint32][2]float32
@@ -1062,7 +1067,7 @@ func (r *Renderer_GL33) Init() {
 
 	// create an FBO for our r.fbo, which is then for r.fbo_texture
 	gl.GenFramebuffers(1, &r.fbo)
-	gl.BindFramebuffer(gl.FRAMEBUFFER, r.fbo)
+	r.bindFramebuffer(gl.FRAMEBUFFER, r.fbo)
 
 	if sys.msaa > 0 {
 		gl.FramebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D_MULTISAMPLE, r.fbo_texture, 0)
@@ -1071,7 +1076,7 @@ func (r *Renderer_GL33) Init() {
 			LogMessage("Framebuffer creation failed: 0x%x", status)
 		}
 		gl.GenFramebuffers(1, &r.fbo_f)
-		gl.BindFramebuffer(gl.FRAMEBUFFER, r.fbo_f)
+		r.bindFramebuffer(gl.FRAMEBUFFER, r.fbo_f)
 		gl.FramebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, r.fbo_f_texture.handle, 0)
 	} else {
 		gl.FramebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, r.fbo_texture, 0)
@@ -1081,7 +1086,7 @@ func (r *Renderer_GL33) Init() {
 	// create our two FBOs for our post-processing needs
 	for i := 0; i < 2; i++ {
 		gl.GenFramebuffers(1, &(r.fbo_pp[i]))
-		gl.BindFramebuffer(gl.FRAMEBUFFER, r.fbo_pp[i])
+		r.bindFramebuffer(gl.FRAMEBUFFER, r.fbo_pp[i])
 		gl.FramebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, r.fbo_pp_texture[i], 0)
 	}
 
@@ -1100,7 +1105,7 @@ func (r *Renderer_GL33) Init() {
 			gl.TexParameteri(gl.TEXTURE_CUBE_MAP_ARRAY_ARB, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
 			gl.TexParameteri(gl.TEXTURE_CUBE_MAP_ARRAY_ARB, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
 
-			gl.BindFramebuffer(gl.FRAMEBUFFER, r.fbo_shadow)
+			r.bindFramebuffer(gl.FRAMEBUFFER, r.fbo_shadow)
 			gl.FramebufferTexture(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, r.fbo_shadow_cube_texture, 0)
 			gl.DrawBuffer(gl.NONE)
 			gl.ReadBuffer(gl.NONE)
@@ -1114,10 +1119,10 @@ func (r *Renderer_GL33) Init() {
 
 	if sys.msaa > 0 {
 		gl.GenFramebuffers(1, &r.grabFbo)
-		gl.BindFramebuffer(gl.FRAMEBUFFER, r.grabFbo)
+		r.bindFramebuffer(gl.FRAMEBUFFER, r.grabFbo)
 		gl.FramebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, r.grabTexture.handle, 0)
 	}
-	gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
+	r.bindFramebuffer(gl.FRAMEBUFFER, 0)
 
 	// Create palette atlas
 	r.createPalAtlas()
@@ -1170,6 +1175,10 @@ func (r *Renderer_GL33) InitStateCache() {
 	r.uniformF2Cache = make(map[uint32][2]float32, 32)
 	r.uniformF3Cache = make(map[uint32][3]float32, 32)
 	r.uniformF4Cache = make(map[uint32][4]float32, 32)
+
+	// Initialize FBO binding cache — start with default framebuffer (0).
+	r.curDrawFbo = 0
+	r.curReadFbo = 0
 }
 
 func (r *Renderer_GL33) EnableDebug() {
@@ -1316,6 +1325,33 @@ func (r *Renderer_GL33) DebugVerifyCache() {
 	checkAttr(r.useOutlineAttribute, "outlineAttributeIn")
 }
 
+// bindFramebuffer wraps gl.BindFramebuffer with a state cache to skip
+// redundant calls. This is on the hot path (called 5-8× per frame in
+// BeginFrame/EndFrame alone) and avoids unnecessary CGo crossings.
+func (r *Renderer_GL33) bindFramebuffer(target uint32, fbo uint32) {
+	switch target {
+	case gl.FRAMEBUFFER:
+		if r.curDrawFbo == fbo && r.curReadFbo == fbo {
+			return
+		}
+		gl.BindFramebuffer(gl.FRAMEBUFFER, fbo)
+		r.curDrawFbo = fbo
+		r.curReadFbo = fbo
+	case gl.DRAW_FRAMEBUFFER:
+		if r.curDrawFbo == fbo {
+			return
+		}
+		gl.BindFramebuffer(gl.DRAW_FRAMEBUFFER, fbo)
+		r.curDrawFbo = fbo
+	case gl.READ_FRAMEBUFFER:
+		if r.curReadFbo == fbo {
+			return
+		}
+		gl.BindFramebuffer(gl.READ_FRAMEBUFFER, fbo)
+		r.curReadFbo = fbo
+	}
+}
+
 func (r *Renderer_GL33) IsModelEnabled() bool {
 	return r.enableModel
 }
@@ -1326,7 +1362,7 @@ func (r *Renderer_GL33) IsShadowEnabled() bool {
 
 func (r *Renderer_GL33) BeginFrame(clearColor bool) {
 	//gl.BindVertexArray(r.vao)
-	gl.BindFramebuffer(gl.FRAMEBUFFER, r.fbo)
+	r.bindFramebuffer(gl.FRAMEBUFFER, r.fbo)
 	gl.Viewport(0, 0, sys.scrrect[2], sys.scrrect[3])
 	if clearColor {
 		gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
@@ -1344,8 +1380,8 @@ func (r *Renderer_GL33) EndFrame() {
 	time := sdl.GetPerformanceCounter() // consistent time across all shaders
 
 	if sys.msaa > 0 {
-		gl.BindFramebuffer(gl.DRAW_FRAMEBUFFER, r.fbo_f)
-		gl.BindFramebuffer(gl.READ_FRAMEBUFFER, r.fbo)
+		r.bindFramebuffer(gl.DRAW_FRAMEBUFFER, r.fbo_f)
+		r.bindFramebuffer(gl.READ_FRAMEBUFFER, r.fbo)
 		gl.BlitFramebuffer(x, y, width, height, x, y, width, height, gl.COLOR_BUFFER_BIT, gl.LINEAR)
 	}
 
@@ -1361,7 +1397,7 @@ func (r *Renderer_GL33) EndFrame() {
 	// clear both of our post-processing FBOs to make sure
 	// nothing's there. the output is set later
 	for i := 0; i < 2; i++ {
-		gl.BindFramebuffer(gl.FRAMEBUFFER, r.fbo_pp[i])
+		r.bindFramebuffer(gl.FRAMEBUFFER, r.fbo_pp[i])
 		gl.Clear(gl.COLOR_BUFFER_BIT)
 	}
 	r.SetActiveTexture0() //gl.ActiveTexture(gl.TEXTURE0) // later referred to by Texture_GL
@@ -1391,7 +1427,7 @@ func (r *Renderer_GL33) EndFrame() {
 		// behavior to write to the same FBO
 		if i%2 == 0 {
 			// ping! our first post-processing FBO is the output
-			gl.BindFramebuffer(gl.FRAMEBUFFER, r.fbo_pp[0])
+			r.bindFramebuffer(gl.FRAMEBUFFER, r.fbo_pp[0])
 			if i == 0 {
 				// first pass, use fbo_texture
 				gl.BindTexture(gl.TEXTURE_2D, fbo_texture)
@@ -1401,7 +1437,7 @@ func (r *Renderer_GL33) EndFrame() {
 			}
 		} else {
 			// pong! our second post-processing FBO is the output
-			gl.BindFramebuffer(gl.FRAMEBUFFER, r.fbo_pp[1])
+			r.bindFramebuffer(gl.FRAMEBUFFER, r.fbo_pp[1])
 			// our first post-processing FBO is the input
 			gl.BindTexture(gl.TEXTURE_2D, r.fbo_pp_texture[0])
 		}
@@ -1412,7 +1448,7 @@ func (r *Renderer_GL33) EndFrame() {
 			// to FB0, the default frame buffer that the user sees
 			x, y, width, height := sys.window.GetScaledViewportSize()
 			gl.Viewport(x, y, width, height)
-			gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
+			r.bindFramebuffer(gl.FRAMEBUFFER, 0)
 			// clear FB0 just to make sure
 			gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 		}
@@ -1611,7 +1647,7 @@ func (r *Renderer_GL33) prepareShadowMapPipeline(bufferIndex uint32) {
 	r.ChangeProgram(r.shadowMapShader.program)
 
 	gl.BindVertexArray(r.modelVAO)
-	gl.BindFramebuffer(gl.FRAMEBUFFER, r.fbo_shadow)
+	r.bindFramebuffer(gl.FRAMEBUFFER, r.fbo_shadow)
 
 	gl.Viewport(0, 0, 1024, 1024)
 	//gl.Enable(gl.TEXTURE_2D) // Causes OpenGL error
@@ -1760,7 +1796,7 @@ func (r *Renderer_GL33) prepareModelPipeline(bufferIndex uint32, env *Environmen
 	r.ChangeProgram(r.modelShader.program)
 
 	gl.BindVertexArray(r.modelVAO)
-	gl.BindFramebuffer(gl.FRAMEBUFFER, r.fbo)
+	r.bindFramebuffer(gl.FRAMEBUFFER, r.fbo)
 
 	gl.Viewport(0, 0, sys.scrrect[2], sys.scrrect[3])
 	r.SetDepthMask(true)
@@ -2009,7 +2045,7 @@ func (r *Renderer_GL33) ReleaseModelPipeline() {
 func (r *Renderer_GL33) ReadPixels(data []uint8, width, height int) {
 	// we defer the EndFrame(), SwapBuffers(), and BeginFrame() calls that were previously below now to
 	// a single spot in order to prevent the blank screenshot bug on single digit FPS
-	gl.BindFramebuffer(gl.READ_FRAMEBUFFER, 0)
+	r.bindFramebuffer(gl.READ_FRAMEBUFFER, 0)
 	gl.ReadPixels(0, 0, int32(width), int32(height), gl.RGBA, gl.UNSIGNED_BYTE, unsafe.Pointer(&data[0]))
 }
 
@@ -2382,7 +2418,7 @@ func (r *Renderer_GL33) RenderCubeMap(envTex Texture, cubeTex Texture) {
 	r.ChangeProgram(r.panoramaToCubeMapShader.program)
 
 	gl.BindVertexArray(r.modelEnvVAO)
-	gl.BindFramebuffer(gl.FRAMEBUFFER, r.fbo_env)
+	r.bindFramebuffer(gl.FRAMEBUFFER, r.fbo_env)
 	gl.Viewport(0, 0, textureSize, textureSize)
 
 	data := f32.Bytes(binary.LittleEndian, -1, -1, 1, -1, -1, 1, 1, 1)
@@ -2405,7 +2441,7 @@ func (r *Renderer_GL33) RenderCubeMap(envTex Texture, cubeTex Texture) {
 	}
 
 	gl.BindVertexArray(0)
-	gl.BindFramebuffer(gl.FRAMEBUFFER, r.fbo)
+	r.bindFramebuffer(gl.FRAMEBUFFER, r.fbo)
 	gl.BindTexture(gl.TEXTURE_CUBE_MAP, cubeTexture.handle)
 	gl.GenerateMipmap(gl.TEXTURE_CUBE_MAP)
 }
@@ -2419,7 +2455,7 @@ func (r *Renderer_GL33) RenderFilteredCubeMap(distribution int32, cubeTex Textur
 	r.ChangeProgram(r.cubemapFilteringShader.program)
 
 	gl.BindVertexArray(r.modelEnvVAO)
-	gl.BindFramebuffer(gl.FRAMEBUFFER, r.fbo_env)
+	r.bindFramebuffer(gl.FRAMEBUFFER, r.fbo_env)
 	gl.Viewport(0, 0, currentTextureSize, currentTextureSize)
 
 	data := f32.Bytes(binary.LittleEndian, -1, -1, 1, -1, -1, 1, 1, 1)
@@ -2454,7 +2490,7 @@ func (r *Renderer_GL33) RenderFilteredCubeMap(distribution int32, cubeTex Textur
 	}
 
 	gl.BindVertexArray(0)
-	gl.BindFramebuffer(gl.FRAMEBUFFER, r.fbo)
+	r.bindFramebuffer(gl.FRAMEBUFFER, r.fbo)
 }
 
 func (r *Renderer_GL33) RenderLUT(distribution int32, cubeTex Texture, lutTex Texture, sampleCount int32) {
@@ -2465,7 +2501,7 @@ func (r *Renderer_GL33) RenderLUT(distribution int32, cubeTex Texture, lutTex Te
 	r.ChangeProgram(r.cubemapFilteringShader.program)
 
 	gl.BindVertexArray(r.modelEnvVAO)
-	gl.BindFramebuffer(gl.FRAMEBUFFER, r.fbo_env)
+	r.bindFramebuffer(gl.FRAMEBUFFER, r.fbo_env)
 	gl.Viewport(0, 0, textureSize, textureSize)
 
 	data := f32.Bytes(binary.LittleEndian, -1, -1, 1, -1, -1, 1, 1, 1)
@@ -2499,7 +2535,7 @@ func (r *Renderer_GL33) RenderLUT(distribution int32, cubeTex Texture, lutTex Te
 	gl.DrawArrays(gl.TRIANGLE_STRIP, 0, 4)
 
 	gl.BindVertexArray(0)
-	gl.BindFramebuffer(gl.FRAMEBUFFER, r.fbo)
+	r.bindFramebuffer(gl.FRAMEBUFFER, r.fbo)
 }
 
 func (r *Renderer_GL33) PerspectiveProjectionMatrix(angle, aspect, near, far float32) mgl.Mat4 {
@@ -2601,23 +2637,23 @@ func (r *Renderer_GL33) NeedsGrabPass() bool {
 
 func (r *Renderer_GL33) ResolveBackBuffer() Texture {
 	if sys.msaa > 0 {
-		gl.BindFramebuffer(gl.READ_FRAMEBUFFER, r.fbo)
-		gl.BindFramebuffer(gl.DRAW_FRAMEBUFFER, r.grabFbo)
+		r.bindFramebuffer(gl.READ_FRAMEBUFFER, r.fbo)
+		r.bindFramebuffer(gl.DRAW_FRAMEBUFFER, r.grabFbo)
 
 		gl.BlitFramebuffer(0, 0, sys.scrrect[2], sys.scrrect[3], 0, 0, sys.scrrect[2], sys.scrrect[3], gl.COLOR_BUFFER_BIT, gl.NEAREST)
 
-		gl.BindFramebuffer(gl.FRAMEBUFFER, r.fbo)
+		r.bindFramebuffer(gl.FRAMEBUFFER, r.fbo)
 		return r.grabTexture
 	}
 
 	r.SetActiveTexture0()
 	gl.BindTexture(gl.TEXTURE_2D, r.grabTexture.handle)
 
-	gl.BindFramebuffer(gl.READ_FRAMEBUFFER, r.fbo)
+	r.bindFramebuffer(gl.READ_FRAMEBUFFER, r.fbo)
 	gl.ReadBuffer(gl.COLOR_ATTACHMENT0)
 
 	gl.CopyTexSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 0, 0, r.grabTexture.width, r.grabTexture.height)
 
-	gl.BindFramebuffer(gl.FRAMEBUFFER, r.fbo)
+	r.bindFramebuffer(gl.FRAMEBUFFER, r.fbo)
 	return r.grabTexture
 }
