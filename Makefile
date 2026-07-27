@@ -306,9 +306,11 @@ endif
 
 BINARY   := $(OUTDIR)/$(BINNAME)
 
-ifeq ($(HOST_OS),windows)
-  SRC_SYSO := src/rsrc_windows.syso
-endif
+SRC_SYSO := src/rsrc_windows.syso
+
+# Go source files — used as prerequisites for the binary target so make can
+# detect when to recompile.
+GO_SOURCES := $(shell find src -name '*.go' -type f)
 
 # ============================================================================
 # SxS Version Sanitization (Windows only)
@@ -344,7 +346,7 @@ endif
 
 .PHONY: all release debug help \
         deps-check check-go-env \
-        ffmpeg xmp sdl2 winres binary install appbundle \
+        ffmpeg xmp sdl2 winres install appbundle \
         screenpack \
         clean distclean FORCE
 
@@ -358,7 +360,7 @@ all: release
 # Release Build
 # ============================================================================
 
-release: deps-check xmp ffmpeg sdl2 binary
+release: deps-check xmp ffmpeg sdl2 $(BINARY)
 	@echo "==> Build successful"
 	@echo "    Binary: $(BINARY)"
 
@@ -518,16 +520,15 @@ $(BUILD_PREFIX)/lib/libSDL2.a:
 sdl2:
 	@case "$(HOST_OS)" in \
 		windows) \
-			$(MAKE) --no-print-directory $(BUILD_PREFIX)/lib/libSDL2.a; \
-			echo "    SDL2 $$(PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig" $(PKG_CONFIG) --modversion sdl2) found";; \
+			$(MAKE) -s $(BUILD_PREFIX)/lib/libSDL2.a; \
+			echo "    Local SDL2 $$(PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig" $(PKG_CONFIG) --modversion sdl2) found";; \
 		*) \
 			pkg-config --exists sdl2 || { \
 				echo "ERROR: SDL2 development library not found." >&2; \
 				echo "  Install with: sudo apt install libsdl2-dev" >&2; \
 				exit 1; \
 			}; \
-			echo "==> Using system SDL2..."; \
-			echo "    SDL2 $$(PKG_CONFIG_PATH="/usr/local/lib/pkgconfig" $(PKG_CONFIG) --modversion sdl2) found";; \
+			echo "    System SDL2 $$(PKG_CONFIG_PATH="/usr/local/lib/pkgconfig" $(PKG_CONFIG) --modversion sdl2) found";; \
 	esac
 
 # ============================================================================
@@ -536,6 +537,7 @@ sdl2:
 # ============================================================================
 
 ffmpeg: $(FFMPEG_LIBS)
+	@echo "    FFmpeg $$(PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig" $(PKG_CONFIG) --modversion libavformat) found"
 
 $(FFMPEG_LIBS):
 	@echo "==> Building static FFmpeg for $(HOST_OS)..."
@@ -596,6 +598,7 @@ XMP_LIB    := $(BUILD_PREFIX)/lib/libxmp.a
 xmp: $(XMP_LIB)
 	@# Remove any shared import lib (Windows-specific, no-op elsewhere).
 	@rm -f "$(BUILD_PREFIX)/lib/libxmp.dll.a"
+	@echo "    XMP $$(PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig" $(PKG_CONFIG) --modversion libxmp) found"
 
 $(XMP_LIB):
 	@echo "==> Building static libxmp for $(HOST_OS)..."
@@ -694,9 +697,9 @@ $(WINRES_DIR)/Ikemen_GO.rc: FORCE
 	END
 	RCEOF
 
-.PHONY: winres
-winres: $(WINRES_DIR)/Ikemen_GO.rc
-	@# Windows resource embedding — no-op on non-Windows
+# Windows resource embedding — produces the .syso object for the linker.
+# The shell guard makes this a no-op on non-Windows.
+$(SRC_SYSO): $(WINRES_DIR)/Ikemen_GO.rc
 	@[ "$(HOST_OS)" = "windows" ] || exit 0
 	@echo "==> Embedding Windows resources (icon + manifest)..."
 	mkdir -p src
@@ -704,6 +707,9 @@ winres: $(WINRES_DIR)/Ikemen_GO.rc
 		-I $(WINRES_DIR) -I external/icons \
 		-i $(WINRES_DIR)/Ikemen_GO.rc \
 		-O coff -o $(SRC_SYSO)
+
+.PHONY: winres
+winres: $(SRC_SYSO)
 
 # ============================================================================
 # CGo Flags — computed inside the recipe at build time (after ffmpeg/xmp
@@ -718,13 +724,17 @@ _CGO_PKGS := libavformat libavcodec libavutil libswscale libswresample libavfilt
 # Go Binary
 # ============================================================================
 
-binary: ffmpeg xmp sdl2 check-go-env
-ifeq ($(HOST_OS),windows)
-binary: winres
-endif
+# Forwarding phony — `make binary` still works as before.
+.PHONY: binary
+binary: $(BINARY)
+
+# Real file target — only rebuilds when Go sources, libraries, or resources
+# have actually changed.  The `go build` command leverages Go's own build
+# cache so unchanged packages are not recompiled.
+$(BINARY): $(GO_SOURCES) $(XMP_LIB) $(FFMPEG_LIBS)
+	@go version >/dev/null 2>&1 || \
+		{ echo "ERROR: 'go version' failed." >&2; exit 1; }
 	@echo "==> Building $(BINNAME) ($(CONFIG), GOOS=$(GOOS) GOARCH=$(GOARCH))..."
-	@# Clear stale Go build cache (old CGo objects may reference system FFmpeg)
-	GOROOT="$(GOROOT)" "$(GOROOT)/bin/go" clean -cache 2>/dev/null || true
 	case "$(HOST_OS)" in \
 		windows) \
 			_PC_WINPATH="$$(cygpath -m "$(BUILD_PREFIX)/lib/pkgconfig")" ; \
@@ -732,7 +742,7 @@ endif
 			_CGO_LDFLAGS="-L$(BUILD_PREFIX)/lib $$( $(PKG_CONFIG) --with-path="$${_PC_WINPATH}" --static --libs $(_CGO_PKGS) )" ; \
 			CGO_CFLAGS="-DLIBXMP_STATIC $$_CGO_CFLAGS" \
 			CGO_LDFLAGS="$$_CGO_LDFLAGS" \
-			go build -trimpath -v $(GO_TAGS) \
+			go build -trimpath $(GO_TAGS) \
 				-ldflags "$(LDFLAGS_GO)" \
 				-o "$(BINARY)" ./src;; \
 		*) \
@@ -742,12 +752,18 @@ endif
 			PKG_CONFIG_LIBDIR= \
 			CGO_CFLAGS="-DLIBXMP_STATIC $$_CGO_CFLAGS" \
 			CGO_LDFLAGS="$$_CGO_LDFLAGS" \
-			go build -trimpath -v $(GO_TAGS) \
+			go build -trimpath $(GO_TAGS) \
 				-ldflags "$(LDFLAGS_GO)" \
 				-o "$(BINARY)" ./src;; \
 	esac
 	@# Clean up Windows resource object after build
 	rm -f $(SRC_SYSO) 2>/dev/null || true
+
+# On Windows, the binary also requires SDL2 (built from source) and the
+# resource .syso object (icon + manifest + version info).
+ifeq ($(HOST_OS),windows)
+$(BINARY): $(BUILD_PREFIX)/lib/libSDL2_windows_$(GOARCH).a $(SRC_SYSO)
+endif
 
 # ============================================================================
 # Install — assemble a runnable distribution
@@ -756,7 +772,7 @@ endif
 # Merges screenpack directories (chars, stages, sound, video, data, external,
 # font) with engine data and copies the binary into $(INSTALLDIR).
 
-install: deps-check screenpack binary
+install: deps-check screenpack $(BINARY)
 	@echo "==> Installing to $(INSTALLDIR)/..."
 	mkdir -p "$(INSTALLDIR)"
 	@echo "==> Copying engine data: data font external"
