@@ -417,6 +417,7 @@ type FaceProperties struct {
 	} `ini:"done"`
 	Random   AnimationProperties `ini:"random"`  // only used by [Select Info]
 	Loading  AnimationProperties `ini:"loading"` // only used by [Select Info] and [VS Screen]
+	Slot     AnimationProperties `ini:"slot"`    // only used by [Select Info]
 	Velocity [2]float32          `ini:"velocity"`
 	MaxDist  [2]float32          `ini:"maxdist"`
 	Accel    [2]float32          `ini:"accel"`
@@ -691,6 +692,7 @@ type SelectInfoProperties struct {
 			SwitchTime int32 `ini:"switchtime"`
 		} `ini:"random"`
 		MapCell map[string]*CellOverrideProperties `ini:"map:^[0-9*]+-[0-9*]+$" lua:""`
+		Slot    AnimationProperties                `ini:"slot"`
 	} `ini:"cell"`
 	P1      PlayerSelectProperties `ini:"p1"`
 	P2      PlayerSelectProperties `ini:"p2"`
@@ -2105,6 +2107,16 @@ func (m *Motif) mergeWithInheritance(specs []InheritSpec) {
 		for suf := range suffixes {
 			dstKey := sp.DstPrefix + suf
 			srcKey := sp.SrcPrefix + suf
+			// Skip face.random/face2.random and face.slot/face2.slot anim/spr inheritance
+			lowerDst := strings.ToLower(sp.DstPrefix)
+			if (strings.Contains(lowerDst, ".face.random.") ||
+				strings.Contains(lowerDst, ".face2.random.") ||
+				strings.Contains(lowerDst, "face.slot.") ||
+				strings.Contains(lowerDst, "face2.slot.")) &&
+				(strings.EqualFold(suf, "anim") ||
+					strings.EqualFold(suf, "spr")) {
+				continue
+			}
 			lowerFull := strings.ToLower(dstKey)
 			if shouldSkip(lowerFull) {
 				continue
@@ -2156,6 +2168,7 @@ func (m *Motif) mergeWithInheritance(specs []InheritSpec) {
 			query := strings.ToLower(secPath + "." + dstKey)
 			if err := m.SetValueUpdate(query, val); err != nil {
 				//fmt.Printf("Warning: inheritance set failed for %s = %q: %v\n", query, val, err)
+				continue
 			}
 
 			// Remember only anim/spr values that were actually inherited into the destination.
@@ -2228,12 +2241,20 @@ func (m *Motif) overrideParams() {
 		{SrcSec: "Option Info", SrcPrefix: "menu.", DstSec: "Option Info", DstPrefix: "keymenu."},
 		// [Select Info]
 		{SrcSec: "Select Info", SrcPrefix: "p1.face.", DstSec: "Select Info", DstPrefix: "p1.face.done."},
+		{SrcSec: "Select Info", SrcPrefix: "p1.face.", DstSec: "Select Info", DstPrefix: "p1.face.random."},
+		{SrcSec: "Select Info", SrcPrefix: "p1.face.", DstSec: "Select Info", DstPrefix: "p1.face.slot."},
 		{SrcSec: "Select Info", SrcPrefix: "p1.face.", DstSec: "Select Info", DstPrefix: "p1.face.loading."},
 		{SrcSec: "Select Info", SrcPrefix: "p1.face2.", DstSec: "Select Info", DstPrefix: "p1.face2.done."},
+		{SrcSec: "Select Info", SrcPrefix: "p1.face2.", DstSec: "Select Info", DstPrefix: "p1.face2.random."},
+		{SrcSec: "Select Info", SrcPrefix: "p1.face2.", DstSec: "Select Info", DstPrefix: "p1.face2.slot."},
 		{SrcSec: "Select Info", SrcPrefix: "p1.face2.", DstSec: "Select Info", DstPrefix: "p1.face2.loading."},
 		{SrcSec: "Select Info", SrcPrefix: "p2.face.", DstSec: "Select Info", DstPrefix: "p2.face.done."},
+		{SrcSec: "Select Info", SrcPrefix: "p2.face.", DstSec: "Select Info", DstPrefix: "p2.face.random."},
+		{SrcSec: "Select Info", SrcPrefix: "p2.face.", DstSec: "Select Info", DstPrefix: "p2.face.slot."},
 		{SrcSec: "Select Info", SrcPrefix: "p2.face.", DstSec: "Select Info", DstPrefix: "p2.face.loading."},
 		{SrcSec: "Select Info", SrcPrefix: "p2.face2.", DstSec: "Select Info", DstPrefix: "p2.face2.done."},
+		{SrcSec: "Select Info", SrcPrefix: "p2.face2.", DstSec: "Select Info", DstPrefix: "p2.face2.random."},
+		{SrcSec: "Select Info", SrcPrefix: "p2.face2.", DstSec: "Select Info", DstPrefix: "p2.face2.slot."},
 		{SrcSec: "Select Info", SrcPrefix: "p2.face2.", DstSec: "Select Info", DstPrefix: "p2.face2.loading."},
 		{SrcSec: "Select Info", SrcPrefix: "p1.face.", DstSec: "Select Info", DstPrefix: "p1.palmenu.preview."},
 		{SrcSec: "Select Info", SrcPrefix: "p2.face.", DstSec: "Select Info", DstPrefix: "p2.palmenu.preview."},
@@ -2662,6 +2683,10 @@ func (m *Motif) applyPostParsePosAdjustments() {
 		// Face.Random and Face2.Random
 		offsetAnims(ps.Face.Pos[0], ps.Face.Pos[1], ps.Face.Random.AnimData)
 		offsetAnims(ps.Face2.Pos[0], ps.Face2.Pos[1], ps.Face2.Random.AnimData)
+
+		// Face.Slot and Face2.Slot
+		offsetAnims(ps.Face.Pos[0], ps.Face.Pos[1], ps.Face.Slot.AnimData)
+		offsetAnims(ps.Face2.Pos[0], ps.Face2.Pos[1], ps.Face2.Slot.AnimData)
 	}
 
 	// Select Screen: Players

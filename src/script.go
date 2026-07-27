@@ -2101,7 +2101,6 @@ func systemScriptInit(l *lua.LState) {
 			sys.luaQueueLayerDraw(int(layerLocal), func() {
 				(&aSnap).Draw(layerLocal)
 			})
-			aSnap.Update(true)
 		})
 		return 0
 	})
