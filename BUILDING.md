@@ -394,6 +394,78 @@ the Elecbyte screenpack. The release CI bundles these automatically.
 
 ---
 
+## Profiling with pprof (debug build only)
+
+The `debug` build tag activates an HTTP pprof server on `localhost:6060`.
+Start the game with a `CONFIG=debug` build and navigate to your desired screen
+before profiling.
+
+### Capturing profiles from a live process
+
+```bash
+# Heap (in-use memory snapshot)
+GOROOT=/mingw64/lib/go go tool pprof http://localhost:6060/debug/pprof/heap
+
+# Heap (total allocations since process start)
+GOROOT=/mingw64/lib/go go tool pprof -alloc_space http://localhost:6060/debug/pprof/heap
+
+# CPU profile (30 seconds)
+GOROOT=/mingw64/lib/go go tool pprof http://localhost:6060/debug/pprof/profile?seconds=30
+
+# Goroutine stacks
+GOROOT=/mingw64/lib/go go tool pprof http://localhost:6060/debug/pprof/goroutine
+
+# Blocking profile
+GOROOT=/mingw64/lib/go go tool pprof http://localhost:6060/debug/pprof/block
+```
+
+### Examining a saved profile
+
+Profiles are saved to `$HOME/pprof/` by default. To re-open a saved file with
+source-level annotations:
+
+```bash
+# On MSYS2, Go needs explicit GOROOT and the binary's module path
+# must be trimmed to find source files in the local checkout:
+GOROOT=/mingw64/lib/go go tool pprof -trim_path 'github.com/ikemen-engine/Ikemen-GO/' \
+  -source_path /path/to/your/Ikemen-GO \
+  -list 'main.toLValue' \
+  $HOME/pprof/pprof.Ikemen_GO_debug.exe.*.pb.gz
+
+# Or, if running from the project root:
+GOROOT=/mingw64/lib/go go tool pprof -trim_path 'github.com/ikemen-engine/Ikemen-GO/' \
+  -source_path . \
+  -list 'main.toLValue' \
+  $HOME/pprof/pprof.Ikemen_GO_debug.exe.*.pb.gz
+```
+
+Common pprof commands:
+
+| Command | Description |
+|---------|-------------|
+| `top` | Show top memory/cpu consumers |
+| `top20 --cum` | Show top 20 by cumulative total |
+| `list fn` | Show source lines for a function with per-line allocations |
+| `peek fn` | Show callers/callees of a function |
+| `tree` | Show hierarchical call tree |
+| `web` | Open interactive flame graph in browser |
+| `pdf` | Generate PDF call graph |
+
+### Comparing two profiles
+
+```bash
+GOROOT=/mingw64/lib/go go tool pprof \
+  -base /path/to/baseline.pb.gz \
+  /path/to/current.pb.gz
+```
+
+Then use `top` to see what grew (positive = more allocations in current).
+
+> The pprof server is compiled out entirely in release builds (`!debug` tag) —
+> zero overhead.
+
+---
+
 ## Notes & licensing
 
 - The minimal FFmpeg we build matches CI: static libs only; `file` protocol;

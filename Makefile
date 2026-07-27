@@ -43,7 +43,7 @@ SHELL       := /bin/bash
 SDL2_URL    := https://github.com/libsdl-org/SDL/archive/refs/tags/release-2.32.10.zip
 FFMPEG_URL  := https://github.com/FFmpeg/FFmpeg/archive/refs/tags/n7.1.zip
 XMP_URL     := https://github.com/libxmp/libxmp/archive/refs/tags/libxmp-4.7.1.zip
-SCREENPACK_URL := https://github.com/leonkasovan/Ikemen-GO-Screenpack/archive/refs/heads/master.zip
+SCREENPACK_URL := https://github.com/ikemen-engine/Ikemen-GO-Screenpack/archive/refs/heads/master.zip
 
 # ============================================================================
 # Host OS / Architecture Detection

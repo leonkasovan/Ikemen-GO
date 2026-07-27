@@ -305,6 +305,12 @@ type System struct {
 	luaLState          *lua.LState
 	statusLFunc        *lua.LFunction
 	listLFunc          []*lua.LFunction
+
+	// Cached Lua tables for stable Go→Lua conversions
+	cachedCfgTable    *lua.LTable
+	cfgCacheGen       uint64
+	cachedMotifTable  *lua.LTable
+	motifCacheGen     uint64
 	reloadPreserveVars [MaxPlayerNo]bool
 	charVarsBackup     map[int]CharVarBackup
 	shaderRefCount     map[string]int

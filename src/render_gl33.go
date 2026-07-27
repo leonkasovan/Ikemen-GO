@@ -293,6 +293,8 @@ func (r *Renderer_GL33) autoResizeAtlas() {
 
 	// Update config for persistence (takes effect on next launch).
 	sys.cfg.SetValueUpdate("Video.PaletteAtlasSize", newSize)
+	sys.cfgCacheGen++
+	sys.cachedCfgTable = nil
 	PalAtlasSize = newSize
 
 	// Create new, larger atlas.
@@ -846,6 +848,8 @@ func (r *Renderer_GL33) Init() {
 	gl.GetIntegerv(gl.MAX_SAMPLES, &maxSamples)
 	if sys.msaa > maxSamples {
 		sys.cfg.SetValueUpdate("Video.MSAA", maxSamples)
+		sys.cfgCacheGen++
+		sys.cachedCfgTable = nil
 		sys.msaa = maxSamples
 	}
 

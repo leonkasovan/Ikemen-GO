@@ -178,6 +178,8 @@ func realMain() {
 		cfg.Video.RenderMode = "OpenGL ES 3.2"
 	}
 	sys.cfg = *cfg
+	sys.cfgCacheGen++
+	sys.cachedCfgTable = nil
 	// LogDebug("[INIT] Config Loaded. System Script: %s", sys.cfg.Config.System)
 
 	if sys.cfg.Debug.DumpLuaTables {

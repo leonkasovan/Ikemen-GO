@@ -323,6 +323,8 @@ func (r *Renderer_GLES32) autoResizeAtlas() {
 
 	// Update config for persistence (takes effect on next launch).
 	sys.cfg.SetValueUpdate("Video.PaletteAtlasSize", newSize)
+	sys.cfgCacheGen++
+	sys.cachedCfgTable = nil
 	PalAtlasSize = newSize
 
 	// Create new, larger atlas.

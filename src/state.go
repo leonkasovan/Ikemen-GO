@@ -137,6 +137,7 @@ func (gs *GameState) LoadState(stateID int) {
 
 	sys.fightScreen = gs.fightScreen.Clone(a)
 	sys.motif = gs.motif.Clone(a, gs.postMatchFlg)
+	sys.motifCacheGen++
 
 	// Storyboard: only rollback-touch it when it was actually running.
 	if gs.storyboard.active {

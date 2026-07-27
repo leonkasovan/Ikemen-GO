@@ -1613,6 +1613,8 @@ func (r *Renderer_VK) NewVulkanDevice(appInfo *vk.ApplicationInfo, window uintpt
 			}
 			if sys.msaa > int32(maxSamples) {
 				sys.cfg.SetValueUpdate("Video.MSAA", maxSamples)
+				sys.cfgCacheGen++
+				sys.cachedCfgTable = nil
 				sys.msaa = int32(maxSamples)
 			}
 			r.gpuIndex = uint32(i)

@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"strings"
+
+	lua "github.com/yuin/gopher-lua"
 )
 
 // -----------------------------------------------------------------------------
@@ -177,6 +179,7 @@ func expandMusicKV(key, value string) []string {
 // -----------------------------------------------------------------------------
 
 type SelectCharParams struct {
+	luaCache      *lua.LTable
 	musicEntries  []string `ini:"musicEntries"`
 	AI            int32    `ini:"ai"`
 	VsScreen      bool     `ini:"vsscreen"`
@@ -217,6 +220,7 @@ func newSelectCharParams() *SelectCharParams {
 func (p *SelectCharParams) MusicEntries() []string { return p.musicEntries }
 
 func (p *SelectCharParams) AppendParams(entries []string) {
+	p.luaCache = nil
 	p.Raw = append(p.Raw, entries...)
 	for _, e := range entries {
 		key, val, ok := parseKV(e)
@@ -284,6 +288,7 @@ func (p *SelectCharParams) AppendParams(entries []string) {
 // -----------------------------------------------------------------------------
 
 type SelectStageParams struct {
+	luaCache     *lua.LTable
 	musicEntries []string `ini:"musicentries"`
 	Order        []int32  `ini:"order"`
 	Unlock       string   `ini:"unlock"`
@@ -301,6 +306,7 @@ func newSelectStageParams() *SelectStageParams {
 func (p *SelectStageParams) MusicEntries() []string { return p.musicEntries }
 
 func (p *SelectStageParams) AppendParams(entries []string) {
+	p.luaCache = nil
 	p.Raw = append(p.Raw, entries...)
 	for _, e := range entries {
 		key, val, ok := parseKV(e)
@@ -342,6 +348,7 @@ func newOverrideCharData() *OverrideCharData {
 }
 
 type GameParams struct {
+	luaCache            *lua.LTable
 	musicEntries        []string `ini:"musicentries"`
 	Continue            bool     `ini:"continue"`
 	QuickContinue       bool     `ini:"quickcontinue"`
@@ -425,6 +432,7 @@ func (p *GameParams) ensureOverride(team, member int) *OverrideCharData {
 }
 
 func (p *GameParams) AppendParams(entries []string) {
+	p.luaCache = nil
 	p.Raw = append(p.Raw, entries...)
 	for _, e := range entries {
 		key, val, ok := parseKV(e)

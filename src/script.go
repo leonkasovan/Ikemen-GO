@@ -3507,12 +3507,21 @@ func systemScriptInit(l *lua.LState) {
 		@treturn table params Lua table created from the comma-separated `params` string passed to `addChar()`.
 		function getCharSelectParams(charRef) end*/
 		c := sys.sel.GetChar(int(numArg(l, 1)))
+		if c == nil || c.scp == nil {
+			l.Push(lua.LNil)
+			return 1
+		}
+		if c.scp.luaCache != nil {
+			l.Push(c.scp.luaCache)
+			return 1
+		}
 		lv := toLValue(l, c.scp)
 		lTable, ok := lv.(*lua.LTable)
 		if !ok {
 			l.RaiseError("Error: 'lv' is not a *lua.LTable")
 			return 0
 		}
+		c.scp.luaCache = lTable
 		l.Push(lTable)
 		return 1
 	})
@@ -3606,12 +3615,21 @@ func systemScriptInit(l *lua.LState) {
 		@function getGameParams
 		@treturn table params Current game parameters as a Lua table.
 		function getGameParams() end*/
+		if sys.sel.gameParams == nil {
+			l.Push(lua.LNil)
+			return 1
+		}
+		if sys.sel.gameParams.luaCache != nil {
+			l.Push(sys.sel.gameParams.luaCache)
+			return 1
+		}
 		lv := toLValue(l, sys.sel.gameParams)
 		lTable, ok := lv.(*lua.LTable)
 		if !ok {
 			l.RaiseError("Error: 'lv' is not a *lua.LTable")
 			return 0
 		}
+		sys.sel.gameParams.luaCache = lTable
 		l.Push(lTable)
 		return 1
 	})
@@ -4110,12 +4128,21 @@ func systemScriptInit(l *lua.LState) {
 		@treturn table params Lua table created from the comma-separated `params` string passed to `addStage()`.
 		function getStageSelectParams(stageRef) end*/
 		c := sys.sel.GetStage(int(numArg(l, 1)))
+		if c == nil || c.ssp == nil {
+			l.Push(lua.LNil)
+			return 1
+		}
+		if c.ssp.luaCache != nil {
+			l.Push(c.ssp.luaCache)
+			return 1
+		}
 		lv := toLValue(l, c.ssp)
 		lTable, ok := lv.(*lua.LTable)
 		if !ok {
 			l.RaiseError("Error: 'lv' is not a *lua.LTable")
 			return 0
 		}
+		c.ssp.luaCache = lTable
 		l.Push(lTable)
 		return 1
 	})
@@ -4377,8 +4404,17 @@ func systemScriptInit(l *lua.LState) {
 				l.RaiseError("\nCan't load %v: %v\n", strArg(l, 1), err.Error())
 			}
 			sys.cfg = *cfg
+			sys.cfgCacheGen++
+			sys.cachedCfgTable = nil
+		}
+		if sys.cachedCfgTable != nil {
+			l.Push(sys.cachedCfgTable)
+			return 1
 		}
 		lv := toLValue(l, sys.cfg)
+		if tbl, ok := lv.(*lua.LTable); ok {
+			sys.cachedCfgTable = tbl
+		}
 		l.Push(lv)
 		return 1
 	})
@@ -4463,6 +4499,8 @@ func systemScriptInit(l *lua.LState) {
 			l.RaiseError("\nCan't load motif %v: %v\n", def, err.Error())
 		}
 		sys.motif = *m
+		sys.motifCacheGen++
+		sys.cachedMotifTable = nil
 
 		// Initialize the LUT for nokey (helps fix #3091 for all cases)
 		StringToButtonLUT[sys.motif.OptionInfo.Menu.Valuename["nokey"]] = 25
@@ -4910,6 +4948,10 @@ func systemScriptInit(l *lua.LState) {
 			dst.RawSetString("itemname_order", orders)
 		}
 
+		if sys.cachedMotifTable != nil && sys.motifCacheGen > 0 {
+			l.Push(sys.cachedMotifTable)
+			return 1
+		}
 		lv := toLValue(l, sys.motif)
 		lTable, ok := lv.(*lua.LTable)
 		if !ok {
@@ -4949,6 +4991,7 @@ func systemScriptInit(l *lua.LState) {
 		populateItemName("Select Info", []string{"select_info", "teammenu"}, "teammenu.itemname.", "team", lTable)
 		buildTeamOrder("Select Info", []string{"select_info", "teammenu"}, lTable)
 
+		sys.cachedMotifTable = lTable
 		l.Push(lTable)
 		return 1
 	})
@@ -5126,6 +5169,8 @@ func systemScriptInit(l *lua.LState) {
 
 		// Pass interface{} value
 		err := sys.cfg.SetValueUpdate(query, value)
+		sys.cfgCacheGen++
+		sys.cachedCfgTable = nil
 		if err == nil {
 			return 0
 		}
