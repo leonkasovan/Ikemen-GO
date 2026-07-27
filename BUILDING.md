@@ -260,6 +260,23 @@ The script runs 14 steps automatically:
 11. Downloads screenpack assets
 12. Builds and signs the APK
 
+### Dependency overrides
+
+The project maintains a local fork of the [`reisen`](https://github.com/ikemen-engine/reisen)
+FFmpeg binding library at **`packages/reisen/`**. This fork applies a fix for
+32-bit ARM (armeabi-v7a) builds where the upstream library uses C types (`C.ulong`,
+`C.long`) that are incompatible on 32-bit architectures. The fix uses `C.size_t`
+and `C.int64_t` instead, which are correct on both 32-bit and 64-bit ARM.
+
+The local fork is enabled via a `replace` directive in `go.mod`:
+
+```
+replace github.com/ikemen-engine/reisen => ./packages/reisen
+```
+
+If you update the `reisen` dependency version, copy the updated source into
+`packages/reisen/` and re-apply the platform fix if needed.
+
 ### Outputs
 
 | File | Description |
@@ -329,6 +346,23 @@ ANDROID_ABI=armeabi-v7a ./tools/generate_android_via_native.sh --yes
 When you change the ABI, all native dependencies (SDL2, libxmp, FFmpeg) are
 rebuilt from scratch into a separate directory (`build/android-deps-<ABI>/`).
 
+> **Important**: If you previously built a different ABI, make sure the
+> `ANDROID_DEPS_PATH` environment variable is **not stale** from the previous
+> build. A leftover `ANDROID_DEPS_PATH` in your shell or `~/.bashrc` will cause
+> the linker to pick up libraries from the wrong ABI directory, resulting in:
+> ```
+> ld.lld: error: .../libSDL2.so is incompatible with aarch64linux
+> ```
+> To fix this, either unset the variable before building:
+> ```bash
+> unset ANDROID_DEPS_PATH
+> ANDROID_ABI=armeabi-v7a ./tools/generate_android_via_native.sh --yes
+> ```
+> Or explicitly clear it:
+> ```bash
+> ANDROID_DEPS_PATH= ANDROID_ABI=armeabi-v7a ./tools/generate_android_via_native.sh --yes
+> ```
+
 ### Customization
 
 Override any setting via environment variables:
@@ -383,3 +417,10 @@ the Elecbyte screenpack. The release CI bundles these automatically.
 - **FFmpeg link errors**: run `make ffmpeg` separately to verify the FFmpeg build.
 - **libxmp not found**: run `make xmp` separately to verify the XMP build.
 - **Linux GL compatibility**: try `MESA_GL_VERSION_OVERRIDE=2.1` for a fallback.
+- **Android armeabi-v7a CGo type errors** (`cannot use _Ctype_ulong as _Ctype_size_t`):
+  The upstream `reisen` library uses C types that are incompatible on 32-bit ARM.
+  The project ships a patched local copy at `packages/reisen/` with the fix.
+  If updating the dependency, re-apply the fix to `packages/reisen/platform_linux.go`.
+- **Android linker error after switching ABIs** (`libSDL2.so is incompatible with
+  aarch64linux`): The `ANDROID_DEPS_PATH` variable may still point to the previous
+  ABI's library directory. Run `unset ANDROID_DEPS_PATH` before building.

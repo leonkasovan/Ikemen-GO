@@ -11,7 +11,7 @@ import (
 
 	"github.com/gopxl/beep/v2"
 	"github.com/gopxl/beep/v2/effects"
-	"github.com/ikemen-engine/reisen"
+	"github.com/ikemen-engine/Ikemen-GO/packages/reisen"
 )
 
 type bgVideo struct {

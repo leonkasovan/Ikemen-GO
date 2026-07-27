@@ -727,9 +727,9 @@ endif
 	GOROOT="$(GOROOT)" "$(GOROOT)/bin/go" clean -cache 2>/dev/null || true
 	case "$(HOST_OS)" in \
 		windows) \
-			_CGO_CFLAGS=$$( PKG_CONFIG_LIBDIR="$(BUILD_PREFIX)/lib/pkgconfig" $(PKG_CONFIG) --cflags $(_CGO_PKGS) ) ; \
-			_CGO_LDFLAGS="-L$(BUILD_PREFIX)/lib $$( PKG_CONFIG_LIBDIR="$(BUILD_PREFIX)/lib/pkgconfig" $(PKG_CONFIG) --static --libs $(_CGO_PKGS) )" ; \
-			PKG_CONFIG_LIBDIR="$(BUILD_PREFIX)/lib/pkgconfig" \
+			_PC_WINPATH="$$(cygpath -m "$(BUILD_PREFIX)/lib/pkgconfig")" ; \
+			_CGO_CFLAGS=$$( $(PKG_CONFIG) --with-path="$${_PC_WINPATH}" --cflags $(_CGO_PKGS) ) ; \
+			_CGO_LDFLAGS="-L$(BUILD_PREFIX)/lib $$( $(PKG_CONFIG) --with-path="$${_PC_WINPATH}" --static --libs $(_CGO_PKGS) )" ; \
 			CGO_CFLAGS="-DLIBXMP_STATIC $$_CGO_CFLAGS" \
 			CGO_LDFLAGS="$$_CGO_LDFLAGS" \
 			go build -trimpath -v $(GO_TAGS) \
