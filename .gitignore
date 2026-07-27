@@ -83,6 +83,7 @@ external/gamecontrollerdb.txt
 *.cmd
 *.bat
 *.sh
+!setup_msys_terminal_for_agentic_ai.bat
 # Keep only our own build scripts in tools/, NOT scripts inside the
 # downloaded dependency source trees (SDL/FFmpeg/libxmp), which would otherwise
 # be re-included by a recursive !tools/**/*.sh and make git recurse into them.
