@@ -1,0 +1,54 @@
+# This workflow will build a golang project
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-go
+
+name: Go
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go:
+          - '1.20' # Go version of Ikemen GO
+    name: "build with Go ${{ matrix.go }}"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+
+      - name: Install goveralls
+        if: ${{ github.ref == 'refs/heads/main' }}
+        run: go install github.com/mattn/goveralls@latest
+
+      # Install ALSA for building Oto
+      - name: Install ALSA
+        run: sudo apt install libasound2-dev
+
+      - name: Build
+        run: go build -v ./...
+
+      - name: Test
+        run: go test -v -covermode atomic -coverprofile=covprofile ./...
+
+      - name: Gofmt
+        # Run gofmt, print the output and exit with status code 1 if it isn't empty.
+        run: |
+          OUTPUT=$(gofmt -d ./)
+          echo "$OUTPUT"
+          test -z "$OUTPUT"
+
+      - name: Send coverage
+        if: ${{ github.ref == 'refs/heads/main' }}
+        env:
+          COVERALLS_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
+        run: goveralls -coverprofile=covprofile -service=github
