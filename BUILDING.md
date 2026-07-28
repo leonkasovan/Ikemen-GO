@@ -104,7 +104,7 @@ make APP_VERSION=v1.0.0 CONFIG=debug
 
 ## Linux
 
-### Prerequisites (Debian/Ubuntu)
+### Prerequisites (Debian/Ubuntu amd64)
 
 ```bash
 sudo apt update && sudo apt install -y \
@@ -112,6 +112,29 @@ sudo apt update && sudo apt install -y \
   wget unzip libx11-dev libxext-dev libxrandr-dev \
   libxcursor-dev libxi-dev libxinerama-dev libxss-dev \
   libxxf86vm-dev libasound2-dev libgl1-mesa-dev
+```
+
+### Prerequisites (Ubuntu arm64)
+```bash
+(root)
+sudo sudo apt install -y make cmake pkg-config gcc g++ wget unzip libasound2-dev libgl1-mesa-dev libxext-dev
+
+#install latest golang
+(root)
+wget https://go.dev/dl/go1.26.5.linux-arm64.tar.gz
+tar -C /usr/local -xzf go1.26.5.linux-arm64.tar.gz
+(user)
+export PATH=$PATH:/usr/local/go/bin
+
+
+#install latest SDL2 into system
+(root)
+wget https://github.com/libsdl-org/SDL/archive/refs/heads/release-2.32.x.zip
+unzip release-2.32.x.zip
+cd SDL-release-2.32.x/
+./configure --prefix=/usr
+make -j8
+make install
 ```
 
 > `mingw-w64-x86_64-yasm` is optional (nasm covers the assembler needs).
