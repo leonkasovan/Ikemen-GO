@@ -357,6 +357,15 @@ func attachController(deviceIndex int) {
 	input.controllers[slot] = controller
 	resetControllerState(slot)
 	input.controllerstate[slot].HasRumble = controller.HasRumble()
+
+	// Log controller info
+	vendor := controller.Vendor()
+	product := controller.Product()
+	productVersion := controller.ProductVersion()
+	name := controller.Name()
+	LogMessage("[Input] Controller %d connected: %s (Vendor: 0x%04X, Product: 0x%04X, Version: %d, Rumble: %t)",
+		slot, name, vendor, product, productVersion,
+		input.controllerstate[slot].HasRumble)
 }
 
 var fpsLogTick int32
