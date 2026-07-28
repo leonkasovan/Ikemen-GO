@@ -193,7 +193,7 @@ PKG_CONFIG ?= pkg-config
 
 # Tools required for building — nasm is an x86 assembler, not available/needed on ARM64
 ifeq ($(HOST_ARCH),arm64)
-  BUILD_TOOLS := make cmake pkg-config gcc g++ go unzip wget
+  BUILD_TOOLS := make cmake pkg-config gcc g++ unzip wget
 else
   BUILD_TOOLS := make cmake pkg-config gcc g++ nasm go unzip wget
 endif
@@ -270,9 +270,9 @@ endif
 
 ifeq ($(HOST_OS),windows)
   ifeq ($(IS_DEBUG),1)
-    GO_TAGS := -tags "static debug"
+    GO_TAGS := static debug
   else
-    GO_TAGS := -tags static
+    GO_TAGS := static
   endif
   EXTLDFLAGS := -static
   ifeq ($(IS_DEBUG),1)
@@ -283,7 +283,7 @@ ifeq ($(HOST_OS),windows)
 else
   # Linux / macOS — no -tags static; SDL2 via pkg-config. No -static, no -H windowsgui.
   ifeq ($(IS_DEBUG),1)
-    GO_TAGS := -tags debug
+    GO_TAGS := debug
   else
     GO_TAGS :=
   endif
@@ -295,7 +295,7 @@ else
   endif
   ifeq ($(HOST_ARCH),arm64)
     ifeq ($(HOST_OS),linux)
-      GO_TAGS += -tags armdevice
+      GO_TAGS += armdevice
     endif
   endif
 endif
@@ -528,7 +528,7 @@ sdl2:
 				echo "  Install with: sudo apt install libsdl2-dev" >&2; \
 				exit 1; \
 			}; \
-			echo "    System SDL2 $$(PKG_CONFIG_PATH="/usr/local/lib/pkgconfig" $(PKG_CONFIG) --modversion sdl2) found";; \
+			echo "    System SDL2 $$(PKG_CONFIG_PATH="/usr/lib/pkgconfig:/usr/local/lib/pkgconfig" $(PKG_CONFIG) --modversion sdl2) found";; \
 	esac
 
 # ============================================================================
@@ -735,6 +735,7 @@ $(BINARY): $(GO_SOURCES) $(XMP_LIB) $(FFMPEG_LIBS)
 	@go version >/dev/null 2>&1 || \
 		{ echo "ERROR: 'go version' failed." >&2; exit 1; }
 	@echo "==> Building $(BINNAME) ($(CONFIG), GOOS=$(GOOS) GOARCH=$(GOARCH))..."
+	@echo "    Go build tags: $(GO_TAGS) LDFLAGS: $(LDFLAGS_GO) CGO_CFLAGS: $(CGO_CFLAGS) CGO_LDFLAGS: $(CGO_LDFLAGS)"
 	case "$(HOST_OS)" in \
 		windows) \
 			_PC_WINPATH="$$(cygpath -m "$(BUILD_PREFIX)/lib/pkgconfig")" ; \
@@ -742,17 +743,17 @@ $(BINARY): $(GO_SOURCES) $(XMP_LIB) $(FFMPEG_LIBS)
 			_CGO_LDFLAGS="-L$(BUILD_PREFIX)/lib $$( $(PKG_CONFIG) --with-path="$${_PC_WINPATH}" --static --libs $(_CGO_PKGS) )" ; \
 			CGO_CFLAGS="-DLIBXMP_STATIC $$_CGO_CFLAGS" \
 			CGO_LDFLAGS="$$_CGO_LDFLAGS" \
-			go build -trimpath $(GO_TAGS) \
+			go build -trimpath -tags "$(GO_TAGS)" \
 				-ldflags "$(LDFLAGS_GO)" \
 				-o "$(BINARY)" ./src;; \
 		*) \
-			_CGO_CFLAGS=$$( PKG_CONFIG_LIBDIR= PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig:/usr/local/lib/pkgconfig$(if $(PKG_CONFIG_PATH),:$(PKG_CONFIG_PATH),)" $(PKG_CONFIG) --cflags $(_CGO_PKGS) ) ; \
-			_CGO_LDFLAGS="-L$(BUILD_PREFIX)/lib $$( PKG_CONFIG_LIBDIR= PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig:/usr/local/lib/pkgconfig$(if $(PKG_CONFIG_PATH),:$(PKG_CONFIG_PATH),)" $(PKG_CONFIG) --static --libs $(_CGO_PKGS) )" ; \
-			PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig:/usr/local/lib/pkgconfig$(if $(PKG_CONFIG_PATH),:$(PKG_CONFIG_PATH),)" \
+			_CGO_CFLAGS=$$( PKG_CONFIG_LIBDIR= PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig:/usr/lib/pkgconfig:/usr/local/lib/pkgconfig$(if $(PKG_CONFIG_PATH),:$(PKG_CONFIG_PATH),)" $(PKG_CONFIG) --cflags $(_CGO_PKGS) ) ; \
+			_CGO_LDFLAGS="-L$(BUILD_PREFIX)/lib $$( PKG_CONFIG_LIBDIR= PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig:/usr/lib/pkgconfig:/usr/local/lib/pkgconfig$(if $(PKG_CONFIG_PATH),:$(PKG_CONFIG_PATH),)" $(PKG_CONFIG) --static --libs $(_CGO_PKGS) )" ; \
+			PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig:/usr/lib/pkgconfig:/usr/local/lib/pkgconfig$(if $(PKG_CONFIG_PATH),:$(PKG_CONFIG_PATH),)" \
 			PKG_CONFIG_LIBDIR= \
 			CGO_CFLAGS="-DLIBXMP_STATIC $$_CGO_CFLAGS" \
 			CGO_LDFLAGS="$$_CGO_LDFLAGS" \
-			go build -trimpath $(GO_TAGS) \
+			go build -trimpath -tags "$(GO_TAGS)" \
 				-ldflags "$(LDFLAGS_GO)" \
 				-o "$(BINARY)" ./src;; \
 	esac
