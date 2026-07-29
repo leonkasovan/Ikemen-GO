@@ -3483,6 +3483,10 @@ func (ch *MotifChallenger) init(m *Motif) {
 		return
 	}
 
+	if m.AttractMode.Enabled && sys.credits == 0 {
+		return
+	}
+
 	controllerNo := sys.buttonController(m.ChallengerInfo.Key)
 	if controllerNo == -1 || sys.uiControllerKey(controllerNo) == sys.uiControllerKey(0) {
 		return
@@ -6546,11 +6550,13 @@ func victoryPortraitAnim(m *Motif, sc *SelectChar, slot string,
 		if len(a.anim.sff.palList.paletteMap) > 0 {
 			a = a.Copy()
 			isCopied = true
-			a.anim.sff.palList.paletteMap[0] = pal - 1
+			if idx, ok := a.anim.sff.palList.PalTable[[2]uint16{1, uint16(pal)}]; ok {
+				a.anim.sff.palList.paletteMap[0] = idx
+			}
 		}
 		//fmt.Printf("[Victory] slot=%s -> applied palette %d\n", slot, pal)
 	}
-
+	// Apply pn.lose.brightness
 	if brightness > 0 && brightness < 256 && a.anim != nil && a.anim.sff != nil {
 		if !isCopied {
 			a = a.Copy()
