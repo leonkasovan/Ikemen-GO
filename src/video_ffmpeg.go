@@ -7,12 +7,52 @@ import (
 	"math"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gopxl/beep/v2"
 	"github.com/gopxl/beep/v2/effects"
 	"github.com/ikemen-engine/Ikemen-GO/packages/reisen"
 )
+
+// pixelPool is a fixed-size pool of RGBA pixel buffers for a specific frame
+// resolution. Pooling eliminates the per-frame GoBytes allocation in reisen
+// (which was the single largest allocation source: ~1.4 GB/session).
+type pixelPool struct {
+	p    sync.Pool
+	size int // expected byte length (w * h * 4)
+}
+
+func newPixelPool(w, h int) *pixelPool {
+	sz := w * h * 4
+	return &pixelPool{
+		size: sz,
+		p: sync.Pool{
+			New: func() any {
+				b := make([]byte, sz)
+				return &b
+			},
+		},
+	}
+}
+
+func (pp *pixelPool) get() []byte {
+	b := pp.p.Get().(*[]byte)
+	if len(*b) < pp.size {
+		// Pool was created for a different size (shouldn't happen); alloc fresh.
+		nb := make([]byte, pp.size)
+		return nb
+	}
+	return (*b)[:pp.size]
+}
+
+func (pp *pixelPool) put(b []byte) {
+	if cap(b) < pp.size {
+		return // wrong size; discard
+	}
+	b = b[:cap(b)]
+	pp.p.Put(&b)
+}
 
 type bgVideo struct {
 	errs            chan error
@@ -29,8 +69,9 @@ type bgVideo struct {
 	basePTS         time.Duration
 	haveBasePTS     bool
 	elapsedPTS      time.Duration
-	lastFrame       *image.RGBA
-	volume          int
+	lastFrame          *image.RGBA
+	lastUploadedFrame  *image.RGBA
+	volume             int
 	scaleMode       BgVideoScaleMode
 	flag            BgVideoScaleFilter
 	playing         bool
@@ -39,6 +80,7 @@ type bgVideo struct {
 	videoVol        *effects.Volume
 	audioSampleRate beep.SampleRate
 	inMixer         bool
+	pixPool         *pixelPool // pool of RGBA pixel buffers; eliminates per-frame GoBytes alloc
 }
 
 const (
@@ -175,6 +217,24 @@ func (bgv *bgVideo) Open(filename string, volume int, sm BgVideoScaleMode, sf Bg
 		}
 	}
 	bgv.videoStream = videoStreams[0]
+
+	// Pre-allocate the pixel buffer pool now that we know the output dimensions.
+	// The filter graph (if applied) outputs at window size; sws fallback outputs at
+	// codec dimensions. We use window size as the canonical pool size since that is
+	// the common case and the pool grows automatically if dimensions differ.
+	{
+		outW, outH := bgv.videoStream.Width(), bgv.videoStream.Height()
+		if sm != SM_None {
+			// Filter graph targets window dimensions.
+			if ww := int(sys.scrrect[2]); ww > 0 {
+				outW = ww
+			}
+			if wh := int(sys.scrrect[3]); wh > 0 {
+				outH = wh
+			}
+		}
+		bgv.pixPool = newPixelPool(outW, outH)
+	}
 
 	// Try to open the first audio stream, if any
 	audioStreams := bgv.media.AudioStreams()
@@ -347,9 +407,20 @@ func (bgv *bgVideo) processPacket() bool {
 	switch packet.Type() {
 	case reisen.StreamVideo:
 		s := bgv.media.Streams()[packet.StreamIndex()].(*reisen.VideoStream)
-		vf, gotFrame, err := s.ReadVideoFrame()
+		// Get a pooled pixel buffer to avoid a per-frame GoBytes heap allocation.
+		// ReadVideoFrameInto copies decoded pixels into buf; if buf is too small it
+		// falls back to allocating (safe, just not pooled for that frame).
+		var buf []byte
+		if bgv.pixPool != nil {
+			buf = bgv.pixPool.get()
+		}
+		vf, gotFrame, err := s.ReadVideoFrameInto(buf)
 
 		if err != nil {
+			// Return buf to pool — frame was not used.
+			if buf != nil && bgv.pixPool != nil {
+				bgv.pixPool.put(buf)
+			}
 			bgv.errs <- err
 		}
 
@@ -377,6 +448,16 @@ func (bgv *bgVideo) processPacket() bool {
 			if bgv.visible {
 				bgv.frameBuffer <- vf.Image()
 				bgv.lastFrame = vf.Image() // remember last for sticky reupload
+			} else {
+				// Frame decoded but not used — return its pixel buffer to the pool.
+				if bgv.pixPool != nil {
+					bgv.pixPool.put(vf.Image().Pix)
+				}
+			}
+		} else {
+			// No frame produced from this packet — return the pooled buffer immediately.
+			if buf != nil && bgv.pixPool != nil {
+				bgv.pixPool.put(buf)
 			}
 		}
 
@@ -437,6 +518,7 @@ func (bgv *bgVideo) Tick() error {
 			// Decoder finished (loop=0). Do not keep rendering a stale/blank texture.
 			bgv.texture = nil
 			bgv.lastFrame = nil
+			bgv.lastUploadedFrame = nil
 			// Keep audio path paused if it exists.
 			if bgv.videoCtrl != nil {
 				WithSpeakerLock(func() {
@@ -452,11 +534,18 @@ func (bgv *bgVideo) Tick() error {
 		if bgv.texture == nil || w != bgv.texture.GetWidth() || h != bgv.texture.GetHeight() {
 			bgv.texture = gfx.newTexture(w, h, 32, true)
 		}
+		// Return previous frame's pixel buffer to the pool before replacing it.
+		if bgv.lastFrame != nil && bgv.lastFrame != frame {
+			bgv.pixPool.put(bgv.lastFrame.Pix)
+		}
 		bgv.texture.SetData(frame.Pix)
 		bgv.lastFrame = frame
+		bgv.lastUploadedFrame = frame
 	default:
-		// No new frame right now. Re-upload last to keep video visible.
-		if bgv.lastFrame != nil {
+		// No new frame right now. Only re-upload if we haven't uploaded this frame yet
+		// (avoids a redundant glTexSubImage2D every tick when the decoder is stalled or
+		// the video is paused — saves uploading ~3.5 MB of pixel data 60× per second).
+		if bgv.lastFrame != nil && bgv.lastFrame != bgv.lastUploadedFrame {
 			rect := bgv.lastFrame.Bounds()
 			w := int32(rect.Dx())
 			h := int32(rect.Dy())
@@ -464,6 +553,7 @@ func (bgv *bgVideo) Tick() error {
 				bgv.texture = gfx.newTexture(w, h, 32, true)
 			}
 			bgv.texture.SetData(bgv.lastFrame.Pix)
+			bgv.lastUploadedFrame = bgv.lastFrame
 		}
 	}
 
@@ -554,6 +644,7 @@ func (bgv *bgVideo) Reset() {
 	// Drop previously uploaded GPU texture and sticky frame to prevent flashes.
 	bgv.texture = nil
 	bgv.lastFrame = nil
+	bgv.lastUploadedFrame = nil
 	bgv.haveBasePTS = false
 	bgv.elapsedPTS = 0
 }

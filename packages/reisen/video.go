@@ -293,6 +293,22 @@ func (video *VideoStream) ReadFrame() (Frame, bool, error) {
 // ReadVideoFrame reads the next video frame
 // from the video stream.
 func (video *VideoStream) ReadVideoFrame() (*VideoFrame, bool, error) {
+	return video.readVideoFrameInto(nil)
+}
+
+// ReadVideoFrameInto is like ReadVideoFrame but copies pixel data into the
+// caller-supplied buffer instead of allocating a new one.  buf must be large
+// enough for the output frame (width * height * 4 bytes); if it is nil or too
+// small a new buffer is allocated as usual.  The returned VideoFrame.Pix
+// points directly into buf, so the caller must not modify buf until the frame
+// has been consumed.
+func (video *VideoStream) ReadVideoFrameInto(buf []byte) (*VideoFrame, bool, error) {
+	return video.readVideoFrameInto(buf)
+}
+
+// readVideoFrameInto is the shared implementation for ReadVideoFrame and
+// ReadVideoFrameInto.
+func (video *VideoStream) readVideoFrameInto(buf []byte) (*VideoFrame, bool, error) {
 	ok, err := video.read()
 
 	if err != nil {
@@ -335,7 +351,9 @@ func (video *VideoStream) ReadVideoFrame() (*VideoFrame, bool, error) {
 		stride := int(video.filteredFrame.linesize[0])
 		rowBytes := w * 4
 		size := rowBytes * h
-		buf := make([]byte, size)
+		if len(buf) < size {
+			buf = make([]byte, size)
+		}
 		src := uintptr(unsafe.Pointer(video.filteredFrame.data[0]))
 		for y := 0; y < h; y++ {
 			dstOff := y * rowBytes
@@ -392,10 +410,14 @@ func (video *VideoStream) ReadVideoFrame() (*VideoFrame, bool, error) {
 		&video.rgbaFrame.data[0],
 		&video.rgbaFrame.linesize[0])
 
-	data := C.GoBytes(unsafe.Pointer(video.rgbaFrame.data[0]), video.bufSize)
+	swsSize := int(video.bufSize)
+	if len(buf) < swsSize {
+		buf = make([]byte, swsSize)
+	}
+	copy(buf[:swsSize], C.GoBytes(unsafe.Pointer(video.rgbaFrame.data[0]), video.bufSize))
 	frame := newVideoFrame(video, int64(video.frame.pts),
 		0, 0,
-		int(video.codecCtx.width), int(video.codecCtx.height), data)
+		int(video.codecCtx.width), int(video.codecCtx.height), buf[:swsSize])
 
 	return frame, true, nil
 }
