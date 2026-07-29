@@ -165,6 +165,7 @@ type Config struct {
 		KeepAspect               bool     `ini:"KeepAspect"`
 		RendererDebugMode        bool     `ini:"RendererDebugMode"`
 		DrawCallLog              bool     `ini:"DrawCallLog"`          // Log per-frame batch stats (debug only)
+		RenderScale              float32  `ini:"RenderScale"`          // 0.5–1.0; renders at this fraction of window size, upscaled
 		EnableModel              bool     `ini:"EnableModel"`
 		EnableModelShadow        bool     `ini:"EnableModelShadow"`
 		ImageSuballocThresholdKB int      `ini:"ImageSuballocThresholdKB"` // ≤ this (KB) suballocated; 0 to disable

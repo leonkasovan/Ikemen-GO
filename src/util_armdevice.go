@@ -65,3 +65,23 @@ func selectRenderer(cfgVal string) (Renderer, FontRenderer) {
 	return &Renderer_GLES32{}, &FontRenderer_GLES32{}
 }
 
+// platformDefaultConfig applies ARM device performance defaults after config
+// loading. Only sets values that haven't been explicitly overridden by the user
+// (i.e. still at their zero/unset value), except for the model flags which are
+// always forced off because models are not viable at R36S performance levels.
+func platformDefaultConfig(cfg *Config) {
+	// Render at 75% resolution → ~56% fill rate reduction with minimal visual loss
+	if cfg.Video.RenderScale <= 0 {
+		cfg.Video.RenderScale = 0.75
+	}
+	// 3D models and shadows are too costly on Mali-G31; disable unconditionally
+	cfg.Video.EnableModel = false
+	cfg.Video.EnableModelShadow = false
+	// MSAA is expensive on tile-based GPUs; force off
+	cfg.Video.MSAA = 0
+	// Cap to display refresh — uncapped burns CPU/GPU for no gain
+	if cfg.Video.VSync == 0 {
+		cfg.Video.VSync = 1
+	}
+}
+

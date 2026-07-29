@@ -180,6 +180,8 @@ func realMain() {
 	sys.cfg = *cfg
 	sys.cfgCacheGen++
 	sys.cachedCfgTable = nil
+	// Apply platform-specific performance defaults (e.g. RenderScale, EnableModel on armdevice)
+	platformDefaultConfig(&sys.cfg)
 	// LogDebug("[INIT] Config Loaded. System Script: %s", sys.cfg.Config.System)
 
 	if sys.cfg.Debug.DumpLuaTables {

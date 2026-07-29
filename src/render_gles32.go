@@ -733,6 +733,10 @@ type Renderer_GLES32 struct {
 	enableShadow bool
 	debugMode    bool
 
+	// RenderScale: internal render dimensions (may be smaller than window when RenderScale < 1)
+	renderW int32
+	renderH int32
+
 	// Palette atlas
 	palAtlas      *Texture_GLES32   // Shared atlas texture for all palettes
 	palAtlasSize  int32             // Size of atlas (e.g., 2048)
@@ -1007,6 +1011,28 @@ func (r *Renderer_GLES32) Init() {
 	r.grabTexture = r.newTexture(sys.scrrect[2], sys.scrrect[3], 32, true).(*Texture_GLES32)
 	r.grabTexture.SetData(nil)
 
+	// Compute internal render resolution (RenderScale support).
+	// The scene is rendered into an FBO of this size, then upscaled to the full
+	// window size in EndFrame(). A scale of 1.0 means no downscaling.
+	{
+		scale := sys.cfg.Video.RenderScale
+		if scale <= 0 || scale > 1.0 {
+			scale = 1.0
+		}
+		r.renderW = (int32(float32(sys.scrrect[2])*scale) / 2) * 2
+		r.renderH = (int32(float32(sys.scrrect[3])*scale) / 2) * 2
+		if r.renderW < 2 {
+			r.renderW = 2
+		}
+		if r.renderH < 2 {
+			r.renderH = 2
+		}
+		if scale < 1.0 {
+			LogMessage("[GLES] RenderScale=%.2f → internal render size %dx%d (window %dx%d)",
+				scale, r.renderW, r.renderH, sys.scrrect[2], sys.scrrect[3])
+		}
+	}
+
 	// create a texture for r.fbo
 	gl.GenTextures(1, &r.fbo_texture)
 	textureSerialNumber++
@@ -1025,8 +1051,8 @@ func (r *Renderer_GLES32) Init() {
 		gl.TEXTURE_2D,
 		0,
 		gl.RGBA,
-		sys.scrrect[2],
-		sys.scrrect[3],
+		r.renderW,
+		r.renderH,
 		0,
 		gl.RGBA,
 		gl.UNSIGNED_BYTE,
@@ -1070,13 +1096,13 @@ func (r *Renderer_GLES32) Init() {
 	gl.BindRenderbuffer(gl.RENDERBUFFER, r.rbo_depth)
 	if sys.msaa > 0 {
 		//gl.RenderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, int(sys.scrrect[2]), int(sys.scrrect[3]))
-		gl.RenderbufferStorageMultisample(gl.RENDERBUFFER, sys.msaa, gl.DEPTH_COMPONENT16, sys.scrrect[2], sys.scrrect[3])
+		gl.RenderbufferStorageMultisample(gl.RENDERBUFFER, sys.msaa, gl.DEPTH_COMPONENT16, r.renderW, r.renderH)
 	} else {
-		gl.RenderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, sys.scrrect[2], sys.scrrect[3])
+		gl.RenderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, r.renderW, r.renderH)
 	}
 	gl.BindRenderbuffer(gl.RENDERBUFFER, 0)
 	if sys.msaa > 0 {
-		r.fbo_f_texture = r.newTexture(sys.scrrect[2], sys.scrrect[3], 32, false).(*Texture_GLES32)
+		r.fbo_f_texture = r.newTexture(r.renderW, r.renderH, 32, false).(*Texture_GLES32)
 		r.fbo_f_texture.SetData(nil)
 	} else {
 		//r.rbo_depth = gl.CreateRenderbuffer()
@@ -1294,7 +1320,7 @@ func (r *Renderer_GLES32) BeginFrame(clearColor bool) {
 	lastRenderParams = nil
 	//gl.BindVertexArray(r.vao)
 	r.bindFramebuffer(gl.FRAMEBUFFER, r.fbo)
-	gl.Viewport(0, 0, sys.scrrect[2], sys.scrrect[3])
+	gl.Viewport(0, 0, r.renderW, r.renderH)
 	if clearColor {
 		gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 	} else {
@@ -1309,14 +1335,21 @@ func (r *Renderer_GLES32) EndFrame() {
 		return
 	}
 
-	x, y, width, height := int32(0), int32(0), int32(sys.scrrect[2]), int32(sys.scrrect[3])
+	// renderW/renderH: the size of the main render FBO (may be smaller when RenderScale < 1).
+	// winW/winH: the full window/screen size used for post-processing FBOs and output.
+	x, y := int32(0), int32(0)
+	renderW, renderH := r.renderW, r.renderH
+	winW, winH := int32(sys.scrrect[2]), int32(sys.scrrect[3])
 	time := sdl.GetPerformanceCounter() // consistent time across all shaders
 
 	if sys.msaa > 0 {
 		r.bindFramebuffer(gl.DRAW_FRAMEBUFFER, r.fbo_f)
 		r.bindFramebuffer(gl.READ_FRAMEBUFFER, r.fbo)
-		gl.BlitFramebuffer(x, y, width, height, x, y, width, height, gl.COLOR_BUFFER_BIT, gl.LINEAR)
+		gl.BlitFramebuffer(x, y, renderW, renderH, x, y, renderW, renderH, gl.COLOR_BUFFER_BIT, gl.LINEAR)
 	}
+	// Suppress unused-variable warnings for renderW/renderH when MSAA is 0.
+	_ = renderW
+	_ = renderH
 
 	var scaleMode int32 // GL enum
 	if sys.cfg.Video.WindowScaleMode {
@@ -1326,7 +1359,7 @@ func (r *Renderer_GLES32) EndFrame() {
 	}
 
 	// set the viewport to the unscaled bounds for post-processing
-	gl.Viewport(x, y, width, height)
+	gl.Viewport(x, y, winW, winH)
 	// clear both of our post-processing FBOs to make sure
 	// nothing's there. the output is set later
 	for i := 0; i < 2; i++ {
@@ -1391,7 +1424,7 @@ func (r *Renderer_GLES32) EndFrame() {
 			r.SetUniformISub(loc, 0)
 		}
 		if loc, ok := postShader.uniforms["TextureSize"]; ok && loc >= 0 {
-			r.SetUniformFSub(loc, float32(width), float32(height))
+			r.SetUniformFSub(loc, float32(winW), float32(winH))
 		}
 		if loc, ok := postShader.uniforms["CurrentTime"]; ok && loc >= 0 {
 			r.SetUniformFSub(loc, float32(time))

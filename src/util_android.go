@@ -161,3 +161,8 @@ func Java_org_libsdl_app_SDLActivity_nativeOnSDLReady(env *C.JNIEnv, clazz C.jcl
 }
 
 
+
+
+// platformDefaultConfig is a no-op on Android.
+// Android-specific settings (e.g. RenderMode) are handled separately in main.go.
+func platformDefaultConfig(cfg *Config) {}

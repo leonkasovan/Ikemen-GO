@@ -72,3 +72,8 @@ func selectRenderer(cfgVal string) (Renderer, FontRenderer) {
 }
 
 
+
+
+// platformDefaultConfig is a no-op on desktop platforms.
+// Platform-specific defaults are only applied on armdevice builds.
+func platformDefaultConfig(cfg *Config) {}
