@@ -636,6 +636,10 @@ func (t *Texture_GLES32) GetPalUV() [4]float32 {
 	return [4]float32{0, 0.5, 1, 0}
 }
 
+func (t *Texture_GLES32) GetSerial() uint64 {
+	return t.serial
+}
+
 func (t *Texture_GLES32) MapUploadType(i int32) uint32 {
 	switch i {
 	case 96, 128:
@@ -1286,6 +1290,8 @@ func (r *Renderer_GLES32) bindFramebuffer(target uint32, fbo uint32) {
 }
 
 func (r *Renderer_GLES32) BeginFrame(clearColor bool) {
+	drawCallStats.reset()
+	lastRenderParams = nil
 	//gl.BindVertexArray(r.vao)
 	r.bindFramebuffer(gl.FRAMEBUFFER, r.fbo)
 	gl.Viewport(0, 0, sys.scrrect[2], sys.scrrect[3])
@@ -1297,6 +1303,8 @@ func (r *Renderer_GLES32) BeginFrame(clearColor bool) {
 }
 
 func (r *Renderer_GLES32) EndFrame() {
+	drawCallStats.logFrame(int(sys.frameCounter))
+
 	if len(r.fbo_pp) == 0 {
 		return
 	}

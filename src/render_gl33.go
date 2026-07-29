@@ -642,6 +642,10 @@ func (t *Texture_GL33) GetPalUV() [4]float32 {
 	return [4]float32{0, 0.5, 1, 0}
 }
 
+func (t *Texture_GL33) GetSerial() uint64 {
+	return t.serial
+}
+
 func (t *Texture_GL33) MapTextureSamplingParam(i TextureSamplingParam) int32 {
 	var SamplingParam = map[TextureSamplingParam]int32{
 		TextureSamplingFilterNearest:              gl.NEAREST,
@@ -1361,6 +1365,8 @@ func (r *Renderer_GL33) IsShadowEnabled() bool {
 }
 
 func (r *Renderer_GL33) BeginFrame(clearColor bool) {
+	drawCallStats.reset()
+	lastRenderParams = nil
 	//gl.BindVertexArray(r.vao)
 	r.bindFramebuffer(gl.FRAMEBUFFER, r.fbo)
 	gl.Viewport(0, 0, sys.scrrect[2], sys.scrrect[3])
@@ -1372,6 +1378,8 @@ func (r *Renderer_GL33) BeginFrame(clearColor bool) {
 }
 
 func (r *Renderer_GL33) EndFrame() {
+	drawCallStats.logFrame(int(sys.frameCounter))
+
 	if len(r.fbo_pp) == 0 {
 		return
 	}

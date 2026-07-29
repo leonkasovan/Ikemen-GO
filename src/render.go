@@ -20,6 +20,7 @@ type Texture interface {
 	GetPalUV() [4]float32
 	CopyData(src *Texture)
 	Release()
+	GetSerial() uint64
 }
 
 type Renderer interface {
@@ -287,6 +288,99 @@ type CustomShaderRenderData struct {
 	sTime  float32
 	tex1   Texture
 	tex2   Texture
+}
+
+// DrawCallStats tracks per-frame batching metrics.
+// All fields are reset at the start of BeginFrame.
+// Only populated when sys.cfg.Video.DrawCallLog is true.
+type DrawCallStats struct {
+	TotalDrawCalls int
+	TotalBatches   int
+	BreakShader    int // batch broken by shader change
+	BreakBlend     int // batch broken by blend mode / alpha change
+	BreakScissor   int // batch broken by scissor rect change
+	BreakTexture   int // batch broken by sprite texture change
+	BreakPalTex    int // batch broken by palette texture change
+	BreakTrapez    int // batch broken by trapezoid flag change
+	BreakMask      int // batch broken by mask change
+	BreakIsRgba    int // batch broken by RGBA vs paletted change
+}
+
+func (s *DrawCallStats) reset() {
+	*s = DrawCallStats{}
+}
+
+func (s *DrawCallStats) logFrame(frameNo int) {
+	if !sys.cfg.Video.DrawCallLog {
+		return
+	}
+	LogMessage("[BATCH] frame=%d draws=%d batches=%d breaks: shader=%d blend=%d scissor=%d tex=%d pal=%d trapez=%d mask=%d rgba=%d",
+		frameNo,
+		s.TotalDrawCalls, s.TotalBatches,
+		s.BreakShader, s.BreakBlend, s.BreakScissor,
+		s.BreakTexture, s.BreakPalTex,
+		s.BreakTrapez, s.BreakMask, s.BreakIsRgba,
+	)
+}
+
+var drawCallStats DrawCallStats
+var lastRenderParams *RenderParams // nil at frame start; used to detect batch breaks
+
+func recordBatchBreak(rp *RenderParams) {
+	if !sys.cfg.Video.DrawCallLog || lastRenderParams == nil {
+		lastRenderParams = rp
+		drawCallStats.TotalBatches++
+		return
+	}
+	prev := lastRenderParams
+	broke := false
+	if rp.shader != prev.shader {
+		drawCallStats.BreakShader++
+		broke = true
+	}
+	if rp.blendMode != prev.blendMode || rp.blendAlpha != prev.blendAlpha {
+		drawCallStats.BreakBlend++
+		broke = true
+	}
+	// Compare scissor window by value (not pointer) since each sprite may have its own window allocation.
+	if (rp.window == nil) != (prev.window == nil) || (rp.window != nil && *rp.window != *prev.window) {
+		drawCallStats.BreakScissor++
+		broke = true
+	}
+	texSerial := func(t Texture) uint64 {
+		if t == nil {
+			return 0
+		}
+		return t.GetSerial()
+	}
+	if texSerial(rp.tex) != texSerial(prev.tex) {
+		drawCallStats.BreakTexture++
+		broke = true
+	}
+	if texSerial(rp.paltex) != texSerial(prev.paltex) {
+		drawCallStats.BreakPalTex++
+		broke = true
+	}
+	isRgba := rp.paltex == nil
+	prevIsRgba := prev.paltex == nil
+	if isRgba != prevIsRgba {
+		drawCallStats.BreakIsRgba++
+		broke = true
+	}
+	isTrapez := Abs(Abs(rp.xts)-Abs(rp.xbs)) > 0.001
+	prevTrapez := Abs(Abs(prev.xts)-Abs(prev.xbs)) > 0.001
+	if isTrapez != prevTrapez {
+		drawCallStats.BreakTrapez++
+		broke = true
+	}
+	if rp.mask != prev.mask {
+		drawCallStats.BreakMask++
+		broke = true
+	}
+	if broke {
+		drawCallStats.TotalBatches++
+	}
+	lastRenderParams = rp
 }
 
 func (rp *RenderParams) IsValid() bool {
@@ -692,6 +786,11 @@ func RenderSprite(rp RenderParams) {
 	if !rp.IsValid() {
 		return
 	}
+
+	if sys.cfg.Video.DrawCallLog {
+		drawCallStats.TotalDrawCalls++
+	}
+	recordBatchBreak(&rp)
 
 	initRenderSpriteQuad(&rp)
 

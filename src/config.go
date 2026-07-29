@@ -164,6 +164,7 @@ type Config struct {
 		FightAspectHeight        int32    `ini:"FightAspectHeight" sync:"strict"`
 		KeepAspect               bool     `ini:"KeepAspect"`
 		RendererDebugMode        bool     `ini:"RendererDebugMode"`
+		DrawCallLog              bool     `ini:"DrawCallLog"`          // Log per-frame batch stats (debug only)
 		EnableModel              bool     `ini:"EnableModel"`
 		EnableModelShadow        bool     `ini:"EnableModelShadow"`
 		ImageSuballocThresholdKB int      `ini:"ImageSuballocThresholdKB"` // ≤ this (KB) suballocated; 0 to disable
@@ -272,6 +273,20 @@ func loadConfig(def string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read base data: %v", err)
 	}
+
+	// Apply platform-specific default overrides (Android, ARM device, etc.)
+	// These sit between the base defaults and the user config in precedence.
+	platformText := platformConfigBytes()
+	if len(platformText) > 0 {
+		platformIni, err := LoadINIText(string(platformText), baseOptions)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read platform config: %v", err)
+		}
+		// Overlay platform defaults onto both the defaults-only and the merged ini.
+		overlayUserFirstWins(defaultOnlyIni, platformIni)
+		overlayUserFirstWins(iniFile, platformIni)
+	}
+
 	if fp := FileExist(def); len(fp) != 0 {
 		userIniFile, _, err = LoadINIFile(fp, userOptions)
 		if err != nil {

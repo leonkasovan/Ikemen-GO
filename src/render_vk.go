@@ -53,6 +53,7 @@ type Texture_VK struct {
 	sampler    vk.Sampler
 	allocation *VulkanAllocation
 	palSlot    bool
+	serial     uint64 // unique serial for batch break detection
 }
 
 // Release immediately frees the GPU resources held by this texture.
@@ -97,6 +98,8 @@ func (r *Renderer_VK) newTexture(width, height, depth int32, filter bool) Textur
 			[]interface{}{t.img, t.imageView, t.sampler, t.allocation},
 		}
 	})
+	textureSerialNumber++
+	t.serial = textureSerialNumber
 	return t
 }
 
@@ -122,6 +125,8 @@ func (r *Renderer_VK) newModelTexture(width, height, depth int32, filter bool) T
 			[]interface{}{t.img, t.imageView, t.sampler, t.allocation},
 		}
 	})
+	textureSerialNumber++
+	t.serial = textureSerialNumber
 	return t
 }
 
@@ -147,6 +152,8 @@ func (r *Renderer_VK) newDataTexture(width, height int32) Texture {
 			[]interface{}{t.img, t.imageView, t.sampler, t.allocation},
 		}
 	})
+	textureSerialNumber++
+	t.serial = textureSerialNumber
 	return t
 }
 
@@ -182,6 +189,8 @@ func (r *Renderer_VK) newCubeMapTexture(widthHeight int32, mipmap bool, lowestMi
 			[]interface{}{t.img, t.imageView, t.sampler, t.allocation},
 		}
 	})
+	textureSerialNumber++
+	t.serial = textureSerialNumber
 	return t
 }
 
@@ -212,6 +221,8 @@ func (r *Renderer_VK) newPaletteTexture() Texture {
 			},
 		}
 	})
+	textureSerialNumber++
+	t.serial = textureSerialNumber
 	return t
 }
 
@@ -236,6 +247,8 @@ func (r *Renderer_VK) newDummyCubeMapTexture() Texture {
 			[]interface{}{t.img, t.imageView, t.sampler, t.allocation},
 		}
 	})
+	textureSerialNumber++
+	t.serial = textureSerialNumber
 	return t
 }
 
@@ -775,6 +788,10 @@ func (t *Texture_VK) GetHeight() int32 {
 
 func (t *Texture_VK) GetPalUV() [4]float32 {
 	return t.uvst
+}
+
+func (t *Texture_VK) GetSerial() uint64 {
+	return t.serial
 }
 
 func (t *Texture_VK) MapInternalFormat(i int32) vk.Format {
