@@ -8,7 +8,6 @@ import (
 	mgl "github.com/go-gl/mathgl/mgl32"
 )
 
-
 type Texture interface {
 	SetData(data []byte)
 	SetSubData(data []byte, x, y, width, height, stride int32)
@@ -304,6 +303,7 @@ type DrawCallStats struct {
 	BreakTrapez    int // batch broken by trapezoid flag change
 	BreakMask      int // batch broken by mask change
 	BreakIsRgba    int // batch broken by RGBA vs paletted change
+	FBOSwitches    int // number of actual gl.BindFramebuffer calls issued
 }
 
 func (s *DrawCallStats) reset() {
@@ -314,22 +314,128 @@ func (s *DrawCallStats) logFrame(frameNo int) {
 	if !sys.cfg.Video.DrawCallLog {
 		return
 	}
-	LogMessage("[BATCH] frame=%d draws=%d batches=%d breaks: shader=%d blend=%d scissor=%d tex=%d pal=%d trapez=%d mask=%d rgba=%d",
+	LogMessage("[BATCH] frame=%d draws=%d batches=%d breaks: shader=%d blend=%d scissor=%d tex=%d pal=%d trapez=%d mask=%d rgba=%d fbo=%d",
 		frameNo,
 		s.TotalDrawCalls, s.TotalBatches,
 		s.BreakShader, s.BreakBlend, s.BreakScissor,
 		s.BreakTexture, s.BreakPalTex,
 		s.BreakTrapez, s.BreakMask, s.BreakIsRgba,
+		s.FBOSwitches,
 	)
 }
 
 var drawCallStats DrawCallStats
 var lastRenderParams *RenderParams // nil at frame start; used to detect batch breaks
 
+// SpriteDrawCall is a fully resolved, ready-to-render sprite command produced
+// by enqueueSpriteDrawCall / enqueueFillRect. It is flushed in batches by the
+// renderer at end of frame (Phase 4/5).
+type SpriteDrawCall struct {
+	// rp is the original RenderParams (pre initRenderSpriteQuad). Only used by
+	// the non-GLES32 fallback path, which re-renders each call individually.
+	rp RenderParams
+
+	// Batch key — all of these must match for two calls to share a batch.
+	isFlat     bool
+	blendEq    BlendEquation
+	blendSrc   BlendFunc
+	blendDst   BlendFunc
+	isRgba     bool // paltex == nil
+	isTrapez   bool
+	mask       int32
+	hasScissor bool
+	scissor    [4]int32
+
+	// Texture identity. Used for texture-slot budgeting (Phase 5), not uploaded.
+	texSerial uint64
+	palSerial uint64
+	tex       Texture
+	paltex    Texture
+
+	// Per-instance data, packed into the instance VBO.
+	corners  [8]float32 // transformed quad corners p1..p4 (screen space)
+	x1x2x4x3 [4]float32 // pre-transform corner x's for trapezoid correction
+	palUV    [4]float32 // palette atlas UV
+	uv       [4]float32 // uv bias-adjusted (u1,v1,u2,v2)
+	tint     [4]float32
+	spfx     ShaderPalFX
+	alpha    float32
+	gray     float32
+}
+
+// spriteQueue holds all deferred sprite draw calls for the current frame.
+// Reset in BeginFrame, flushed at end of luaFlushDrawQueue and at EndFrame.
+var spriteQueue []SpriteDrawCall
+
+// spriteQueueFlushing guards against re-entrant flushes (a custom-shader sprite
+// flushes the queue first, and the fallback path re-renders via
+// renderSpriteImmediate, which would otherwise trigger an infinite loop).
+var spriteQueueFlushing bool
+
+func resetSpriteQueue() {
+	spriteQueue = spriteQueue[:0]
+}
+
+// renderFlatCallImmediate draws a resolved flat-color call (from FillRect)
+// through the immediate sprite pipeline. Only used by fallback paths where the
+// instanced shader is unavailable; the batch path renders these instanced.
+func renderFlatCallImmediate(dc *SpriteDrawCall) {
+	gfx.SetSpritePipeline("")
+	proj := gfx.OrthographicProjectionMatrix(0, float32(sys.scrrect[2]), 0, float32(sys.scrrect[3]), -65535, 65535)
+	ident := mgl.Ident4()
+	gfx.SetUniformMatrix("projection", proj[:])
+	gfx.SetUniformMatrix("modelview", ident[:]) // corners already carry the +screenH translate
+	gfx.SetUniformI("isFlat", 1)
+	gfx.SetUniformI("isTrapez", 0)
+	gfx.SetUniformI("mask", 0)
+	gfx.SetUniformI("isRgba", 1)
+	gfx.SetUniformF("hue", dc.spfx.hue)
+	gfx.SetUniformF("alpha", dc.alpha)
+	gfx.SetUniformF("tint", dc.tint[0], dc.tint[1], dc.tint[2], dc.tint[3])
+
+	gfx.EnableBlending(dc.blendEq, dc.blendSrc, dc.blendDst)
+	gfx.SetUniformI("neg", int(Btoi(dc.spfx.neg)))
+	gfx.SetUniformFv("add", dc.spfx.add[:])
+	gfx.SetUniformFv("mult", dc.spfx.mult[:])
+	gfx.SetUniformF("gray", dc.gray)
+
+	// Match FillRect's vertex order with our p1..p4 mapping:
+	// v0=p2, v1=p3, v2=p1, v3=p4.
+	c := dc.corners
+	gfx.SetVertexData(
+		c[2], c[3], 1, 1,
+		c[4], c[5], 1, 0,
+		c[0], c[1], 0, 1,
+		c[6], c[7], 0, 0,
+	)
+	gfx.RenderQuad()
+}
+
+// flushSpriteQueue renders all enqueued sprite draw calls. The GLES32 backend
+// batches them (real draw-call reduction); other backends re-render each one
+// individually so batching remains a no-op there.
+func flushSpriteQueue() {
+	if spriteQueueFlushing {
+		return
+	}
+	if len(spriteQueue) == 0 {
+		return
+	}
+	spriteQueueFlushing = true
+	flushSpriteQueueBatched(spriteQueue)
+	spriteQueue = spriteQueue[:0]
+	spriteQueueFlushing = false
+}
+
 func recordBatchBreak(rp *RenderParams) {
+	// TotalBatches is owned by the real flush when batching is on; here we only
+	// count the break reasons (the consecutive-pair analysis) for DrawCallLog.
+	countBatches := !sys.cfg.Video.EnableSpriteBatching
 	if !sys.cfg.Video.DrawCallLog || lastRenderParams == nil {
 		lastRenderParams = rp
-		drawCallStats.TotalBatches++
+		if countBatches {
+			drawCallStats.TotalBatches++
+		}
 		return
 	}
 	prev := lastRenderParams
@@ -377,7 +483,7 @@ func recordBatchBreak(rp *RenderParams) {
 		drawCallStats.BreakMask++
 		broke = true
 	}
-	if broke {
+	if broke && countBatches {
 		drawCallStats.TotalBatches++
 	}
 	lastRenderParams = rp
@@ -390,6 +496,22 @@ func (rp *RenderParams) IsValid() bool {
 
 func drawQuads(modelview mgl.Mat4, x1, y1, x2, y2, x3, y3, x4, y4 float32) {
 	drawQuadsUV(modelview, x1, y1, x2, y2, x3, y3, x4, y4, [4]float32{0, 0, 1, 1})
+}
+
+// quadEmitter receives the final, fully-resolved quads that renderSpriteQuad /
+// renderSpriteHTile produce. The immediate path uses drawQuadsUV (GL calls now);
+// the deferred batching path uses an emitter that captures the quad for the queue.
+type quadEmitter func(modelview mgl.Mat4, x1, y1, x2, y2, x3, y3, x4, y4 float32, uv [4]float32)
+
+// transformPoint maps a 2D point through a modelview matrix, applying the
+// perspective divide when the matrix contains a projection (projectionMode != 0).
+func transformPoint(modelview mgl.Mat4, x, y float32) (float32, float32) {
+	v := modelview.Mul4x1(mgl.Vec4{x, y, 0, 1})
+	if v.W() != 0 {
+		invW := 1 / v.W()
+		return v.X() * invW, v.Y() * invW
+	}
+	return v.X(), v.Y()
 }
 
 func drawQuadsUV(modelview mgl.Mat4, x1, y1, x2, y2, x3, y3, x4, y4 float32, uv [4]float32) {
@@ -513,14 +635,6 @@ func transformTextQuad(x1, y1, x2, y2, x3, y3, x4, y4, rxadd float32,
 	toTextSpace := func(x, y float32) (float32, float32) {
 		return x / sx, (screenH - y) / sy
 	}
-	transformPoint := func(modelview mgl.Mat4, x, y float32) (float32, float32) {
-		v := modelview.Mul4x1(mgl.Vec4{x, y, 0, 1})
-		if v.W() != 0 {
-			invW := 1 / v.W()
-			return v.X() * invW, v.Y() * invW
-		}
-		return v.X(), v.Y()
-	}
 
 	// truetype quads use top-left coordinates but sprite transforms expect bottom-left ones
 	blx, bly := toSpriteSpace(x3, y3)
@@ -578,7 +692,7 @@ func transformTextQuad(x1, y1, x2, y2, x3, y3, x4, y4, rxadd float32,
 }
 
 // Render a quad with optional horizontal tiling
-func renderSpriteHTile(modelview mgl.Mat4, x1, y1, x2, y2, x3, y3, x4, y4, dy, width float32, rp RenderParams) {
+func renderSpriteHTile(modelview mgl.Mat4, x1, y1, x2, y2, x3, y3, x4, y4, dy, width float32, rp RenderParams, emit quadEmitter) {
 	uv := rp.UV
 	if uv == [4]float32{} {
 		uv = [4]float32{0, 0, 1, 1}
@@ -643,11 +757,11 @@ func renderSpriteHTile(modelview mgl.Mat4, x1, y1, x2, y2, x3, y3, x4, y4, dy, w
 			mat = mat.Mul4(mgl.Translate3D(-(rp.rcx + float32(n)*botdist), -(rp.rcy + dy), 0))
 		}
 
-		drawQuadsUV(mat, x1d, y1, x2d, y2, x3d, y3, x4d, y4, uv)
+		emit(mat, x1d, y1, x2d, y2, x3d, y3, x4d, y4, uv)
 	}
 }
 
-func renderSpriteQuad(modelview mgl.Mat4, rp RenderParams) {
+func renderSpriteQuad(modelview mgl.Mat4, rp RenderParams, emit quadEmitter) {
 	uv := rp.UV
 	if uv == [4]float32{} {
 		uv = [4]float32{0, 0, 1, 1}
@@ -678,7 +792,7 @@ func renderSpriteQuad(modelview mgl.Mat4, rp RenderParams) {
 		modelview = applyRotation(modelview, rp)
 		modelview = modelview.Mul4(mgl.Translate3D(-rp.rcx, -rp.rcy, 0))
 
-		drawQuadsUV(modelview, x1, y1, x2, y2, x3, y3, x4, y4, uv)
+		emit(modelview, x1, y1, x2, y2, x3, y3, x4, y4, uv)
 		return
 	}
 	if rp.tile.yflag == 1 && rp.xbs != 0 {
@@ -714,7 +828,7 @@ func renderSpriteQuad(modelview mgl.Mat4, rp RenderParams) {
 			x1d, x2d, x3d, x4d, y1d, y2d, y3d, y4d, xy = xy[len(xy)-8], xy[len(xy)-7], xy[len(xy)-6], xy[len(xy)-5], xy[len(xy)-4], xy[len(xy)-3], xy[len(xy)-2], xy[len(xy)-1], xy[:len(xy)-8]
 			if (0 > y1d || 0 > y4d) &&
 				(y1d > float32(-sys.scrrect[3]) || y4d > float32(-sys.scrrect[3])) {
-				renderSpriteHTile(modelview, x1d, y1d, x2d, y2d, x3d, y3d, x4d, y4d, y1d-y1, float32(rp.size[0]), rp)
+				renderSpriteHTile(modelview, x1d, y1d, x2d, y2d, x3d, y3d, x4d, y4d, y1d-y1, float32(rp.size[0]), rp, emit)
 			}
 		}
 	}
@@ -733,7 +847,7 @@ func renderSpriteQuad(modelview mgl.Mat4, rp RenderParams) {
 			}
 			if (0 > y1 || 0 > y4) &&
 				(y1 > float32(-sys.scrrect[3]) || y4 > float32(-sys.scrrect[3])) {
-				renderSpriteHTile(modelview, x1, y1, x2, y2, x3, y3, x4, y4, y1-oy, float32(rp.size[0]), rp)
+				renderSpriteHTile(modelview, x1, y1, x2, y2, x3, y3, x4, y4, y1-oy, float32(rp.size[0]), rp, emit)
 			}
 			if rp.tile.yflag != 1 && n != 0 {
 				n--
@@ -786,12 +900,128 @@ func RenderSprite(rp RenderParams) {
 	if !rp.IsValid() {
 		return
 	}
-
 	if sys.cfg.Video.DrawCallLog {
 		drawCallStats.TotalDrawCalls++
 	}
 	recordBatchBreak(&rp)
 
+	// Batching only applies to the exact geometry path: custom shaders and
+	// 3D-projection sprites (projectionMode != 0, whose Frustum warp can't be
+	// reproduced by the instanced shader) stay on the immediate path.
+	if sys.cfg.Video.EnableSpriteBatching && rp.customShader.name == "" && rp.projectionMode == 0 {
+		enqueueSpriteDrawCall(rp)
+		return
+	}
+	renderSpriteImmediate(rp)
+}
+
+// enqueueSpriteDrawCall resolves everything renderSpriteImmediate would compute
+// (PalFX, per-pass blending, geometry) and appends one call per blending pass.
+// The geometry is emitted through renderSpriteQuad with an emitter that
+// captures each quad's transformed corners.
+func enqueueSpriteDrawCall(rp RenderParams) {
+	// Keep the original (pre-init) params for the non-GLES32 fallback path,
+	// which re-runs renderSpriteImmediate (and therefore initRenderSpriteQuad).
+	origRP := rp
+	initRenderSpriteQuad(&rp)
+
+	spfx := NewShaderPalFX()
+	if rp.pfx != nil {
+		spfx = rp.pfx.getFinalPalFx(rp.blendMode, rp.blendAlpha)
+	}
+	passes := resolveBlendPasses(rp.blendMode, rp.blendAlpha, rp.paltex != nil, &spfx, rp.paltex == nil)
+	if len(passes) == 0 {
+		return
+	}
+
+	tint := [4]float32{
+		float32(rp.tint&0xff) / 255,
+		float32(rp.tint>>8&0xff) / 255,
+		float32(rp.tint>>16&0xff) / 255,
+		float32(rp.tint>>24&0xff) / 255,
+	}
+
+	modelview := mgl.Translate3D(0, float32(sys.scrrect[3]), 0)
+
+	isRgba := rp.paltex == nil
+	isTrapez := Abs(Abs(rp.xts)-Abs(rp.xbs)) > 0.001
+
+	var palUV [4]float32
+	if rp.paltex != nil {
+		palUV = rp.paltex.GetPalUV()
+	}
+
+	texSerial, palSerial := uint64(0), uint64(0)
+	if rp.tex != nil {
+		texSerial = rp.tex.GetSerial()
+	}
+	if rp.paltex != nil {
+		palSerial = rp.paltex.GetSerial()
+	}
+
+	// Apply the same UV bias as drawQuadsUV to avoid diagonal rasterization artifacts.
+	uv := rp.UV
+	if uv == [4]float32{} {
+		uv = [4]float32{0, 0, 1, 1}
+	}
+	uvBias := float32(0.000002)
+	uv = [4]float32{
+		Max(uv[0], uvBias),
+		Max(uv[1], 0.0),
+		Max(uv[2]-uvBias, uvBias),
+		Max(uv[3]-uvBias, 0.0),
+	}
+
+	var scissor [4]int32
+	hasScissor := rp.window != nil
+	if hasScissor {
+		scissor = *rp.window
+	}
+
+	emit := func(mv mgl.Mat4, x1, y1, x2, y2, x3, y3, x4, y4 float32, quv [4]float32) {
+		tx1, ty1 := transformPoint(mv, x1, y1)
+		tx2, ty2 := transformPoint(mv, x2, y2)
+		tx3, ty3 := transformPoint(mv, x3, y3)
+		tx4, ty4 := transformPoint(mv, x4, y4)
+		for i := range passes {
+			spriteQueue = append(spriteQueue, SpriteDrawCall{
+				rp:         origRP,
+				blendEq:    passes[i].eq,
+				blendSrc:   passes[i].src,
+				blendDst:   passes[i].dst,
+				isRgba:     isRgba,
+				isTrapez:   isTrapez,
+				mask:       rp.mask,
+				hasScissor: hasScissor,
+				scissor:    scissor,
+				texSerial:  texSerial,
+				palSerial:  palSerial,
+				tex:        rp.tex,
+				paltex:     rp.paltex,
+				corners:    [8]float32{tx1, ty1, tx2, ty2, tx3, ty3, tx4, ty4},
+				x1x2x4x3:   [4]float32{x1, x2, x4, x3},
+				palUV:      palUV,
+				uv:         uv,
+				tint:       tint,
+				spfx:       passes[i].spfx,
+				alpha:      passes[i].a,
+				gray:       passes[i].gray,
+			})
+		}
+	}
+
+	renderSpriteQuad(modelview, rp, emit)
+}
+
+// renderSpriteImmediate issues all GL calls for a single sprite immediately.
+// Called either directly (batching off / custom shaders) or from the fallback
+// path when the instanced shader is unavailable.
+func renderSpriteImmediate(rp RenderParams) {
+	// Custom shaders (and their grab passes) must see the deferred sprites
+	// already rendered. Flush the queue first — re-entrancy is guarded.
+	if sys.cfg.Video.EnableSpriteBatching && len(spriteQueue) > 0 && !spriteQueueFlushing {
+		flushSpriteQueue()
+	}
 	initRenderSpriteQuad(&rp)
 
 	// PalFX and color setup
@@ -829,7 +1059,6 @@ func RenderSprite(rp RenderParams) {
 	gfx.SetUniformI("mask", int(rp.mask))
 	gfx.SetUniformI("isTrapez", int(Btoi(Abs(Abs(rp.xts)-Abs(rp.xbs)) > 0.001)))
 
-	gfx.SetUniformF("gray", spfx.gray)
 	gfx.SetUniformF("hue", spfx.hue)
 	gfx.SetUniformFv("tint", tint[:])
 
@@ -876,18 +1105,19 @@ func RenderSprite(rp RenderParams) {
 	}
 
 	// Local function called for each blending pass
-	renderPass := func(eq BlendEquation, src, dst BlendFunc, a float32) {
+	renderPass := func(eq BlendEquation, src, dst BlendFunc, a float32, pspfx ShaderPalFX, gray float32) {
 		// Lightweight state change
 		gfx.EnableBlending(eq, src, dst)
 
 		// Dynamic uniforms
 		// We must include the parameters that renderWithBlending() may have changed
-		gfx.SetUniformI("neg", int(Btoi(spfx.neg)))
-		gfx.SetUniformFv("add", spfx.add[:])
-		gfx.SetUniformFv("mult", spfx.mult[:])
+		gfx.SetUniformI("neg", int(Btoi(pspfx.neg)))
+		gfx.SetUniformFv("add", pspfx.add[:])
+		gfx.SetUniformFv("mult", pspfx.mult[:])
 		gfx.SetUniformF("alpha", a)
+		gfx.SetUniformF("gray", gray)
 
-		renderSpriteQuad(modelview, rp)
+		renderSpriteQuad(modelview, rp, drawQuadsUV)
 	}
 
 	renderWithBlending(renderPass, rp.blendMode, rp.blendAlpha, rp.paltex != nil, &spfx, rp.paltex == nil)
@@ -895,10 +1125,31 @@ func RenderSprite(rp RenderParams) {
 	gfx.DisableScissor()
 }
 
-func renderWithBlending(
-	render func(eq BlendEquation, src, dst BlendFunc, a float32),
+// blendPass is a fully resolved single blending pass: the blend state, the
+// per-pass alpha and the PalFX state (which renderWithBlending may mutate
+// between passes). Both the immediate and the deferred batching paths consume
+// the same resolved passes, so the two paths can never diverge.
+type blendPass struct {
+	eq   BlendEquation
+	src  BlendFunc
+	dst  BlendFunc
+	a    float32
+	spfx ShaderPalFX
+	gray float32
+}
+
+// resolveBlendPasses computes the sequence of blending passes a sprite draw
+// needs. It works on a copy of spfx so the caller's state is left untouched.
+func resolveBlendPasses(
 	blendMode TransType, blendAlpha [2]int32, correctAlpha bool,
-	spfx *ShaderPalFX, isrgba bool) {
+	spfx *ShaderPalFX, isrgba bool) []blendPass {
+
+	var passes []blendPass
+	sp := *spfx
+	gray := sp.gray
+	render := func(eq BlendEquation, src, dst BlendFunc, a float32) {
+		passes = append(passes, blendPass{eq: eq, src: src, dst: dst, a: a, spfx: sp, gray: gray})
+	}
 
 	blendSourceFactor := BlendSrcAlpha
 	if !correctAlpha {
@@ -907,7 +1158,7 @@ func renderWithBlending(
 
 	Blend := BlendAdd
 	BlendInv := BlendReverseSubtract
-	if spfx.invblend >= 1 {
+	if sp.invblend >= 1 {
 		Blend = BlendReverseSubtract
 		BlendInv = BlendAdd
 	}
@@ -928,12 +1179,12 @@ func renderWithBlending(
 	// Helpers for invertblend
 	// Invert PalFX add
 	invertAColor := func() {
-		spfx.add[0], spfx.add[1], spfx.add[2] = -spfx.add[0], -spfx.add[1], -spfx.add[2]
+		sp.add[0], sp.add[1], sp.add[2] = -sp.add[0], -sp.add[1], -sp.add[2]
 	}
 	// Disable the "neg" uniform, which the shader uses to invert colors
 	// We sometimes use this because subtractive transparency already inverts colors on its own, so it'd be a double negation
 	disableNeg := func() {
-		spfx.neg = false
+		sp.neg = false
 	}
 
 	// Proceed with the render calls
@@ -945,10 +1196,10 @@ func renderWithBlending(
 			// Fully transparent. Skip render
 		case src == 1 && dst == 1:
 			// Fast path for full subtraction
-			if spfx.invblend >= 1 {
+			if sp.invblend >= 1 {
 				invertAColor()
 			}
-			if spfx.invblend == 3 {
+			if sp.invblend == 3 {
 				disableNeg()
 			}
 			render(BlendInv, blendSourceFactor, BlendOne, 1)
@@ -958,10 +1209,10 @@ func renderWithBlending(
 				render(BlendAdd, BlendZero, BlendOneMinusSrcAlpha, 1-dst)
 			}
 			if src > 0 {
-				if spfx.invblend >= 1 {
+				if sp.invblend >= 1 {
 					invertAColor()
 				}
-				if spfx.invblend == 3 {
+				if sp.invblend == 3 {
 					disableNeg()
 				}
 				render(BlendInv, blendSourceFactor, BlendOne, src)
@@ -970,35 +1221,35 @@ func renderWithBlending(
 	// SubAdd
 	case blendMode == TT_subadd:
 		// Save original state for later restoration
-		origState := *spfx
+		origState := sp
 
 		// Helper to set PalFX parameters to grayscale for the first pass
 		makeFxGrayscale := func() {
 			avgAdd := (origState.add[0] + origState.add[1] + origState.add[2]) / 3
-			spfx.add = [3]float32{avgAdd, avgAdd, avgAdd}
+			sp.add = [3]float32{avgAdd, avgAdd, avgAdd}
 			avgMult := (origState.mult[0] + origState.mult[1] + origState.mult[2]) / 3
-			spfx.mult = [3]float32{avgMult, avgMult, avgMult}
+			sp.mult = [3]float32{avgMult, avgMult, avgMult}
 		}
-		if spfx.neg {
+		if sp.neg {
 			// With invertall we invert the passes. Add then sub
 			// This is kind of like "invblend = 3"
 			// But adding "invertblend" support here would force people to have to use it to get the expected results
 			// We avoid "neg" entirely because it turns black edges into white auras. But maybe allowing that would be more consistent?
-			disableNeg() // spfx.neg = false
+			disableNeg() // sp.neg = false
 			//invertAColor()
 
 			// Pass 1: additive with gray PalFX
 			if dst > 0 {
 				makeFxGrayscale()
 				// Set gray uniform manually because render() doesn't set it (and doesn't need to most of the time)
-				gfx.SetUniformF("gray", 1.0)
+				gray = 1.0
 				render(BlendAdd, blendSourceFactor, BlendOne, dst)
 			}
 			// Pass 2: subtractive with original PalFX
 			if src > 0 {
-				*spfx = origState
+				sp = origState
 				disableNeg() // Disable neg again because of the restore
-				gfx.SetUniformF("gray", spfx.gray)
+				gray = sp.gray
 				render(BlendReverseSubtract, blendSourceFactor, BlendOne, src)
 			}
 		} else {
@@ -1006,13 +1257,13 @@ func renderWithBlending(
 			// Pass 1: subtractive with gray PalFX
 			if dst > 0 {
 				makeFxGrayscale()
-				gfx.SetUniformF("gray", 1.0)
+				gray = 1.0
 				render(BlendReverseSubtract, blendSourceFactor, BlendOne, dst)
 			}
 			// Pass 2: additive with original PalFX
 			if src > 0 {
-				*spfx = origState
-				gfx.SetUniformF("gray", spfx.gray)
+				sp = origState
+				gray = sp.gray
 				render(BlendAdd, blendSourceFactor, BlendOne, src)
 			}
 		}
@@ -1028,10 +1279,10 @@ func renderWithBlending(
 			render(BlendAdd, blendSourceFactor, BlendOneMinusSrcAlpha, 1)
 		case src == 1 && dst == 1:
 			// Fast path for full Add
-			if spfx.invblend >= 1 {
+			if sp.invblend >= 1 {
 				invertAColor()
 			}
-			if spfx.invblend == 3 {
+			if sp.invblend == 3 {
 				disableNeg()
 			}
 			render(Blend, blendSourceFactor, BlendOne, 1)
@@ -1041,23 +1292,23 @@ func renderWithBlending(
 				render(Blend, BlendZero, BlendOneMinusSrcAlpha, 1-dst)
 			}
 			if src > 0 {
-				if spfx.invblend >= 1 && dst == 1 {
+				if sp.invblend >= 1 && dst == 1 {
 					Blend = BlendReverseSubtract
-					if spfx.invblend >= 2 { // Not 1 here. TODO: Explain why in comment
+					if sp.invblend >= 2 { // Not 1 here. TODO: Explain why in comment
 						invertAColor()
 					}
-					if spfx.invblend == 3 {
+					if sp.invblend == 3 {
 						disableNeg()
 					}
 				} else {
 					Blend = BlendAdd
 				}
-				if !isrgba && (spfx.invblend <= -1 || spfx.invblend >= 2) && src < 1 {
+				if !isrgba && (sp.invblend <= -1 || sp.invblend >= 2) && src < 1 {
 					// Sum of add components
-					gc := Abs(spfx.add[0]) + Abs(spfx.add[1]) + Abs(spfx.add[2])
+					gc := Abs(sp.add[0]) + Abs(sp.add[1]) + Abs(sp.add[2])
 					v3, ml, al := Max(255*(gc-(src+dst)), 512)/128, src, src+dst
-					rM, gM, bM := spfx.mult[0]*ml, spfx.mult[1]*ml, spfx.mult[2]*ml
-					spfx.mult[0], spfx.mult[1], spfx.mult[2] = rM, gM, bM
+					rM, gM, bM := sp.mult[0]*ml, sp.mult[1]*ml, sp.mult[2]*ml
+					sp.mult[0], sp.mult[1], sp.mult[2] = rM, gM, bM
 					render(Blend, blendSourceFactor, BlendOne, al*Pow(v3, 3))
 				} else {
 					render(Blend, blendSourceFactor, BlendOne, src)
@@ -1065,9 +1316,29 @@ func renderWithBlending(
 			}
 		}
 	}
+	return passes
+}
+
+// renderWithBlending runs the resolved blending passes through the given
+// render callback (used by the immediate drawing path).
+func renderWithBlending(
+	render func(eq BlendEquation, src, dst BlendFunc, a float32, spfx ShaderPalFX, gray float32),
+	blendMode TransType, blendAlpha [2]int32, correctAlpha bool,
+	spfx *ShaderPalFX, isrgba bool) {
+
+	for _, p := range resolveBlendPasses(blendMode, blendAlpha, correctAlpha, spfx, isrgba) {
+		render(p.eq, p.src, p.dst, p.a, p.spfx, p.gray)
+	}
 }
 
 func FillRect(rect [4]int32, color uint32, alpha [2]int32, fx *PalFX) {
+	// FillRect is deferred through the sprite queue when batching is on so it
+	// stays correctly interleaved with the deferred sprite draws (e.g. lifebar
+	// rects must draw after their background sprites but before the characters).
+	if sys.cfg.Video.EnableSpriteBatching {
+		enqueueFillRect(rect, color, alpha, fx)
+		return
+	}
 	r := float32(color>>16&0xff) / 255
 	g := float32(color>>8&0xff) / 255
 	b := float32(color&0xff) / 255
@@ -1117,18 +1388,63 @@ func FillRect(rect [4]int32, color uint32, alpha [2]int32, fx *PalFX) {
 	gfx.SetUniformF("alpha", 1.0)
 
 	// Local function called for each blending pass
-	renderPass := func(eq BlendEquation, src, dst BlendFunc, a float32) {
+	renderPass := func(eq BlendEquation, src, dst BlendFunc, a float32, pspfx ShaderPalFX, gray float32) {
 		// Update only the dynamic state
 		gfx.EnableBlending(eq, src, dst)
 		gfx.SetUniformF("tint", r, g, b, a)
-		gfx.SetUniformI("neg", int(Btoi(spfx.neg)))
-		gfx.SetUniformFv("add", spfx.add[:])
-		gfx.SetUniformFv("mult", spfx.mult[:])
+		gfx.SetUniformI("neg", int(Btoi(pspfx.neg)))
+		gfx.SetUniformFv("add", pspfx.add[:])
+		gfx.SetUniformFv("mult", pspfx.mult[:])
 
 		gfx.RenderQuad()
 	}
 
 	renderWithBlending(renderPass, TT_add, alpha, true, &spfx, true)
+}
+
+// enqueueFillRect defers a flat-color rectangle through the sprite queue.
+// It renders as an isFlat instance (tint carries the color + per-pass alpha),
+// so the geometry/UV attributes are irrelevant — only the corners matter.
+func enqueueFillRect(rect [4]int32, color uint32, alpha [2]int32, fx *PalFX) {
+	spfx := NewShaderPalFX()
+	spfx = fx.getFinalPalFx(TT_add, alpha)
+	passes := resolveBlendPasses(TT_add, alpha, true, &spfx, true)
+	if len(passes) == 0 {
+		return
+	}
+
+	r := float32(color>>16&0xff) / 255
+	g := float32(color>>8&0xff) / 255
+	b := float32(color&0xff) / 255
+
+	// Match FillRect's immediate vertex order: v0=(x2,y2), v1=(x2,y1),
+	// v2=(x1,y2), v3=(x1,y1). With the standard quad corner mapping
+	// (v0=p2, v1=p3, v2=p1, v3=p4) that gives:
+	//   p1=(x1,y2) p2=(x2,y2) p3=(x2,y1) p4=(x1,y1)
+	mv := mgl.Translate3D(0, float32(sys.scrrect[3]), 0)
+	x1, y1 := float32(rect[0]), -float32(rect[1])
+	x2, y2 := float32(rect[0]+rect[2]), -float32(rect[1]+rect[3])
+	px1, py1 := transformPoint(mv, x1, y2)
+	px2, py2 := transformPoint(mv, x2, y2)
+	px3, py3 := transformPoint(mv, x2, y1)
+	px4, py4 := transformPoint(mv, x1, y1)
+
+	for i := range passes {
+		spriteQueue = append(spriteQueue, SpriteDrawCall{
+			isFlat:   true,
+			blendEq:  passes[i].eq,
+			blendSrc: passes[i].src,
+			blendDst: passes[i].dst,
+			isRgba:   true,
+			corners:  [8]float32{px1, py1, px2, py2, px3, py3, px4, py4},
+			palUV:    [4]float32{0, 0, 1, 1},
+			uv:       [4]float32{0, 0, 1, 1},
+			tint:     [4]float32{r, g, b, passes[i].a},
+			spfx:     passes[i].spfx,
+			alpha:    1.0, // flat alpha rides in tint.a, matching FillRect
+			gray:     passes[i].gray,
+		})
+	}
 }
 
 type TextureAtlas struct {

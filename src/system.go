@@ -25,6 +25,16 @@ import (
 	lua "github.com/yuin/gopher-lua"
 )
 
+// Debug-only frame time breakdown for the match loop (gated by DebugMem in the
+// log call; the accumulation itself is a few time.Now() calls per iteration).
+var (
+	renderTimeAccum  time.Duration
+	logicTimeAccum   time.Duration
+	gpuTimeAccum     time.Duration
+	renderFrameCount int
+	loopIterCount    int
+)
+
 const (
 	MaxSimul        = 4
 	MaxAttachedChar = 4
@@ -291,26 +301,26 @@ type System struct {
 	usePalette          bool
 	gameRunning         bool
 
-	msaa               int32
-	externalShaders    [][][]byte
-	windowMainIcon     []image.Image
-	frameCounter       int32
-	captureNum         int
-	timerRounds        []int32
-	scoreRounds        [][2]float32
-	statsLog           StatsLog
-	maxPowerMode       bool
-	debugClsnText      []DebugClsnText
-	consoleText        []string
-	luaLState          *lua.LState
-	statusLFunc        *lua.LFunction
-	listLFunc          []*lua.LFunction
+	msaa            int32
+	externalShaders [][][]byte
+	windowMainIcon  []image.Image
+	frameCounter    int32
+	captureNum      int
+	timerRounds     []int32
+	scoreRounds     [][2]float32
+	statsLog        StatsLog
+	maxPowerMode    bool
+	debugClsnText   []DebugClsnText
+	consoleText     []string
+	luaLState       *lua.LState
+	statusLFunc     *lua.LFunction
+	listLFunc       []*lua.LFunction
 
 	// Cached Lua tables for stable Go→Lua conversions
-	cachedCfgTable    *lua.LTable
-	cfgCacheGen       uint64
-	cachedMotifTable  *lua.LTable
-	motifCacheGen     uint64
+	cachedCfgTable     *lua.LTable
+	cfgCacheGen        uint64
+	cachedMotifTable   *lua.LTable
+	motifCacheGen      uint64
 	reloadPreserveVars [MaxPlayerNo]bool
 	charVarsBackup     map[int]CharVarBackup
 	shaderRefCount     map[string]int
@@ -824,6 +834,7 @@ func (s *System) keepAlive() {
 func (s *System) await(fps int) bool {
 	if !s.frameSkip {
 		// Render the finished frame
+		gpuT0 := time.Now()
 		gfx.EndFrame()
 		if gfx.GetName()[:6] == "OpenGL" {
 			s.window.SwapBuffers()
@@ -831,6 +842,7 @@ func (s *System) await(fps int) bool {
 			gfx.Await()
 			calculateFPS()
 		}
+		gpuTimeAccum += time.Since(gpuT0)
 		s.window.UpdateDebugFPS()
 		if s.isTakingScreenshot {
 			defer captureScreen()
@@ -1899,6 +1911,8 @@ func (s *System) luaFlushDrawQueue() {
 		}
 		s.luaDrawLayerOps[i] = s.luaDrawLayerOps[i][:0]
 	}
+	// Flush any deferred sprite draw calls accumulated during this draw queue.
+	flushSpriteQueue()
 }
 func (s *System) luaDiscardDrawQueue() {
 	s.luaDrawPreOps = s.luaDrawPreOps[:0]
@@ -3948,11 +3962,32 @@ func (s *System) runMatch() (reload bool) {
 		}
 
 		// Render frame
-		s.renderFrame()
+		if !s.frameSkip {
+			renderT0 := time.Now()
+			s.renderFrame()
+			renderTimeAccum += time.Since(renderT0)
+			renderFrameCount++
+		} else {
+			s.renderFrame()
+		}
 
 		// Update system. Break if update returns false (engine shutdown).
+		logicT0 := time.Now()
 		if !s.update() {
 			break
+		}
+		logicTimeAccum += time.Since(logicT0)
+		loopIterCount++
+
+		if DebugMem && renderFrameCount >= 60 {
+			// render/gpu are per rendered frame; logic is per loop iteration
+			// (update runs every iteration, skipped renders still tick logic).
+			LogDebug("[FRAME] render=%.1fms gpu=%.1fms logic=%.1fms renders=%d/%d",
+				float64(renderTimeAccum)/float64(renderFrameCount)/float64(time.Millisecond),
+				float64(gpuTimeAccum)/float64(renderFrameCount)/float64(time.Millisecond),
+				float64(logicTimeAccum)/float64(loopIterCount)/float64(time.Millisecond),
+				renderFrameCount, loopIterCount)
+			renderTimeAccum, logicTimeAccum, gpuTimeAccum, renderFrameCount, loopIterCount = 0, 0, 0, 0, 0
 		}
 
 		// Exit the replay match loop before EOF can reuse the last input sample.
@@ -6114,7 +6149,7 @@ func (l *Loader) prepareTurnsFaces(pn int, fa *FightScreenFace, nm *FightScreenN
 				targetPal := sc.sff.palList.Get(int(palIdx) - 1)
 				if targetPal != nil {
 					// Decouple clone from global SFF palettes				spr.Pal = make([]uint32, len(targetPal))
-				copy(spr.Pal, targetPal)
+					copy(spr.Pal, targetPal)
 
 					// Pre-compute hash for the new palette
 					spr.palhash = hashPal(targetPal)

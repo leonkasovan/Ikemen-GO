@@ -79,6 +79,8 @@ func platformDefaultConfig(cfg *Config) {
 	cfg.Video.EnableModelShadow = false
 	// MSAA is expensive on tile-based GPUs; force off
 	cfg.Video.MSAA = 0
+	// Enable deferred sprite queue — prerequisite for Phase 4 instanced batching
+	cfg.Video.EnableSpriteBatching = true
 	// Cap to display refresh — uncapped burns CPU/GPU for no gain
 	if cfg.Video.VSync == 0 {
 		cfg.Video.VSync = 1

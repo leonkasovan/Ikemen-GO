@@ -9,6 +9,7 @@ package main
 import (
 	"bytes"
 	"container/list"
+	_ "embed"
 	"encoding/binary"
 	"fmt"
 	"math"
@@ -22,6 +23,34 @@ import (
 	"github.com/ikemen-engine/Ikemen-GO/packages/go-sdl2/sdl"
 	"golang.org/x/mobile/exp/f32"
 )
+
+//go:embed shaders/sprite_instanced.vert.glsl
+var instancedVertShader string
+
+//go:embed shaders/sprite_instanced.frag.glsl
+var instancedFragShader string
+
+// maxTexSlots is the number of unique (sprite, palette) texture pairs a single
+// instanced batch may span. 7 sprite + 7 palette units + 2 reserved = 16,
+// which stays within the Mali-G31 texture image unit limit on the R36S.
+const maxTexSlots = 7
+
+// instanceStrideFloats is the per-instance vertex attribute layout width:
+// [0..7] corners | [8..11] x1x2x4x3 | [12..15] palUV | [16..19] uv |
+// [20..23] tint | [24..27] negadd | [28..30] mult | [31..33] agrayhue |
+// [34] texSlot | [35] palSlot
+const instanceStrideFloats = 36
+
+// texKey identifies a unique (sprite, palette) texture pair for slot budgeting.
+type texKey struct{ tex, pal uint64 }
+
+// texSlotInfo is one texture-slot entry. The slot index is the position in the
+// fixed-size slot array (0..maxTexSlots-1), so no per-batch allocation occurs.
+type texSlotInfo struct {
+	key texKey
+	tex Texture
+	pal Texture
+}
 
 // ------------------------------------------------------------------
 // ShaderProgram_GLES32
@@ -717,6 +746,12 @@ type Renderer_GLES32 struct {
 	// per-quad []byte allocation via f32.Bytes on the render hot path.
 	// gl.BufferData copies immediately, so the buffer can be safely reused.
 	vertexScratch []byte
+	// Instanced sprite rendering (Phase 4/5 batching)
+	instancedSpriteShader *ShaderProgram_GLES32
+	instanceVBO           uint32    // per-instance attribute VBO
+	instanceVAO           uint32    // VAO for the instanced sprite pass
+	instanceQuadVBO       uint32    // static corner-index VBO (2,3,1,4)
+	instanceScratch       []float32 // reusable CPU-side instance buffer
 	// Shader and index data for 3D model rendering
 	shadowMapShader         *ShaderProgram_GLES32
 	modelShader             *ShaderProgram_GLES32
@@ -736,6 +771,10 @@ type Renderer_GLES32 struct {
 	// RenderScale: internal render dimensions (may be smaller than window when RenderScale < 1)
 	renderW int32
 	renderH int32
+
+	// useIntermediateFBO: when false, render directly to the default framebuffer (no FBO).
+	// True when post-processing shaders are active or MSAA > 0.
+	useIntermediateFBO bool
 
 	// Palette atlas
 	palAtlas      *Texture_GLES32   // Shared atlas texture for all palettes
@@ -888,6 +927,7 @@ func (r *Renderer_GLES32) Init() {
 	r.customShaderMap = make(map[string]uint32)
 	r.nextShaderID = 1
 	r.currentProgram = nil
+	var err error
 
 	// Data buffers for rendering
 	postVertData := f32.Bytes(binary.LittleEndian, -1, -1, 1, -1, -1, 1, 1, 1)
@@ -959,6 +999,81 @@ func (r *Renderer_GLES32) Init() {
 	// Unbind for safety
 	gl.BindVertexArray(0)
 
+	// Instanced sprite shader (Phase 4/5 batching). Best-effort: if the driver
+	// rejects it, batching silently falls back to the immediate path.
+	if r.instancedSpriteShader, err = r.newShaderProgram(instancedVertShader, instancedFragShader, "", "Instanced Sprite Shader", false); err != nil {
+		LogError("[GLES] Instanced sprite shader compile failed — sprite batching disabled: %v", err)
+		r.instancedSpriteShader = nil
+		// Route all sprite draws back through the immediate path.
+		sys.cfg.Video.EnableSpriteBatching = false
+	} else {
+		// Attribute locations are explicit via layout(location=..) in the shader.
+		r.instancedSpriteShader.RegisterUniforms("projection", "mask", "isRgba", "isTrapez", "isFlat")
+		r.instancedSpriteShader.RegisterUniforms("texArray[0]", "palArray[0]")
+		if r.instancedSpriteShader.uniforms["texArray[0]"] < 0 {
+			// Some drivers reject the "[0]" form but accept the bare array name.
+			r.instancedSpriteShader.RegisterUniforms("texArray", "palArray")
+		}
+
+		gl.GenBuffers(1, &r.instanceVBO)
+		gl.GenBuffers(1, &r.instanceQuadVBO)
+		gl.GenVertexArrays(1, &r.instanceVAO)
+		gl.BindVertexArray(r.instanceVAO)
+
+		// Static per-vertex attribute 0: corner index, triangle-strip order (2,3,1,4).
+		gl.BindBuffer(gl.ARRAY_BUFFER, r.instanceQuadVBO)
+		quadData := f32.Bytes(binary.LittleEndian, 2, 3, 1, 4)
+		gl.BufferData(gl.ARRAY_BUFFER, len(quadData), unsafe.Pointer(&quadData[0]), gl.STATIC_DRAW)
+		gl.EnableVertexAttribArray(0)
+		gl.VertexAttribPointerWithOffset(0, 1, gl.FLOAT, false, 4, 0)
+
+		// Per-instance attributes (divisor 1).
+		gl.BindBuffer(gl.ARRAY_BUFFER, r.instanceVBO)
+		stride := int32(instanceStrideFloats * 4)
+
+		gl.EnableVertexAttribArray(2)
+		gl.VertexAttribPointerWithOffset(2, 4, gl.FLOAT, false, stride, 0)
+		gl.VertexAttribDivisor(2, 1)
+		gl.EnableVertexAttribArray(3)
+		gl.VertexAttribPointerWithOffset(3, 4, gl.FLOAT, false, stride, 16)
+		gl.VertexAttribDivisor(3, 1)
+		gl.EnableVertexAttribArray(4)
+		gl.VertexAttribPointerWithOffset(4, 4, gl.FLOAT, false, stride, 32)
+		gl.VertexAttribDivisor(4, 1)
+		gl.EnableVertexAttribArray(5)
+		gl.VertexAttribPointerWithOffset(5, 4, gl.FLOAT, false, stride, 48)
+		gl.VertexAttribDivisor(5, 1)
+		gl.EnableVertexAttribArray(6)
+		gl.VertexAttribPointerWithOffset(6, 4, gl.FLOAT, false, stride, 64)
+		gl.VertexAttribDivisor(6, 1)
+		gl.EnableVertexAttribArray(7)
+		gl.VertexAttribPointerWithOffset(7, 4, gl.FLOAT, false, stride, 80)
+		gl.VertexAttribDivisor(7, 1)
+		gl.EnableVertexAttribArray(8)
+		gl.VertexAttribPointerWithOffset(8, 4, gl.FLOAT, false, stride, 96)
+		gl.VertexAttribDivisor(8, 1)
+		gl.EnableVertexAttribArray(9)
+		gl.VertexAttribPointerWithOffset(9, 3, gl.FLOAT, false, stride, 112)
+		gl.VertexAttribDivisor(9, 1)
+		gl.EnableVertexAttribArray(10)
+		gl.VertexAttribPointerWithOffset(10, 3, gl.FLOAT, false, stride, 124)
+		gl.VertexAttribDivisor(10, 1)
+		gl.EnableVertexAttribArray(11)
+		gl.VertexAttribPointerWithOffset(11, 1, gl.FLOAT, false, stride, 136)
+		gl.VertexAttribDivisor(11, 1)
+		gl.EnableVertexAttribArray(12)
+		gl.VertexAttribPointerWithOffset(12, 1, gl.FLOAT, false, stride, 140)
+		gl.VertexAttribDivisor(12, 1)
+
+		gl.BindVertexArray(0)
+		gl.BindBuffer(gl.ARRAY_BUFFER, 0)
+
+		r.instanceScratch = make([]float32, 0, instanceStrideFloats*512)
+		if r.debugMode {
+			LogMessage("[GLES] Instanced sprite batching initialized (%d floats/instance)", instanceStrideFloats)
+		}
+	}
+
 	if r.enableModel {
 		if err := r.InitModelShader(); err != nil {
 			r.enableModel = false
@@ -1003,14 +1118,6 @@ func (r *Renderer_GLES32) Init() {
 	// It should be the last one in modern OpenGL
 	r.postShaderSelect[len(r.postShaderSelect)-1] = identShader
 
-	// Unbind for safety
-	gl.BindVertexArray(0)
-	gl.BindBuffer(gl.ARRAY_BUFFER, 0)
-
-	r.SetActiveTexture0() //gl.ActiveTexture(gl.TEXTURE0)
-	r.grabTexture = r.newTexture(sys.scrrect[2], sys.scrrect[3], 32, true).(*Texture_GLES32)
-	r.grabTexture.SetData(nil)
-
 	// Compute internal render resolution (RenderScale support).
 	// The scene is rendered into an FBO of this size, then upscaled to the full
 	// window size in EndFrame(). A scale of 1.0 means no downscaling.
@@ -1032,6 +1139,25 @@ func (r *Renderer_GLES32) Init() {
 				scale, r.renderW, r.renderH, sys.scrrect[2], sys.scrrect[3])
 		}
 	}
+
+	// Determine whether we need an intermediate FBO.
+	// If no post-processing shaders, no MSAA and no RenderScale downscaling, we
+	// can render directly to the default framebuffer (FBO 0), eliminating the
+	// main render-target FBO switch entirely. A scaled render MUST go through the
+	// FBO so EndFrame can upscale the smaller texture to the window size.
+	r.useIntermediateFBO = r.renderW != int32(sys.scrrect[2]) || r.renderH != int32(sys.scrrect[3]) ||
+		len(sys.cfg.Video.ExternalShaders) > 0 || sys.msaa > 0
+	if !r.useIntermediateFBO {
+		LogMessage("[GLES] No post shaders, no MSAA, no scaling — skipping intermediate FBO (direct render to screen)")
+	}
+
+	// Unbind for safety
+	gl.BindVertexArray(0)
+	gl.BindBuffer(gl.ARRAY_BUFFER, 0)
+
+	r.SetActiveTexture0() //gl.ActiveTexture(gl.TEXTURE0)
+	r.grabTexture = r.newTexture(sys.scrrect[2], sys.scrrect[3], 32, true).(*Texture_GLES32)
+	r.grabTexture.SetData(nil)
 
 	// create a texture for r.fbo
 	gl.GenTextures(1, &r.fbo_texture)
@@ -1297,6 +1423,7 @@ func (r *Renderer_GLES32) bindFramebuffer(target uint32, fbo uint32) {
 		if r.curDrawFbo == fbo && r.curReadFbo == fbo {
 			return
 		}
+		drawCallStats.FBOSwitches++
 		gl.BindFramebuffer(gl.FRAMEBUFFER, fbo)
 		r.curDrawFbo = fbo
 		r.curReadFbo = fbo
@@ -1304,12 +1431,14 @@ func (r *Renderer_GLES32) bindFramebuffer(target uint32, fbo uint32) {
 		if r.curDrawFbo == fbo {
 			return
 		}
+		drawCallStats.FBOSwitches++
 		gl.BindFramebuffer(gl.DRAW_FRAMEBUFFER, fbo)
 		r.curDrawFbo = fbo
 	case gl.READ_FRAMEBUFFER:
 		if r.curReadFbo == fbo {
 			return
 		}
+		drawCallStats.FBOSwitches++
 		gl.BindFramebuffer(gl.READ_FRAMEBUFFER, fbo)
 		r.curReadFbo = fbo
 	}
@@ -1318,8 +1447,23 @@ func (r *Renderer_GLES32) bindFramebuffer(target uint32, fbo uint32) {
 func (r *Renderer_GLES32) BeginFrame(clearColor bool) {
 	drawCallStats.reset()
 	lastRenderParams = nil
-	//gl.BindVertexArray(r.vao)
-	r.bindFramebuffer(gl.FRAMEBUFFER, r.fbo)
+	resetSpriteQueue()
+	if r.useIntermediateFBO {
+		r.bindFramebuffer(gl.FRAMEBUFFER, r.fbo)
+	} else {
+		// No post shaders / MSAA — render directly to the window surface.
+		// BeginFrame is called once per game frame so we must manually reset
+		// the FBO cache to ensure the first bindFramebuffer in EndFrame fires.
+		x, y, w, h := sys.window.GetScaledViewportSize()
+		r.bindFramebuffer(gl.FRAMEBUFFER, 0)
+		gl.Viewport(x, y, w, h)
+		if clearColor {
+			gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
+		} else {
+			gl.Clear(gl.DEPTH_BUFFER_BIT)
+		}
+		return
+	}
 	gl.Viewport(0, 0, r.renderW, r.renderH)
 	if clearColor {
 		gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
@@ -1329,9 +1473,18 @@ func (r *Renderer_GLES32) BeginFrame(clearColor bool) {
 }
 
 func (r *Renderer_GLES32) EndFrame() {
+	// Flush any deferred sprite draws accumulated after the last
+	// luaFlushDrawQueue (top-layer elements, fades, debug overlays).
+	flushSpriteQueue()
 	drawCallStats.logFrame(int(sys.frameCounter))
 
 	if len(r.fbo_pp) == 0 {
+		return
+	}
+
+	// When rendering directly to the default framebuffer (no post shaders, no MSAA),
+	// BeginFrame already targeted FBO 0 — nothing left to do in EndFrame.
+	if !r.useIntermediateFBO {
 		return
 	}
 
@@ -2633,4 +2786,242 @@ func (r *Renderer_GLES32) ResolveBackBuffer() Texture {
 
 	r.bindFramebuffer(gl.FRAMEBUFFER, r.fbo)
 	return r.grabTexture
+}
+
+// ------------------------------------------------------------------
+// Instanced sprite batching (Phase 4/5)
+// ------------------------------------------------------------------
+
+func sameBatchKey(a, b *SpriteDrawCall) bool {
+	if a.isFlat != b.isFlat ||
+		a.blendEq != b.blendEq ||
+		a.blendSrc != b.blendSrc ||
+		a.blendDst != b.blendDst ||
+		a.isRgba != b.isRgba ||
+		a.isTrapez != b.isTrapez ||
+		a.mask != b.mask ||
+		a.hasScissor != b.hasScissor {
+		return false
+	}
+	return a.scissor == b.scissor
+}
+
+// buildSlots maps each unique (sprite, palette) texture pair in a batch to a
+// texture unit slot, writing into a fixed-size array so the render hot path
+// allocates nothing. The slot index equals the array index. Returns the count.
+func buildSlots(calls []SpriteDrawCall, slots *[maxTexSlots]texSlotInfo) int {
+	count := 0
+	for i := range calls {
+		k := texKey{calls[i].texSerial, calls[i].palSerial}
+		j := 0
+		for ; j < count; j++ {
+			if slots[j].key == k {
+				break
+			}
+		}
+		if j == count {
+			slots[count] = texSlotInfo{key: k, tex: calls[i].tex, pal: calls[i].paltex}
+			count++
+		}
+	}
+	return count
+}
+
+// flushSpriteQueueBatched groups consecutive compatible calls in the deferred
+// draw queue and issues one instanced draw call per batch. Texture identity is
+// deliberately NOT part of the batch key (Phase 5): a batch may span up to
+// maxTexSlots unique texture pairs, which removes the texture-change batch break
+// that dominates the profiler output.
+func flushSpriteQueueBatched(queue []SpriteDrawCall) {
+	if r, ok := gfx.(*Renderer_GLES32); ok {
+		r.flushSpriteBatches(queue)
+	} else {
+		// Defensive: no instanced backend available (should not happen on GLES32 builds).
+		for i := range queue {
+			if queue[i].isFlat {
+				renderFlatCallImmediate(&queue[i])
+			} else {
+				renderSpriteImmediate(queue[i].rp)
+			}
+		}
+	}
+}
+
+func (r *Renderer_GLES32) flushSpriteBatches(queue []SpriteDrawCall) {
+	if len(queue) == 0 {
+		return
+	}
+	if r.instancedSpriteShader == nil {
+		// Shader failed to compile (batching should already be disabled, but be safe).
+		for i := range queue {
+			if queue[i].isFlat {
+				renderFlatCallImmediate(&queue[i])
+			} else {
+				renderSpriteImmediate(queue[i].rp)
+			}
+		}
+		return
+	}
+
+	// Painter's-algorithm correctness: the engine draws strictly in submission
+	// order, so a global sort (the plan's Phase 4 idea) would reorder layers —
+	// e.g. flat lifebar rects drawn mid-frame would end up over the characters.
+	// Instead we only group *consecutive* calls sharing a batch key. Phase 5
+	// still removes the dominant texture-change break by letting one batch span
+	// up to maxTexSlots unique textures within a run.
+	numBatches := 0
+	start := 0
+	for start < len(queue) {
+		end := start + 1
+		for end < len(queue) && sameBatchKey(&queue[start], &queue[end]) {
+			end++
+		}
+		if queue[start].isFlat {
+			// Flat rects share one batch (no textures to budget).
+			r.renderBatch(queue[start:end])
+			numBatches++
+		} else {
+			// Split the same-key run when more than maxTexSlots textures appear.
+			var runSlots [maxTexSlots]texKey
+			slotCount := 0
+			batchStart := start
+			for i := start; i < end; i++ {
+				k := texKey{queue[i].texSerial, queue[i].palSerial}
+				j := 0
+				for ; j < slotCount; j++ {
+					if runSlots[j] == k {
+						break
+					}
+				}
+				if j == slotCount {
+					if slotCount == maxTexSlots {
+						r.renderBatch(queue[batchStart:i])
+						numBatches++
+						batchStart = i
+						slotCount = 0
+					}
+					runSlots[slotCount] = k
+					slotCount++
+				}
+			}
+			r.renderBatch(queue[batchStart:end])
+			numBatches++
+		}
+		start = end
+	}
+	// Accumulate across the frame's flush passes (luaFlushDrawQueue + EndFrame)
+	// so the [BATCH] log reports the real total batch count.
+	drawCallStats.TotalBatches += numBatches
+}
+
+// renderBatch draws a slice of compatible SpriteDrawCalls in a single instanced
+// draw call. All calls share the same batch key; they may span multiple texture
+// pairs (up to maxTexSlots), each bound to its own texture unit.
+func (r *Renderer_GLES32) renderBatch(calls []SpriteDrawCall) {
+	if len(calls) == 0 {
+		return
+	}
+	first := &calls[0]
+
+	r.ChangeProgram(r.instancedSpriteShader.program)
+	gl.BindVertexArray(r.instanceVAO)
+
+	if first.hasScissor {
+		r.EnableScissor(first.scissor[0], first.scissor[1], first.scissor[2], first.scissor[3])
+	}
+
+	proj := gfx.OrthographicProjectionMatrix(0, float32(sys.scrrect[2]), 0, float32(sys.scrrect[3]), -65535, 65535)
+	if loc := r.instancedSpriteShader.uniforms["projection"]; loc >= 0 {
+		gl.UniformMatrix4fv(loc, 1, false, &proj[0])
+	}
+	r.SetUniformISub(r.instancedSpriteShader.uniforms["isFlat"], Btoi(first.isFlat))
+	r.SetUniformISub(r.instancedSpriteShader.uniforms["isRgba"], Btoi(first.isRgba))
+	r.SetUniformISub(r.instancedSpriteShader.uniforms["isTrapez"], Btoi(first.isTrapez))
+	r.SetUniformISub(r.instancedSpriteShader.uniforms["mask"], first.mask)
+
+	r.EnableBlending(first.blendEq, first.blendSrc, first.blendDst)
+
+	var slotArr [maxTexSlots]texSlotInfo
+	slotCount := buildSlots(calls, &slotArr)
+	if !first.isFlat {
+		for i := 0; i < slotCount; i++ {
+			info := &slotArr[i]
+			if info.tex != nil {
+				if t, ok := info.tex.(*Texture_GLES32); ok {
+					gl.ActiveTexture(gl.TEXTURE0 + uint32(i))
+					gl.BindTexture(gl.TEXTURE_2D, t.handle)
+				}
+			}
+			if info.pal != nil {
+				if p, ok := info.pal.(*Texture_GLES32); ok {
+					gl.ActiveTexture(gl.TEXTURE0 + uint32(maxTexSlots) + uint32(i))
+					gl.BindTexture(gl.TEXTURE_2D, p.handle)
+				}
+			}
+		}
+		texUnits := [maxTexSlots]int32{0, 1, 2, 3, 4, 5, 6}
+		palUnits := [maxTexSlots]int32{7, 8, 9, 10, 11, 12, 13}
+		texLoc := r.instancedSpriteShader.uniforms["texArray[0]"]
+		if texLoc < 0 {
+			texLoc = r.instancedSpriteShader.uniforms["texArray"]
+		}
+		if texLoc >= 0 {
+			gl.Uniform1iv(texLoc, maxTexSlots, &texUnits[0])
+		}
+		palLoc := r.instancedSpriteShader.uniforms["palArray[0]"]
+		if palLoc < 0 {
+			palLoc = r.instancedSpriteShader.uniforms["palArray"]
+		}
+		if palLoc >= 0 {
+			gl.Uniform1iv(palLoc, maxTexSlots, &palUnits[0])
+		}
+	}
+
+	// Pack per-instance data.
+	n := len(calls)
+	needed := n * instanceStrideFloats
+	if cap(r.instanceScratch) < needed {
+		r.instanceScratch = make([]float32, needed)
+	}
+	buf := r.instanceScratch[:needed]
+
+	for i := range calls {
+		dc := &calls[i]
+		off := i * instanceStrideFloats
+		copy(buf[off:off+8], dc.corners[:])
+		copy(buf[off+8:off+12], dc.x1x2x4x3[:])
+		copy(buf[off+12:off+16], dc.palUV[:])
+		copy(buf[off+16:off+20], dc.uv[:])
+		copy(buf[off+20:off+24], dc.tint[:])
+		buf[off+24] = 0
+		if dc.spfx.neg {
+			buf[off+24] = 1
+		}
+		copy(buf[off+25:off+28], dc.spfx.add[:])
+		copy(buf[off+28:off+31], dc.spfx.mult[:])
+		buf[off+31] = dc.alpha
+		buf[off+32] = dc.gray
+		buf[off+33] = dc.spfx.hue
+		slot := 0
+		if !dc.isFlat {
+			k := texKey{dc.texSerial, dc.palSerial}
+			for j := 0; j < slotCount; j++ {
+				if slotArr[j].key == k {
+					slot = j
+					break
+				}
+			}
+		}
+		buf[off+34] = float32(slot)
+		buf[off+35] = float32(slot) // palette shares the sprite slot index
+	}
+
+	gl.BindBuffer(gl.ARRAY_BUFFER, r.instanceVBO)
+	gl.BufferData(gl.ARRAY_BUFFER, needed*4, unsafe.Pointer(&buf[0]), gl.DYNAMIC_DRAW)
+
+	// Single instanced draw call for the whole batch.
+	gl.DrawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, int32(n))
+
+	gl.BindVertexArray(0)
+	r.DisableScissor()
 }

@@ -1367,6 +1367,7 @@ func (r *Renderer_GL33) IsShadowEnabled() bool {
 func (r *Renderer_GL33) BeginFrame(clearColor bool) {
 	drawCallStats.reset()
 	lastRenderParams = nil
+	resetSpriteQueue()
 	//gl.BindVertexArray(r.vao)
 	r.bindFramebuffer(gl.FRAMEBUFFER, r.fbo)
 	gl.Viewport(0, 0, sys.scrrect[2], sys.scrrect[3])
@@ -1378,6 +1379,7 @@ func (r *Renderer_GL33) BeginFrame(clearColor bool) {
 }
 
 func (r *Renderer_GL33) EndFrame() {
+	flushSpriteQueue()
 	drawCallStats.logFrame(int(sys.frameCounter))
 
 	if len(r.fbo_pp) == 0 {
@@ -2664,4 +2666,18 @@ func (r *Renderer_GL33) ResolveBackBuffer() Texture {
 
 	r.bindFramebuffer(gl.FRAMEBUFFER, r.fbo)
 	return r.grabTexture
+}
+
+// flushSpriteQueueBatched is the desktop fallback: batching is only implemented
+// in the GLES32 backend, so here each deferred call re-renders individually
+// (correct, just not instanced). Batching defaults to off on desktop.
+func flushSpriteQueueBatched(queue []SpriteDrawCall) {
+	for i := range queue {
+		if queue[i].isFlat {
+			renderFlatCallImmediate(&queue[i])
+		} else {
+			renderSpriteImmediate(queue[i].rp)
+		}
+	}
+	drawCallStats.TotalBatches += len(queue)
 }
