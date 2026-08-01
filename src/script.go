@@ -2483,10 +2483,10 @@ func systemScriptInit(l *lua.LState) {
 		return 1
 	})
 	luaRegister(l, "endMatch", func(*lua.LState) int {
-		/*Signal that the current match should end (using menu fade-out settings).
+		/*Signal that the current match should end (using fight screen fade-out settings).
 		@function endMatch
 		function endMatch() end*/
-		sys.motif.PauseMenu["pause_menu"].FadeOut.FadeData.init(sys.motif.fadeOut, false)
+		sys.fightScreen.round.fadeOut.init(sys.fightScreen.round.fadeOut, false)
 		sys.uiResetTokenGuard()
 		sys.endMatch = true
 		return 0
@@ -3199,10 +3199,9 @@ func systemScriptInit(l *lua.LState) {
 				if winp, err = fight(); err != nil {
 					l.RaiseError(err.Error())
 				}
-				// Hard reset: drop the incomplete match stats and start a fresh one
+				// Hard reset: discard all stats from the abandoned attempt.
 				if winp == -2 {
-					sys.statsLog.abortMatch()
-					sys.statsLog.startMatch()
+					sys.statsLog.discardCurrentMatch()
 				}
 				// If a team won, and not going to the next character in turns mode, break
 				if winp < 0 ||
@@ -9736,6 +9735,16 @@ func triggerFunctions(l *lua.LState) {
 		default:
 			l.RaiseError("\nInvalid argument: %v\n", strArg(l, 1))
 		}
+		return 1
+	})
+	luaRegister(l, "motifIsInherited", func(l *lua.LState) int {
+		/*Returns whether a motif value was inherited from another motif parameter.
+		@function motifIsInherited
+		@tparam string key Motif key path.
+		@treturn boolean
+		function motifIsInherited(key) end*/
+		key := strings.ToLower(l.CheckString(1))
+		l.Push(lua.LBool(sys.motif.inheritedKeys[key]))
 		return 1
 	})
 	luaRegister(l, "motifVar", func(l *lua.LState) int {

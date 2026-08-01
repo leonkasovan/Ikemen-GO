@@ -645,7 +645,8 @@ func (s *System) getMotifAspect() float32 {
 
 func (s *System) getCurrentAspect() float32 {
 	skip := s.skipMotifScaling()
-	motifAspectActive := s.shouldPersistMotifAspect() && (s.motif.me.active || s.motif.di.active)
+	motifAspectActive := s.shouldPersistMotifAspect() && (s.motif.di.active ||
+		s.motif.me.active && s.motif.me.state != ME_OpeningOut && s.motif.me.state != ME_ClosingIn)
 	if (s.postMatchFlg && skip) || (s.middleOfMatch() && !motifAspectActive) {
 		return s.getFightAspect()
 	}
@@ -2350,7 +2351,7 @@ func (s *System) updateMusicMaps() {
 
 // TODO: This function is still a bit overloaded because it's handling some selections instead of doing a pure reset
 func (s *System) resetRound() {
-	if s.sel.gameParams.PersistRounds && !s.roundResetFlg {
+	if s.sel.gameParams.PersistRounds && !s.roundResetFlg && !s.reloadFlg {
 		s.persistRoundCount++
 	}
 
@@ -3860,7 +3861,7 @@ func (s *System) runMatch() (reload bool) {
 	}
 
 	// Loop until end of match
-	for !s.endMatch {
+	for !s.endMatch || s.fightScreen.round.fadeOut.isActive() {
 		s.frameStepFlag = false
 
 		for _, v := range s.shortcutScripts {
@@ -3926,7 +3927,7 @@ func (s *System) runMatch() (reload bool) {
 				s.roundNo = 1
 				s.roundsExisted = [2]int32{}
 
-				s.statsLog.abortMatch()
+				s.statsLog.discardCurrentMatch()
 				s.statsLog.startMatch()
 
 				// Recover the round 1 backup
@@ -3993,13 +3994,6 @@ func (s *System) runMatch() (reload bool) {
 		// Exit the replay match loop before EOF can reuse the last input sample.
 		if s.replayFile != nil && s.replayFile.file == nil {
 			break
-		}
-
-		// If end match selected from menu
-		if s.endMatch {
-			if !s.motif.fadeOut.isActive() {
-				break
-			}
 		}
 
 		// If player pressed esc during netplay
@@ -5745,6 +5739,7 @@ func (s *System) activateNextTurnsFighters() {
 			s.chars[src][0].memberNo != nextMember {
 			continue
 		}
+		outgoingPower := s.chars[dst][0].power
 		s.removePlayerFromCharList(dst)
 		s.removePlayerFromCharList(src)
 		oldDst, oldSrc := dst, src
@@ -5758,6 +5753,7 @@ func (s *System) activateNextTurnsFighters() {
 		s.workingChar = nil
 		s.workingState = nil
 		s.setBGTurnsSlotState(s.chars[dst], dst, true)
+		s.chars[dst][0].power = outgoingPower
 		s.setBGTurnsSlotState(s.chars[src], src, false)
 		if s.chars[dst][0].id < 0 {
 			s.chars[dst][0].id = s.newCharId()
