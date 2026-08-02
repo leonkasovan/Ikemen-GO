@@ -165,6 +165,7 @@ type Config struct {
 		KeepAspect               bool     `ini:"KeepAspect"`
 		RendererDebugMode        bool     `ini:"RendererDebugMode"`
 		DrawCallLog              bool     `ini:"DrawCallLog"`          // Log per-frame batch stats (debug only)
+		PerfLog                  bool     `ini:"PerfLog"`              // Log [FPS] every 60 frames via stdout (works in release builds)
 		RenderScale              float32  `ini:"RenderScale"`          // 0.5–1.0; renders at this fraction of window size, upscaled
 		EnableSpriteBatching     bool     `ini:"EnableSpriteBatching"` // Defer all sprite draws and flush as a batch (default: false; armdevice: true)
 		EnableModel              bool     `ini:"EnableModel"`

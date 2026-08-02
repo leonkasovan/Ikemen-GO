@@ -371,10 +371,12 @@ func attachController(deviceIndex int) {
 var fpsLogTick int32
 
 func (w *Window) UpdateDebugFPS() {
-	if DebugMem {
+	// Release-safe: LogDebug is a no-op without the debug tag, so we print to
+	// stdout directly. Gated by PerfLog config (default off).
+	if sys.cfg.Video.PerfLog {
 		fpsLogTick++
 		if fpsLogTick >= 60 {
-			LogDebug("[FPS] %.1f", sys.gameFPS)
+			fmt.Printf("[FPS] %.1f\n", sys.gameFPS)
 			fpsLogTick = 0
 		}
 	}
