@@ -2829,22 +2829,22 @@ func sameBatchKey(a, b *SpriteDrawCall) bool {
 
 func recordBatchBoundary(a, b *SpriteDrawCall) {
 	if a.isFlat != b.isFlat {
-		batchBreakFlat++
+		perfBreakFlat()
 	}
 	if a.blendEq != b.blendEq || a.blendSrc != b.blendSrc || a.blendDst != b.blendDst {
-		batchBreakBlend++
+		perfBreakBlend()
 	}
 	if a.isRgba != b.isRgba {
-		batchBreakRgba++
+		perfBreakRgba()
 	}
 	if a.isTrapez != b.isTrapez {
-		batchBreakTrapez++
+		perfBreakTrapez()
 	}
 	if a.mask != b.mask {
-		batchBreakMask++
+		perfBreakMask()
 	}
 	if a.hasScissor != b.hasScissor || a.scissor != b.scissor {
-		batchBreakScis++
+		perfBreakScis()
 	}
 }
 
@@ -3014,7 +3014,7 @@ func (r *Renderer_GLES32) flushSpriteBatches(queue []SpriteDrawCall) {
 					if slotCount == maxTexSlots {
 						r.renderBatch(queue[batchStart:i])
 						numBatches++
-						batchSlotSplits++
+						perfSlotSplit()
 						batchStart = i
 						slotCount = 0
 					}
