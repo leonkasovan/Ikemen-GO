@@ -1737,6 +1737,14 @@ func (e *Explod) initFromChar(c *Char) *Explod {
 	return e
 }
 
+func (e *Explod) root() *Char {
+	return sys.chars[e.playerno][0]
+}
+
+func (e *Explod) parent() *Char {
+	return sys.playerID(e.ownerId)
+}
+
 func (e *Explod) setAllPosX(x float32) {
 	e.pos[0], e.oldPos[0], e.newPos[0] = x, x, x
 }
@@ -1844,7 +1852,7 @@ func (e *Explod) matchId(eid, pid int32) bool {
 }
 
 func (e *Explod) setAnim() {
-	c := sys.playerID(e.ownerId)
+	c := e.parent()
 	if c == nil {
 		return
 	}
@@ -1920,7 +1928,7 @@ func (e *Explod) canAct() bool {
 
 	// Apply ignorehitpause
 	if act && !e.ignorehitpause {
-		if parent := sys.playerID(e.ownerId); parent != nil {
+		if parent := e.parent(); parent != nil {
 			act = parent.acttmp%2 >= 0
 		}
 	}
@@ -1935,12 +1943,12 @@ func (e *Explod) update() {
 		return
 	}
 
-	parent := sys.playerID(e.ownerId)
-	root := sys.chars[e.playerno][0]
-
-	if root.scf(SCF_disabled) {
+	if e.root().scf(SCF_disabled) {
 		return
 	}
+
+	// Fetch parent once. It's a more expensive operation than root()
+	parent := e.parent()
 
 	// Remove on get hit
 	if sys.tickNextFrame() && e.removeongethit &&
@@ -1965,7 +1973,7 @@ func (e *Explod) update() {
 		}
 	}
 
-	oldVer := root.gi().mugenver[0] != 1 || root.gi().mugenver[1] != 1
+	oldVer := e.root().gi().mugenver[0] != 1 || e.root().gi().mugenver[1] != 1
 
 	// Bind explod to parent
 	// In Mugen this only happens if the explod is not paused, hence "act"
@@ -2125,14 +2133,17 @@ func (e *Explod) update() {
 }
 
 func (e *Explod) cueDraw() {
-	if e.hidewithbars && sys.shouldHideWithBars() {
-		return
-	}
 	if e.anim == nil {
 		return
 	}
+	if e.root().scf(SCF_disabled) {
+		return
+	}
+	if e.hidewithbars && sys.shouldHideWithBars() {
+		return
+	}
 
-	parent := sys.playerID(e.ownerId)
+	parent := e.parent()
 	act := e.canAct()
 
 	var pfx *PalFX
@@ -2540,6 +2551,10 @@ func (p *Projectile) paused() bool {
 }
 
 func (p *Projectile) update() {
+	if p.root().scf(SCF_disabled) {
+		return
+	}
+
 	// Check projectile removal conditions
 	if sys.tickFrame() && !p.paused() && p.hitpause == 0 {
 		// Check if timer has expired or boundaries were reached
@@ -2779,6 +2794,10 @@ func (p *Projectile) tradeDetection(playerNo, index int) {
 }
 
 func (p *Projectile) tick() {
+	if p.root().scf(SCF_disabled) {
+		return
+	}
+
 	if p.contactflag {
 		p.contactflag = false
 		// Projectile hitpause should maybe be set in this place instead of using "(p.hitpause <= 0 || p.contactflag)" for hit checking
@@ -2794,6 +2813,7 @@ func (p *Projectile) tick() {
 		}
 		p.hitdef.air_juggle = 0
 	}
+
 	if !p.paused() {
 		if p.hitpause <= 0 {
 			p.time++ // Only used in ProjVar currently
@@ -2831,6 +2851,9 @@ func (p *Projectile) tick() {
 func (p *Projectile) cueDraw() {
 	// Nothing to draw here. Not even debug
 	if p.anim == nil {
+		return
+	}
+	if p.root().scf(SCF_disabled) {
 		return
 	}
 
@@ -2908,6 +2931,9 @@ func (p *Projectile) cueDraw() {
 		p.window[3] * basescale[1],
 	}
 
+	// Fetch owner once
+	owner := p.owner()
+
 	// Prepare sprite data
 	sd := newSpriteData()
 	sd.anim = p.anim
@@ -2919,7 +2945,7 @@ func (p *Projectile) cueDraw() {
 	sd.layerno = p.layerno
 	sd.priority = p.sprpriority + int32(p.pos[2]*p.localscl)
 	sd.rot = rot
-	sd.undarken = p.owner() != nil && p.owner().ignoreDarkenTime > 0
+	sd.undarken = owner != nil && owner.ignoreDarkenTime > 0
 	sd.facing = p.facing
 	sd.projection = int32(p.projection)
 	sd.fLength = fLength
@@ -2940,7 +2966,7 @@ func (p *Projectile) cueDraw() {
 	// Record afterimage
 	if p.aimg != nil {
 		if p.aimg.isActive() {
-			p.aimg.recAndCue(sd, p.owner().playerNo, sys.tickNextFrame() && notpause, false)
+			p.aimg.recAndCue(sd, p.playerno, sys.tickNextFrame() && notpause, false)
 		} else {
 			p.aimg = nil
 		}
@@ -2981,6 +3007,7 @@ func (p *Projectile) root() *Char {
 	return sys.chars[p.playerno][0]
 }
 
+// Not "parent()" because a projectile is not always owned by the char that spawned it
 func (p *Projectile) owner() *Char {
 	return sys.playerID(p.ownerId)
 }
