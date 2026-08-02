@@ -66,6 +66,11 @@ type ShaderProgram_GLES32 struct {
 
 var shaderCompileMutex sync.Mutex
 
+// batchBreakLogDone gates the one-shot detailed batch-break diagnostic so it
+// fires exactly once (on the first fight frame) and never again.
+// Set to true initially so it only fires when explicitly re-armed in BeginFrame.
+var batchBreakLogDone bool = false
+
 func (r *Renderer_GLES32) newShaderProgram(vert, frag, geo, name string, crashWhenFail bool) (s *ShaderProgram_GLES32, err error) {
 	// LOCK THE THREAD HERE
 	shaderCompileMutex.Lock()
@@ -752,6 +757,10 @@ type Renderer_GLES32 struct {
 	instanceVAO           uint32    // VAO for the instanced sprite pass
 	instanceQuadVBO       uint32    // static corner-index VBO (2,3,1,4)
 	instanceScratch       []float32 // reusable CPU-side instance buffer
+	// boundTexUnits tracks which texture handle is bound to each texture unit
+	// during the current instanced flush, so repeated binds across batches
+	// (very common: consecutive batches reuse the same sprite/palette) are skipped.
+	boundTexUnits [2 * maxTexSlots]uint32
 	// Shader and index data for 3D model rendering
 	shadowMapShader         *ShaderProgram_GLES32
 	modelShader             *ShaderProgram_GLES32
@@ -2806,6 +2815,27 @@ func sameBatchKey(a, b *SpriteDrawCall) bool {
 	return a.scissor == b.scissor
 }
 
+func recordBatchBoundary(a, b *SpriteDrawCall) {
+	if a.isFlat != b.isFlat {
+		batchBreakFlat++
+	}
+	if a.blendEq != b.blendEq || a.blendSrc != b.blendSrc || a.blendDst != b.blendDst {
+		batchBreakBlend++
+	}
+	if a.isRgba != b.isRgba {
+		batchBreakRgba++
+	}
+	if a.isTrapez != b.isTrapez {
+		batchBreakTrapez++
+	}
+	if a.mask != b.mask {
+		batchBreakMask++
+	}
+	if a.hasScissor != b.hasScissor || a.scissor != b.scissor {
+		batchBreakScis++
+	}
+}
+
 // buildSlots maps each unique (sprite, palette) texture pair in a batch to a
 // texture unit slot, writing into a fixed-size array so the render hot path
 // allocates nothing. The slot index equals the array index. Returns the count.
@@ -2869,11 +2899,86 @@ func (r *Renderer_GLES32) flushSpriteBatches(queue []SpriteDrawCall) {
 	// Instead we only group *consecutive* calls sharing a batch key. Phase 5
 	// still removes the dominant texture-change break by letting one batch span
 	// up to maxTexSlots unique textures within a run.
+
+	// One-shot detailed break log: on the first non-empty queue flush that has
+	// DrawCallLog enabled, print every batch boundary and what field changed.
+	// Set batchBreakLogDone=false in config to re-arm (it resets on restart).
+	if sys.cfg.Video.DrawCallLog && !batchBreakLogDone && len(queue) > 50 {
+		batchBreakLogDone = true
+		for i := 1; i < len(queue); i++ {
+			a, b := &queue[i-1], &queue[i]
+			if !sameBatchKey(a, b) {
+				reasons := ""
+				if a.isFlat != b.isFlat {
+					reasons += fmt.Sprintf(" isFlat:%v->%v", a.isFlat, b.isFlat)
+				}
+				if a.blendEq != b.blendEq {
+					reasons += fmt.Sprintf(" blendEq:%v->%v", a.blendEq, b.blendEq)
+				}
+				if a.blendSrc != b.blendSrc {
+					reasons += fmt.Sprintf(" blendSrc:%v->%v", a.blendSrc, b.blendSrc)
+				}
+				if a.blendDst != b.blendDst {
+					reasons += fmt.Sprintf(" blendDst:%v->%v", a.blendDst, b.blendDst)
+				}
+				if a.isRgba != b.isRgba {
+					reasons += fmt.Sprintf(" isRgba:%v->%v", a.isRgba, b.isRgba)
+				}
+				if a.isTrapez != b.isTrapez {
+					reasons += fmt.Sprintf(" isTrapez:%v->%v", a.isTrapez, b.isTrapez)
+				}
+				if a.mask != b.mask {
+					reasons += fmt.Sprintf(" mask:%v->%v", a.mask, b.mask)
+				}
+				if a.hasScissor != b.hasScissor {
+					reasons += fmt.Sprintf(" hasScissor:%v->%v", a.hasScissor, b.hasScissor)
+				}
+				if a.scissor != b.scissor {
+					reasons += fmt.Sprintf(" scissor:%v->%v", a.scissor, b.scissor)
+				}
+				LogMessage("[BATCHBREAK] q[%d->%d]%s", i-1, i, reasons)
+			}
+		}
+	}
+
+	// All batches in this flush use the same instanced pipeline and VAO.
+	// Keep them bound across the flush to avoid two VAO binds per batch.
+	r.ChangeProgram(r.instancedSpriteShader.program)
+	gl.BindVertexArray(r.instanceVAO)
+	defer gl.BindVertexArray(0)
+
+	// Static uniforms and texture-unit layout are identical for every batch in
+	// this flush; set them once instead of once per batch.
+	proj := gfx.OrthographicProjectionMatrix(0, float32(sys.scrrect[2]), 0, float32(sys.scrrect[3]), -65535, 65535)
+	if loc := r.instancedSpriteShader.uniforms["projection"]; loc >= 0 {
+		gl.UniformMatrix4fv(loc, 1, false, &proj[0])
+	}
+	texUnits := [maxTexSlots]int32{0, 1, 2, 3, 4, 5, 6}
+	palUnits := [maxTexSlots]int32{7, 8, 9, 10, 11, 12, 13}
+	if texLoc := r.instancedSpriteShader.uniforms["texArray[0]"]; texLoc >= 0 {
+		gl.Uniform1iv(texLoc, maxTexSlots, &texUnits[0])
+	} else if texLoc := r.instancedSpriteShader.uniforms["texArray"]; texLoc >= 0 {
+		gl.Uniform1iv(texLoc, maxTexSlots, &texUnits[0])
+	}
+	if palLoc := r.instancedSpriteShader.uniforms["palArray[0]"]; palLoc >= 0 {
+		gl.Uniform1iv(palLoc, maxTexSlots, &palUnits[0])
+	} else if palLoc := r.instancedSpriteShader.uniforms["palArray"]; palLoc >= 0 {
+		gl.Uniform1iv(palLoc, maxTexSlots, &palUnits[0])
+	}
+
+	// Forget the per-unit bind cache: units may have been used by other code
+	// paths (immediate sprites, post-processing) since the last flush.
+	r.boundTexUnits = [2 * maxTexSlots]uint32{}
+
 	numBatches := 0
 	start := 0
 	for start < len(queue) {
 		end := start + 1
-		for end < len(queue) && sameBatchKey(&queue[start], &queue[end]) {
+		for end < len(queue) {
+			if !sameBatchKey(&queue[start], &queue[end]) {
+				recordBatchBoundary(&queue[end-1], &queue[end])
+				break
+			}
 			end++
 		}
 		if queue[start].isFlat {
@@ -2897,6 +3002,7 @@ func (r *Renderer_GLES32) flushSpriteBatches(queue []SpriteDrawCall) {
 					if slotCount == maxTexSlots {
 						r.renderBatch(queue[batchStart:i])
 						numBatches++
+						batchSlotSplits++
 						batchStart = i
 						slotCount = 0
 					}
@@ -2923,17 +3029,10 @@ func (r *Renderer_GLES32) renderBatch(calls []SpriteDrawCall) {
 	}
 	first := &calls[0]
 
-	r.ChangeProgram(r.instancedSpriteShader.program)
-	gl.BindVertexArray(r.instanceVAO)
-
 	if first.hasScissor {
 		r.EnableScissor(first.scissor[0], first.scissor[1], first.scissor[2], first.scissor[3])
 	}
 
-	proj := gfx.OrthographicProjectionMatrix(0, float32(sys.scrrect[2]), 0, float32(sys.scrrect[3]), -65535, 65535)
-	if loc := r.instancedSpriteShader.uniforms["projection"]; loc >= 0 {
-		gl.UniformMatrix4fv(loc, 1, false, &proj[0])
-	}
 	r.SetUniformISub(r.instancedSpriteShader.uniforms["isFlat"], Btoi(first.isFlat))
 	r.SetUniformISub(r.instancedSpriteShader.uniforms["isRgba"], Btoi(first.isRgba))
 	r.SetUniformISub(r.instancedSpriteShader.uniforms["isTrapez"], Btoi(first.isTrapez))
@@ -2947,33 +3046,19 @@ func (r *Renderer_GLES32) renderBatch(calls []SpriteDrawCall) {
 		for i := 0; i < slotCount; i++ {
 			info := &slotArr[i]
 			if info.tex != nil {
-				if t, ok := info.tex.(*Texture_GLES32); ok {
+				if t, ok := info.tex.(*Texture_GLES32); ok && r.boundTexUnits[i] != t.handle {
 					gl.ActiveTexture(gl.TEXTURE0 + uint32(i))
 					gl.BindTexture(gl.TEXTURE_2D, t.handle)
+					r.boundTexUnits[i] = t.handle
 				}
 			}
 			if info.pal != nil {
-				if p, ok := info.pal.(*Texture_GLES32); ok {
+				if p, ok := info.pal.(*Texture_GLES32); ok && r.boundTexUnits[maxTexSlots+i] != p.handle {
 					gl.ActiveTexture(gl.TEXTURE0 + uint32(maxTexSlots) + uint32(i))
 					gl.BindTexture(gl.TEXTURE_2D, p.handle)
+					r.boundTexUnits[maxTexSlots+i] = p.handle
 				}
 			}
-		}
-		texUnits := [maxTexSlots]int32{0, 1, 2, 3, 4, 5, 6}
-		palUnits := [maxTexSlots]int32{7, 8, 9, 10, 11, 12, 13}
-		texLoc := r.instancedSpriteShader.uniforms["texArray[0]"]
-		if texLoc < 0 {
-			texLoc = r.instancedSpriteShader.uniforms["texArray"]
-		}
-		if texLoc >= 0 {
-			gl.Uniform1iv(texLoc, maxTexSlots, &texUnits[0])
-		}
-		palLoc := r.instancedSpriteShader.uniforms["palArray[0]"]
-		if palLoc < 0 {
-			palLoc = r.instancedSpriteShader.uniforms["palArray"]
-		}
-		if palLoc >= 0 {
-			gl.Uniform1iv(palLoc, maxTexSlots, &palUnits[0])
 		}
 	}
 
@@ -3022,6 +3107,5 @@ func (r *Renderer_GLES32) renderBatch(calls []SpriteDrawCall) {
 	// Single instanced draw call for the whole batch.
 	gl.DrawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, int32(n))
 
-	gl.BindVertexArray(0)
 	r.DisableScissor()
 }

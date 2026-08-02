@@ -29,8 +29,19 @@ import (
 // log call; the accumulation itself is a few time.Now() calls per iteration).
 var (
 	renderTimeAccum  time.Duration
+	actionTimeAccum  time.Duration
 	logicTimeAccum   time.Duration
 	gpuTimeAccum     time.Duration
+	flushTimeAccum   time.Duration
+	spriteCount      int
+	batchCount       int
+	batchBreakFlat   int
+	batchBreakBlend  int
+	batchBreakRgba   int
+	batchBreakTrapez int
+	batchBreakMask   int
+	batchBreakScis   int
+	batchSlotSplits  int
 	renderFrameCount int
 	loopIterCount    int
 )
@@ -3524,15 +3535,6 @@ func (s *System) draw(x, y, scl float32) {
 		// Draw character sprites with special under flag
 		s.spriteList.draw(0, true, x, y, scl*s.cam.BaseScale())
 
-		// Draw fight screen layer -1
-		s.fightScreen.draw(-1)
-
-		// Draw char texts layer -1
-		s.drawCharTexts(-1)
-
-		// Draw motif layer -1
-		s.motif.draw(-1)
-
 		// Draw shadows
 		// Draw reflections on layer 0
 		// TODO: Make shadows render in same layers as their sources?
@@ -3577,13 +3579,14 @@ func (s *System) draw(x, y, scl float32) {
 		//	fade(rect, 0, 255)
 		//}
 
-		// Draw fight screen layer 0
+		// Draw fight screen layers -1 and 0 after all sprites so lifebar elements
+		// do not interleave with the character sprite stream and break batches.
+		// Lifebars are always on top of characters so this reordering is visually safe.
+		s.fightScreen.draw(-1)
+		s.drawCharTexts(-1)
+		s.motif.draw(-1)
 		s.fightScreen.draw(0)
-
-		// Draw char texts layer 0
 		s.drawCharTexts(0)
-
-		// Draw motif layer 0
 		s.motif.draw(0)
 	}
 
@@ -3601,6 +3604,10 @@ func (s *System) draw(x, y, scl float32) {
 		}
 	}
 
+	// Draw character sprites in layer 1 (old "ontop") before UI so lifebar layer 1
+	// elements do not break the sprite batch.
+	s.spriteList.draw(1, false, x, y, scl*s.cam.BaseScale())
+
 	// Draw fight screen layer 1
 	s.fightScreen.draw(1)
 
@@ -3609,9 +3616,6 @@ func (s *System) draw(x, y, scl float32) {
 
 	// Draw motif layer 1
 	s.motif.draw(1)
-
-	// Draw character sprites in layer 1 (old "ontop")
-	s.spriteList.draw(1, false, x, y, scl*s.cam.BaseScale())
 
 	// Draw fight screen layer 2
 	s.fightScreen.draw(2)
@@ -3887,7 +3891,9 @@ func (s *System) runMatch() (reload bool) {
 		}
 
 		// Update game state
+		actionT0 := time.Now()
 		s.action()
+		actionTimeAccum += time.Since(actionT0)
 
 		debugInput()
 
@@ -3979,15 +3985,27 @@ func (s *System) runMatch() (reload bool) {
 		logicTimeAccum += time.Since(logicT0)
 		loopIterCount++
 
-		if DebugMem && renderFrameCount >= 60 {
-			// render/gpu are per rendered frame; logic is per loop iteration
-			// (update runs every iteration, skipped renders still tick logic).
-			LogDebug("[FRAME] render=%.1fms gpu=%.1fms logic=%.1fms renders=%d/%d",
+		if sys.cfg.Video.PerfLog && renderFrameCount >= 60 {
+			// action is the real game-logic tick (charList, collision, fight screen),
+			// untimed before this change. render/gpu are per rendered frame; logic
+			// wraps update() which re-measures the gpu EndFrame+swap, so treat logic
+			// as present cost, not CPU. fmt.Printf (not LogDebug): survives release
+			// builds where logWrite is a no-op.
+			fmt.Printf("[FRAME] render=%.1fms action=%.1fms logic=%.1fms gpu=%.1fms flush=%.1fms sprites=%d batches=%d (flat=%d blend=%d rgba=%d trap=%d mask=%d scis=%d slots=%d) renders=%d/%d\n",
 				float64(renderTimeAccum)/float64(renderFrameCount)/float64(time.Millisecond),
-				float64(gpuTimeAccum)/float64(renderFrameCount)/float64(time.Millisecond),
+				float64(actionTimeAccum)/float64(loopIterCount)/float64(time.Millisecond),
 				float64(logicTimeAccum)/float64(loopIterCount)/float64(time.Millisecond),
+				float64(gpuTimeAccum)/float64(renderFrameCount)/float64(time.Millisecond),
+				float64(flushTimeAccum)/float64(renderFrameCount)/float64(time.Millisecond),
+				spriteCount,
+				batchCount,
+				batchBreakFlat, batchBreakBlend, batchBreakRgba, batchBreakTrapez,
+				batchBreakMask, batchBreakScis, batchSlotSplits,
 				renderFrameCount, loopIterCount)
-			renderTimeAccum, logicTimeAccum, gpuTimeAccum, renderFrameCount, loopIterCount = 0, 0, 0, 0, 0
+			renderTimeAccum, actionTimeAccum, logicTimeAccum, gpuTimeAccum, flushTimeAccum,
+				spriteCount, batchCount, batchBreakFlat, batchBreakBlend, batchBreakRgba, batchBreakTrapez,
+				batchBreakMask, batchBreakScis, batchSlotSplits,
+				renderFrameCount, loopIterCount = 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 		}
 
 		// Exit the replay match loop before EOF can reuse the last input sample.

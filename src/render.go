@@ -4,6 +4,7 @@ import (
 	"container/list"
 	_ "embed"
 	"math"
+	"time"
 
 	mgl "github.com/go-gl/mathgl/mgl32"
 )
@@ -422,7 +423,11 @@ func flushSpriteQueue() {
 		return
 	}
 	spriteQueueFlushing = true
+	flushT0 := time.Now()
+	batchesBefore := drawCallStats.TotalBatches
 	flushSpriteQueueBatched(spriteQueue)
+	flushTimeAccum += time.Since(flushT0)
+	batchCount += drawCallStats.TotalBatches - batchesBefore
 	spriteQueue = spriteQueue[:0]
 	spriteQueueFlushing = false
 }
@@ -900,6 +905,7 @@ func RenderSprite(rp RenderParams) {
 	if !rp.IsValid() {
 		return
 	}
+	spriteCount++
 	if sys.cfg.Video.DrawCallLog {
 		drawCallStats.TotalDrawCalls++
 	}
@@ -976,6 +982,13 @@ func enqueueSpriteDrawCall(rp RenderParams) {
 	hasScissor := rp.window != nil
 	if hasScissor {
 		scissor = *rp.window
+		// Normalize: a scissor that covers the full screen is equivalent to no
+		// scissor. Treating them identically prevents batch breaks when elements
+		// alternate between an explicit full-screen window and no window.
+		if scissor == [4]int32{0, 0, int32(sys.scrrect[2]), int32(sys.scrrect[3])} {
+			hasScissor = false
+			scissor = [4]int32{}
+		}
 	}
 
 	emit := func(mv mgl.Mat4, x1, y1, x2, y2, x3, y3, x4, y4 float32, quv [4]float32) {
