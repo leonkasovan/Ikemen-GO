@@ -34,9 +34,9 @@ var (
 	// uploads it to the GPU (i.e. it was drawn at least once). The difference
 	// at shutdown is the set of sprites that were loaded but never drawn — their
 	// pixel buffers stayed resident in the Go heap and never cost GPU memory.
-	memSpritePending      int64 // sprites whose pixel data was staged
-	memSpritePendingBytes int64 // total staged pixel bytes
-	memSpriteRealized     int64 // sprites whose texture was created (drawn)
+	memSpritePending       int64 // sprites whose pixel data was staged
+	memSpritePendingBytes  int64 // total staged pixel bytes
+	memSpriteRealized      int64 // sprites whose texture was created (drawn)
 	memSpriteRealizedBytes int64 // total realized pixel bytes
 
 	// palSlotLogCounter throttles per-palSlot texture creation logs during
@@ -250,4 +250,120 @@ func startProfiler() {
 			LogMessage("[PProf] server error: %v", err)
 		}
 	}()
+}
+
+// ------------------------------------------------------------------
+// PerfLog: per-frame timing instrumentation for the match loop. Only compiled
+// into debug builds; the release build (common_release.go) stubs every function
+// to a no-op so the hot path stays clean.
+
+var (
+	renderTimeAccum  time.Duration
+	actionTimeAccum  time.Duration
+	actionCharAccum  time.Duration
+	charsCmdAccum    time.Duration
+	charsPrepAccum   time.Duration
+	charsRunAccum    time.Duration
+	charsFinAccum    time.Duration
+	actionUpdAccum   time.Duration
+	actionFSAcum     time.Duration
+	actionCollAccum  time.Duration
+	logicTimeAccum   time.Duration
+	gpuTimeAccum     time.Duration
+	flushTimeAccum   time.Duration
+	spriteCount      int
+	batchCount       int
+	batchBreakFlat   int
+	batchBreakBlend  int
+	batchBreakRgba   int
+	batchBreakTrapez int
+	batchBreakMask   int
+	batchBreakScis   int
+	batchSlotSplits  int
+	renderFrameCount int
+	loopIterCount    int
+)
+
+func perfRenderBegin() time.Time { return time.Now() }
+func perfRenderEnd(t time.Time)  { renderTimeAccum += time.Since(t) }
+func perfFrameRendered()         { renderFrameCount++ }
+
+func perfActionBegin() time.Time { return time.Now() }
+func perfActionEnd(t time.Time)  { actionTimeAccum += time.Since(t) }
+
+func perfCharBegin() time.Time { return time.Now() }
+func perfCharEnd(t time.Time)  { actionCharAccum += time.Since(t) }
+
+func perfCmdBegin() time.Time { return time.Now() }
+func perfCmdEnd(t time.Time)  { charsCmdAccum += time.Since(t) }
+
+func perfPrepBegin() time.Time { return time.Now() }
+func perfPrepEnd(t time.Time)  { charsPrepAccum += time.Since(t) }
+
+func perfRunBegin() time.Time { return time.Now() }
+func perfRunEnd(t time.Time)  { charsRunAccum += time.Since(t) }
+
+func perfFinBegin() time.Time { return time.Now() }
+func perfFinEnd(t time.Time)  { charsFinAccum += time.Since(t) }
+
+func perfUpdBegin() time.Time { return time.Now() }
+func perfUpdEnd(t time.Time)  { actionUpdAccum += time.Since(t) }
+
+func perfFSBegin() time.Time { return time.Now() }
+func perfFSEnd(t time.Time)  { actionFSAcum += time.Since(t) }
+
+func perfCollBegin() time.Time { return time.Now() }
+func perfCollEnd(t time.Time)  { actionCollAccum += time.Since(t) }
+
+func perfLogicBegin() time.Time { return time.Now() }
+func perfLogicEnd(t time.Time)  { logicTimeAccum += time.Since(t) }
+func perfLoopIter()             { loopIterCount++ }
+
+func perfGpuBegin() time.Time { return time.Now() }
+func perfGpuEnd(t time.Time)  { gpuTimeAccum += time.Since(t) }
+
+func perfFlushBegin() time.Time { return time.Now() }
+func perfFlushEnd(t time.Time)  { flushTimeAccum += time.Since(t) }
+
+func perfSpriteHit()     { spriteCount++ }
+func perfBatchAdd(n int) { batchCount += n }
+func perfBreakFlat()     { batchBreakFlat++ }
+func perfBreakBlend()    { batchBreakBlend++ }
+func perfBreakRgba()     { batchBreakRgba++ }
+func perfBreakTrapez()   { batchBreakTrapez++ }
+func perfBreakMask()     { batchBreakMask++ }
+func perfBreakScis()     { batchBreakScis++ }
+func perfSlotSplit()     { batchSlotSplits++ }
+
+func perfFrameLog() {
+	if !sys.cfg.Video.PerfLog || renderFrameCount < 60 {
+		return
+	}
+	// render/gpu are per rendered frame; action/logic are per loop iteration
+	// (update runs every iteration, skipped renders still tick logic).
+	LogMessage("[FRAME] render=%.1fms action=%.1fms (chars=%.2f[cmd=%.2f prep=%.2f run=%.2f fin=%.2f] upd=%.2f fs=%.2f coll=%.2f) logic=%.1fms gpu=%.1fms flush=%.1fms sprites=%d batches=%d (flat=%d blend=%d rgba=%d trap=%d mask=%d scis=%d slots=%d) renders=%d/%d",
+		float64(renderTimeAccum)/float64(renderFrameCount)/float64(time.Millisecond),
+		float64(actionTimeAccum)/float64(loopIterCount)/float64(time.Millisecond),
+		float64(actionCharAccum)/float64(loopIterCount)/float64(time.Millisecond),
+		float64(charsCmdAccum)/float64(loopIterCount)/float64(time.Millisecond),
+		float64(charsPrepAccum)/float64(loopIterCount)/float64(time.Millisecond),
+		float64(charsRunAccum)/float64(loopIterCount)/float64(time.Millisecond),
+		float64(charsFinAccum)/float64(loopIterCount)/float64(time.Millisecond),
+		float64(actionUpdAccum)/float64(loopIterCount)/float64(time.Millisecond),
+		float64(actionFSAcum)/float64(loopIterCount)/float64(time.Millisecond),
+		float64(actionCollAccum)/float64(loopIterCount)/float64(time.Millisecond),
+		float64(logicTimeAccum)/float64(loopIterCount)/float64(time.Millisecond),
+		float64(gpuTimeAccum)/float64(renderFrameCount)/float64(time.Millisecond),
+		float64(flushTimeAccum)/float64(renderFrameCount)/float64(time.Millisecond),
+		spriteCount,
+		batchCount,
+		batchBreakFlat, batchBreakBlend, batchBreakRgba, batchBreakTrapez,
+		batchBreakMask, batchBreakScis, batchSlotSplits,
+		renderFrameCount, loopIterCount)
+	renderTimeAccum, actionTimeAccum, logicTimeAccum, gpuTimeAccum, flushTimeAccum,
+		actionCharAccum, charsCmdAccum, charsPrepAccum, charsRunAccum, charsFinAccum,
+		actionUpdAccum, actionFSAcum, actionCollAccum,
+		spriteCount, batchCount, batchBreakFlat, batchBreakBlend, batchBreakRgba, batchBreakTrapez,
+		batchBreakMask, batchBreakScis, batchSlotSplits,
+		renderFrameCount, loopIterCount = 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 }

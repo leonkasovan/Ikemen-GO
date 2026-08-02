@@ -73,7 +73,7 @@ func (t *Texture_VK) Release() {
 		VulkanResourceTypeTexture,
 		[]interface{}{t.img, t.imageView, t.sampler, t.allocation},
 	}
-	t.img = nil   // finalizer guard — finalizer checks t.img == nil before double-free
+	t.img = nil // finalizer guard — finalizer checks t.img == nil before double-free
 	t.allocation = nil
 }
 
@@ -2092,10 +2092,10 @@ func (r *Renderer_VK) CreateSwapchain() error {
 	}
 	if chosenFormat < 0 {
 		if len(formats) > 0 {
-			fmt.Printf("Choosing fallback SurfaceFormat")
+			LogWarn("Choosing fallback SurfaceFormat")
 			//formats[0].Deref()
 			chosenFormat = 0
-			fmt.Printf("Falling back on surface format: %v", formats[0].Format)
+			LogWarn("Falling back on surface format: %v", formats[0].Format)
 		} else {
 			err := fmt.Errorf("vk.GetPhysicalDeviceSurfaceFormats not found suitable format")
 			return err
@@ -4948,7 +4948,7 @@ func (r *Renderer_VK) Destroy() {
 	err := vk.Error(vk.GetPipelineCacheData(r.device, r.pipelineCache, &pipelineCacheSize, nil))
 	if err != nil {
 		err = fmt.Errorf("vk.GetPipelineCacheData failed with %s", err)
-		fmt.Println(err)
+		LogError("%v", err)
 	} else {
 		pipelineCacheData := make([]byte, pipelineCacheSize)
 		err = vk.Error(vk.GetPipelineCacheData(r.device, r.pipelineCache, &pipelineCacheSize, unsafe.Pointer(&pipelineCacheData[0])))
@@ -5790,11 +5790,11 @@ func (r *Renderer_VK) EndFrame() {
 }
 
 func (r *Renderer_VK) PrintVkState() {
-	fmt.Printf("Number of Uniforms: %d \n", +len(r.spriteProgram.uniformOffsetMap))
-	fmt.Printf("Uniform Size: %d \n", +r.spriteProgram.uniformSize)
-	fmt.Printf("Uniform Alignment: %d \n", +r.minUniformBufferOffsetAlignment)
+	LogMessage("Number of Uniforms: %d", len(r.spriteProgram.uniformOffsetMap))
+	LogMessage("Uniform Size: %d", r.spriteProgram.uniformSize)
+	LogMessage("Uniform Alignment: %d", r.minUniformBufferOffsetAlignment)
 
-	fmt.Printf("Vertex buffer offset: %d \n", +r.vertexBufferOffset)
+	LogMessage("Vertex buffer offset: %d", r.vertexBufferOffset)
 	return
 }
 
@@ -6023,7 +6023,7 @@ func (r *Renderer_VK) ReadPixels(data []uint8, width, height int) {
 
 	intermediateAlloc, err := r.allocator.AllocateImageMemory(intermediateImg, vk.MemoryPropertyDeviceLocalBit)
 	if err != nil {
-		fmt.Printf("ReadPixels: failed to allocate intermediate image memory: %v\n", err)
+		LogError("ReadPixels: failed to allocate intermediate image memory: %v", err)
 		vk.DestroyImage(r.device, intermediateImg, nil)
 		return
 	}
@@ -6032,7 +6032,7 @@ func (r *Renderer_VK) ReadPixels(data []uint8, width, height int) {
 	var stagingBufferMemory vk.DeviceMemory
 	stagingBuffer, err := r.CreateBuffer(bufferSize, vk.BufferUsageFlags(vk.BufferUsageTransferDstBit), vk.MemoryPropertyHostVisibleBit|vk.MemoryPropertyHostCoherentBit, &stagingBufferMemory)
 	if err != nil {
-		fmt.Printf("ReadPixels: failed to create staging buffer: %v\n", err)
+		LogError("ReadPixels: failed to create staging buffer: %v", err)
 		vk.DestroyImage(r.device, intermediateImg, nil)
 		r.allocator.FreeImageAllocation(intermediateImg, intermediateAlloc)
 		return

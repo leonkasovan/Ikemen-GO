@@ -435,7 +435,7 @@ func (g *RollbackLogger) saveStateLogs() {
 	// Save file
 	err := os.WriteFile(g.filename, []byte(fullLog), 0666)
 	if err != nil {
-		fmt.Println(err)
+		LogError("%v", err)
 	}
 }
 
@@ -739,7 +739,7 @@ func (r *RollbackSession) OnEvent(info *ggpo.Event) {
 		r.syncProgress = 100
 		r.synchronized = true
 	case ggpo.EventCodeRunning:
-		fmt.Println("EventCodeRunning")
+		LogMessage("EventCodeRunning")
 	case ggpo.EventCodeDisconnectedFromPeer:
 		if sys.postMatchFlg {
 			return
@@ -747,28 +747,28 @@ func (r *RollbackSession) OnEvent(info *ggpo.Event) {
 		if r.config.LogsEnabled {
 			r.log.saveStateLogs()
 		}
-		fmt.Println("EventCodeDisconnectedFromPeer")
+		LogMessage("EventCodeDisconnectedFromPeer")
 		sys.endMatch = true
 		r.SaveReplay()
 		if sys.sessionWarning == "" {
 			sys.sessionWarning = fmt.Sprintf(sys.motif.WarningInfo.Text.Text["disconnect"], int(info.Player))
 		}
 	case ggpo.EventCodeTimeSync:
-		fmt.Printf("EventCodeTimeSync: FramesAhead %f TimeSyncPeriodInFrames: %d\n", info.FramesAhead, info.TimeSyncPeriodInFrames)
+		LogMessage("EventCodeTimeSync: FramesAhead %f TimeSyncPeriodInFrames: %d", info.FramesAhead, info.TimeSyncPeriodInFrames)
 		r.loopTimer.OnGGPOTimeSyncEvent(info.FramesAhead)
 	case ggpo.EventCodeDesync:
 		if r.config.LogsEnabled {
 			r.log.saveStateLogs()
 		}
-		fmt.Println("EventCodeDesync")
-		log.Printf("Rollback desync detected")
+		LogMessage("EventCodeDesync")
+		LogError("Rollback desync detected")
 		sys.esc = true
 		r.SaveReplay()
 		sys.sessionWarning = sys.motif.WarningInfo.Text.Text["desync"]
 	case ggpo.EventCodeConnectionInterrupted:
-		fmt.Println("EventCodeconnectionInterrupted")
+		LogMessage("EventCodeconnectionInterrupted")
 	case ggpo.EventCodeConnectionResumed:
-		fmt.Println("EventCodeconnectionInterrupted")
+		LogMessage("EventCodeconnectionInterrupted")
 	}
 }
 

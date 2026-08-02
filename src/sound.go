@@ -88,7 +88,19 @@ func (n *NormalizerLR) process(mul float64, sam *float64) float64 {
 		n.edgeDelta += 32 * (1 - n.edge) / float64(sys.cfg.Sound.SampleRate+32)
 		s = math.Copysign(1.0, s)
 	} else {
-		tmp := (1 - math.Pow(1-math.Abs(s), 64)) * math.Pow(0.5-math.Abs(s), 3)
+		sa := math.Abs(s)
+		// Constant-exponent pow: x^64 via repeated squaring, x^3 via two mults.
+		// math.Pow per sample (44100 Hz × 2ch) was a top CPU consumer.
+		p := 1 - sa
+		p2 := p * p
+		p4 := p2 * p2
+		p8 := p4 * p4
+		p16 := p8 * p8
+		p32 := p16 * p16
+		p64 := p32 * p32
+		q := 0.5 - sa
+		q3 := q * q * q
+		tmp := (1 - p64) * q3
 		mul += mul * (n.edge*(1/32.0-n.average)/n.gain + tmp*n.gain*(1-n.edge)/32) /
 			(float64(sys.cfg.Sound.SampleRate)*2/8.0 + 1)
 		n.edgeDelta -= (0.5 - n.average) * n.edge / (float64(sys.cfg.Sound.SampleRate) * 2)

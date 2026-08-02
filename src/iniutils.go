@@ -1017,7 +1017,7 @@ func elemHasFieldWithINITag(elemType reflect.Type, name string) bool {
 func assignField(structPtr interface{}, parts []queryPart, value interface{}, baseDef string) error {
 	v := reflect.ValueOf(structPtr)
 	if v.Kind() != reflect.Ptr || v.IsNil() {
-		fmt.Println("Error: structPtr must be a non-nil pointer")
+		LogError("Error: structPtr must be a non-nil pointer")
 		return fmt.Errorf("structPtr must be a non-nil pointer")
 	}
 
@@ -2070,13 +2070,13 @@ func SetAnim(obj interface{}, fVal, structVal, parent reflect.Value, sffOverride
 	}
 
 	if !atField.IsValid() {
-		fmt.Println("Error: object does not have required AnimTable or Sff fields")
+		LogError("Error: object does not have required AnimTable or Sff fields")
 		return
 	}
 
 	animMap, ok := atField.Interface().(AnimationTable)
 	if !ok {
-		fmt.Println("Error: AnimTable field is not of type AnimationTable")
+		LogError("Error: AnimTable field is not of type AnimationTable")
 		return
 	}
 
@@ -2776,7 +2776,7 @@ func PopulateDataPointers(obj interface{}, rootLocalcoord [2]int32) {
 
 	v := reflect.ValueOf(obj)
 	if v.Kind() != reflect.Ptr || v.IsNil() {
-		fmt.Println("Error: PopulateDataPointers requires a non-nil pointer")
+		LogError("Error: PopulateDataPointers requires a non-nil pointer")
 		return
 	}
 	// Start recursion with the original user-supplied localcoord

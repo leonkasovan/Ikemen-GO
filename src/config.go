@@ -165,14 +165,14 @@ type Config struct {
 		KeepAspect               bool     `ini:"KeepAspect"`
 		RendererDebugMode        bool     `ini:"RendererDebugMode"`
 		DrawCallLog              bool     `ini:"DrawCallLog"`          // Log per-frame batch stats (debug only)
-		PerfLog                  bool     `ini:"PerfLog"`              // Log [FPS] every 60 frames via stdout (works in release builds)
+		PerfLog                  bool     `ini:"PerfLog"`              // Log [FPS]/[FRAME] perf lines via the log pipeline (debug builds only)
 		RenderScale              float32  `ini:"RenderScale"`          // 0.5–1.0; renders at this fraction of window size, upscaled
 		EnableSpriteBatching     bool     `ini:"EnableSpriteBatching"` // Defer all sprite draws and flush as a batch (default: false; armdevice: true)
 		EnableModel              bool     `ini:"EnableModel"`
 		EnableModelShadow        bool     `ini:"EnableModelShadow"`
 		ImageSuballocThresholdKB int      `ini:"ImageSuballocThresholdKB"` // ≤ this (KB) suballocated; 0 to disable
 		ImageSuballocBlockSizeMB int      `ini:"ImageSuballocBlockSizeMB"` // block size (MB) for suballocation pool
-		PaletteAtlasSize         int32    `ini:"PaletteAtlasSize"`          // Size of palette atlas texture (square, RGBA)
+		PaletteAtlasSize         int32    `ini:"PaletteAtlasSize"`         // Size of palette atlas texture (square, RGBA)
 	} `ini:"Video"`
 	Sound struct {
 		SampleRate           int32   `ini:"SampleRate"`
@@ -314,12 +314,12 @@ func loadConfig(def string) (*Config, error) {
 				keyName := key.Name()
 				value, dup := iniFirstValue(key)
 				if dup > 0 {
-					fmt.Printf("Warning: Duplicate key [%s] %s (%d duplicate(s) ignored)\n", sectionName, keyName, dup)
+					LogWarn("Duplicate key [%s] %s (%d duplicate(s) ignored)", sectionName, keyName, dup)
 				}
 				fullKey := strings.ReplaceAll(sectionName, " ", "_") + "." + strings.ReplaceAll(keyName, " ", "_")
 				keyParts := parseQueryPath(fullKey)
 				if err := assignField(&c, keyParts, value, def); err != nil {
-					fmt.Printf("Warning: Failed to assign key [%s]: %v\n", fullKey, err)
+					LogWarn("Failed to assign key [%s]: %v", fullKey, err)
 				}
 			}
 		}

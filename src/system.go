@@ -25,27 +25,6 @@ import (
 	lua "github.com/yuin/gopher-lua"
 )
 
-// Debug-only frame time breakdown for the match loop (gated by DebugMem in the
-// log call; the accumulation itself is a few time.Now() calls per iteration).
-var (
-	renderTimeAccum  time.Duration
-	actionTimeAccum  time.Duration
-	logicTimeAccum   time.Duration
-	gpuTimeAccum     time.Duration
-	flushTimeAccum   time.Duration
-	spriteCount      int
-	batchCount       int
-	batchBreakFlat   int
-	batchBreakBlend  int
-	batchBreakRgba   int
-	batchBreakTrapez int
-	batchBreakMask   int
-	batchBreakScis   int
-	batchSlotSplits  int
-	renderFrameCount int
-	loopIterCount    int
-)
-
 const (
 	MaxSimul        = 4
 	MaxAttachedChar = 4
@@ -846,7 +825,7 @@ func (s *System) keepAlive() {
 func (s *System) await(fps int) bool {
 	if !s.frameSkip {
 		// Render the finished frame
-		gpuT0 := time.Now()
+		gpuT0 := perfGpuBegin()
 		gfx.EndFrame()
 		if gfx.GetName()[:6] == "OpenGL" {
 			s.window.SwapBuffers()
@@ -854,7 +833,7 @@ func (s *System) await(fps int) bool {
 			gfx.Await()
 			calculateFPS()
 		}
-		gpuTimeAccum += time.Since(gpuT0)
+		perfGpuEnd(gpuT0)
 		s.window.UpdateDebugFPS()
 		if s.isTakingScreenshot {
 			defer captureScreen()
@@ -2720,7 +2699,9 @@ func (s *System) action() {
 		}
 
 		// Run the main character logic
+		charT0 := perfCharBegin()
 		s.charList.action()
+		perfCharEnd(charT0)
 
 		// The following must be placed after char action or they will lag behind 1 frame
 		s.allPalFX.step()
@@ -2732,16 +2713,22 @@ func (s *System) action() {
 
 	// This function runs every tick
 	// It should be placed between "tick frame" and "tick next frame"
+	updT0 := perfUpdBegin()
 	s.charUpdate()
+	perfUpdEnd(updT0)
 
 	// Update the fight screen
 	// Lifebar and combo must update after character states but before hit detection for accurate detection
 	// So that it allows a combo to still end if a character is hit in the same frame where it exits movetype H
+	fsT0 := perfFSBegin()
 	s.fightScreen.step()
+	perfFSEnd(fsT0)
 
 	if s.tickNextFrame() {
+		collT0 := perfCollBegin()
 		s.globalCollision() // This could perhaps happen during "tick frame" instead? Would need more testing
 		s.globalTick()
+		perfCollEnd(collT0)
 	}
 
 	// Run camera
@@ -3892,9 +3879,9 @@ func (s *System) runMatch() (reload bool) {
 		}
 
 		// Update game state
-		actionT0 := time.Now()
+		actionT0 := perfActionBegin()
 		s.action()
-		actionTimeAccum += time.Since(actionT0)
+		perfActionEnd(actionT0)
 
 		debugInput()
 
@@ -3970,44 +3957,23 @@ func (s *System) runMatch() (reload bool) {
 
 		// Render frame
 		if !s.frameSkip {
-			renderT0 := time.Now()
+			renderT0 := perfRenderBegin()
 			s.renderFrame()
-			renderTimeAccum += time.Since(renderT0)
-			renderFrameCount++
+			perfRenderEnd(renderT0)
+			perfFrameRendered()
 		} else {
 			s.renderFrame()
 		}
 
 		// Update system. Break if update returns false (engine shutdown).
-		logicT0 := time.Now()
+		logicT0 := perfLogicBegin()
 		if !s.update() {
 			break
 		}
-		logicTimeAccum += time.Since(logicT0)
-		loopIterCount++
+		perfLogicEnd(logicT0)
+		perfLoopIter()
 
-		if sys.cfg.Video.PerfLog && renderFrameCount >= 60 {
-			// action is the real game-logic tick (charList, collision, fight screen),
-			// untimed before this change. render/gpu are per rendered frame; logic
-			// wraps update() which re-measures the gpu EndFrame+swap, so treat logic
-			// as present cost, not CPU. fmt.Printf (not LogDebug): survives release
-			// builds where logWrite is a no-op.
-			fmt.Printf("[FRAME] render=%.1fms action=%.1fms logic=%.1fms gpu=%.1fms flush=%.1fms sprites=%d batches=%d (flat=%d blend=%d rgba=%d trap=%d mask=%d scis=%d slots=%d) renders=%d/%d\n",
-				float64(renderTimeAccum)/float64(renderFrameCount)/float64(time.Millisecond),
-				float64(actionTimeAccum)/float64(loopIterCount)/float64(time.Millisecond),
-				float64(logicTimeAccum)/float64(loopIterCount)/float64(time.Millisecond),
-				float64(gpuTimeAccum)/float64(renderFrameCount)/float64(time.Millisecond),
-				float64(flushTimeAccum)/float64(renderFrameCount)/float64(time.Millisecond),
-				spriteCount,
-				batchCount,
-				batchBreakFlat, batchBreakBlend, batchBreakRgba, batchBreakTrapez,
-				batchBreakMask, batchBreakScis, batchSlotSplits,
-				renderFrameCount, loopIterCount)
-			renderTimeAccum, actionTimeAccum, logicTimeAccum, gpuTimeAccum, flushTimeAccum,
-				spriteCount, batchCount, batchBreakFlat, batchBreakBlend, batchBreakRgba, batchBreakTrapez,
-				batchBreakMask, batchBreakScis, batchSlotSplits,
-				renderFrameCount, loopIterCount = 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-		}
+		perfFrameLog()
 
 		// Exit the replay match loop before EOF can reuse the last input sample.
 		if s.replayFile != nil && s.replayFile.file == nil {

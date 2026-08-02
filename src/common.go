@@ -863,8 +863,6 @@ func (e Error) Error() string {
 	return string(e)
 }
 
-
-
 type IniSection map[string]string
 
 func NewIniSection() IniSection {
@@ -1546,7 +1544,7 @@ func compareNatural(a, b string) bool {
 
 	// If regex doesn't match, print warning and place non-matching items at the end
 	if aMatches == nil || bMatches == nil {
-		fmt.Printf("Warning: Skipping comparison for non-matching keys: '%s' vs '%s'\n", a, b)
+		LogWarn("Skipping comparison for non-matching keys: '%s' vs '%s'", a, b)
 		return a < b // Default to lexicographic comparison to prevent panic
 	}
 

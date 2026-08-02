@@ -13210,26 +13210,34 @@ func (cl *CharList) action() {
 	cl.updateRunOrder()
 
 	// Update commands for all chars
+	cmdT0 := perfCmdBegin()
 	cl.commandUpdate()
+	perfCmdEnd(cmdT0)
 
 	// Prepare characters before performing their actions
+	prepT0 := perfPrepBegin()
 	for _, c := range cl.runOrder {
 		c.actionPrepare()
 	}
+	perfPrepEnd(prepT0)
 
 	// Run actions for each character in the sorted list
 	// We use an index-based loop instead of a range so that appended helpers are also processed
+	runT0 := perfRunBegin()
 	for i := 0; i < len(cl.runOrder); i++ {
 		c := cl.runOrder[i]
 		if !c.csf(CSF_destroy) {
 			c.actionRun()
 		}
 	}
+	perfRunEnd(runT0)
 
 	// Finish performing character actions
+	finT0 := perfFinBegin()
 	for _, c := range cl.runOrder {
 		c.actionFinish()
 	}
+	perfFinEnd(finT0)
 }
 
 func (cl *CharList) xScreenBound() {

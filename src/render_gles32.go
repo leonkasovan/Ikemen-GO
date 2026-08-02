@@ -385,7 +385,7 @@ func (r *Renderer_GLES32) newPaletteTexture() Texture {
 	}
 
 	if r.palFreeSlots == nil || r.palFreeSlots.Len() == 0 {
-		fmt.Printf("[PalAtlas] Out of palette slots! Creating fallback standalone texture.\n")
+		LogWarn("[PalAtlas] Out of palette slots! Creating fallback standalone texture.")
 		return r.newTexture(256, 1, 32, false)
 	}
 
@@ -2167,8 +2167,20 @@ func (r *Renderer_GLES32) ReadPixels(data []uint8, width, height int) {
 }
 
 func (r *Renderer_GLES32) EnableScissor(x, y, width, height int32) {
+	// Scissor rects are computed in scrrect (game render target) space, but the
+	// actual GL viewport is renderW×renderH when RenderScale < 1. Without this
+	// scale, the scissor lands at 1/RenderScale too far right/down, clipping
+	// the left/top of every scissored draw (e.g. lifebar fills).
+	if r.renderW != int32(sys.scrrect[2]) || r.renderH != int32(sys.scrrect[3]) {
+		sx := float32(r.renderW) / float32(sys.scrrect[2])
+		sy := float32(r.renderH) / float32(sys.scrrect[3])
+		x = int32(float32(x) * sx)
+		y = int32(float32(y) * sy)
+		width = int32(float32(width) * sx)
+		height = int32(float32(height) * sy)
+	}
 	// Flip Y to OpenGL convention
-	realY := sys.scrrect[3] - (y + height)
+	realY := r.renderH - (y + height)
 
 	if r.scissorEnabled &&
 		r.scissorRect[0] == x && r.scissorRect[1] == realY &&

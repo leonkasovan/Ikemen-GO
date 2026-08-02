@@ -1103,11 +1103,11 @@ func systemScriptInit(l *lua.LState) {
 		if !nilArg(l, 2) {
 			str = strArg(l, 2)
 		}
-		fmt.Printf("%s *Anim=%p %+v\n", str, a, *a)
+		LogDebug("%s *Anim=%p %+v", str, a, *a)
 		if a.anim == nil {
-			fmt.Printf("%s *Animation=nil\n", str)
+			LogDebug("%s *Animation=nil", str)
 		} else {
-			fmt.Printf("%s *Animation=%p %+v\n", str, a.anim, *a.anim)
+			LogDebug("%s *Animation=%p %+v", str, a.anim, *a.anim)
 		}
 		return 0
 	})
@@ -2118,13 +2118,13 @@ func systemScriptInit(l *lua.LState) {
 		if !nilArg(l, 2) {
 			str = strArg(l, 2)
 		}
-		fmt.Printf("%s *BGDef=%p %+v\n", str, bg, *bg)
+		LogDebug("%s *BGDef=%p %+v", str, bg, *bg)
 		for i, v := range bg.bg {
 			if v == nil {
-				fmt.Printf("%s bg.bg[%d]=nil\n", str, i)
-				continue
+				LogDebug("%s bg.bg[%d]=nil", str, i)
+			} else {
+				LogDebug("%s bg.bg[%d]=%p %+v", str, i, v, *v)
 			}
-			fmt.Printf("%s bg.bg[%d]=%p %+v\n", str, i, v, *v)
 		}
 		return 0
 	})
@@ -2413,17 +2413,17 @@ func systemScriptInit(l *lua.LState) {
 		if cl.Buffer != nil {
 			buf = cl.Buffer
 		}
-		fmt.Printf("%s *CommandList=%p Names=%d Groups=%d Buffer=%p\n",
+		LogDebug("%s *CommandList=%p Names=%d Groups=%d Buffer=%p",
 			str, cl, len(cl.Names), len(cl.Commands), buf)
 		for name, idx := range cl.Names {
 			if idx < 0 || idx >= len(cl.Commands) {
-				fmt.Printf("%s  %q idx=%d (out of range)\n", str, name, idx)
+				LogDebug("%s  %q idx=%d (out of range)", str, name, idx)
 				continue
 			}
-			fmt.Printf("%s  %q idx=%d variants=%d\n", str, name, idx, len(cl.Commands[idx]))
+			LogDebug("%s  %q idx=%d variants=%d", str, name, idx, len(cl.Commands[idx]))
 			for j := range cl.Commands[idx] {
 				c := &cl.Commands[idx][j]
-				fmt.Printf("%s    %d: time=%d buftime=%d steptime=%d hitpause=%v pauseend=%v shared=%v autogreater=%v\n",
+				LogDebug("%s    %d: time=%d buftime=%d steptime=%d hitpause=%v pauseend=%v shared=%v autogreater=%v",
 					str, j,
 					c.maxtime, c.maxbuftime, c.maxsteptime,
 					c.buffer_hitpause, c.buffer_pauseend, c.buffer_shared,
@@ -2432,9 +2432,9 @@ func systemScriptInit(l *lua.LState) {
 			}
 		}
 		if buf != nil {
-			fmt.Printf("%s *Buffer=%p %+v\n", str, buf, *buf)
+			LogDebug("%s *Buffer=%p %+v", str, buf, *buf)
 		} else {
-			fmt.Printf("%s *Buffer=nil\n", str)
+			LogDebug("%s *Buffer=nil", str)
 		}
 		return 0
 	})
@@ -5066,7 +5066,7 @@ func systemScriptInit(l *lua.LState) {
 		}
 		s, err := loadStoryboard(strArg(l, 1))
 		if err != nil {
-			fmt.Printf("Warning: %v\n", err.Error())
+			LogWarn("Warning: %v", err.Error())
 			return 0
 		}
 		sys.storyboard.Close()
@@ -5710,7 +5710,7 @@ func systemScriptInit(l *lua.LState) {
 		if !nilArg(l, 2) {
 			str = strArg(l, 2)
 		}
-		fmt.Printf("%s *Rect=%p %+v\n", str, r, *r)
+		LogDebug("%s *Rect=%p %+v", str, r, *r)
 		return 0
 	})
 	luaRegister(l, "rectDraw", func(*lua.LState) int {
@@ -7108,7 +7108,7 @@ func systemScriptInit(l *lua.LState) {
 		if !nilArg(l, 2) {
 			str = strArg(l, 2)
 		}
-		fmt.Printf("%s *TextSprite=%p %+v\n", str, ts, *ts)
+		LogDebug("%s *TextSprite=%p %+v", str, ts, *ts)
 		return 0
 	})
 	luaRegister(l, "textImgDraw", func(*lua.LState) int {

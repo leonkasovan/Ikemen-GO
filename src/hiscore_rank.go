@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -288,7 +287,7 @@ func writeStatsPretty(path string, data []byte) error {
 	if err := json.Indent(&buf, data, "", "  "); err == nil {
 		data = buf.Bytes()
 	} else {
-		fmt.Println("stats: pretty print failed, writing compact JSON:", err)
+		LogError("stats: pretty print failed, writing compact JSON: %v", err)
 	}
 	return os.WriteFile(path, data, 0o644)
 }

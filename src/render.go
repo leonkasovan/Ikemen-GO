@@ -4,7 +4,6 @@ import (
 	"container/list"
 	_ "embed"
 	"math"
-	"time"
 
 	mgl "github.com/go-gl/mathgl/mgl32"
 )
@@ -423,11 +422,11 @@ func flushSpriteQueue() {
 		return
 	}
 	spriteQueueFlushing = true
-	flushT0 := time.Now()
+	flushT0 := perfFlushBegin()
 	batchesBefore := drawCallStats.TotalBatches
 	flushSpriteQueueBatched(spriteQueue)
-	flushTimeAccum += time.Since(flushT0)
-	batchCount += drawCallStats.TotalBatches - batchesBefore
+	perfFlushEnd(flushT0)
+	perfBatchAdd(drawCallStats.TotalBatches - batchesBefore)
 	spriteQueue = spriteQueue[:0]
 	spriteQueueFlushing = false
 }
@@ -905,7 +904,7 @@ func RenderSprite(rp RenderParams) {
 	if !rp.IsValid() {
 		return
 	}
-	spriteCount++
+	perfSpriteHit()
 	if sys.cfg.Video.DrawCallLog {
 		drawCallStats.TotalDrawCalls++
 	}

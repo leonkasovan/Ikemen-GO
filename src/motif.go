@@ -1799,8 +1799,9 @@ func loadMotif(def string) (*Motif, error) {
 				}
 
 				if err := assignField(&m, keyParts, value, def); err != nil {
-					fmt.Printf("Warning: Failed to assign key [%s.%s]: %v\n", sectionName, keyName, err)
+					LogWarn("Failed to assign key [%s.%s]: %v", sectionName, keyName, err)
 				}
+				break
 			}
 		}
 		for _, sp := range baseSecs {
@@ -1988,7 +1989,7 @@ func (m *Motif) fixLocalcoordOverrides() {
 			query := strings.ToLower(secNorm + "." + keyNorm)
 
 			if err := m.SetValueUpdate(query, "0, 0"); err != nil {
-				fmt.Printf("Warning: failed to reset localcoord for %s: %v\n", query, err)
+				LogWarn("failed to reset localcoord for %s: %v", query, err)
 			}
 		}
 	}
@@ -2053,7 +2054,7 @@ func (m *Motif) mergeWithInheritance(specs []InheritSpec) {
 		}
 		s, err := user.NewSection(name)
 		if err != nil {
-			fmt.Printf("Warning: failed to create section %s in user ini: %v\n", name, err)
+			LogWarn("failed to create section %s in user ini: %v", name, err)
 			return nil
 		}
 		return s
@@ -5637,19 +5638,19 @@ func (hi *MotifHiscore) finalizeAndSave() {
 	}
 	data, err := os.ReadFile(sys.cmdFlags["-stats"])
 	if err != nil {
-		fmt.Println("hiscore: cannot read save/stats.json for name save:", err)
+		LogError("hiscore: cannot read save/stats.json for name save: %v", err)
 		hi.haveSaved = true
 		return
 	}
 	path := fmt.Sprintf("modes.%s.ranking.%d.name", hi.mode, idx)
 	out, err := sjson.SetBytes(data, path, name)
 	if err != nil {
-		fmt.Println("hiscore: sjson set failed:", err)
+		LogError("hiscore: sjson set failed: %v", err)
 		hi.haveSaved = true
 		return
 	}
 	if err := writeStatsPretty(sys.cmdFlags["-stats"], out); err != nil {
-		fmt.Println("hiscore: write save/stats.json failed:", err)
+		LogError("hiscore: write save/stats.json failed: %v", err)
 	}
 	hi.haveSaved = true
 }
@@ -5756,7 +5757,7 @@ func parseRankingRows(path, mode string) []rankingRow {
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		fmt.Println("hiscore: read stats.json failed:", err)
+		LogError("hiscore: read stats.json failed: %v", err)
 		return nil
 	}
 	res := gjson.GetBytes(data, "modes."+mode+".ranking")
