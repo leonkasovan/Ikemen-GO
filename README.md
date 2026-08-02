@@ -36,8 +36,9 @@ On **Linux** and **macOS**, the same Makefile detects your platform and builds a
 binary — `Ikemen_GO` — with SDL2, FFmpeg, and libxmp compiled in statically and system
 libraries linked dynamically.
 
-Use `make CONFIG=debug` for a debug build with memory instrumentation, or
-`make install` to assemble a runnable installation with screenpack assets.
+Use `make CONFIG=debug` for a debug build with memory instrumentation, `make install`
+to assemble a runnable installation with screenpack assets, or `make install-remote`
+to copy the built binary to a device over SSH (e.g. an ARM handheld).
 See BUILDING.md for prerequisites and platform-specific details.
 
 ### Debugging

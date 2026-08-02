@@ -18,6 +18,7 @@ git clone https://github.com/ikemen-engine/Ikemen-GO.git
 cd Ikemen-GO
 make                    # native build (release)
 make install            # assemble runnable distribution in deploy/
+make install-remote     # scp the binary to a device (opt-in, see below)
 ```
 
 > The first build downloads and compiles SDL2, FFmpeg, and libxmp from source.
@@ -66,6 +67,7 @@ pacman -S --noconfirm wget unzip
 | `make screenpack`    | Clone/update Elecbyte screenpack into `deploy/` |
 | `make install`       | Release build + screenpack → `deploy/` |
 | `make install CONFIG=debug` | Debug build + screenpack → `deploy/` |
+| `make install-remote` | Build binary, then scp it to a remote device (see [Deploying to a remote device](#deploying-to-a-remote-device)) |
 | `make appbundle`     | Create macOS `.app` bundle (I.K.E.M.E.N-Go.app) |
 | `make clean`         | Remove entire `build/` directory (binary, libs, downloaded sources, everything) |
 | `make distclean`     | Remove `build/` + `deploy/` — full reset to pristine checkout |
@@ -79,6 +81,8 @@ pacman -S --noconfirm wget unzip
 | `ARCH=386`      | amd64 / 386         | Build 32-bit instead of 64-bit |
 | `APP_VERSION=X` | string              | Version string embedded in the binary (default: nightly) |
 | `APP_BUILDTIME` | date string         | Build timestamp (default: current date) |
+| `REMOTE_HOST`   | string              | scp destination for `make install-remote` (default: `ark@192.168.7.2`) |
+| `REMOTE_DIR`    | string              | Remote directory for `make install-remote` (default: `/home/ark/ikemen`) |
 
 ### Examples
 
@@ -404,6 +408,25 @@ CONFIG=debug ./tools/generate_android_via_native.sh --yes
 
 See the script header for all overridable variables (including `NDK_VERSION`,
 `SDL2_VERSION`, `FFMPEG_VERSION`, `XMP_VERSION`, and more).
+
+---
+
+## Deploying to a remote device
+
+`make install` assembles the local `deploy/` distribution; it never touches the
+network. To copy the built binary to a device (e.g. an ARM handheld) over SSH
+instead, use the opt-in `install-remote` target:
+
+```bash
+make install-remote                                    # uses the defaults below
+make install-remote REMOTE_HOST=ark@192.168.7.2 \
+                   REMOTE_DIR=/home/ark/ikemen         # explicit override
+```
+
+The target builds the binary (if needed) and `scp`s it to
+`$(REMOTE_HOST):$(REMOTE_DIR)/`, prompting for the SSH password interactively.
+Only the binary is transferred — engine data (`data`, `font`, `external`) and the
+screenpack must already be present on the device.
 
 ---
 

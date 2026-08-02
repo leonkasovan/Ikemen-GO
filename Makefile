@@ -346,7 +346,7 @@ endif
 
 .PHONY: all release debug help \
         deps-check check-go-env \
-        ffmpeg xmp sdl2 winres install appbundle \
+        ffmpeg xmp sdl2 winres install install-remote fetch-log appbundle \
         screenpack \
         clean distclean FORCE
 
@@ -783,6 +783,37 @@ install: deps-check screenpack $(BINARY)
 	@echo "==> Install complete: $(INSTALLDIR)/"
 
 # ============================================================================
+# Remote Deploy — copy the binary to a device over scp (opt-in)
+# ============================================================================
+# Separate from `install` so building for a remote host never happens by
+# accident. `make install` is always the local deploy/ assembly; use this
+# target explicitly when you want to push the binary to a device:
+#   make install-remote REMOTE_HOST=ark@192.168.7.2 REMOTE_DIR=/home/ark/ikemen
+# scp prompts for the password interactively.
+REMOTE_HOST ?= ark@192.168.7.2
+REMOTE_DIR  ?= /home/ark/ikemen
+
+install-remote: deps-check $(BINARY)
+	@echo "==> Deploying $(BINARY) to $(REMOTE_HOST):$(REMOTE_DIR)/..."
+	scp "$(BINARY)" "$(REMOTE_HOST):$(REMOTE_DIR)/"
+	@echo "==> Deploy complete."
+
+# ============================================================================
+# Remote Log — pull ikemen.log from a device over scp (opt-in)
+# ============================================================================
+# Fetches the engine log file from the same REMOTE_HOST/REMOTE_DIR used by
+# `install-remote`:
+#   make fetch-log REMOTE_HOST=ark@rg351mp
+# Pulls $(REMOTE_DIR)/ikemen.log into the repo root. Override REMOTE_LOG to
+# fetch a different file.
+REMOTE_LOG ?= ikemen.log
+
+fetch-log:
+	@echo "==> Pulling $(REMOTE_HOST):$(REMOTE_DIR)/$(REMOTE_LOG) ..."
+	scp "$(REMOTE_HOST):$(REMOTE_DIR)/$(REMOTE_LOG)" "$(REMOTE_LOG)"
+	@echo "==> Fetched $(REMOTE_LOG)"
+
+# ============================================================================
 # macOS App Bundle
 # ============================================================================
 # Creates I.K.E.M.E.N-Go.app from the built binary, Info.plist, and
@@ -878,6 +909,8 @@ help:
 	@echo '  sdl2           Build SDL2 library (static on Windows, system lib on Linux/macOS)'
 	@echo '  screenpack     Clone/update Elecbyte screenpack'
 	@echo '  install        Assemble runnable build in deploy/ (screenpack + binary)'
+	@echo '  install-remote  scp binary to a device (REMOTE_HOST/REMOTE_DIR, opt-in)'
+	@echo '  fetch-log       scp ikemen.log from a device (REMOTE_HOST/REMOTE_DIR, opt-in)'
 	@echo '  appbundle      Create macOS .app bundle (I.K.E.M.E.N-Go.app)'
 	@echo '  clean          Remove build artifacts'
 	@echo '  distclean      Remove artifacts + external library sources'
