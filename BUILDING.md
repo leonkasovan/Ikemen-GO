@@ -25,6 +25,24 @@ make install-remote     # scp the binary to a device (opt-in, see below)
 > Subsequent builds skip download if sources exist and skip compilation if the
 > static libraries are already cached.
 
+### Per-platform build directories
+
+Build artifacts are separated by target platform under `build/`:
+
+```
+build/windows_amd64/    Windows x86-64 (also windows_386 for 32-bit)
+build/linux_amd64/      Linux x86-64
+build/linux_arm64/      Linux aarch64/arm64
+build/darwin_arm64/     macOS Apple Silicon (darwin_amd64 for Intel)
+```
+
+Each platform keeps its own SDL2/FFmpeg/XMP libraries, Windows resources, and
+binary, so you can build for several targets on one machine without one
+platform's artifacts clobbering another's.
+
+- `make clean` / `make distclean` only remove the **current** platform's tree.
+- `rm -rf build/` wipes **all** platform build trees.
+
 ---
 
 ## Windows (MSYS2 / MINGW64)
@@ -69,8 +87,8 @@ pacman -S --noconfirm wget unzip
 | `make install CONFIG=debug` | Debug build + screenpack → `deploy/` |
 | `make install-remote` | Build binary, then scp it to a remote device (see [Deploying to a remote device](#deploying-to-a-remote-device)) |
 | `make appbundle`     | Create macOS `.app` bundle (I.K.E.M.E.N-Go.app) |
-| `make clean`         | Remove entire `build/` directory (binary, libs, downloaded sources, everything) |
-| `make distclean`     | Remove `build/` + `deploy/` — full reset to pristine checkout |
+| `make clean`         | Remove the current platform's build dir (e.g. `build/windows_amd64/`) — binary, libs, downloaded sources, everything for that platform |
+| `make distclean`     | Remove current platform build dir + `deploy/` — full reset |
 | `make deps-check`    | Verify required tools are installed |
 
 ### Options
@@ -99,10 +117,10 @@ make APP_VERSION=v1.0.0 CONFIG=debug
 ### Run
 
 ```bash
-./Ikemen_GO.exe               # 64-bit
+./build/windows_amd64/Ikemen_GO.exe    # 64-bit
 ```
 
-> 32-bit builds use `ARCH=386` and produce `Ikemen_GO_x86.exe`.
+> 32-bit builds use `ARCH=386` and produce `Ikemen_GO_x86.exe` in `build/windows_386/`.
 
 ---
 
@@ -112,26 +130,53 @@ make APP_VERSION=v1.0.0 CONFIG=debug
 
 ```bash
 sudo apt update && sudo apt install -y \
-  git make cmake pkg-config golang-go gcc g++ nasm \
+  git make cmake pkg-config gcc g++ nasm \
   wget unzip libx11-dev libxext-dev libxrandr-dev \
   libxcursor-dev libxi-dev libxinerama-dev libxss-dev \
-  libxxf86vm-dev libasound2-dev libgl1-mesa-dev
+  libxxf86vm-dev libasound2-dev libgl1-mesa-dev libglvnd-dev \
+  libgtk-3-dev
 ```
+
+> `libgtk-3-dev` (GTK3 `.pc`) and `libglvnd-dev` (`gl.pc`) are required by the
+> engine's Linux cgo dependencies (`sqweek/dialog`, vendored `gl` bindings).
+
+**Go toolchain — auto-installed.** The Makefile requires **Go 1.22+**. On Linux,
+`make` runs `check-go-env` before building: if `go` is missing or older than
+1.22, it downloads the **latest Go** from https://go.dev/dl/ and installs it to
+`/usr/local/go` (using `sudo` automatically when needed). You do **not** need to
+`apt install golang-go` — Ubuntu's package is usually too old. If you can't use
+`sudo`, point `GO_INSTALL_DIR` at a writable path:
+`make GO_INSTALL_DIR=$HOME/go-toolchain`.
+
+> Go 1.20+ is required because the engine uses the experimental `arena`
+> standard-library package (state rollback system). The Makefile automatically
+> enables `GOEXPERIMENT=arenas` for the build — don't build outside the
+> Makefile without it, or `imports arena: build constraints exclude all Go
+> files` will fail.
+
+**SDL2 — auto-selected.** The Makefile prefers the **system SDL2** via
+pkg-config (`sudo apt install libsdl2-dev`). If no system SDL2 is found, `make
+sdl2` automatically builds a **dynamic** `libSDL2.so` from source into the
+platform build dir — no manual step needed. (`make install` copies it next to
+the binary; `make install-remote` scps it to the device.) On the build machine
+an rpath makes it load automatically; on a remote device run with
+`LD_LIBRARY_PATH=. ./Ikemen_GO` (or run `ldconfig`) so the loader finds the
+dynamic lib.
 
 ### Prerequisites (Ubuntu arm64)
 ```bash
 (root)
-sudo sudo apt install -y make cmake pkg-config gcc g++ wget unzip libasound2-dev libgl1-mesa-dev libxext-dev
+sudo apt install -y make cmake pkg-config gcc g++ wget unzip libasound2-dev libgl1-mesa-dev libxext-dev
 
-#install latest golang
-(root)
-wget https://go.dev/dl/go1.26.5.linux-arm64.tar.gz
-tar -C /usr/local -xzf go1.26.5.linux-arm64.tar.gz
-(user)
-export PATH=$PATH:/usr/local/go/bin
+> Go 1.22+ is auto-installed by the Makefile (see the amd64 section above): if
+> `go` is missing or too old, `make check-go-env` downloads the latest Go to
+> `/usr/local/go` (needs root, or set `GO_INSTALL_DIR`). Manual alternative:
+>   wget https://go.dev/dl/go1.26.5.linux-arm64.tar.gz
+>   sudo tar -C /usr/local -xzf go1.26.5.linux-arm64.tar.gz
+>   export PATH=$PATH:/usr/local/go/bin
 
-
-#install latest SDL2 into system
+# (optional) install system SDL2 — if you skip this, the Makefile builds a
+# dynamic libSDL2.so from source automatically (make sdl2).
 (root)
 wget https://github.com/libsdl-org/SDL/archive/refs/heads/release-2.32.x.zip
 unzip release-2.32.x.zip
@@ -141,8 +186,9 @@ make -j8
 make install
 ```
 
-> `mingw-w64-x86_64-yasm` is optional (nasm covers the assembler needs).
-> No system SDL2, FFmpeg, or libxmp packages are needed — all are built from source.
+> FFmpeg and libxmp are always built from source. SDL2: system lib via
+> pkg-config is preferred; the Makefile falls back to building a dynamic
+> `libSDL2.so` from source when no system SDL2 is installed.
 
 ### Build
 
@@ -152,15 +198,26 @@ make install                  # Release → deploy/
 make install CONFIG=debug     # Debug → deploy/
 ```
 
-The Makefile detects your architecture and builds natively (x86-64 or ARM64).
+The Makefile detects your architecture and builds natively (x86-64 or ARM64)
+into `build/linux_amd64/` or `build/linux_arm64/`. On the first run,
+`check-go-env` verifies the Go toolchain and auto-installs Go 1.22+ (latest)
+from go.dev to `/usr/local/go` when needed, and `sdl2` picks SDL2 (system lib,
+or dynamic-from-source fallback) — the rest of the build then continues
+automatically.
 
 ### Run
 
 ```bash
-./Ikemen_GO
+./build/linux_amd64/Ikemen_GO          # x86-64 build
+./build/linux_arm64/Ikemen_GO          # arm64 build
 # If you need a GL fallback on some drivers:
-MESA_GL_VERSION_OVERRIDE=2.1 ./Ikemen_GO
+MESA_GL_VERSION_OVERRIDE=2.1 ./build/linux_amd64/Ikemen_GO
 ```
+
+> The Makefile builds natively for the **host** platform. To produce a
+> different target (e.g. `build/linux_arm64` from an x86-64 machine) you need
+> cross toolchains (cross gcc, arm64 SDL2/FFmpeg/XMP builds, etc.) — the
+> Makefile alone does not cross-compile.
 
 ---
 
@@ -169,11 +226,12 @@ MESA_GL_VERSION_OVERRIDE=2.1 ./Ikemen_GO
 ### Prerequisites (Homebrew)
 
 ```bash
-brew install git make cmake pkg-config go nasm wget molten-vk
+brew install git make cmake pkg-config go nasm wget sdl2 molten-vk
 ```
 
 > MoltenVK is required for the Vulkan renderer on macOS.
-> No system SDL2, FFmpeg, or libxmp are needed — all are built from source.
+> SDL2 is used via pkg-config (`brew install sdl2`); FFmpeg and libxmp are
+> always built from source.
 
 ### Build
 
@@ -184,12 +242,14 @@ make install CONFIG=debug     # Debug → deploy/
 make appbundle                # Create I.K.E.M.E.N-Go.app
 ```
 
-The Makefile detects your architecture — Apple Silicon → arm64, Intel → amd64.
+The Makefile detects your architecture — Apple Silicon → arm64, Intel → amd64,
+building into `build/darwin_arm64/` or `build/darwin_amd64/`.
 
 ### Run
 
 ```bash
-./Ikemen_GO
+./build/darwin_arm64/Ikemen_GO        # Apple Silicon build
+./build/darwin_amd64/Ikemen_GO        # Intel build
 ```
 
 You can also double-click **`tools/Ikemen_GO.command`**.
