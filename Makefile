@@ -1,10 +1,11 @@
 # ============================================================================
 # Ikemen-GO — Cross-Platform Makefile (Windows / Linux / macOS)
 #
-# All external libraries (SDL2, FFmpeg, XMP) are built from source and linked
-# statically into the binary. On Windows the MinGW runtime is also linked
-# statically; on Linux/macOS system libraries (glibc, X11, etc.) are linked
-# dynamically.
+# FFmpeg and libxmp are built from source and linked statically. SDL2 is built
+# from source on Windows (static); on Linux/macOS the system SDL2 is used via
+# pkg-config, with a dynamic-from-source fallback on Linux. On Windows the
+# MinGW runtime is also linked statically; on Linux/macOS system libraries
+# (glibc, X11, etc.) are linked dynamically.
 #
 # Usage:
 #   make                    # Native build (release)
@@ -24,8 +25,11 @@
 #     pacman -S --noconfirm wget unzip
 #   Linux (Debian/Ubuntu):
 #     sudo apt update && sudo apt install -y \
-#       make cmake pkg-config golang-go gcc g++ nasm \
+#       make cmake pkg-config gcc g++ nasm \
 #       wget unzip libsdl2-dev \
+#   Linux Go: >= 1.22 required — `make check-go-env` auto-installs the latest
+#     Go to /usr/local/go when `go` is missing or too old (needs sudo unless
+#     GO_INSTALL_DIR points at a writable path). No need for apt golang-go.
 #       libx11-dev libxext-dev libxrandr-dev \
 #       libxcursor-dev libxi-dev libxinerama-dev libxss-dev \
 #       libxxf86vm-dev libasound2-dev libgl1-mesa-dev
@@ -87,8 +91,13 @@ ifeq ($(HOST_OS),windows)
   # Go build cache location — needed because %LocalAppData% may be unset
   # in non-interactive MSYS2 shells.
   export GOCACHE ?= $(HOME)/.cache/go-build
+else ifeq ($(HOST_OS),linux)
+  # /usr/local/go/bin goes FIRST on Linux: a toolchain auto-installed by
+  # `make check-go-env` (or manually placed at /usr/local/go) must take
+  # precedence over an older distro Go in /usr/bin.
+  export PATH := /usr/local/go/bin:$(PATH)
 else
-  # Linux / macOS — common Go installation paths (manual install or non-default)
+  # macOS — keep system paths first (Homebrew Go is usually current)
   export PATH := $(PATH):/usr/local/go/bin
 endif
 
@@ -157,7 +166,13 @@ export GOOS GOARCH CC CXX
 # Directories
 # ============================================================================
 
-BUILDDIR      := build
+# Per-platform build tree: every OS/ARCH combination gets its own isolated
+# directory under build/ (e.g. build/windows_amd64, build/linux_arm64,
+# build/linux_amd64, build/windows_386, build/darwin_arm64). This lets you
+# build for multiple targets on one machine without one platform's artifacts
+# (SDL2/FFmpeg/XMP libs, winres, binary) clobbering another's.
+#   make clean / distclean only remove the CURRENT platform's directory.
+BUILDDIR      := build/$(GOOS)_$(GOARCH)
 BUILD_PREFIX  := $(abspath $(BUILDDIR)/output)
 OUTDIR        := $(BUILDDIR)
 WINRES_DIR    := $(BUILDDIR)/winres
@@ -186,16 +201,25 @@ SCREENPACK_DIR := $(INSTALLDIR)
 # Toolchain
 # ============================================================================
 
-export GOEXPERIMENT := arenas
+# GOEXPERIMENT=arenas is required to compile the stdlib 'arena' package (used
+# by the rollback system), but only Go 1.20+ toolchains know the experiment.
+# It is decided at BUILD TIME in the $(BINARY) recipe — a parse-time probe
+# would run against the toolchain on the ORIGINAL PATH (e.g. Ubuntu's go 1.18),
+# not the one check-go-env may have just auto-installed.
 export CGO_ENABLED  := 1
 
 PKG_CONFIG ?= pkg-config
 
 # Tools required for building — nasm is an x86 assembler, not available/needed on ARM64
+# On Linux, `go` is intentionally NOT required here: `make check-go-env`
+# auto-installs a supported toolchain when `go` is missing or too old.
 ifeq ($(HOST_ARCH),arm64)
   BUILD_TOOLS := make cmake pkg-config gcc g++ unzip wget
 else
-  BUILD_TOOLS := make cmake pkg-config gcc g++ nasm go unzip wget
+  BUILD_TOOLS := make cmake pkg-config gcc g++ nasm unzip wget
+endif
+ifneq ($(HOST_OS),linux)
+  BUILD_TOOLS += go
 endif
 
 # Windows resource compiler (only used on Windows)
@@ -300,6 +324,16 @@ else
   endif
 endif
 
+# Verbose Go build — VERBOSE=1 adds -x -v to `go build` so you can watch
+# exactly what the Go tool does during a build:
+#   -x  print every command it runs (compile, link, cache hits)
+#   -v  print the name of each package as it is compiled
+# With a warm cache you'll see only the changed package(s) recompiled and
+# everything else reported as cached.  `go build -work` (add to GO_VERBOSE
+# manually) additionally keeps the temporary work directory.
+VERBOSE ?=
+GO_VERBOSE := $(if $(VERBOSE),-x -v,)
+
 # ============================================================================
 # Derived File Targets
 # ============================================================================
@@ -360,7 +394,7 @@ all: release
 # Release Build
 # ============================================================================
 
-release: deps-check xmp ffmpeg sdl2 $(BINARY)
+release: check-go-env deps-check xmp ffmpeg sdl2 $(BINARY)
 	@echo "==> Build successful"
 	@echo "    Binary: $(BINARY)"
 
@@ -422,9 +456,69 @@ deps-check:
 	esac
 	@echo "    All dependencies found."
 
+# --- Go toolchain management ---
+# Minimum Go required to build (go.mod declares go 1.20; Ubuntu's golang-go is
+# 1.18, so we auto-install a modern toolchain on Linux instead of failing).
+#
+# On Linux, `make check-go-env` installs the LATEST Go release from go.dev into
+# $(GO_INSTALL_DIR) whenever `go` is missing or older than $(GO_MIN_VERSION):
+#   - version is resolved dynamically from https://go.dev/VERSION (fallback:
+#     $(GO_VERSION) if that query fails)
+#   - `sudo` is used automatically when the install dir is not writable
+#   - override GO_INSTALL_DIR to skip sudo (e.g. a user-writable path)
+GO_MIN_VERSION  ?= 1.22
+GO_VERSION      ?= go1.26.5
+GO_INSTALL_DIR  ?= /usr/local/go
+
 check-go-env:
-	@go version >/dev/null 2>&1 || \
-		{ echo "ERROR: 'go version' failed." >&2; exit 1; }
+	@case "$(HOST_OS)" in \
+		linux) \
+			ver=""; \
+			GO_CMD="$$(command -v go || true)"; \
+			if [ -n "$$GO_CMD" ]; then \
+				ver="$$($$GO_CMD version 2>/dev/null | awk '{print $$3}' | sed 's/^go//' || true)"; \
+			fi; \
+			if [ -n "$$ver" ] && [ "$$(printf '%s\n' "$$ver" "$(GO_MIN_VERSION)" | sort -V | head -1)" = "$(GO_MIN_VERSION)" ]; then \
+				echo "    Go $$ver found (>= $(GO_MIN_VERSION))"; \
+			else \
+				if [ -z "$$ver" ]; then \
+					echo "==> Go toolchain not found on PATH."; \
+				else \
+					echo "==> Go $$ver is older than the required $(GO_MIN_VERSION)."; \
+				fi; \
+				echo "==> Installing latest Go from https://go.dev/dl/ to $(GO_INSTALL_DIR) ..."; \
+				latest="$$(curl -fsSL --max-time 20 'https://go.dev/VERSION?m=text' 2>/dev/null | head -1 || true)"; \
+				[ -n "$$latest" ] || latest="$(GO_VERSION)"; \
+				url="https://go.dev/dl/$${latest}.linux-$(GOARCH).tar.gz"; \
+				echo "==> Downloading $$url ..."; \
+				tmp="$(BUILDDIR)/go-install"; \
+				rm -rf "$$tmp"; mkdir -p "$$tmp"; \
+				( wget -q "$$url" -O "$$tmp/go.tgz" 2>/dev/null || curl -fsSL "$$url" -o "$$tmp/go.tgz" ) || { \
+					echo "ERROR: failed to download $$url" >&2; exit 1; }; \
+				dest="$(dir $(GO_INSTALL_DIR))"; \
+				sudo_cmd=""; [ -w "$$dest" ] || sudo_cmd="sudo"; \
+				if [ -d "$(GO_INSTALL_DIR)" ]; then $$sudo_cmd rm -rf "$(GO_INSTALL_DIR)"; fi; \
+				$$sudo_cmd tar -C "$$dest" -xzf "$$tmp/go.tgz" || { \
+					echo "ERROR: failed to extract Go into $$dest (try 'sudo', or set GO_INSTALL_DIR to a writable path)" >&2; \
+					exit 1; }; \
+				if [ -d "$$dest/go" ] && [ "$(GO_INSTALL_DIR)" != "$$dest/go" ]; then \
+					$$sudo_cmd mv "$$dest/go" "$(GO_INSTALL_DIR)"; \
+				fi; \
+				rm -rf "$$tmp"; \
+				echo "==> Installed $$latest to $(GO_INSTALL_DIR)"; \
+				ver="$$("$(GO_INSTALL_DIR)"/bin/go version 2>/dev/null | awk '{print $$3}' | sed 's/^go//' || true)"; \
+				if [ -z "$$ver" ] || [ "$$(printf '%s\n' "$$ver" "$(GO_MIN_VERSION)" | sort -V | head -1)" != "$(GO_MIN_VERSION)" ]; then \
+					echo "ERROR: Go install failed — '$(GO_INSTALL_DIR)/bin/go version' reports '$$ver'." >&2; \
+					exit 1; \
+				fi; \
+				echo "    Go $$ver ready (>= $(GO_MIN_VERSION))"; \
+			fi;; \
+		*) \
+			go version >/dev/null 2>&1 || { \
+				echo "ERROR: 'go version' failed — install Go >= $(GO_MIN_VERSION) from https://go.dev/dl/." >&2; \
+				exit 1; }; \
+			echo "    Go $$(go version | awk '{print $$3}') found";; \
+	esac
 
 # ============================================================================
 # SDL2 Static Build (CMake)
@@ -479,11 +573,28 @@ else ifeq ($(HOST_OS),darwin)
 	-DSDL_WAYLAND=OFF
 endif
 
-# SDL2: built from source on Windows, system lib on Linux/macOS.
+# Dynamic/shared SDL2 build flags — used only by the Linux fallback (the sdl2
+# target builds a shared libSDL2.so from source when no system SDL2 is found).
+SDL2_CMAKE_FLAGS_SHARED := \
+	$(filter-out -DBUILD_SHARED_LIBS=OFF -DSDL_SHARED=OFF -DSDL_STATIC=ON,$(SDL2_CMAKE_FLAGS)) \
+	-DBUILD_SHARED_LIBS=ON \
+	-DSDL_SHARED=ON \
+	-DSDL_STATIC=OFF
+
+# SDL2 build rule — one recipe serves both library types, selected by $@:
+#   libSDL2.a   static — Windows (also feeds the arch-specific archive)
+#   libSDL2.so  shared — Linux fallback when no system SDL2 is installed
 # NOTE: No ifeq/else/endif around targets — GNU Make 4.2.1 + .ONESHELL
 # peeks at tab-indented lines inside false conditionals and chokes.
-$(BUILD_PREFIX)/lib/libSDL2.a:
-	@echo "==> Building static SDL2 for $(HOST_OS)..."
+$(BUILD_PREFIX)/lib/libSDL2.a $(BUILD_PREFIX)/lib/libSDL2.so:
+	@case "$@" in \
+		*.so) \
+			echo "==> Building dynamic SDL2 for $(HOST_OS)..."; \
+			sdl2_flags="$(SDL2_CMAKE_FLAGS_SHARED)";; \
+		*) \
+			echo "==> Building static SDL2 for $(HOST_OS)..."; \
+			sdl2_flags="$(SDL2_CMAKE_FLAGS)";; \
+	esac
 	mkdir -p $(BUILDDIR)
 	if [ ! -d "$(SDL2_SRCDIR)" ]; then
 		echo "==> Downloading $(SDL2_URL)..."
@@ -505,7 +616,7 @@ $(BUILD_PREFIX)/lib/libSDL2.a:
 	fi
 	cmake -S "$(SDL2_SRCDIR)" -B "$(SDL2_BUILDDIR)" \
 		$(SDL2_CMAKE_GENERATOR) \
-		$(SDL2_CMAKE_FLAGS)
+		$$sdl2_flags
 	cmake --build "$(SDL2_BUILDDIR)" --parallel
 	cmake --install "$(SDL2_BUILDDIR)"
 	case "$(HOST_OS)" in \
@@ -515,20 +626,45 @@ $(BUILD_PREFIX)/lib/libSDL2.a:
 			cp "$(BUILD_PREFIX)/lib/libSDL2.a" "$(BUILD_PREFIX)/lib/libSDL2_windows_$(GOARCH).a"; \
 			cp "$(BUILD_PREFIX)/lib/libSDL2main.a" "$(BUILD_PREFIX)/lib/libSDL2main_windows_$(GOARCH).a";; \
 	esac
-	@echo "==> SDL2 static library installed to: $(BUILD_PREFIX)"
+	@echo "==> SDL2 installed to: $(BUILD_PREFIX)"
 
+# On Windows the Go linker references the arch-specific archive directly
+# (packages/go-sdl2/sdl/sdl_cgo_static.go: -lSDL2_windows_$(GOARCH)), but it
+# is only produced as a side effect of the $(BUILD_PREFIX)/lib/libSDL2.a rule
+# above. Declaring an explicit rule lets any target that depends on the binary
+# (e.g. `install`, `binary`, `install-remote`) trigger the SDL2 build
+# automatically, without requiring `sdl2` to have been run first. Defined
+# unconditionally with a shell guard, following the .ONESHELL + Make 4.2.1
+# conditional limitation used by the winres targets.
+$(BUILD_PREFIX)/lib/libSDL2_windows_$(GOARCH).a: $(BUILD_PREFIX)/lib/libSDL2.a
+	@[ "$(HOST_OS)" = "windows" ] || exit 0
+	cp "$(BUILD_PREFIX)/lib/libSDL2.a" "$@"
+
+# SDL2 policy:
+#   Windows: static SDL2 built from source.
+#   Linux:   system SDL2 via pkg-config; if not installed, build a dynamic
+#            libSDL2.so from source (fallback).
+#   macOS:   system SDL2 via pkg-config (Homebrew); error if missing.
 sdl2:
 	@case "$(HOST_OS)" in \
 		windows) \
 			$(MAKE) -s $(BUILD_PREFIX)/lib/libSDL2.a; \
 			echo "    Local SDL2 $$(PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig" $(PKG_CONFIG) --modversion sdl2) found";; \
+		linux) \
+			if pkg-config --exists sdl2; then \
+				echo "    SDL2 $$($(PKG_CONFIG) --modversion sdl2) found (system or local)"; \
+			else \
+				echo "==> System SDL2 not found — building dynamic SDL2 from source..."; \
+				$(MAKE) -s $(BUILD_PREFIX)/lib/libSDL2.so; \
+				echo "    Local SDL2 $$(PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig" $(PKG_CONFIG) --modversion sdl2) found"; \
+			fi;; \
 		*) \
 			pkg-config --exists sdl2 || { \
 				echo "ERROR: SDL2 development library not found." >&2; \
-				echo "  Install with: sudo apt install libsdl2-dev" >&2; \
+				echo "  Install with: brew install sdl2" >&2; \
 				exit 1; \
 			}; \
-			echo "    System SDL2 $$(PKG_CONFIG_PATH="/usr/lib/pkgconfig:/usr/local/lib/pkgconfig" $(PKG_CONFIG) --modversion sdl2) found";; \
+			echo "    System SDL2 $$($(PKG_CONFIG) --modversion sdl2) found";; \
 	esac
 
 # ============================================================================
@@ -724,16 +860,24 @@ _CGO_PKGS := libavformat libavcodec libavutil libswscale libswresample libavfilt
 # Go Binary
 # ============================================================================
 
-# Forwarding phony — `make binary` still works as before.
+# Forwarding phony — `make binary` still works as before. check-go-env runs
+# first so a missing/old Go on Linux is auto-installed instead of failing at
+# the `go version` guard in the $(BINARY) recipe; sdl2 ensures SDL2 is present
+# (system lib or dynamic-from-source on Linux) before the cgo link.
 .PHONY: binary
-binary: $(BINARY)
+binary: check-go-env sdl2 $(BINARY)
 
 # Real file target — only rebuilds when Go sources, libraries, or resources
 # have actually changed.  The `go build` command leverages Go's own build
 # cache so unchanged packages are not recompiled.
 $(BINARY): $(GO_SOURCES) $(XMP_LIB) $(FFMPEG_LIBS)
 	@go version >/dev/null 2>&1 || \
-		{ echo "ERROR: 'go version' failed." >&2; exit 1; }
+		{ echo "ERROR: 'go version' failed. Run 'make check-go-env' to check/auto-install the Go toolchain." >&2; exit 1; }
+	@# The stdlib 'arena' package only compiles with GOEXPERIMENT=arenas (Go 1.20+).
+	@# Probe at run time: the toolchain on PATH here is the one check-go-env
+	@# ensured, which may differ from the toolchain seen at parse time.
+	@_GOEXPERIMENT=$$( GOEXPERIMENT=arenas go env GOEXPERIMENT 2>/dev/null | grep -q arenas && echo arenas || true ); \
+	echo "    GOEXPERIMENT=$${_GOEXPERIMENT:-<none>}"
 	@echo "==> Building $(BINNAME) ($(CONFIG), GOOS=$(GOOS) GOARCH=$(GOARCH))..."
 	@echo "    Go build tags: $(GO_TAGS) LDFLAGS: $(LDFLAGS_GO) CGO_CFLAGS: $(CGO_CFLAGS) CGO_LDFLAGS: $(CGO_LDFLAGS)"
 	case "$(HOST_OS)" in \
@@ -741,19 +885,20 @@ $(BINARY): $(GO_SOURCES) $(XMP_LIB) $(FFMPEG_LIBS)
 			_PC_WINPATH="$$(cygpath -m "$(BUILD_PREFIX)/lib/pkgconfig")" ; \
 			_CGO_CFLAGS=$$( $(PKG_CONFIG) --with-path="$${_PC_WINPATH}" --cflags $(_CGO_PKGS) ) ; \
 			_CGO_LDFLAGS="-L$(BUILD_PREFIX)/lib $$( $(PKG_CONFIG) --with-path="$${_PC_WINPATH}" --static --libs $(_CGO_PKGS) )" ; \
+			GOEXPERIMENT="$$_GOEXPERIMENT" \
 			CGO_CFLAGS="-DLIBXMP_STATIC $$_CGO_CFLAGS" \
 			CGO_LDFLAGS="$$_CGO_LDFLAGS" \
-			go build -trimpath -tags "$(GO_TAGS)" \
+			go build $(GO_VERBOSE) -trimpath -tags "$(GO_TAGS)" \
 				-ldflags "$(LDFLAGS_GO)" \
 				-o "$(BINARY)" ./src;; \
 		*) \
 			_CGO_CFLAGS=$$( PKG_CONFIG_LIBDIR= PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig:/usr/lib/pkgconfig:/usr/local/lib/pkgconfig$(if $(PKG_CONFIG_PATH),:$(PKG_CONFIG_PATH),)" $(PKG_CONFIG) --cflags $(_CGO_PKGS) ) ; \
 			_CGO_LDFLAGS="-L$(BUILD_PREFIX)/lib $$( PKG_CONFIG_LIBDIR= PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig:/usr/lib/pkgconfig:/usr/local/lib/pkgconfig$(if $(PKG_CONFIG_PATH),:$(PKG_CONFIG_PATH),)" $(PKG_CONFIG) --static --libs $(_CGO_PKGS) )" ; \
 			PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig:/usr/lib/pkgconfig:/usr/local/lib/pkgconfig$(if $(PKG_CONFIG_PATH),:$(PKG_CONFIG_PATH),)" \
-			PKG_CONFIG_LIBDIR= \
+			GOEXPERIMENT="$$_GOEXPERIMENT" \
 			CGO_CFLAGS="-DLIBXMP_STATIC $$_CGO_CFLAGS" \
 			CGO_LDFLAGS="$$_CGO_LDFLAGS" \
-			go build -trimpath -tags "$(GO_TAGS)" \
+			go build $(GO_VERBOSE) -trimpath -tags "$(GO_TAGS)" \
 				-ldflags "$(LDFLAGS_GO)" \
 				-o "$(BINARY)" ./src;; \
 	esac
@@ -773,13 +918,17 @@ endif
 # Merges screenpack directories (chars, stages, sound, video, data, external,
 # font) with engine data and copies the binary into $(INSTALLDIR).
 
-install: deps-check screenpack $(BINARY)
+install: check-go-env deps-check sdl2 screenpack $(BINARY)
 	@echo "==> Installing to $(INSTALLDIR)/..."
 	mkdir -p "$(INSTALLDIR)"
 	@echo "==> Copying engine data: data font external"
 	cp -r data font external "$(INSTALLDIR)/"
 	@echo "==> Copying binary $(BINNAME)..."
 	cp -f "$(BINARY)" "$(INSTALLDIR)/"
+	@if [ "$(HOST_OS)" = "linux" ] && [ -f "$(BUILD_PREFIX)/lib/libSDL2.so" ]; then \
+		echo "==> Copying dynamic SDL2 library (built from source)..."; \
+		cp -f "$(BUILD_PREFIX)"/lib/libSDL2.so* "$(INSTALLDIR)/"; \
+	fi
 	@echo "==> Install complete: $(INSTALLDIR)/"
 
 # ============================================================================
@@ -793,9 +942,13 @@ install: deps-check screenpack $(BINARY)
 REMOTE_HOST ?= ark@192.168.7.2
 REMOTE_DIR  ?= /home/ark/ikemen
 
-install-remote: deps-check $(BINARY)
+install-remote: check-go-env deps-check sdl2 $(BINARY)
 	@echo "==> Deploying $(BINARY) to $(REMOTE_HOST):$(REMOTE_DIR)/..."
 	scp "$(BINARY)" "$(REMOTE_HOST):$(REMOTE_DIR)/"
+	@if [ "$(HOST_OS)" = "linux" ] && [ -f "$(BUILD_PREFIX)/lib/libSDL2.so" ]; then \
+		echo "==> Deploying dynamic SDL2 library..."; \
+		scp "$(BUILD_PREFIX)"/lib/libSDL2.so* "$(REMOTE_HOST):$(REMOTE_DIR)/"; \
+	fi
 	@echo "==> Deploy complete."
 
 # ============================================================================
@@ -877,15 +1030,18 @@ screenpack:
 # ============================================================================
 # Clean
 # ============================================================================
+# NOTE: build artifacts are per-platform (build/<GOOS>_<GOARCH>), so `clean`
+# and `distclean` only remove the CURRENT platform's tree, leaving any other
+# platforms' builds intact. Use `rm -rf build/` to wipe every platform.
 
 clean:
-	@echo "==> Cleaning build artifacts..."
+	@echo "==> Cleaning build artifacts for $(GOOS)_$(GOARCH)..."
 	rm -rf $(BUILDDIR) 2>/dev/null || true
 	rm -rf $(APPDIR) 2>/dev/null || true
 	@echo "==> Clean done."
 
 distclean: clean
-	@echo "==> Deep cleaning — removing all build artifacts and external lib sources..."
+	@echo "==> Deep cleaning — removing build artifacts and external lib sources..."
 	rm -rf $(BUILDDIR) 2>/dev/null || true
 	rm -rf $(INSTALLDIR) 2>/dev/null || true
 	@echo "==> Distclean done."
@@ -906,16 +1062,25 @@ help:
 	@echo '  debug          Debug build (console + memory instrumentation)'
 	@echo '  ffmpeg         Build static FFmpeg libraries'
 	@echo '  xmp            Build static XMP library'
-	@echo '  sdl2           Build SDL2 library (static on Windows, system lib on Linux/macOS)'
+	@echo '  sdl2           Verify/build SDL2: static from source on Windows;'
+	@echo '                 system lib via pkg-config on Linux/macOS, with a'
+	@echo '                 dynamic-from-source fallback on Linux'
 	@echo '  screenpack     Clone/update Elecbyte screenpack'
 	@echo '  install        Assemble runnable build in deploy/ (screenpack + binary)'
 	@echo '  install-remote  scp binary to a device (REMOTE_HOST/REMOTE_DIR, opt-in)'
 	@echo '  fetch-log       scp ikemen.log from a device (REMOTE_HOST/REMOTE_DIR, opt-in)'
 	@echo '  appbundle      Create macOS .app bundle (I.K.E.M.E.N-Go.app)'
-	@echo '  clean          Remove build artifacts'
-	@echo '  distclean      Remove artifacts + external library sources'
+	@echo '  clean          Remove current platform build dir (build/<GOOS>_<GOARCH>)'
+	@echo '  distclean      Remove current platform build dir + deploy/'
 	@echo '  deps-check     Verify required tools are installed'
+	@echo '  check-go-env   Check Go version; on Linux auto-install latest Go'
+	@echo '                 to /usr/local/go when missing or < 1.22'
 	@echo '  help           Show this help'
+	@echo ''
+	@echo 'Build tree: artifacts are separated per platform:'
+	@echo '  build/<GOOS>_<GOARCH>/   e.g. build/windows_amd64, build/linux_arm64'
+	@echo '  Each platform keeps its own SDL2/FFmpeg/XMP libs, winres, and binary.'
+	@echo '  make clean / distclean only touch the current platform; rm -rf build/ wipes all.'
 	@echo ''
 	@echo 'Options:'
 	@echo '  ARCH=<arch>        Target architecture (default: native)'
@@ -925,12 +1090,22 @@ help:
 	@echo '  CONFIG=debug       Debug build + memory instrumentation (default: release)'
 	@echo '  APP_VERSION=X.Y    Set version string (default: nightly)'
 	@echo '  APP_BUILDTIME=X    Set build timestamp'
+	@echo '  VERBOSE=1          Verbose go build (-x -v): show every command and'
+	@echo '                     which packages are recompiled vs. from cache'
+	@echo '  GO_VERSION=<ver>   Go release used by the Linux auto-installer'
+	@echo '                     (default: latest from go.dev; fallback: go1.26.5)'
+	@echo '  GO_INSTALL_DIR=<d> Install dir for auto-installed Go (default: /usr/local/go)'
+	@echo '  GO_MIN_VERSION=<v> Min Go version required; below it on Linux the latest'
+	@echo '                     Go is auto-installed (default: 1.22)'
 	@echo ''
 	@echo 'Platform notes:'
-	@echo '  SDL2: Built from source (Windows) or system lib (Linux/macOS).'
+	@echo '  SDL2: Static from source (Windows); system lib via pkg-config'
+	@echo '        (Linux/macOS); dynamic from source fallback on Linux.'
 	@echo '  FFmpeg/XMP: Built from source on all platforms.'
 	@echo '  Windows: Fully static binary (no external DLLs at runtime).'
 	@echo '  Linux:   SDL2/FFmpeg/XMP compiled in; system libs dynamic.'
+	@echo '           Go < 1.22 auto-installs the latest Go to /usr/local/go'
+	@echo '           (needs sudo, or set GO_INSTALL_DIR to a writable path)'
 	@echo '  macOS:   SDL2/FFmpeg/XMP compiled in; system frameworks dynamic.'
 	@echo ''
 	@echo 'Examples:'
@@ -939,3 +1114,5 @@ help:
 	@echo '  make APP_VERSION=v1.0.0       # Tagged build'
 	@echo '  make APP_VERSION=v1.0.0 CONFIG=debug'
 	@echo '  make install                  # Build + assemble runnable deploy/'
+	@echo '  rm -rf build/                 # Wipe ALL platform build trees'
+
