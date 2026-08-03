@@ -19,7 +19,7 @@ C:\msys64\mingw64\bin    # gcc, the actual compiler
 Run:
 
 ```bash
-make                    # Win64 release → Ikemen_GO.exe
+make                    # Win64 release → Ikemen_GO.amd64.exe
 make CONFIG=debug       # Win64 debug
 ```
 
@@ -29,7 +29,7 @@ The Makefile sets `GOROOT=/mingw64/lib/go`, `GOPATH=$HOME/go`,
 ## Linux / macOS
 
 ```bash
-make                    # Native release → Ikemen_GO
+make                    # Native release → Ikemen_GO.amd64 (linux_amd64) / Ikemen_GO.arm64 (linux_arm64)
 make CONFIG=debug       # Debug build
 ```
 
@@ -69,5 +69,5 @@ Makefile and linked statically into the binary.
 
 ```bash
 make
-ldd Ikemen_GO.exe | grep -iE 'winpthread|SDL2|libgcc_s|libstdc'  # expect: nothing
+ldd Ikemen_GO.amd64.exe | grep -iE 'winpthread|SDL2|libgcc_s|libstdc'  # expect: nothing
 ```

@@ -386,7 +386,7 @@ function varWin32() {
 		export CC=i686-w64-mingw32-gcc
 		export CXX=i686-w64-mingw32-g++
 	fi
-	binName="Ikemen_GO_x86.exe"
+	binName="Ikemen_GO.386.exe"
 }
  
 function varWin64() {
@@ -396,7 +396,7 @@ function varWin64() {
 		export CC=x86_64-w64-mingw32-gcc
 		export CXX=x86_64-w64-mingw32-g++
 	fi
-	binName="Ikemen_GO.exe"
+	binName="Ikemen_GO.amd64.exe"
 }
 
 function varMacOSARM() {
@@ -412,7 +412,7 @@ function varMacOSARM() {
 			export CXX=o64-clang++
 		;;
 	esac
-	binName="Ikemen_GO_MacOSARM"
+	binName="Ikemen_GO"
 }
 function varMacOS() {
 	export GOOS=darwin
@@ -427,18 +427,18 @@ function varMacOS() {
 			export CXX=o64-clang++
 		;;
 	esac
-	binName="Ikemen_GO_MacOS"
+	binName="Ikemen_GO"
 }
 function varLinux() {
 	export GOOS=linux
 	#export CC=gcc
 	#export CXX=g++
-	binName="Ikemen_GO_Linux"
+	binName="Ikemen_GO.amd64"
 }
 function varLinuxARM() {
 	export GOOS=linux
 	export GOARCH=arm64
-	binName="Ikemen_GO_LinuxARM"
+	binName="Ikemen_GO.arm64"
 }
 function varAndroid() {
 	local host_os="linux" # default to Linux as that's what the runner will be using
@@ -1148,7 +1148,7 @@ BEGIN
 			VALUE "FileVersion", "${SXS_VERSION}\\0"
 			VALUE "ProductName", "Ikemen GO\\0"
 			VALUE "ProductVersion", "${SXS_VERSION}\\0"
-			VALUE "OriginalFilename", "Ikemen_GO.exe\\0"
+			VALUE "OriginalFilename", "${binName}\\0"
 			VALUE "InternalName", "Ikemen_GO\\0"
 			VALUE "BuildDate", "${APP_BUILDTIME}\\0"
 			VALUE "LegalCopyright", "${APP_COPYRIGHT}\\0"

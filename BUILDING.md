@@ -117,10 +117,10 @@ make APP_VERSION=v1.0.0 CONFIG=debug
 ### Run
 
 ```bash
-./build/windows_amd64/Ikemen_GO.exe    # 64-bit
+./build/windows_amd64/Ikemen_GO.amd64.exe    # 64-bit
 ```
 
-> 32-bit builds use `ARCH=386` and produce `Ikemen_GO_x86.exe` in `build/windows_386/`.
+> 32-bit builds use `ARCH=386` and produce `Ikemen_GO.386.exe` in `build/windows_386/`.
 
 ---
 
@@ -160,8 +160,8 @@ sdl2` automatically builds a **dynamic** `libSDL2.so` from source into the
 platform build dir — no manual step needed. (`make install` copies it next to
 the binary; `make install-remote` scps it to the device.) On the build machine
 an rpath makes it load automatically; on a remote device run with
-`LD_LIBRARY_PATH=. ./Ikemen_GO` (or run `ldconfig`) so the loader finds the
-dynamic lib.
+`LD_LIBRARY_PATH=. ./Ikemen_GO.arm64` (or run `ldconfig`) so the loader finds
+the dynamic lib.
 
 ### Prerequisites (Ubuntu arm64)
 ```bash
@@ -198,7 +198,7 @@ make install
 
 Build works as a normal Linux build (see prerequisites above). Two WSL-specific notes:
 
-- **Run under WSLg** (default on WSL2): `./build/linux_amd64/Ikemen_GO` opens
+- **Run under WSLg** (default on WSL2): `./build/linux_amd64/Ikemen_GO.amd64` opens
   the window on the Windows desktop. If you have no display, you can instead
   run the binary on Windows directly — copy the whole `deploy/` folder to
   Windows and use the `.exe` there.
@@ -226,10 +226,10 @@ automatically.
 ### Run
 
 ```bash
-./build/linux_amd64/Ikemen_GO          # x86-64 build
-./build/linux_arm64/Ikemen_GO          # arm64 build
+./build/linux_amd64/Ikemen_GO.amd64       # x86-64 build
+./build/linux_arm64/Ikemen_GO.arm64       # arm64 build
 # If you need a GL fallback on some drivers:
-MESA_GL_VERSION_OVERRIDE=2.1 ./build/linux_amd64/Ikemen_GO
+MESA_GL_VERSION_OVERRIDE=2.1 ./build/linux_amd64/Ikemen_GO.amd64
 ```
 
 > The Makefile builds natively for the **host** platform. To produce a

@@ -18,7 +18,7 @@ Ready-to-use builds are available in the [releases section](https://github.com/i
 ## Running
 Download the ZIP archive that matches your operating system and extract its contents to your preferred location.
 
-On Windows, double-click `Ikemen_GO.exe`.
+On Windows, double-click `Ikemen_GO.amd64.exe`.
 On macOS or Linux, double-click `Ikemen_GO.command`.
 
 ## Developing
@@ -29,12 +29,12 @@ For setup and platform-specific steps, see [BUILDING.md](./BUILDING.md).
 It covers Windows, Linux (including ARM64), macOS (Apple Silicon and Intel), and Android (APK via Docker).
 
 On **Windows** (MSYS2 MINGW64), a single `make` command builds SDL2, FFmpeg, and libxmp
-from source and produces a fully statically-linked `Ikemen_GO.exe` with no external DLL
-dependencies (except Windows system DLLs).
+from source and produces a fully statically-linked `Ikemen_GO.amd64.exe` with no external
+DLL dependencies (except Windows system DLLs).
 
 On **Linux** and **macOS**, the same Makefile detects your platform and builds a native
-binary — `Ikemen_GO` — with SDL2, FFmpeg, and libxmp compiled in statically and system
-libraries linked dynamically.
+binary — `Ikemen_GO.amd64` / `Ikemen_GO.arm64` on Linux, `Ikemen_GO` on macOS — with
+SDL2, FFmpeg, and libxmp compiled in statically and system libraries linked dynamically.
 
 Use `make CONFIG=debug` for a debug build with memory instrumentation, `make install`
 to assemble a runnable installation with screenpack assets, or `make install-remote`

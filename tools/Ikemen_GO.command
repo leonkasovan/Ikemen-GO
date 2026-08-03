@@ -12,8 +12,7 @@ case "$OSTYPE" in
 			exec "$APPDIR/Contents/MacOS/bundle_run.sh"
 		fi
 		# Fallbacks: binaries in ./bin or current dir
-		for BIN in "./build/Ikemen_GO_MacOSARM" "./build/Ikemen_GO_MacOS" \
-		           "./Ikemen_GO_MacOSARM" "./Ikemen_GO_MacOS"; do
+		for BIN in "./build/Ikemen_GO" "./Ikemen_GO"; do
 			if [ -x "$BIN" ]; then
 				chmod +x "$BIN" 2>/dev/null || true
 				exec "$BIN"
@@ -24,13 +23,13 @@ case "$OSTYPE" in
 	;;
 	linux*)
 		# Prefer binary in current dir; accept ./bin as secondary
-		for BIN in "./build/Ikemen_GO_Linux" "./Ikemen_GO_Linux"; do
+		for BIN in "./build/Ikemen_GO.amd64" "./Ikemen_GO.amd64"; do
 			if [ -x "$BIN" ]; then
 				chmod +x "$BIN" 2>/dev/null || true
 				exec "$BIN"
 			fi
 		done
-		echo "Ikemen_GO_Linux not found in the top directory. Build it with: ./tools/build.sh Linux" >&2
+		echo "Ikemen_GO.amd64 not found in the top directory. Build it with: ./tools/build.sh Linux" >&2
 		exit 1
 	;;
 	*)

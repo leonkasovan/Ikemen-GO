@@ -180,7 +180,7 @@ jobs:
             os: windows-2022
             goos: windows
             goarch: amd64
-            bin: Ikemen_GO.exe
+            bin: Ikemen_GO.amd64.exe
             glibc: ''
             target: ''
             build_target: Win64
@@ -188,7 +188,7 @@ jobs:
             os: ubuntu-22.04
             goos: linux
             goarch: amd64
-            bin: Ikemen_GO_Linux
+            bin: Ikemen_GO.amd64
             glibc: '2.13'
             target: ''
             build_target: Linux
@@ -196,7 +196,7 @@ jobs:
             os: macos-14 # macos-13
             goos: darwin
             goarch: arm64 # amd64
-            bin: Ikemen_GO_MacOSARM # Ikemen_GO_MacOS
+            bin: Ikemen_GO
             glibc: ''
             target: '10.7'
             build_target: MacOSARM # MacOS
@@ -489,8 +489,8 @@ jobs:
           [Desktop Entry]
           Name=Ikemen GO
           Comment=An open-source fighting game engine
-          TryExec=Ikemen_GO_Linux
-          Exec=./Ikemen_GO_Linux
+          TryExec=Ikemen_GO.amd64
+          Exec=./Ikemen_GO.amd64
           Icon=ikemen-go.png
           Terminal=false
           Type=Application

@@ -7,23 +7,17 @@ SCRIPT_DIR="$(dirname "$0")"
 APP_DIR="$(cd "$SCRIPT_DIR/../../" && pwd)"
 
 # Define the path to the app executable relative to the MacOS directory
-APP_EXEC="$SCRIPT_DIR/Ikemen_GO_MacOSARM"
+APP_EXEC="$SCRIPT_DIR/Ikemen_GO"
 
 # Output for debugging
 echo "SCRIPT_DIR: $SCRIPT_DIR"
 echo "APP_DIR: $APP_DIR"
 echo "APP_EXEC: $APP_EXEC"
 
-# Check if the ARM executable exists
+# Check if the executable exists
 if [ ! -x "$APP_EXEC" ]; then
-    echo "Executable $APP_EXEC not found or not executable. Trying regular path..."
-    APP_EXEC="$SCRIPT_DIR/Ikemen_GO_MacOS"
-
-    # Check if the x64 executable exists
-    if [ ! -x "$APP_EXEC" ]; then
-        echo "Executable $APP_EXEC not found or not executable."
-        exit 1
-    fi
+    echo "Executable $APP_EXEC not found or not executable."
+    exit 1
 fi
 
 # Change directory to the parent directory of the .app bundle

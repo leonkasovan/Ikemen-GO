@@ -134,32 +134,37 @@ ifeq ($(HOST_OS),windows)
     CXX         ?= i686-w64-mingw32-g++
     WRTARGET    := pe-i386
     ASM_ARCH    := x86
-    WIN_BINNAME := Ikemen_GO_x86.exe
   else
     GOARCH      := amd64
     CC          ?= x86_64-w64-mingw32-gcc
     CXX         ?= x86_64-w64-mingw32-g++
     WRTARGET    := pe-x86-64
     ASM_ARCH    := amd64
-    WIN_BINNAME := Ikemen_GO.exe
   endif
-  BINNAME := $(WIN_BINNAME)
   BINEXT  := .exe
 else ifeq ($(HOST_OS),linux)
   GOOS    := linux
   GOARCH  := $(ARCH)
   CC      ?= gcc
   CXX     ?= g++
-  BINNAME := Ikemen_GO
   BINEXT  :=
 else ifeq ($(HOST_OS),darwin)
   GOOS    := darwin
   GOARCH  := $(ARCH)
   CC      ?= clang
   CXX     ?= clang++
-  BINNAME := Ikemen_GO
   BINEXT  :=
 endif
+
+# Output binary name: Windows and Linux embed the arch in the name
+# (Ikemen_GO.amd64.exe / Ikemen_GO.386.exe / Ikemen_GO.amd64 / Ikemen_GO.arm64);
+# macOS keeps a plain Ikemen_GO (no arch suffix).
+ifeq ($(HOST_OS),darwin)
+  BINBASE := Ikemen_GO
+else
+  BINBASE := Ikemen_GO.$(GOARCH)
+endif
+BINNAME := $(BINBASE)$(BINEXT)
 
 export GOOS GOARCH CC CXX
 
@@ -286,11 +291,10 @@ else
   IS_DEBUG :=
 endif
 
-# Debug builds get a distinct binary name (Ikemen_GO_debug.exe / Ikemen_GO_debug)
-# so they never overwrite the release binary. $(basename) strips the extension
-# ('.exe' on Windows, none elsewhere) before appending the suffix + $(BINEXT).
+# Debug builds get a distinct binary name (Ikemen_GO.amd64_debug.exe / Ikemen_GO.amd64_debug)
+# so they never overwrite the release binary.
 ifeq ($(IS_DEBUG),1)
-  BINNAME := $(basename $(BINNAME))_debug$(BINEXT)
+  BINNAME := $(BINBASE)_debug$(BINEXT)
 endif
 
 ifeq ($(HOST_OS),windows)
