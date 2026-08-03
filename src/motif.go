@@ -1801,7 +1801,6 @@ func loadMotif(def string) (*Motif, error) {
 				if err := assignField(&m, keyParts, value, def); err != nil {
 					LogWarn("Failed to assign key [%s.%s]: %v", sectionName, keyName, err)
 				}
-				break
 			}
 		}
 		for _, sp := range baseSecs {
