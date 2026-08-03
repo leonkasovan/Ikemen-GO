@@ -32,7 +32,8 @@
 #     GO_INSTALL_DIR points at a writable path). No need for apt golang-go.
 #       libx11-dev libxext-dev libxrandr-dev \
 #       libxcursor-dev libxi-dev libxinerama-dev libxss-dev \
-#       libxxf86vm-dev libasound2-dev libgl1-mesa-dev
+#       libxxf86vm-dev libasound2-dev libgl1-mesa-dev \
+#       libgtk-3-dev  (required by sqweek/dialog error dialog)
 #   macOS (Homebrew):
 #     brew install make cmake pkg-config go nasm wget \
 #       molten-vk
@@ -501,7 +502,7 @@ check-go-env:
 				$$sudo_cmd tar -C "$$dest" -xzf "$$tmp/go.tgz" || { \
 					echo "ERROR: failed to extract Go into $$dest (try 'sudo', or set GO_INSTALL_DIR to a writable path)" >&2; \
 					exit 1; }; \
-				if [ -d "$$dest/go" ] && [ "$(GO_INSTALL_DIR)" != "$$dest/go" ]; then \
+				if [ -d "$$dest/go" ] && [ "$(GO_INSTALL_DIR)" != "$${dest%/}/go" ]; then \
 					$$sudo_cmd mv "$$dest/go" "$(GO_INSTALL_DIR)"; \
 				fi; \
 				rm -rf "$$tmp"; \

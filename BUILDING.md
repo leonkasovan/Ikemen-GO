@@ -189,6 +189,24 @@ make install
 > FFmpeg and libxmp are always built from source. SDL2: system lib via
 > pkg-config is preferred; the Makefile falls back to building a dynamic
 > `libSDL2.so` from source when no system SDL2 is installed.
+>
+> Linux arm64 builds automatically use the `armdevice` tag (stderr error
+> dialogs, EGL renderer) — **no GTK3 needed**; `libgtk-3-dev` is only required
+> on Linux desktop (x86-64) builds.
+
+### Building on WSL (Windows Subsystem for Linux)
+
+Build works as a normal Linux build (see prerequisites above). Two WSL-specific notes:
+
+- **Run under WSLg** (default on WSL2): `./build/linux_amd64/Ikemen_GO` opens
+  the window on the Windows desktop. If you have no display, you can instead
+  run the binary on Windows directly — copy the whole `deploy/` folder to
+  Windows and use the `.exe` there.
+- **Build from a native path**: building from `/mnt/c/...` (drvfs) works, but
+  CMake/autotools steps are much slower and occasionally flaky there. For
+  reliable builds, `cp -r` the repo to a Linux path like `~/ikemen` and build
+  from there. If your `~/` home is empty for `sudo`, set `GO_INSTALL_DIR`
+  to a writable path (see below).
 
 ### Build
 
@@ -595,6 +613,10 @@ Then use `top` to see what grew (positive = more allocations in current).
 - **FFmpeg link errors**: run `make ffmpeg` separately to verify the FFmpeg build.
 - **libxmp not found**: run `make xmp` separately to verify the XMP build.
 - **Linux GL compatibility**: try `MESA_GL_VERSION_OVERRIDE=2.1` for a fallback.
+- **Linux (desktop amd64) `gtk+-3.0` / `gl` not found in pkg-config** (cgo deps
+  `sqweek/dialog` and the vendored `gl` bindings): install `libgtk-3-dev
+  libgl1-mesa-dev libglvnd-dev` (see the Linux prerequisites above).
+  `make deps-check` only verifies command-line tools, not pkg-config packages.
 - **Android armeabi-v7a CGo type errors** (`cannot use _Ctype_ulong as _Ctype_size_t`):
   The upstream `reisen` library uses C types that are incompatible on 32-bit ARM.
   The project ships a patched local copy at `packages/reisen/` with the fix.
