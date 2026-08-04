@@ -62,6 +62,9 @@ func selectRenderer(cfgVal string) (Renderer, FontRenderer) {
 	case "Vulkan 1.3":
 		gfx = &Renderer_VK{}
 		gfxFont = &FontRenderer_VK{}
+	case "SDL2 Software":
+		gfx = &Renderer_SW{}
+		gfxFont = &FontRenderer_SW{}
 	default:
 		fmt.Printf("Error: Invalid RenderMode '%s'. Defaulting to OpenGL 3.3.\n", cfgVal)
 		gfx = &Renderer_GL33{}
@@ -70,9 +73,6 @@ func selectRenderer(cfgVal string) (Renderer, FontRenderer) {
 
 	return gfx, gfxFont
 }
-
-
-
 
 // platformDefaultConfig is a no-op on desktop platforms.
 // Platform-specific defaults are only applied on armdevice builds.

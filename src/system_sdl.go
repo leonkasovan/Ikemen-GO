@@ -97,6 +97,8 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 				sdl.GLSetAttribute(sdl.GL_CONTEXT_FLAGS, sdl.GL_CONTEXT_DEBUG_FLAG)
 			}
 			windowFlags |= sdl.WINDOW_OPENGL
+		} else if renderName == "SDL2 Software" {
+			// No GL or Vulkan API required; SDL2 renders the final blit itself.
 		} else {
 			windowFlags |= sdl.WINDOW_VULKAN
 		}

@@ -13,8 +13,8 @@ import (
 	"strings"
 	"unsafe"
 
-	gl "github.com/ikemen-engine/Ikemen-GO/packages/gl/v3.3-core/gl"
 	mgl "github.com/go-gl/mathgl/mgl32"
+	gl "github.com/ikemen-engine/Ikemen-GO/packages/gl/v3.3-core/gl"
 	"github.com/ikemen-engine/Ikemen-GO/packages/go-sdl2/sdl"
 	"golang.org/x/mobile/exp/f32"
 )
@@ -719,24 +719,24 @@ type Renderer_GL33 struct {
 }
 
 type GL33State struct {
-	program             uint32
-	depthTest           bool
-	depthMask           bool
-	invertFrontFace     bool
-	doubleSided         bool
-	blendEnabled        bool
-	blendEquation       BlendEquation
-	blendSrc            BlendFunc
-	blendDst            BlendFunc
-	scissorRect         [4]int32
-	scissorEnabled      bool
-	texCacheTexSerial   []uint64 // Unit to serial number. Sized per GPU
-	texCacheLastUsed    []uint64 // Timer value when the slot was last used. Sized per GPU
-	texCacheTimer       uint64   // Increments on every texture access
+	program           uint32
+	depthTest         bool
+	depthMask         bool
+	invertFrontFace   bool
+	doubleSided       bool
+	blendEnabled      bool
+	blendEquation     BlendEquation
+	blendSrc          BlendFunc
+	blendDst          BlendFunc
+	scissorRect       [4]int32
+	scissorEnabled    bool
+	texCacheTexSerial []uint64 // Unit to serial number. Sized per GPU
+	texCacheLastUsed  []uint64 // Timer value when the slot was last used. Sized per GPU
+	texCacheTimer     uint64   // Increments on every texture access
 
 	// FBO binding cache — avoids redundant gl.BindFramebuffer calls (hot path perf).
-	curDrawFbo          uint32   // Currently bound DRAW_FRAMEBUFFER
-	curReadFbo          uint32   // Currently bound READ_FRAMEBUFFER
+	curDrawFbo uint32 // Currently bound DRAW_FRAMEBUFFER
+	curReadFbo uint32 // Currently bound READ_FRAMEBUFFER
 
 	uniformICache       map[uint32]int32
 	uniformF1Cache      map[uint32]float32
@@ -2670,8 +2670,13 @@ func (r *Renderer_GL33) ResolveBackBuffer() Texture {
 
 // flushSpriteQueueBatched is the desktop fallback: batching is only implemented
 // in the GLES32 backend, so here each deferred call re-renders individually
-// (correct, just not instanced). Batching defaults to off on desktop.
+// (correct, just not instanced). The software backend consumes the resolved
+// calls directly. Batching defaults to off on desktop.
 func flushSpriteQueueBatched(queue []SpriteDrawCall) {
+	if r, ok := gfx.(*Renderer_SW); ok {
+		r.flushSWQueue(queue)
+		return
+	}
 	for i := range queue {
 		if queue[i].isFlat {
 			renderFlatCallImmediate(&queue[i])
