@@ -101,7 +101,7 @@ func memBpp(depth int32) int32 {
 
 // memLog writes a [Mem] prefixed line to the engine log (stderr).
 func memLog(format string, a ...any) {
-	LogDebug("[Mem] "+format, a...)
+	// LogDebug("[Mem] "+format, a...)
 }
 
 // memTextureCreated records a GL asset-texture allocation (generateTexture).
@@ -341,29 +341,29 @@ func perfFrameLog() {
 	}
 	// render/gpu are per rendered frame; action/logic are per loop iteration
 	// (update runs every iteration, skipped renders still tick logic).
-	LogMessage("[FRAME] render=%.1fms action=%.1fms (chars=%.2f[cmd=%.2f prep=%.2f run=%.2f fin=%.2f] upd=%.2f fs=%.2f coll=%.2f) logic=%.1fms gpu=%.1fms flush=%.1fms sprites=%d batches=%d (flat=%d blend=%d rgba=%d trap=%d mask=%d scis=%d slots=%d) renders=%d/%d",
-		float64(renderTimeAccum)/float64(renderFrameCount)/float64(time.Millisecond),
-		float64(actionTimeAccum)/float64(loopIterCount)/float64(time.Millisecond),
-		float64(actionCharAccum)/float64(loopIterCount)/float64(time.Millisecond),
-		float64(charsCmdAccum)/float64(loopIterCount)/float64(time.Millisecond),
-		float64(charsPrepAccum)/float64(loopIterCount)/float64(time.Millisecond),
-		float64(charsRunAccum)/float64(loopIterCount)/float64(time.Millisecond),
-		float64(charsFinAccum)/float64(loopIterCount)/float64(time.Millisecond),
-		float64(actionUpdAccum)/float64(loopIterCount)/float64(time.Millisecond),
-		float64(actionFSAcum)/float64(loopIterCount)/float64(time.Millisecond),
-		float64(actionCollAccum)/float64(loopIterCount)/float64(time.Millisecond),
-		float64(logicTimeAccum)/float64(loopIterCount)/float64(time.Millisecond),
-		float64(gpuTimeAccum)/float64(renderFrameCount)/float64(time.Millisecond),
-		float64(flushTimeAccum)/float64(renderFrameCount)/float64(time.Millisecond),
-		spriteCount,
-		batchCount,
-		batchBreakFlat, batchBreakBlend, batchBreakRgba, batchBreakTrapez,
-		batchBreakMask, batchBreakScis, batchSlotSplits,
-		renderFrameCount, loopIterCount)
-	renderTimeAccum, actionTimeAccum, logicTimeAccum, gpuTimeAccum, flushTimeAccum,
-		actionCharAccum, charsCmdAccum, charsPrepAccum, charsRunAccum, charsFinAccum,
-		actionUpdAccum, actionFSAcum, actionCollAccum,
-		spriteCount, batchCount, batchBreakFlat, batchBreakBlend, batchBreakRgba, batchBreakTrapez,
-		batchBreakMask, batchBreakScis, batchSlotSplits,
-		renderFrameCount, loopIterCount = 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+	// LogMessage("[FRAME] render=%.1fms action=%.1fms (chars=%.2f[cmd=%.2f prep=%.2f run=%.2f fin=%.2f] upd=%.2f fs=%.2f coll=%.2f) logic=%.1fms gpu=%.1fms flush=%.1fms sprites=%d batches=%d (flat=%d blend=%d rgba=%d trap=%d mask=%d scis=%d slots=%d) renders=%d/%d",
+	// 	float64(renderTimeAccum)/float64(renderFrameCount)/float64(time.Millisecond),
+	// 	float64(actionTimeAccum)/float64(loopIterCount)/float64(time.Millisecond),
+	// 	float64(actionCharAccum)/float64(loopIterCount)/float64(time.Millisecond),
+	// 	float64(charsCmdAccum)/float64(loopIterCount)/float64(time.Millisecond),
+	// 	float64(charsPrepAccum)/float64(loopIterCount)/float64(time.Millisecond),
+	// 	float64(charsRunAccum)/float64(loopIterCount)/float64(time.Millisecond),
+	// 	float64(charsFinAccum)/float64(loopIterCount)/float64(time.Millisecond),
+	// 	float64(actionUpdAccum)/float64(loopIterCount)/float64(time.Millisecond),
+	// 	float64(actionFSAcum)/float64(loopIterCount)/float64(time.Millisecond),
+	// 	float64(actionCollAccum)/float64(loopIterCount)/float64(time.Millisecond),
+	// 	float64(logicTimeAccum)/float64(loopIterCount)/float64(time.Millisecond),
+	// 	float64(gpuTimeAccum)/float64(renderFrameCount)/float64(time.Millisecond),
+	// 	float64(flushTimeAccum)/float64(renderFrameCount)/float64(time.Millisecond),
+	// 	spriteCount,
+	// 	batchCount,
+	// 	batchBreakFlat, batchBreakBlend, batchBreakRgba, batchBreakTrapez,
+	// 	batchBreakMask, batchBreakScis, batchSlotSplits,
+	// 	renderFrameCount, loopIterCount)
+	// renderTimeAccum, actionTimeAccum, logicTimeAccum, gpuTimeAccum, flushTimeAccum,
+	// 	actionCharAccum, charsCmdAccum, charsPrepAccum, charsRunAccum, charsFinAccum,
+	// 	actionUpdAccum, actionFSAcum, actionCollAccum,
+	// 	spriteCount, batchCount, batchBreakFlat, batchBreakBlend, batchBreakRgba, batchBreakTrapez,
+	// 	batchBreakMask, batchBreakScis, batchSlotSplits,
+	// 	renderFrameCount, loopIterCount = 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 }

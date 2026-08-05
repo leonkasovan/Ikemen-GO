@@ -156,8 +156,22 @@ func (r *Renderer_SW) rasterRect(q *swQuadState, v0, v1, v2, v3 swVertex, mode i
 		// Constant source color (FillRect): precompute once.
 		rr, gg, bb, aa := applySpritePalfx(q.tint[0], q.tint[1], q.tint[2], q.tint[3], q, true, 1)
 		sa := quant(aa)
-		s := [3]int{quant(rr), quant(gg), quant(bb)}
-		sp := [3]int{sat8(mul255(s[0], sa)), sat8(mul255(s[1], sa)), sat8(mul255(s[2], sa))}
+		s0, s1, s2 := quant(rr), quant(gg), quant(bb)
+		sp0 := sat8(mul255(s0, sa))
+		sp1 := sat8(mul255(s1, sa))
+		sp2 := sat8(mul255(s2, sa))
+		if mode == swBlendAddAlphaOver {
+			// Dominant case: inline alpha-over, no per-pixel call or arrays.
+			for py := py0; py <= py1; py++ {
+				dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
+				for i := 0; i < n; i++ {
+					swBlendAlphaOver(dst[i*4:], sp0, sp1, sp2, sa)
+				}
+			}
+			return
+		}
+		s := [3]int{s0, s1, s2}
+		sp := [3]int{sp0, sp1, sp2}
 		for py := py0; py <= py1; py++ {
 			dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
 			for i := 0; i < n; i++ {
@@ -200,6 +214,44 @@ func (r *Renderer_SW) rasterRect(q *swQuadState, v0, v1, v2, v3 swVertex, mode i
 
 	if q.pal != nil {
 		// Paletted: fixed-point texel stepping, table lookup per pixel.
+		if mode == swBlendAddAlphaOver {
+			// Dominant case: alpha-over needs only the premultiplied rgb + alpha
+			// from the table, so skip the raw-rgb loads and the generic per-pixel
+			// blend call/switch entirely.
+			for py := py0; py <= py1; py++ {
+				wy := float32(r.h) - float32(py) - 0.5
+				tL := (wy - l0.y) / (l1.y - l0.y)
+				tR := (wy - r0.y) / (r1.y - r0.y)
+				ul := l0.u + (l1.u-l0.u)*tL
+				ur := r0.u + (r1.u-r0.u)*tR
+				vl := l0.v + (l1.v-l0.v)*tL
+				vr := r0.v + (r1.v-r0.v)*tR
+				uFP := int32((ul+tx0*(ur-ul))*float32(texW)*(1<<swFP) + 0.5)
+				vFP := int32((vl+tx0*(vr-vl))*float32(texH)*(1<<swFP) + 0.5)
+				du := int32((ur - ul) * float32(texW) * (1 << swFP) / float32(wSpanPix))
+				dv := int32((vr - vl) * float32(texH) * (1 << swFP) / float32(wSpanPix))
+				dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
+				for i := 0; i < n; i++ {
+					sx := int(uFP >> swFP)
+					if sx < 0 {
+						sx = 0
+					} else if sx >= texW {
+						sx = texW - 1
+					}
+					sy := int(vFP >> swFP)
+					if sy < 0 {
+						sy = 0
+					} else if sy >= texH {
+						sy = texH - 1
+					}
+					e := int(texData[sy*texStride+sx]) * 8
+					swBlendAlphaOver(dst[i*4:], int(tab[e]), int(tab[e+1]), int(tab[e+2]), int(tab[e+3]))
+					uFP += du
+					vFP += dv
+				}
+			}
+			return
+		}
 		for py := py0; py <= py1; py++ {
 			wy := float32(r.h) - float32(py) - 0.5
 			tL := (wy - l0.y) / (l1.y - l0.y)
@@ -261,9 +313,17 @@ func (r *Renderer_SW) rasterRect(q *swQuadState, v0, v1, v2, v3 swVertex, mode i
 				rr, gg, bb, aa = applySpritePalfx(rr, gg, bb, aa, q, true, q.alpha)
 				rr, gg, bb = tintMix(rr, gg, bb, aa, q.tint)
 				sa := quant(aa)
-				s := [3]int{quant(rr), quant(gg), quant(bb)}
-				sp := [3]int{sat8(mul255(s[0], sa)), sat8(mul255(s[1], sa)), sat8(mul255(s[2], sa))}
-				swBlendPix(dst[i*4:], s, sp, sa, mode)
+				s0, s1, s2 := quant(rr), quant(gg), quant(bb)
+				sp0 := sat8(mul255(s0, sa))
+				sp1 := sat8(mul255(s1, sa))
+				sp2 := sat8(mul255(s2, sa))
+				if mode == swBlendAddAlphaOver {
+					swBlendAlphaOver(dst[i*4:], sp0, sp1, sp2, sa)
+				} else {
+					s := [3]int{s0, s1, s2}
+					sp := [3]int{sp0, sp1, sp2}
+					swBlendPix(dst[i*4:], s, sp, sa, mode)
+				}
 				u += uStep
 				vv += vStep
 			}
@@ -303,22 +363,30 @@ func (r *Renderer_SW) rasterRect(q *swQuadState, v0, v1, v2, v3 swVertex, mode i
 				sy = texH - 1
 			}
 			o := sy*texStride + sx*bpp
-				rr := float32(texData[o]) / 255
-				gg := float32(texData[o+1]) / 255
-				bb := float32(texData[o+2]) / 255
-				var aa float32 = 1
-				if tex.depth >= 32 {
-					aa = float32(texData[o+3]) / 255
-				}
+			rr := float32(texData[o]) / 255
+			gg := float32(texData[o+1]) / 255
+			bb := float32(texData[o+2]) / 255
+			var aa float32 = 1
+			if tex.depth >= 32 {
+				aa = float32(texData[o+3]) / 255
+			}
 			if q.mask == -1 {
 				aa = 1
 			}
 			rr, gg, bb, aa = applySpritePalfx(rr, gg, bb, aa, q, true, q.alpha)
 			rr, gg, bb = tintMix(rr, gg, bb, aa, q.tint)
 			sa := quant(aa)
-			s := [3]int{quant(rr), quant(gg), quant(bb)}
-			sp := [3]int{sat8(mul255(s[0], sa)), sat8(mul255(s[1], sa)), sat8(mul255(s[2], sa))}
-			swBlendPix(dst[i*4:], s, sp, sa, mode)
+			s0, s1, s2 := quant(rr), quant(gg), quant(bb)
+			sp0 := sat8(mul255(s0, sa))
+			sp1 := sat8(mul255(s1, sa))
+			sp2 := sat8(mul255(s2, sa))
+			if mode == swBlendAddAlphaOver {
+				swBlendAlphaOver(dst[i*4:], sp0, sp1, sp2, sa)
+			} else {
+				s := [3]int{s0, s1, s2}
+				sp := [3]int{sp0, sp1, sp2}
+				swBlendPix(dst[i*4:], s, sp, sa, mode)
+			}
 			uFP += du
 			vFP += dv
 		}
@@ -483,6 +551,10 @@ func shadePix(dst []byte, u, v, winX float32, q *swQuadState, mode int, tab []by
 		sa = quant(aa)
 		s = [3]int{quant(rr), quant(gg), quant(bb)}
 		sp = [3]int{sat8(mul255(s[0], sa)), sat8(mul255(s[1], sa)), sat8(mul255(s[2], sa))}
+	}
+	if mode == swBlendAddAlphaOver {
+		swBlendAlphaOver(dst, sp[0], sp[1], sp[2], sa)
+		return
 	}
 	swBlendPix(dst, s, sp, sa, mode)
 }

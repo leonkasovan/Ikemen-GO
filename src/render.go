@@ -314,14 +314,14 @@ func (s *DrawCallStats) logFrame(frameNo int) {
 	if !sys.cfg.Video.DrawCallLog {
 		return
 	}
-	LogMessage("[BATCH] frame=%d draws=%d batches=%d breaks: shader=%d blend=%d scissor=%d tex=%d pal=%d trapez=%d mask=%d rgba=%d fbo=%d",
-		frameNo,
-		s.TotalDrawCalls, s.TotalBatches,
-		s.BreakShader, s.BreakBlend, s.BreakScissor,
-		s.BreakTexture, s.BreakPalTex,
-		s.BreakTrapez, s.BreakMask, s.BreakIsRgba,
-		s.FBOSwitches,
-	)
+	// LogMessage("[BATCH] frame=%d draws=%d batches=%d breaks: shader=%d blend=%d scissor=%d tex=%d pal=%d trapez=%d mask=%d rgba=%d fbo=%d",
+	// 	frameNo,
+	// 	s.TotalDrawCalls, s.TotalBatches,
+	// 	s.BreakShader, s.BreakBlend, s.BreakScissor,
+	// 	s.BreakTexture, s.BreakPalTex,
+	// 	s.BreakTrapez, s.BreakMask, s.BreakIsRgba,
+	// 	s.FBOSwitches,
+	// )
 }
 
 var drawCallStats DrawCallStats

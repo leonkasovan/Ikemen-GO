@@ -30,6 +30,20 @@ func swState() *swQuadState {
 	}
 }
 
+// mul255 must be byte-exact with the rounded divide-by-255 it replaces. The
+// magic multiply ((a*b+127)*32897)>>23 keeps the hot pixel loops division-free;
+// if a refactor ever drifts it, alpha-over edges pick up a visible ±1 (the
+// "ROUND 1" text regression).
+func TestSWMul255Exact(t *testing.T) {
+	for a := 0; a <= 255; a++ {
+		for b := 0; b <= 255; b++ {
+			if got := mul255(a, b); got != (a*b+127)/255 {
+				t.Fatalf("mul255(%d,%d) = %d, want %d", a, b, got, (a*b+127)/255)
+			}
+		}
+	}
+}
+
 // Full-screen opaque flat fill must produce the exact color.
 func TestSWFlatFill(t *testing.T) {
 	r := newSWTestRenderer(64, 48)

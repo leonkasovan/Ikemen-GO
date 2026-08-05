@@ -11,7 +11,15 @@ import "math"
 
 const swFP = 16 // fixed-point fractional bits for the rasterizer
 
-func mul255(a, b int) int { return (a*b + 127) / 255 }
+// mul255 multiplies two 0..255 values and divides by 255 (rounded). This is the
+// single hottest helper in the software rasterizer — called up to 5x per
+// blended pixel from swBlendPix/swBlendAlphaOver — so it must not use an
+// integer division. ((a*b + 127) * 32897) >> 23 is a magic-multiply that is
+// byte-exact with (a*b+127)/255 on all 65536 input pairs (verified
+// exhaustively) while staying division-free, so blending matches the original
+// rounding exactly (no visible shift). The intermediate (a*b+127)*32897 peaks
+// at 2143305344, safely inside int32 (and int on 32-bit builds).
+func mul255(a, b int) int { return ((a*b + 127) * 32897) >> 23 }
 
 func sat8(v int) int {
 	if v < 0 {
@@ -251,6 +259,23 @@ func swBlendPix(dst []byte, s [3]int, sp [3]int, sa int, mode int) {
 	dst[1] = byte(ng)
 	dst[2] = byte(nb)
 	dst[3] = byte(na)
+}
+
+// swBlendAlphaOver blends one pixel with Add/SrcAlpha/OneMinusSrcAlpha using
+// premultiplied source scalars — the dominant blend mode in the software
+// rasterizer (characters, lifebars, effects). Dedicated from swBlendPix so the
+// hot pixel loops avoid the [3]int temporaries, the by-value array copies and
+// the per-pixel mode switch entirely. Math is identical to swBlendPix's
+// swBlendAddAlphaOver case.
+func swBlendAlphaOver(dst []byte, sp0, sp1, sp2, sa int) {
+	dr := int(dst[0])
+	dg := int(dst[1])
+	db := int(dst[2])
+	da := int(dst[3])
+	dst[0] = byte(sp0 + dr - mul255(dr, sa))
+	dst[1] = byte(sp1 + dg - mul255(dg, sa))
+	dst[2] = byte(sp2 + db - mul255(db, sa))
+	dst[3] = byte(mul255(sa, sa) + da - mul255(da, sa))
 }
 
 // buildPalTable applies the full PalFX chain (plus per-pass alpha, tint and
