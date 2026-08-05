@@ -541,7 +541,7 @@ func (r *Renderer_SW) rasterGeneric(q *swQuadState, v0, v1, v2, v3 swVertex, mod
 					u = 0.5
 				}
 			}
-			shadePix(dstRow[px*4:], u, vv, pX, q, mode, tab)
+			shadePix(dstRow[px*4:], u, vv, q, mode, tab)
 		}
 	}
 }
@@ -580,11 +580,12 @@ func triInside(W0, W1, W2, det float32, w0Strict bool) bool {
 	return W0 <= 0 && W1 <= 0 && W2 <= 0
 }
 
-// shadePix samples, applies PalFX and blends one pixel at normalized (u, v).
-// winX is the fragment's window x, used by the trapezoid correction.
-func shadePix(dst []byte, u, v, winX float32, q *swQuadState, mode int, tab []byte) {
-	var s, sp [3]int
-	var sa int
+// shadePix samples, applies PalFX and blends one pixel at normalized (u, v),
+// writing into dst. The trapezoid correction that used to be here moved into
+// rasterGeneric (it needs the fragment's window x), so the winX parameter was
+// dropped.
+func shadePix(dst []byte, u, v float32, q *swQuadState, mode int, tab []byte) {
+	var s0, s1, s2, sp0, sp1, sp2, sa int
 	if q.fontMode {
 		// TTF glyph: font.frag.glsl math. Coverage is bilinearly sampled from
 		// the glyph texture; the color is min(textColor, 1) * (1,1,1,cov).
@@ -613,20 +614,20 @@ func shadePix(dst []byte, u, v, winX float32, q *swQuadState, mode int, tab []by
 		gg *= q.mult[1]
 		bb *= q.mult[2]
 		sa = quant(aa)
-		s = [3]int{quant(rr), quant(gg), quant(bb)}
-		sp = [3]int{sat8(mul255(s[0], sa)), sat8(mul255(s[1], sa)), sat8(mul255(s[2], sa))}
+		s0, s1, s2 = quant(rr), quant(gg), quant(bb)
+		sp0, sp1, sp2 = sat8(mul255(s0, sa)), sat8(mul255(s1, sa)), sat8(mul255(s2, sa))
 	} else if q.isFlat {
 		rr, gg, bb, aa := applySpritePalfx(q.tint[0], q.tint[1], q.tint[2], q.tint[3], q, true, 1)
 		sa = quant(aa)
-		s = [3]int{quant(rr), quant(gg), quant(bb)}
-		sp = [3]int{sat8(mul255(s[0], sa)), sat8(mul255(s[1], sa)), sat8(mul255(s[2], sa))}
+		s0, s1, s2 = quant(rr), quant(gg), quant(bb)
+		sp0, sp1, sp2 = sat8(mul255(s0, sa)), sat8(mul255(s1, sa)), sat8(mul255(s2, sa))
 	} else if q.tex == nil {
 		return
 	} else if q.pal != nil {
 		e := q.tex.sampleIndex(u, v) * 8
-		sp = [3]int{int(tab[e]), int(tab[e+1]), int(tab[e+2])}
+		sp0, sp1, sp2 = int(tab[e]), int(tab[e+1]), int(tab[e+2])
 		sa = int(tab[e+3])
-		s = [3]int{int(tab[e+4]), int(tab[e+5]), int(tab[e+6])}
+		s0, s1, s2 = int(tab[e+4]), int(tab[e+5]), int(tab[e+6])
 	} else {
 		var rr, gg, bb, aa float32
 		if q.tex.filter {
@@ -640,28 +641,28 @@ func shadePix(dst []byte, u, v, winX float32, q *swQuadState, mode int, tab []by
 		rr, gg, bb, aa = applySpritePalfx(rr, gg, bb, aa, q, true, q.alpha)
 		rr, gg, bb = tintMix(rr, gg, bb, aa, q.tint)
 		sa = quant(aa)
-		s = [3]int{quant(rr), quant(gg), quant(bb)}
-		sp = [3]int{sat8(mul255(s[0], sa)), sat8(mul255(s[1], sa)), sat8(mul255(s[2], sa))}
+		s0, s1, s2 = quant(rr), quant(gg), quant(bb)
+		sp0, sp1, sp2 = sat8(mul255(s0, sa)), sat8(mul255(s1, sa)), sat8(mul255(s2, sa))
 	}
 	// mode is constant per draw; scalar dispatch like the rasterRect loops
 	// (byte-identical to the old swBlendPix cases).
 	switch mode {
 	case swBlendAddAlphaOver:
-		swBlendAlphaOver(dst, sp[0], sp[1], sp[2], sa)
+		swBlendAlphaOver(dst, sp0, sp1, sp2, sa)
 	case swBlendAddOneOne:
-		swBlendAddOneOnePix(dst, s[0], s[1], s[2], sa)
+		swBlendAddOneOnePix(dst, s0, s1, s2, sa)
 	case swBlendAddSrcAlphaOne:
-		swBlendAddSrcAlphaOnePix(dst, sp[0], sp[1], sp[2], sa)
+		swBlendAddSrcAlphaOnePix(dst, sp0, sp1, sp2, sa)
 	case swBlendAddOneInvAlpha:
-		swBlendAddOneInvAlphaPix(dst, s[0], s[1], s[2], sa)
+		swBlendAddOneInvAlphaPix(dst, s0, s1, s2, sa)
 	case swBlendAddZeroInvAlpha:
 		swBlendAddZeroInvAlphaPix(dst, sa)
 	case swBlendSubOneOne:
-		swBlendSubOneOnePix(dst, s[0], s[1], s[2], sa)
+		swBlendSubOneOnePix(dst, s0, s1, s2, sa)
 	case swBlendSubSrcAlphaOne:
-		swBlendSubSrcAlphaOnePix(dst, sp[0], sp[1], sp[2], sa)
+		swBlendSubSrcAlphaOnePix(dst, sp0, sp1, sp2, sa)
 	default: // swBlendReplace
-		swBlendReplacePix(dst, s[0], s[1], s[2], sa)
+		swBlendReplacePix(dst, s0, s1, s2, sa)
 	}
 }
 
