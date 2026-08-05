@@ -153,14 +153,17 @@ func (r *Renderer_SW) rasterRect(q *swQuadState, v0, v1, v2, v3 swVertex, mode i
 	n := px1 - px0 + 1
 
 	if q.isFlat {
-		// Constant source color (FillRect): precompute once.
+		// Constant source color (FillRect): precompute once. The source scalars
+		// are loop-invariant, so the mode switch is hoisted out of the pixel
+		// loops — each mode gets a tight inner loop with no per-pixel branch.
 		rr, gg, bb, aa := applySpritePalfx(q.tint[0], q.tint[1], q.tint[2], q.tint[3], q, true, 1)
 		sa := quant(aa)
 		s0, s1, s2 := quant(rr), quant(gg), quant(bb)
 		sp0 := sat8(mul255(s0, sa))
 		sp1 := sat8(mul255(s1, sa))
 		sp2 := sat8(mul255(s2, sa))
-		if mode == swBlendAddAlphaOver {
+		switch mode {
+		case swBlendAddAlphaOver:
 			// Dominant case: inline alpha-over, no per-pixel call or arrays.
 			for py := py0; py <= py1; py++ {
 				dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
@@ -168,14 +171,54 @@ func (r *Renderer_SW) rasterRect(q *swQuadState, v0, v1, v2, v3 swVertex, mode i
 					swBlendAlphaOver(dst[i*4:], sp0, sp1, sp2, sa)
 				}
 			}
-			return
-		}
-		s := [3]int{s0, s1, s2}
-		sp := [3]int{sp0, sp1, sp2}
-		for py := py0; py <= py1; py++ {
-			dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
-			for i := 0; i < n; i++ {
-				swBlendPix(dst[i*4:], s, sp, sa, mode)
+		case swBlendAddOneOne:
+			for py := py0; py <= py1; py++ {
+				dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
+				for i := 0; i < n; i++ {
+					swBlendAddOneOnePix(dst[i*4:], s0, s1, s2, sa)
+				}
+			}
+		case swBlendAddSrcAlphaOne:
+			for py := py0; py <= py1; py++ {
+				dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
+				for i := 0; i < n; i++ {
+					swBlendAddSrcAlphaOnePix(dst[i*4:], sp0, sp1, sp2, sa)
+				}
+			}
+		case swBlendAddOneInvAlpha:
+			for py := py0; py <= py1; py++ {
+				dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
+				for i := 0; i < n; i++ {
+					swBlendAddOneInvAlphaPix(dst[i*4:], s0, s1, s2, sa)
+				}
+			}
+		case swBlendAddZeroInvAlpha:
+			for py := py0; py <= py1; py++ {
+				dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
+				for i := 0; i < n; i++ {
+					swBlendAddZeroInvAlphaPix(dst[i*4:], sa)
+				}
+			}
+		case swBlendSubOneOne:
+			for py := py0; py <= py1; py++ {
+				dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
+				for i := 0; i < n; i++ {
+					swBlendSubOneOnePix(dst[i*4:], s0, s1, s2, sa)
+				}
+			}
+		case swBlendSubSrcAlphaOne:
+			for py := py0; py <= py1; py++ {
+				dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
+				for i := 0; i < n; i++ {
+					swBlendSubSrcAlphaOnePix(dst[i*4:], sp0, sp1, sp2, sa)
+				}
+			}
+		default: // swBlendReplace
+			for py := py0; py <= py1; py++ {
+				dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
+				for i := 0; i < n; i++ {
+					swBlendReplacePix(dst[i*4:], s0, s1, s2, sa)
+				}
 			}
 		}
 		return
@@ -267,9 +310,9 @@ func (r *Renderer_SW) rasterRect(q *swQuadState, v0, v1, v2, v3 swVertex, mode i
 			dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
 			// mode is constant for the whole draw, so dispatch once per pixel on
 			// scalars loaded straight from the table — no [3]int temporaries and no
-			// swBlendPix call (its array params and per-pixel mode switch were the
-			// hottest overhead in this loop). Each case is byte-identical to the
-			// matching swBlendPix branch.
+			// old swBlendPix call (its array params and per-pixel mode switch were
+			// the hottest overhead in this loop). Each case is byte-identical to
+			// the matching swBlendPix branch.
 			for i := 0; i < n; i++ {
 				sx := int(uFP >> swFP)
 				if sx < 0 {
@@ -338,9 +381,9 @@ func (r *Renderer_SW) rasterRect(q *swQuadState, v0, v1, v2, v3 swVertex, mode i
 				sp2 := sat8(mul255(s2, sa))
 				p := dst[i*4:]
 				// mode is constant per draw, so dispatch once per pixel on the
-				// scalar source values — no [3]int temporaries and no swBlendPix
-				// call (its per-pixel mode switch was the overhead). Each case is
-				// byte-identical to the old branch it replaces.
+				// scalar source values — no [3]int temporaries and no per-pixel
+				// mode switch. Each case is byte-identical to the old branch it
+				// replaces.
 				switch mode {
 				case swBlendAddAlphaOver:
 					swBlendAlphaOver(p, sp0, sp1, sp2, sa)
@@ -600,11 +643,26 @@ func shadePix(dst []byte, u, v, winX float32, q *swQuadState, mode int, tab []by
 		s = [3]int{quant(rr), quant(gg), quant(bb)}
 		sp = [3]int{sat8(mul255(s[0], sa)), sat8(mul255(s[1], sa)), sat8(mul255(s[2], sa))}
 	}
-	if mode == swBlendAddAlphaOver {
+	// mode is constant per draw; scalar dispatch like the rasterRect loops
+	// (byte-identical to the old swBlendPix cases).
+	switch mode {
+	case swBlendAddAlphaOver:
 		swBlendAlphaOver(dst, sp[0], sp[1], sp[2], sa)
-		return
+	case swBlendAddOneOne:
+		swBlendAddOneOnePix(dst, s[0], s[1], s[2], sa)
+	case swBlendAddSrcAlphaOne:
+		swBlendAddSrcAlphaOnePix(dst, sp[0], sp[1], sp[2], sa)
+	case swBlendAddOneInvAlpha:
+		swBlendAddOneInvAlphaPix(dst, s[0], s[1], s[2], sa)
+	case swBlendAddZeroInvAlpha:
+		swBlendAddZeroInvAlphaPix(dst, sa)
+	case swBlendSubOneOne:
+		swBlendSubOneOnePix(dst, s[0], s[1], s[2], sa)
+	case swBlendSubSrcAlphaOne:
+		swBlendSubSrcAlphaOnePix(dst, sp[0], sp[1], sp[2], sa)
+	default: // swBlendReplace
+		swBlendReplacePix(dst, s[0], s[1], s[2], sa)
 	}
-	swBlendPix(dst, s, sp, sa, mode)
 }
 
 // ---- Texture sampling ----

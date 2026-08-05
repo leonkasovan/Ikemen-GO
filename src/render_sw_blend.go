@@ -13,8 +13,8 @@ const swFP = 16 // fixed-point fractional bits for the rasterizer
 
 // mul255 multiplies two 0..255 values and divides by 255 (rounded). This is the
 // single hottest helper in the software rasterizer — called up to 5x per
-// blended pixel from swBlendPix/swBlendAlphaOver — so it must not use an
-// integer division. ((a*b + 127) * 32897) >> 23 is a magic-multiply that is
+// blended pixel from the swBlend*Pix helpers — so it must not use an integer
+// division. ((a*b + 127) * 32897) >> 23 is a magic-multiply that is
 // byte-exact with (a*b+127)/255 on all 65536 input pairs (verified
 // exhaustively) while staying division-free, so blending matches the original
 // rounding exactly (no visible shift). The intermediate (a*b+127)*32897 peaks
@@ -215,58 +215,11 @@ func swBlendMode(q *swQuadState) int {
 	return swBlendReplace
 }
 
-// swBlendPix blends one pixel. s = raw source rgb, sp = source rgb premultiplied
-// by source alpha, sa = source alpha (all 0..255); dst is the framebuffer byte
-// row at the pixel.
-func swBlendPix(dst []byte, s [3]int, sp [3]int, sa int, mode int) {
-	dr := int(dst[0])
-	dg := int(dst[1])
-	db := int(dst[2])
-	da := int(dst[3])
-	var nr, ng, nb, na int
-	switch mode {
-	case swBlendAddOneOne:
-		nr, ng, nb = sat8(dr+s[0]), sat8(dg+s[1]), sat8(db+s[2])
-		na = sat8(da + sa)
-	case swBlendAddSrcAlphaOne:
-		nr, ng, nb = sat8(dr+sp[0]), sat8(dg+sp[1]), sat8(db+sp[2])
-		na = sat8(da + mul255(sa, sa))
-	case swBlendAddOneInvAlpha:
-		nr = dr + s[0] - mul255(dr, sa)
-		ng = dg + s[1] - mul255(dg, sa)
-		nb = db + s[2] - mul255(db, sa)
-		na = da + sa - mul255(da, sa)
-	case swBlendAddAlphaOver:
-		nr = sp[0] + dr - mul255(dr, sa)
-		ng = sp[1] + dg - mul255(dg, sa)
-		nb = sp[2] + db - mul255(db, sa)
-		na = mul255(sa, sa) + da - mul255(da, sa)
-	case swBlendAddZeroInvAlpha:
-		nr = dr - mul255(dr, sa)
-		ng = dg - mul255(dg, sa)
-		nb = db - mul255(db, sa)
-		na = da - mul255(da, sa)
-	case swBlendSubOneOne:
-		nr, ng, nb = sat8(dr-s[0]), sat8(dg-s[1]), sat8(db-s[2])
-		na = sat8(da - sa)
-	case swBlendSubSrcAlphaOne:
-		nr, ng, nb = sat8(dr-sp[0]), sat8(dg-sp[1]), sat8(db-sp[2])
-		na = sat8(da - mul255(sa, sa))
-	default: // swBlendReplace
-		nr, ng, nb, na = s[0], s[1], s[2], sa
-	}
-	dst[0] = byte(nr)
-	dst[1] = byte(ng)
-	dst[2] = byte(nb)
-	dst[3] = byte(na)
-}
-
 // swBlendAlphaOver blends one pixel with Add/SrcAlpha/OneMinusSrcAlpha using
 // premultiplied source scalars — the dominant blend mode in the software
-// rasterizer (characters, lifebars, effects). Dedicated from swBlendPix so the
-// hot pixel loops avoid the [3]int temporaries, the by-value array copies and
-// the per-pixel mode switch entirely. Math is identical to swBlendPix's
-// swBlendAddAlphaOver case.
+// rasterizer (characters, lifebars, effects). Dedicated so the hot pixel loops
+// avoid the [3]int temporaries, the by-value array copies and the per-pixel
+// mode switch entirely.
 func swBlendAlphaOver(dst []byte, sp0, sp1, sp2, sa int) {
 	dr := int(dst[0])
 	dg := int(dst[1])
@@ -278,12 +231,13 @@ func swBlendAlphaOver(dst []byte, sp0, sp1, sp2, sa int) {
 	dst[3] = byte(mul255(sa, sa) + da - mul255(da, sa))
 }
 
-// Scalar blend helpers for the paletted rasterizer loop. The blend mode is
-// constant for an entire draw call, so the loop dispatches once per pixel on
-// scalars read straight from the palette table instead of calling swBlendPix
-// (whose [3]int temporaries, array params and per-pixel mode switch were the
-// hottest overhead in the paletted path). Each helper writes one framebuffer
-// pixel and is byte-identical to the corresponding swBlendPix case.
+// Scalar blend helpers used by every rasterizer inner loop (paletted, RGBA
+// filtered/nearest, flat, and the generic shadePix path). The blend mode is
+// constant for an entire draw call, so the loops dispatch on scalars instead of
+// building [3]int temporaries and switching per pixel (the former swBlendPix
+// overhead). Each helper writes one framebuffer pixel and is byte-identical to
+// the corresponding original swBlendPix case (frozen as swBlendPixRef in
+// render_sw_test.go and verified by TestSWBlendHelpersMatchSwBlendPix).
 
 // swBlendAddOneOnePix — Add, One, One (saturated add).
 func swBlendAddOneOnePix(dst []byte, s0, s1, s2, sa int) {

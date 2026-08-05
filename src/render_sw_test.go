@@ -483,7 +483,7 @@ func TestSWBlendHelpersMatchSwBlendPix(t *testing.T) {
 			sa := rng.Intn(256)
 			var expect [4]byte
 			copy(expect[:], dst[:])
-			swBlendPix(expect[:], s, sp, sa, mode)
+			swBlendPixRef(expect[:], s, sp, sa, mode)
 			copy(got[:], dst[:])
 			switch mode {
 			case swBlendAddOneOne:
@@ -504,7 +504,7 @@ func TestSWBlendHelpersMatchSwBlendPix(t *testing.T) {
 				swBlendReplacePix(got[:], s[0], s[1], s[2], sa)
 			}
 			if expect != got {
-				t.Fatalf("mode %d: swBlendPix=%v helpers=%v (s=%v sp=%v sa=%d dst=%v)",
+				t.Fatalf("mode %d: ref=%v helpers=%v (s=%v sp=%v sa=%d dst=%v)",
 					mode, expect, got, s, sp, sa, dst)
 			}
 		}
@@ -552,6 +552,53 @@ func TestSWRGBAFilteredStable(t *testing.T) {
 			}
 		}
 	}
+}
+
+// The original swBlendPix (removed from production once the scalar helpers
+// replaced it everywhere), frozen as the reference for the equivalence test
+// above. NOTE: if the blend helpers are ever intentionally changed, this frozen
+// copy and the test must be updated to the new reference implementation.
+func swBlendPixRef(dst []byte, s [3]int, sp [3]int, sa int, mode int) {
+	dr := int(dst[0])
+	dg := int(dst[1])
+	db := int(dst[2])
+	da := int(dst[3])
+	var nr, ng, nb, na int
+	switch mode {
+	case swBlendAddOneOne:
+		nr, ng, nb = sat8(dr+s[0]), sat8(dg+s[1]), sat8(db+s[2])
+		na = sat8(da + sa)
+	case swBlendAddSrcAlphaOne:
+		nr, ng, nb = sat8(dr+sp[0]), sat8(dg+sp[1]), sat8(db+sp[2])
+		na = sat8(da + mul255(sa, sa))
+	case swBlendAddOneInvAlpha:
+		nr = dr + s[0] - mul255(dr, sa)
+		ng = dg + s[1] - mul255(dg, sa)
+		nb = db + s[2] - mul255(db, sa)
+		na = da + sa - mul255(da, sa)
+	case swBlendAddAlphaOver:
+		nr = sp[0] + dr - mul255(dr, sa)
+		ng = sp[1] + dg - mul255(dg, sa)
+		nb = sp[2] + db - mul255(db, sa)
+		na = mul255(sa, sa) + da - mul255(da, sa)
+	case swBlendAddZeroInvAlpha:
+		nr = dr - mul255(dr, sa)
+		ng = dg - mul255(dg, sa)
+		nb = db - mul255(db, sa)
+		na = da - mul255(da, sa)
+	case swBlendSubOneOne:
+		nr, ng, nb = sat8(dr-s[0]), sat8(dg-s[1]), sat8(db-s[2])
+		na = sat8(da - sa)
+	case swBlendSubSrcAlphaOne:
+		nr, ng, nb = sat8(dr-sp[0]), sat8(dg-sp[1]), sat8(db-sp[2])
+		na = sat8(da - mul255(sa, sa))
+	default: // swBlendReplace
+		nr, ng, nb, na = s[0], s[1], s[2], sa
+	}
+	dst[0] = byte(nr)
+	dst[1] = byte(ng)
+	dst[2] = byte(nb)
+	dst[3] = byte(na)
 }
 
 // The pre-refactor closure implementation of sampleRGBAFiltered, frozen for the
@@ -634,6 +681,37 @@ func TestSWRGBAFilteredAlphaOver(t *testing.T) {
 		rr, gg, bb, aa = swPix(r, 1, py)
 		if rr != 0 || gg != 127 || bb != 128 || aa != 191 {
 			t.Fatalf("filtered alpha-over col 1 row %d: got (%d,%d,%d,%d), want (0,127,128,191)", py, rr, gg, bb, aa)
+		}
+	}
+}
+
+// The flat path's outer mode dispatch must wire s (raw) vs sp (premul) to the
+// right helpers. A semi-transparent red source distinguishes them over black:
+// AddOneOne uses raw s → (255,0,0), AddSrcAlphaOne uses premul sp → (128,0,0),
+// so a swapped argument in any flat switch case fails these exact checks.
+func TestSWFlatFillModeWiring(t *testing.T) {
+	cases := []struct {
+		name string
+		src  BlendFunc
+		dst  BlendFunc
+		want [4]int
+	}{
+		{"AddOneOne", BlendOne, BlendOne, [4]int{255, 0, 0, 128}},
+		{"AddSrcAlphaOne", BlendSrcAlpha, BlendOne, [4]int{128, 0, 0, 64}},
+	}
+	for _, c := range cases {
+		r := newSWTestRenderer(4, 2)
+		q := swState()
+		q.isFlat = true
+		q.tint = [4]float32{1, 0, 0, 0.5} // semi-transparent red
+		q.src = c.src
+		q.dst = c.dst
+		r.rasterizeQuadWindow(q,
+			swVertex{4, 2, 1, 1}, swVertex{4, 0, 1, 0},
+			swVertex{0, 2, 0, 1}, swVertex{0, 0, 0, 0})
+		rr, gg, bb, aa := swPix(r, 2, 1)
+		if rr != c.want[0] || gg != c.want[1] || bb != c.want[2] || aa != c.want[3] {
+			t.Fatalf("flat %s: got (%d,%d,%d,%d), want %v", c.name, rr, gg, bb, aa, c.want)
 		}
 	}
 }
