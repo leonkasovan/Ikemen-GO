@@ -265,6 +265,11 @@ func (r *Renderer_SW) rasterRect(q *swQuadState, v0, v1, v2, v3 swVertex, mode i
 			du := int32((ur - ul) * float32(texW) * (1 << swFP) / float32(wSpanPix))
 			dv := int32((vr - vl) * float32(texH) * (1 << swFP) / float32(wSpanPix))
 			dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
+			// mode is constant for the whole draw, so dispatch once per pixel on
+			// scalars loaded straight from the table — no [3]int temporaries and no
+			// swBlendPix call (its array params and per-pixel mode switch were the
+			// hottest overhead in this loop). Each case is byte-identical to the
+			// matching swBlendPix branch.
 			for i := 0; i < n; i++ {
 				sx := int(uFP >> swFP)
 				if sx < 0 {
@@ -279,10 +284,24 @@ func (r *Renderer_SW) rasterRect(q *swQuadState, v0, v1, v2, v3 swVertex, mode i
 					sy = texH - 1
 				}
 				e := int(texData[sy*texStride+sx]) * 8
-				sp := [3]int{int(tab[e]), int(tab[e+1]), int(tab[e+2])}
-				sa := int(tab[e+3])
-				s := [3]int{int(tab[e+4]), int(tab[e+5]), int(tab[e+6])}
-				swBlendPix(dst[i*4:], s, sp, sa, mode)
+				p := dst[i*4:]
+				// [0..2]=premul rgb, [3]=sa, [4..6]=raw rgb (see buildPalTable).
+				switch mode {
+				case swBlendAddOneOne:
+					swBlendAddOneOnePix(p, int(tab[e+4]), int(tab[e+5]), int(tab[e+6]), int(tab[e+3]))
+				case swBlendAddSrcAlphaOne:
+					swBlendAddSrcAlphaOnePix(p, int(tab[e]), int(tab[e+1]), int(tab[e+2]), int(tab[e+3]))
+				case swBlendAddOneInvAlpha:
+					swBlendAddOneInvAlphaPix(p, int(tab[e+4]), int(tab[e+5]), int(tab[e+6]), int(tab[e+3]))
+				case swBlendAddZeroInvAlpha:
+					swBlendAddZeroInvAlphaPix(p, int(tab[e+3]))
+				case swBlendSubOneOne:
+					swBlendSubOneOnePix(p, int(tab[e+4]), int(tab[e+5]), int(tab[e+6]), int(tab[e+3]))
+				case swBlendSubSrcAlphaOne:
+					swBlendSubSrcAlphaOnePix(p, int(tab[e]), int(tab[e+1]), int(tab[e+2]), int(tab[e+3]))
+				default: // swBlendReplace
+					swBlendReplacePix(p, int(tab[e+4]), int(tab[e+5]), int(tab[e+6]), int(tab[e+3]))
+				}
 				uFP += du
 				vFP += dv
 			}
@@ -621,6 +640,10 @@ func (t *swTexture) sampleRGBA(u, v float32) (float32, float32, float32, float32
 }
 
 // sampleRGBAFiltered returns the bilinearly filtered texel (CLAMP_TO_EDGE).
+// Same float32 math as the GL sprite shader's bilinear sample. Written without
+// closures — the old lerp/px closures were the two hottest children of this
+// function in profiles; inlined direct code lets the compiler keep the corner
+// texels in registers.
 func (t *swTexture) sampleRGBAFiltered(u, v float32) (float32, float32, float32, float32) {
 	w := int(t.width)
 	h := int(t.height)
@@ -637,24 +660,37 @@ func (t *swTexture) sampleRGBAFiltered(u, v float32) (float32, float32, float32,
 		bpp = 1
 	}
 	d := t.data
-	lerp := func(a, b, f float32) float32 { return a + (b-a)*f }
-	px := func(o int) (float32, float32, float32, float32) {
-		r := float32(d[o]) / 255
-		g := float32(d[o+1]) / 255
-		b := float32(d[o+2]) / 255
-		a := float32(1)
-		if t.depth >= 32 {
-			a = float32(d[o+3]) / 255
-		}
-		return r, g, b, a
+	o00 := (y0*w + x0) * bpp
+	o10 := (y0*w + x1) * bpp
+	o01 := (y1*w + x0) * bpp
+	o11 := (y1*w + x1) * bpp
+	// Corner texels (alpha = 1 for 24-bit sources), then lerp rows and column:
+	// r = lerp(lerp(r00,r10,fx), lerp(r01,r11,fx), fy). The float32 operation
+	// order is unchanged from the closure version, so results are bit-identical.
+	if t.depth >= 32 {
+		r00, g00, b00, a00 := float32(d[o00])/255, float32(d[o00+1])/255, float32(d[o00+2])/255, float32(d[o00+3])/255
+		r10, g10, b10, a10 := float32(d[o10])/255, float32(d[o10+1])/255, float32(d[o10+2])/255, float32(d[o10+3])/255
+		r01, g01, b01, a01 := float32(d[o01])/255, float32(d[o01+1])/255, float32(d[o01+2])/255, float32(d[o01+3])/255
+		r11, g11, b11, a11 := float32(d[o11])/255, float32(d[o11+1])/255, float32(d[o11+2])/255, float32(d[o11+3])/255
+		r0 := r00 + (r10-r00)*fx
+		g0 := g00 + (g10-g00)*fx
+		b0f := b00 + (b10-b00)*fx
+		a0 := a00 + (a10-a00)*fx
+		r1 := r01 + (r11-r01)*fx
+		g1 := g01 + (g11-g01)*fx
+		b1f := b01 + (b11-b01)*fx
+		a1 := a01 + (a11-a01)*fx
+		return r0 + (r1-r0)*fy, g0 + (g1-g0)*fy, b0f + (b1f-b0f)*fy, a0 + (a1-a0)*fy
 	}
-	r00, g00, b00, a00 := px(y0*w*bpp + x0*bpp)
-	r10, g10, b10, a10 := px(y0*w*bpp + x1*bpp)
-	r01, g01, b01, a01 := px(y1*w*bpp + x0*bpp)
-	r11, g11, b11, a11 := px(y1*w*bpp + x1*bpp)
-	r := lerp(lerp(r00, r10, fx), lerp(r01, r11, fx), fy)
-	g := lerp(lerp(g00, g10, fx), lerp(g01, g11, fx), fy)
-	b := lerp(lerp(b00, b10, fx), lerp(b01, b11, fx), fy)
-	a := lerp(lerp(a00, a10, fx), lerp(a01, a11, fx), fy)
-	return r, g, b, a
+	r00, g00, b00 := float32(d[o00])/255, float32(d[o00+1])/255, float32(d[o00+2])/255
+	r10, g10, b10 := float32(d[o10])/255, float32(d[o10+1])/255, float32(d[o10+2])/255
+	r01, g01, b01 := float32(d[o01])/255, float32(d[o01+1])/255, float32(d[o01+2])/255
+	r11, g11, b11 := float32(d[o11])/255, float32(d[o11+1])/255, float32(d[o11+2])/255
+	r0 := r00 + (r10-r00)*fx
+	g0 := g00 + (g10-g00)*fx
+	b0f := b00 + (b10-b00)*fx
+	r1 := r01 + (r11-r01)*fx
+	g1 := g01 + (g11-g01)*fx
+	b1f := b01 + (b11-b01)*fx
+	return r0 + (r1-r0)*fy, g0 + (g1-g0)*fy, b0f + (b1f-b0f)*fy, 1
 }

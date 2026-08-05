@@ -3,6 +3,8 @@
 package main
 
 import (
+	"math"
+	"math/rand"
 	"testing"
 
 	mgl "github.com/go-gl/mathgl/mgl32"
@@ -71,8 +73,8 @@ func TestSWPalettedSprite(t *testing.T) {
 	tex.data = []byte{0, 1, 1, 0} // checkerboard of indices
 	pal := &swTexture{width: 256, height: 1, depth: 32, palSlot: true, serial: 2}
 	pal.data = make([]byte, 1024)
-	pal.data[0], pal.data[1], pal.data[2], pal.data[3] = 255, 0, 0, 255   // idx 0: red, opaque
-	pal.data[4], pal.data[5], pal.data[6], pal.data[7] = 0, 0, 255, 255   // idx 1: blue, opaque
+	pal.data[0], pal.data[1], pal.data[2], pal.data[3] = 255, 0, 0, 255 // idx 0: red, opaque
+	pal.data[4], pal.data[5], pal.data[6], pal.data[7] = 0, 0, 255, 255 // idx 1: blue, opaque
 
 	q := swState()
 	q.tex = tex
@@ -227,8 +229,8 @@ func TestSWStalePaletteIgnoredOnRGBA(t *testing.T) {
 	r := newSWTestRenderer(64, 48)
 	pal := &swTexture{width: 256, height: 1, depth: 32, palSlot: true, serial: 20}
 	pal.data = make([]byte, 1024)
-	pal.data[0], pal.data[1], pal.data[2], pal.data[3] = 255, 0, 0, 255   // idx 0: red
-	pal.data[4], pal.data[5], pal.data[6], pal.data[7] = 0, 0, 255, 255   // idx 1: blue
+	pal.data[0], pal.data[1], pal.data[2], pal.data[3] = 255, 0, 0, 255 // idx 0: red
+	pal.data[4], pal.data[5], pal.data[6], pal.data[7] = 0, 0, 255, 255 // idx 1: blue
 
 	// RGBA 2x2: {green, red; blue, yellow} (row 0 on top).
 	tex32 := &swTexture{width: 2, height: 2, depth: 32, serial: 21}
@@ -459,6 +461,139 @@ func TestSWClippedQuadUV(t *testing.T) {
 			t.Fatalf("clipped filtered px63: got (%d,..,%d), want red-dominant mix", rr, bb)
 		}
 	}
+}
+
+// The scalar blend helpers (swBlendAddOneOne & co., used by the paletted
+// rasterizer loop) must be byte-identical to swBlendPix's per-mode cases for
+// every mode and every input — the rasterizer rewrote swBlendPix calls into
+// per-pixel helper dispatch and any drift shows up as off-by-one colors.
+func TestSWBlendHelpersMatchSwBlendPix(t *testing.T) {
+	rng := rand.New(rand.NewSource(0xC0FFEE))
+	for mode := swBlendAddOneOne; mode <= swBlendReplace; mode++ {
+		for iter := 0; iter < 4000; iter++ {
+			var dst, got [4]byte
+			for i := range dst {
+				dst[i] = byte(rng.Intn(256))
+			}
+			var s, sp [3]int
+			for i := range s {
+				s[i] = rng.Intn(256)
+				sp[i] = rng.Intn(256)
+			}
+			sa := rng.Intn(256)
+			var expect [4]byte
+			copy(expect[:], dst[:])
+			swBlendPix(expect[:], s, sp, sa, mode)
+			copy(got[:], dst[:])
+			switch mode {
+			case swBlendAddOneOne:
+				swBlendAddOneOnePix(got[:], s[0], s[1], s[2], sa)
+			case swBlendAddSrcAlphaOne:
+				swBlendAddSrcAlphaOnePix(got[:], sp[0], sp[1], sp[2], sa)
+			case swBlendAddOneInvAlpha:
+				swBlendAddOneInvAlphaPix(got[:], s[0], s[1], s[2], sa)
+			case swBlendAddAlphaOver:
+				swBlendAlphaOver(got[:], sp[0], sp[1], sp[2], sa)
+			case swBlendAddZeroInvAlpha:
+				swBlendAddZeroInvAlphaPix(got[:], sa)
+			case swBlendSubOneOne:
+				swBlendSubOneOnePix(got[:], s[0], s[1], s[2], sa)
+			case swBlendSubSrcAlphaOne:
+				swBlendSubSrcAlphaOnePix(got[:], sp[0], sp[1], sp[2], sa)
+			default:
+				swBlendReplacePix(got[:], s[0], s[1], s[2], sa)
+			}
+			if expect != got {
+				t.Fatalf("mode %d: swBlendPix=%v helpers=%v (s=%v sp=%v sa=%d dst=%v)",
+					mode, expect, got, s, sp, sa, dst)
+			}
+		}
+	}
+}
+
+// The closure-free sampleRGBAFiltered must be bit-identical to the original
+// closure implementation across the whole (u,v) domain and texture sizes — a
+// 1-ULP float drift would shift blended pixel rounding (the same class of
+// regression as the mul255 approximation).
+func TestSWRGBAFilteredStable(t *testing.T) {
+	makeTex := func(w, h int, depth int, data []byte) *swTexture {
+		return &swTexture{width: int32(w), height: int32(h), depth: int32(depth), filter: true, data: data}
+	}
+	textures := []*swTexture{
+		makeTex(1, 1, 32, []byte{10, 20, 30, 40}),
+		makeTex(2, 2, 32, []byte{
+			0, 255, 0, 255, 255, 0, 0, 255,
+			0, 0, 255, 255, 255, 255, 0, 255,
+		}),
+		makeTex(4, 3, 32, []byte{
+			255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255,
+			1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+			16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1,
+		}),
+		makeTex(3, 5, 24, []byte{ // 24-bit: alpha must stay 1
+			255, 0, 0, 0, 255, 0, 0, 0, 255,
+			1, 2, 3, 4, 5, 6, 7, 8, 9,
+			9, 8, 7, 6, 5, 4, 3, 2, 1,
+			128, 64, 32, 16, 8, 4, 2, 1, 0,
+			0, 1, 2, 3, 4, 5, 6, 7, 8,
+		}),
+	}
+	for _, tex := range textures {
+		for i := 0; i <= 256; i++ {
+			u := float32(i) / 256
+			for j := 0; j <= 256; j++ {
+				v := float32(j) / 256
+				rn, gn, bn, an := tex.sampleRGBAFiltered(u, v)
+				ro, go_, bo, ao := sampleRGBAFilteredOld(tex, u, v)
+				if rn != ro || gn != go_ || bn != bo || an != ao {
+					t.Fatalf("%dx%x d%d u=%v v=%v: new=(%v,%v,%v,%v) old=(%v,%v,%v,%v)",
+						tex.width, tex.height, tex.depth, u, v, rn, gn, bn, an, ro, go_, bo, ao)
+				}
+			}
+		}
+	}
+}
+
+// The pre-refactor closure implementation of sampleRGBAFiltered, frozen for the
+// stability test above. NOTE: if the sampler is ever intentionally changed
+// (e.g. integer bilinear), this frozen copy and the test must be updated to
+// the new reference implementation.
+func sampleRGBAFilteredOld(t *swTexture, u, v float32) (float32, float32, float32, float32) {
+	w := int(t.width)
+	h := int(t.height)
+	x0 := int(math.Floor(float64(u*float32(w) - 0.5)))
+	y0 := int(math.Floor(float64(v*float32(h) - 0.5)))
+	fx := u*float32(w) - 0.5 - float32(x0)
+	fy := v*float32(h) - 0.5 - float32(y0)
+	x0 = swClampIdx(x0, w)
+	y0 = swClampIdx(y0, h)
+	x1 := swClampIdx(x0+1, w)
+	y1 := swClampIdx(y0+1, h)
+	bpp := int(t.depth / 8)
+	if bpp < 1 {
+		bpp = 1
+	}
+	d := t.data
+	lerp := func(a, b, f float32) float32 { return a + (b-a)*f }
+	px := func(o int) (float32, float32, float32, float32) {
+		r := float32(d[o]) / 255
+		g := float32(d[o+1]) / 255
+		b := float32(d[o+2]) / 255
+		a := float32(1)
+		if t.depth >= 32 {
+			a = float32(d[o+3]) / 255
+		}
+		return r, g, b, a
+	}
+	r00, g00, b00, a00 := px(y0*w*bpp + x0*bpp)
+	r10, g10, b10, a10 := px(y0*w*bpp + x1*bpp)
+	r01, g01, b01, a01 := px(y1*w*bpp + x0*bpp)
+	r11, g11, b11, a11 := px(y1*w*bpp + x1*bpp)
+	r := lerp(lerp(r00, r10, fx), lerp(r01, r11, fx), fy)
+	g := lerp(lerp(g00, g10, fx), lerp(g01, g11, fx), fy)
+	b := lerp(lerp(b00, b10, fx), lerp(b01, b11, fx), fy)
+	a := lerp(lerp(a00, a10, fx), lerp(a01, a11, fx), fy)
+	return r, g, b, a
 }
 
 // Rotated quad through the generic path (45° rotation of a 4x4 sprite).

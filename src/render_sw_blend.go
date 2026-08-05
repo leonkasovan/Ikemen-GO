@@ -278,6 +278,75 @@ func swBlendAlphaOver(dst []byte, sp0, sp1, sp2, sa int) {
 	dst[3] = byte(mul255(sa, sa) + da - mul255(da, sa))
 }
 
+// Scalar blend helpers for the paletted rasterizer loop. The blend mode is
+// constant for an entire draw call, so the loop dispatches once per pixel on
+// scalars read straight from the palette table instead of calling swBlendPix
+// (whose [3]int temporaries, array params and per-pixel mode switch were the
+// hottest overhead in the paletted path). Each helper writes one framebuffer
+// pixel and is byte-identical to the corresponding swBlendPix case.
+
+// swBlendAddOneOnePix — Add, One, One (saturated add).
+func swBlendAddOneOnePix(dst []byte, s0, s1, s2, sa int) {
+	dr, dg, db, da := int(dst[0]), int(dst[1]), int(dst[2]), int(dst[3])
+	dst[0] = byte(sat8(dr + s0))
+	dst[1] = byte(sat8(dg + s1))
+	dst[2] = byte(sat8(db + s2))
+	dst[3] = byte(sat8(da + sa))
+}
+
+// swBlendAddSrcAlphaOnePix — Add, SrcAlpha, One (premultiplied source).
+func swBlendAddSrcAlphaOnePix(dst []byte, sp0, sp1, sp2, sa int) {
+	dr, dg, db, da := int(dst[0]), int(dst[1]), int(dst[2]), int(dst[3])
+	dst[0] = byte(sat8(dr + sp0))
+	dst[1] = byte(sat8(dg + sp1))
+	dst[2] = byte(sat8(db + sp2))
+	dst[3] = byte(sat8(da + mul255(sa, sa)))
+}
+
+// swBlendAddOneInvAlphaPix — Add, One, OneMinusSrcAlpha.
+func swBlendAddOneInvAlphaPix(dst []byte, s0, s1, s2, sa int) {
+	dr, dg, db, da := int(dst[0]), int(dst[1]), int(dst[2]), int(dst[3])
+	dst[0] = byte(dr + s0 - mul255(dr, sa))
+	dst[1] = byte(dg + s1 - mul255(dg, sa))
+	dst[2] = byte(db + s2 - mul255(db, sa))
+	dst[3] = byte(da + sa - mul255(da, sa))
+}
+
+// swBlendAddZeroInvAlphaPix — Add, Zero, OneMinusSrcAlpha (scale dst by 1-sa).
+func swBlendAddZeroInvAlphaPix(dst []byte, sa int) {
+	dr, dg, db, da := int(dst[0]), int(dst[1]), int(dst[2]), int(dst[3])
+	dst[0] = byte(dr - mul255(dr, sa))
+	dst[1] = byte(dg - mul255(dg, sa))
+	dst[2] = byte(db - mul255(db, sa))
+	dst[3] = byte(da - mul255(da, sa))
+}
+
+// swBlendSubOneOnePix — ReverseSubtract, One, One.
+func swBlendSubOneOnePix(dst []byte, s0, s1, s2, sa int) {
+	dr, dg, db, da := int(dst[0]), int(dst[1]), int(dst[2]), int(dst[3])
+	dst[0] = byte(sat8(dr - s0))
+	dst[1] = byte(sat8(dg - s1))
+	dst[2] = byte(sat8(db - s2))
+	dst[3] = byte(sat8(da - sa))
+}
+
+// swBlendSubSrcAlphaOnePix — ReverseSubtract, SrcAlpha, One.
+func swBlendSubSrcAlphaOnePix(dst []byte, sp0, sp1, sp2, sa int) {
+	dr, dg, db, da := int(dst[0]), int(dst[1]), int(dst[2]), int(dst[3])
+	dst[0] = byte(sat8(dr - sp0))
+	dst[1] = byte(sat8(dg - sp1))
+	dst[2] = byte(sat8(db - sp2))
+	dst[3] = byte(sat8(da - mul255(sa, sa)))
+}
+
+// swBlendReplacePix — write the source color and alpha outright.
+func swBlendReplacePix(dst []byte, s0, s1, s2, sa int) {
+	dst[0] = byte(s0)
+	dst[1] = byte(s1)
+	dst[2] = byte(s2)
+	dst[3] = byte(sa)
+}
+
 // buildPalTable applies the full PalFX chain (plus per-pass alpha, tint and
 // premultiplication) to a palette texture once per draw call, so the inner
 // loops only do a table lookup. Layout per entry (8 bytes):
