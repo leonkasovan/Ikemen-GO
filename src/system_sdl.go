@@ -208,6 +208,15 @@ func (w *Window) SetIcon(icon []image.Image) {
 }
 
 func (w *Window) SetSwapInterval(interval int) {
+	// The SDL2 Software renderer's present path stalls ~30ms/frame when VSync is
+	// enabled (deep FPS dips during round transitions and the win/result screen),
+	// so it always presents unsynchronized regardless of the config value.
+	if gfx.GetName() == "SDL2 Software" {
+		if interval != 0 {
+			LogMessage("[SDL2 Software] VSync forced off: software present path stalls when synced")
+		}
+		interval = 0
+	}
 	gfx.SetVSync(interval)
 }
 
