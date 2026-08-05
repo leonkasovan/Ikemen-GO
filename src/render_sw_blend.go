@@ -21,6 +21,18 @@ const swFP = 16 // fixed-point fractional bits for the rasterizer
 // at 2143305344, safely inside int32 (and int on 32-bit builds).
 func mul255(a, b int) int { return ((a*b + 127) * 32897) >> 23 }
 
+// mul255SASATab precomputes mul255(sa, sa) for sa in 0..255. The alpha-over
+// and SrcAlpha-One formulas evaluate it per pixel; the 256-entry lookup
+// replaces the 4-op magic-multiply chain with a single hot-L1 load. Byte-exact
+// by construction (each entry is mul255(i, i), asserted by TestSWMul255SASATab).
+var mul255SASATab [256]byte
+
+func init() {
+	for i := range mul255SASATab {
+		mul255SASATab[i] = byte(mul255(i, i))
+	}
+}
+
 func sat8(v int) int {
 	if v < 0 {
 		return 0
@@ -217,30 +229,29 @@ func swBlendMode(q *swQuadState) int {
 
 // swBlendAlphaOver blends one pixel with Add/SrcAlpha/OneMinusSrcAlpha using
 // premultiplied source scalars — the dominant blend mode in the software
-// rasterizer (characters, lifebars, effects). Dedicated so the hot pixel loops
-// avoid the [3]int temporaries, the by-value array copies and the per-pixel
-// mode switch entirely.
-func swBlendAlphaOver(dst []byte, sp0, sp1, sp2, sa int) {
-	dr := int(dst[0])
-	dg := int(dst[1])
-	db := int(dst[2])
-	da := int(dst[3])
+// rasterizer (characters, lifebars, effects). The destination is a *[4]byte
+// (not a slice) so the hot pixel loops skip the per-pixel bounds checks a
+// []byte param would re-emit for every dst[i]; callers convert once with
+// (*[4]byte)(row[i*4:]).
+func swBlendAlphaOver(dst *[4]byte, sp0, sp1, sp2, sa int) {
+	dr, dg, db, da := int(dst[0]), int(dst[1]), int(dst[2]), int(dst[3])
 	dst[0] = byte(sp0 + dr - mul255(dr, sa))
 	dst[1] = byte(sp1 + dg - mul255(dg, sa))
 	dst[2] = byte(sp2 + db - mul255(db, sa))
-	dst[3] = byte(mul255(sa, sa) + da - mul255(da, sa))
+	dst[3] = byte(int(mul255SASATab[sa]) + da - mul255(da, sa))
 }
 
 // Scalar blend helpers used by every rasterizer inner loop (paletted, RGBA
 // filtered/nearest, flat, and the generic shadePix path). The blend mode is
 // constant for an entire draw call, so the loops dispatch on scalars instead of
 // building [3]int temporaries and switching per pixel (the former swBlendPix
-// overhead). Each helper writes one framebuffer pixel and is byte-identical to
-// the corresponding original swBlendPix case (frozen as swBlendPixRef in
+// overhead). Each helper writes one framebuffer pixel through a *[4]byte (so
+// the loops skip per-pixel slice bounds checks) and is byte-identical to the
+// corresponding original swBlendPix case (frozen as swBlendPixRef in
 // render_sw_test.go and verified by TestSWBlendHelpersMatchSwBlendPix).
 
 // swBlendAddOneOnePix — Add, One, One (saturated add).
-func swBlendAddOneOnePix(dst []byte, s0, s1, s2, sa int) {
+func swBlendAddOneOnePix(dst *[4]byte, s0, s1, s2, sa int) {
 	dr, dg, db, da := int(dst[0]), int(dst[1]), int(dst[2]), int(dst[3])
 	dst[0] = byte(sat8(dr + s0))
 	dst[1] = byte(sat8(dg + s1))
@@ -249,16 +260,16 @@ func swBlendAddOneOnePix(dst []byte, s0, s1, s2, sa int) {
 }
 
 // swBlendAddSrcAlphaOnePix — Add, SrcAlpha, One (premultiplied source).
-func swBlendAddSrcAlphaOnePix(dst []byte, sp0, sp1, sp2, sa int) {
+func swBlendAddSrcAlphaOnePix(dst *[4]byte, sp0, sp1, sp2, sa int) {
 	dr, dg, db, da := int(dst[0]), int(dst[1]), int(dst[2]), int(dst[3])
 	dst[0] = byte(sat8(dr + sp0))
 	dst[1] = byte(sat8(dg + sp1))
 	dst[2] = byte(sat8(db + sp2))
-	dst[3] = byte(sat8(da + mul255(sa, sa)))
+	dst[3] = byte(sat8(da + int(mul255SASATab[sa])))
 }
 
 // swBlendAddOneInvAlphaPix — Add, One, OneMinusSrcAlpha.
-func swBlendAddOneInvAlphaPix(dst []byte, s0, s1, s2, sa int) {
+func swBlendAddOneInvAlphaPix(dst *[4]byte, s0, s1, s2, sa int) {
 	dr, dg, db, da := int(dst[0]), int(dst[1]), int(dst[2]), int(dst[3])
 	dst[0] = byte(dr + s0 - mul255(dr, sa))
 	dst[1] = byte(dg + s1 - mul255(dg, sa))
@@ -267,7 +278,7 @@ func swBlendAddOneInvAlphaPix(dst []byte, s0, s1, s2, sa int) {
 }
 
 // swBlendAddZeroInvAlphaPix — Add, Zero, OneMinusSrcAlpha (scale dst by 1-sa).
-func swBlendAddZeroInvAlphaPix(dst []byte, sa int) {
+func swBlendAddZeroInvAlphaPix(dst *[4]byte, sa int) {
 	dr, dg, db, da := int(dst[0]), int(dst[1]), int(dst[2]), int(dst[3])
 	dst[0] = byte(dr - mul255(dr, sa))
 	dst[1] = byte(dg - mul255(dg, sa))
@@ -276,7 +287,7 @@ func swBlendAddZeroInvAlphaPix(dst []byte, sa int) {
 }
 
 // swBlendSubOneOnePix — ReverseSubtract, One, One.
-func swBlendSubOneOnePix(dst []byte, s0, s1, s2, sa int) {
+func swBlendSubOneOnePix(dst *[4]byte, s0, s1, s2, sa int) {
 	dr, dg, db, da := int(dst[0]), int(dst[1]), int(dst[2]), int(dst[3])
 	dst[0] = byte(sat8(dr - s0))
 	dst[1] = byte(sat8(dg - s1))
@@ -285,16 +296,16 @@ func swBlendSubOneOnePix(dst []byte, s0, s1, s2, sa int) {
 }
 
 // swBlendSubSrcAlphaOnePix — ReverseSubtract, SrcAlpha, One.
-func swBlendSubSrcAlphaOnePix(dst []byte, sp0, sp1, sp2, sa int) {
+func swBlendSubSrcAlphaOnePix(dst *[4]byte, sp0, sp1, sp2, sa int) {
 	dr, dg, db, da := int(dst[0]), int(dst[1]), int(dst[2]), int(dst[3])
 	dst[0] = byte(sat8(dr - sp0))
 	dst[1] = byte(sat8(dg - sp1))
 	dst[2] = byte(sat8(db - sp2))
-	dst[3] = byte(sat8(da - mul255(sa, sa)))
+	dst[3] = byte(sat8(da - int(mul255SASATab[sa])))
 }
 
 // swBlendReplacePix — write the source color and alpha outright.
-func swBlendReplacePix(dst []byte, s0, s1, s2, sa int) {
+func swBlendReplacePix(dst *[4]byte, s0, s1, s2, sa int) {
 	dst[0] = byte(s0)
 	dst[1] = byte(s1)
 	dst[2] = byte(s2)

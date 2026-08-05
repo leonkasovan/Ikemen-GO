@@ -37,6 +37,13 @@ func swState() *swQuadState {
 // if a refactor ever drifts it, alpha-over edges pick up a visible ±1 (the
 // "ROUND 1" text regression).
 func TestSWMul255Exact(t *testing.T) {
+	// The sa² lookup table used by the alpha-over / SrcAlpha-One helpers must
+	// match mul255(i, i) for every entry.
+	for i := 0; i < 256; i++ {
+		if int(mul255SASATab[i]) != mul255(i, i) {
+			t.Fatalf("mul255SASATab[%d] = %d, want %d", i, mul255SASATab[i], mul255(i, i))
+		}
+	}
 	for a := 0; a <= 255; a++ {
 		for b := 0; b <= 255; b++ {
 			if got := mul255(a, b); got != (a*b+127)/255 {
@@ -487,21 +494,21 @@ func TestSWBlendHelpersMatchSwBlendPix(t *testing.T) {
 			copy(got[:], dst[:])
 			switch mode {
 			case swBlendAddOneOne:
-				swBlendAddOneOnePix(got[:], s[0], s[1], s[2], sa)
+				swBlendAddOneOnePix((*[4]byte)(got[:]), s[0], s[1], s[2], sa)
 			case swBlendAddSrcAlphaOne:
-				swBlendAddSrcAlphaOnePix(got[:], sp[0], sp[1], sp[2], sa)
+				swBlendAddSrcAlphaOnePix((*[4]byte)(got[:]), sp[0], sp[1], sp[2], sa)
 			case swBlendAddOneInvAlpha:
-				swBlendAddOneInvAlphaPix(got[:], s[0], s[1], s[2], sa)
+				swBlendAddOneInvAlphaPix((*[4]byte)(got[:]), s[0], s[1], s[2], sa)
 			case swBlendAddAlphaOver:
-				swBlendAlphaOver(got[:], sp[0], sp[1], sp[2], sa)
+				swBlendAlphaOver((*[4]byte)(got[:]), sp[0], sp[1], sp[2], sa)
 			case swBlendAddZeroInvAlpha:
-				swBlendAddZeroInvAlphaPix(got[:], sa)
+				swBlendAddZeroInvAlphaPix((*[4]byte)(got[:]), sa)
 			case swBlendSubOneOne:
-				swBlendSubOneOnePix(got[:], s[0], s[1], s[2], sa)
+				swBlendSubOneOnePix((*[4]byte)(got[:]), s[0], s[1], s[2], sa)
 			case swBlendSubSrcAlphaOne:
-				swBlendSubSrcAlphaOnePix(got[:], sp[0], sp[1], sp[2], sa)
+				swBlendSubSrcAlphaOnePix((*[4]byte)(got[:]), sp[0], sp[1], sp[2], sa)
 			default:
-				swBlendReplacePix(got[:], s[0], s[1], s[2], sa)
+				swBlendReplacePix((*[4]byte)(got[:]), s[0], s[1], s[2], sa)
 			}
 			if expect != got {
 				t.Fatalf("mode %d: ref=%v helpers=%v (s=%v sp=%v sa=%d dst=%v)",

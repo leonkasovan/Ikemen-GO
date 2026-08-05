@@ -168,56 +168,56 @@ func (r *Renderer_SW) rasterRect(q *swQuadState, v0, v1, v2, v3 swVertex, mode i
 			for py := py0; py <= py1; py++ {
 				dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
 				for i := 0; i < n; i++ {
-					swBlendAlphaOver(dst[i*4:], sp0, sp1, sp2, sa)
+					swBlendAlphaOver((*[4]byte)(dst[i*4:]), sp0, sp1, sp2, sa)
 				}
 			}
 		case swBlendAddOneOne:
 			for py := py0; py <= py1; py++ {
 				dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
 				for i := 0; i < n; i++ {
-					swBlendAddOneOnePix(dst[i*4:], s0, s1, s2, sa)
+					swBlendAddOneOnePix((*[4]byte)(dst[i*4:]), s0, s1, s2, sa)
 				}
 			}
 		case swBlendAddSrcAlphaOne:
 			for py := py0; py <= py1; py++ {
 				dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
 				for i := 0; i < n; i++ {
-					swBlendAddSrcAlphaOnePix(dst[i*4:], sp0, sp1, sp2, sa)
+					swBlendAddSrcAlphaOnePix((*[4]byte)(dst[i*4:]), sp0, sp1, sp2, sa)
 				}
 			}
 		case swBlendAddOneInvAlpha:
 			for py := py0; py <= py1; py++ {
 				dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
 				for i := 0; i < n; i++ {
-					swBlendAddOneInvAlphaPix(dst[i*4:], s0, s1, s2, sa)
+					swBlendAddOneInvAlphaPix((*[4]byte)(dst[i*4:]), s0, s1, s2, sa)
 				}
 			}
 		case swBlendAddZeroInvAlpha:
 			for py := py0; py <= py1; py++ {
 				dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
 				for i := 0; i < n; i++ {
-					swBlendAddZeroInvAlphaPix(dst[i*4:], sa)
+					swBlendAddZeroInvAlphaPix((*[4]byte)(dst[i*4:]), sa)
 				}
 			}
 		case swBlendSubOneOne:
 			for py := py0; py <= py1; py++ {
 				dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
 				for i := 0; i < n; i++ {
-					swBlendSubOneOnePix(dst[i*4:], s0, s1, s2, sa)
+					swBlendSubOneOnePix((*[4]byte)(dst[i*4:]), s0, s1, s2, sa)
 				}
 			}
 		case swBlendSubSrcAlphaOne:
 			for py := py0; py <= py1; py++ {
 				dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
 				for i := 0; i < n; i++ {
-					swBlendSubSrcAlphaOnePix(dst[i*4:], sp0, sp1, sp2, sa)
+					swBlendSubSrcAlphaOnePix((*[4]byte)(dst[i*4:]), sp0, sp1, sp2, sa)
 				}
 			}
 		default: // swBlendReplace
 			for py := py0; py <= py1; py++ {
 				dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
 				for i := 0; i < n; i++ {
-					swBlendReplacePix(dst[i*4:], s0, s1, s2, sa)
+					swBlendReplacePix((*[4]byte)(dst[i*4:]), s0, s1, s2, sa)
 				}
 			}
 		}
@@ -288,7 +288,7 @@ func (r *Renderer_SW) rasterRect(q *swQuadState, v0, v1, v2, v3 swVertex, mode i
 						sy = texH - 1
 					}
 					e := int(texData[sy*texStride+sx]) * 8
-					swBlendAlphaOver(dst[i*4:], int(tab[e]), int(tab[e+1]), int(tab[e+2]), int(tab[e+3]))
+					swBlendAlphaOver((*[4]byte)(dst[i*4:]), int(tab[e]), int(tab[e+1]), int(tab[e+2]), int(tab[e+3]))
 					uFP += du
 					vFP += dv
 				}
@@ -327,7 +327,7 @@ func (r *Renderer_SW) rasterRect(q *swQuadState, v0, v1, v2, v3 swVertex, mode i
 					sy = texH - 1
 				}
 				e := int(texData[sy*texStride+sx]) * 8
-				p := dst[i*4:]
+				p := (*[4]byte)(dst[i*4:])
 				// [0..2]=premul rgb, [3]=sa, [4..6]=raw rgb (see buildPalTable).
 				switch mode {
 				case swBlendAddOneOne:
@@ -379,7 +379,7 @@ func (r *Renderer_SW) rasterRect(q *swQuadState, v0, v1, v2, v3 swVertex, mode i
 				sp0 := sat8(mul255(s0, sa))
 				sp1 := sat8(mul255(s1, sa))
 				sp2 := sat8(mul255(s2, sa))
-				p := dst[i*4:]
+				p := (*[4]byte)(dst[i*4:])
 				// mode is constant per draw, so dispatch once per pixel on the
 				// scalar source values — no [3]int temporaries and no per-pixel
 				// mode switch. Each case is byte-identical to the old branch it
@@ -458,7 +458,7 @@ func (r *Renderer_SW) rasterRect(q *swQuadState, v0, v1, v2, v3 swVertex, mode i
 			sp0 := sat8(mul255(s0, sa))
 			sp1 := sat8(mul255(s1, sa))
 			sp2 := sat8(mul255(s2, sa))
-			p := dst[i*4:]
+			p := (*[4]byte)(dst[i*4:])
 			// Same scalar mode dispatch as the filtered loop above.
 			switch mode {
 			case swBlendAddAlphaOver:
@@ -541,7 +541,7 @@ func (r *Renderer_SW) rasterGeneric(q *swQuadState, v0, v1, v2, v3 swVertex, mod
 					u = 0.5
 				}
 			}
-			shadePix(dstRow[px*4:], u, vv, q, mode, tab)
+			shadePix((*[4]byte)(dstRow[px*4:]), u, vv, q, mode, tab)
 		}
 	}
 }
@@ -584,7 +584,7 @@ func triInside(W0, W1, W2, det float32, w0Strict bool) bool {
 // writing into dst. The trapezoid correction that used to be here moved into
 // rasterGeneric (it needs the fragment's window x), so the winX parameter was
 // dropped.
-func shadePix(dst []byte, u, v float32, q *swQuadState, mode int, tab []byte) {
+func shadePix(dst *[4]byte, u, v float32, q *swQuadState, mode int, tab []byte) {
 	var s0, s1, s2, sp0, sp1, sp2, sa int
 	if q.fontMode {
 		// TTF glyph: font.frag.glsl math. Coverage is bilinearly sampled from
