@@ -596,6 +596,48 @@ func sampleRGBAFilteredOld(t *swTexture, u, v float32) (float32, float32, float3
 	return r, g, b, a
 }
 
+// The RGBA filtered loop in alpha-over mode with exact-pixel expectations: a
+// 2x1 filtered texture {opaque red, half-alpha blue} drawn over an opaque green
+// fill, with the quad sized so each pixel center samples a texel center exactly
+// (fx = fy = 0, no bilinear mixing). Verifies the scalar-dispatch switch in the
+// filtered loop wires the right scalars (premul sp for SrcAlpha modes).
+func TestSWRGBAFilteredAlphaOver(t *testing.T) {
+	r := newSWTestRenderer(4, 2)
+	// Background: opaque green fill.
+	bg := swState()
+	bg.isFlat = true
+	bg.tint = [4]float32{0, 1, 0, 1}
+	r.rasterizeQuadWindow(bg,
+		swVertex{4, 2, 1, 1}, swVertex{4, 0, 1, 0},
+		swVertex{0, 2, 0, 1}, swVertex{0, 0, 0, 0})
+
+	// Foreground: filtered 2x1 {red opaque, blue 50%} in alpha-over mode.
+	tex := &swTexture{width: 2, height: 1, depth: 32, filter: true, serial: 60}
+	tex.data = []byte{255, 0, 0, 255, 0, 0, 255, 128}
+	q := swState()
+	q.tex = tex
+	q.mask = 0 // keep the texel's real alpha (mask -1 would force aa = 1)
+	q.src = BlendSrcAlpha
+	r.rasterizeQuadWindow(q,
+		swVertex{2, 2, 1, 1}, swVertex{2, 0, 1, 0},
+		swVertex{0, 2, 0, 1}, swVertex{0, 0, 0, 0})
+
+	// Pixel column 0 samples texel 0 (opaque red): covers green fully.
+	// Pixel column 1 samples texel 1 (blue, sa = quant(128/255) = 128):
+	//   g = 255 - mul255(255,128) = 127, b = mul255(255,128) = 128,
+	//   a = mul255(128,128) + 255 - mul255(255,128) = 191.
+	for py := 0; py < 2; py++ {
+		rr, gg, bb, aa := swPix(r, 0, py)
+		if rr != 255 || gg != 0 || bb != 0 || aa != 255 {
+			t.Fatalf("filtered alpha-over col 0 row %d: got (%d,%d,%d,%d), want (255,0,0,255)", py, rr, gg, bb, aa)
+		}
+		rr, gg, bb, aa = swPix(r, 1, py)
+		if rr != 0 || gg != 127 || bb != 128 || aa != 191 {
+			t.Fatalf("filtered alpha-over col 1 row %d: got (%d,%d,%d,%d), want (0,127,128,191)", py, rr, gg, bb, aa)
+		}
+	}
+}
+
 // Rotated quad through the generic path (45° rotation of a 4x4 sprite).
 func TestSWRotatedQuad(t *testing.T) {
 	r := newSWTestRenderer(64, 48)

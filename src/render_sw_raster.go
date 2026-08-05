@@ -336,12 +336,28 @@ func (r *Renderer_SW) rasterRect(q *swQuadState, v0, v1, v2, v3 swVertex, mode i
 				sp0 := sat8(mul255(s0, sa))
 				sp1 := sat8(mul255(s1, sa))
 				sp2 := sat8(mul255(s2, sa))
-				if mode == swBlendAddAlphaOver {
-					swBlendAlphaOver(dst[i*4:], sp0, sp1, sp2, sa)
-				} else {
-					s := [3]int{s0, s1, s2}
-					sp := [3]int{sp0, sp1, sp2}
-					swBlendPix(dst[i*4:], s, sp, sa, mode)
+				p := dst[i*4:]
+				// mode is constant per draw, so dispatch once per pixel on the
+				// scalar source values — no [3]int temporaries and no swBlendPix
+				// call (its per-pixel mode switch was the overhead). Each case is
+				// byte-identical to the old branch it replaces.
+				switch mode {
+				case swBlendAddAlphaOver:
+					swBlendAlphaOver(p, sp0, sp1, sp2, sa)
+				case swBlendAddOneOne:
+					swBlendAddOneOnePix(p, s0, s1, s2, sa)
+				case swBlendAddSrcAlphaOne:
+					swBlendAddSrcAlphaOnePix(p, sp0, sp1, sp2, sa)
+				case swBlendAddOneInvAlpha:
+					swBlendAddOneInvAlphaPix(p, s0, s1, s2, sa)
+				case swBlendAddZeroInvAlpha:
+					swBlendAddZeroInvAlphaPix(p, sa)
+				case swBlendSubOneOne:
+					swBlendSubOneOnePix(p, s0, s1, s2, sa)
+				case swBlendSubSrcAlphaOne:
+					swBlendSubSrcAlphaOnePix(p, sp0, sp1, sp2, sa)
+				default: // swBlendReplace
+					swBlendReplacePix(p, s0, s1, s2, sa)
 				}
 				u += uStep
 				vv += vStep
@@ -399,12 +415,25 @@ func (r *Renderer_SW) rasterRect(q *swQuadState, v0, v1, v2, v3 swVertex, mode i
 			sp0 := sat8(mul255(s0, sa))
 			sp1 := sat8(mul255(s1, sa))
 			sp2 := sat8(mul255(s2, sa))
-			if mode == swBlendAddAlphaOver {
-				swBlendAlphaOver(dst[i*4:], sp0, sp1, sp2, sa)
-			} else {
-				s := [3]int{s0, s1, s2}
-				sp := [3]int{sp0, sp1, sp2}
-				swBlendPix(dst[i*4:], s, sp, sa, mode)
+			p := dst[i*4:]
+			// Same scalar mode dispatch as the filtered loop above.
+			switch mode {
+			case swBlendAddAlphaOver:
+				swBlendAlphaOver(p, sp0, sp1, sp2, sa)
+			case swBlendAddOneOne:
+				swBlendAddOneOnePix(p, s0, s1, s2, sa)
+			case swBlendAddSrcAlphaOne:
+				swBlendAddSrcAlphaOnePix(p, sp0, sp1, sp2, sa)
+			case swBlendAddOneInvAlpha:
+				swBlendAddOneInvAlphaPix(p, s0, s1, s2, sa)
+			case swBlendAddZeroInvAlpha:
+				swBlendAddZeroInvAlphaPix(p, sa)
+			case swBlendSubOneOne:
+				swBlendSubOneOnePix(p, s0, s1, s2, sa)
+			case swBlendSubSrcAlphaOne:
+				swBlendSubSrcAlphaOnePix(p, sp0, sp1, sp2, sa)
+			default: // swBlendReplace
+				swBlendReplacePix(p, s0, s1, s2, sa)
 			}
 			uFP += du
 			vFP += dv
