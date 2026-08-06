@@ -165,61 +165,77 @@ func (r *Renderer_SW) rasterRect(q *swQuadState, v0, v1, v2, v3 swVertex, mode i
 		switch mode {
 		case swBlendAddAlphaOver:
 			// Dominant case: inline alpha-over, no per-pixel call or arrays.
-			for py := py0; py <= py1; py++ {
-				dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
-				for i := 0; i < n; i++ {
-					swBlendAlphaOver((*[4]byte)(dst[i*4:]), sp0, sp1, sp2, sa)
+			r.runRows(px0, px1, py0, py1, func(a0, a1 int) {
+				for py := a0; py <= a1; py++ {
+					dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
+					for i := 0; i < n; i++ {
+						swBlendAlphaOver((*[4]byte)(dst[i*4:]), sp0, sp1, sp2, sa)
+					}
 				}
-			}
+			})
 		case swBlendAddOneOne:
-			for py := py0; py <= py1; py++ {
-				dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
-				for i := 0; i < n; i++ {
-					swBlendAddOneOnePix((*[4]byte)(dst[i*4:]), s0, s1, s2, sa)
+			r.runRows(px0, px1, py0, py1, func(a0, a1 int) {
+				for py := a0; py <= a1; py++ {
+					dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
+					for i := 0; i < n; i++ {
+						swBlendAddOneOnePix((*[4]byte)(dst[i*4:]), s0, s1, s2, sa)
+					}
 				}
-			}
+			})
 		case swBlendAddSrcAlphaOne:
-			for py := py0; py <= py1; py++ {
-				dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
-				for i := 0; i < n; i++ {
-					swBlendAddSrcAlphaOnePix((*[4]byte)(dst[i*4:]), sp0, sp1, sp2, sa)
+			r.runRows(px0, px1, py0, py1, func(a0, a1 int) {
+				for py := a0; py <= a1; py++ {
+					dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
+					for i := 0; i < n; i++ {
+						swBlendAddSrcAlphaOnePix((*[4]byte)(dst[i*4:]), sp0, sp1, sp2, sa)
+					}
 				}
-			}
+			})
 		case swBlendAddOneInvAlpha:
-			for py := py0; py <= py1; py++ {
-				dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
-				for i := 0; i < n; i++ {
-					swBlendAddOneInvAlphaPix((*[4]byte)(dst[i*4:]), s0, s1, s2, sa)
+			r.runRows(px0, px1, py0, py1, func(a0, a1 int) {
+				for py := a0; py <= a1; py++ {
+					dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
+					for i := 0; i < n; i++ {
+						swBlendAddOneInvAlphaPix((*[4]byte)(dst[i*4:]), s0, s1, s2, sa)
+					}
 				}
-			}
+			})
 		case swBlendAddZeroInvAlpha:
-			for py := py0; py <= py1; py++ {
-				dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
-				for i := 0; i < n; i++ {
-					swBlendAddZeroInvAlphaPix((*[4]byte)(dst[i*4:]), sa)
+			r.runRows(px0, px1, py0, py1, func(a0, a1 int) {
+				for py := a0; py <= a1; py++ {
+					dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
+					for i := 0; i < n; i++ {
+						swBlendAddZeroInvAlphaPix((*[4]byte)(dst[i*4:]), sa)
+					}
 				}
-			}
+			})
 		case swBlendSubOneOne:
-			for py := py0; py <= py1; py++ {
-				dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
-				for i := 0; i < n; i++ {
-					swBlendSubOneOnePix((*[4]byte)(dst[i*4:]), s0, s1, s2, sa)
+			r.runRows(px0, px1, py0, py1, func(a0, a1 int) {
+				for py := a0; py <= a1; py++ {
+					dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
+					for i := 0; i < n; i++ {
+						swBlendSubOneOnePix((*[4]byte)(dst[i*4:]), s0, s1, s2, sa)
+					}
 				}
-			}
+			})
 		case swBlendSubSrcAlphaOne:
-			for py := py0; py <= py1; py++ {
-				dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
-				for i := 0; i < n; i++ {
-					swBlendSubSrcAlphaOnePix((*[4]byte)(dst[i*4:]), sp0, sp1, sp2, sa)
+			r.runRows(px0, px1, py0, py1, func(a0, a1 int) {
+				for py := a0; py <= a1; py++ {
+					dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
+					for i := 0; i < n; i++ {
+						swBlendSubSrcAlphaOnePix((*[4]byte)(dst[i*4:]), sp0, sp1, sp2, sa)
+					}
 				}
-			}
+			})
 		default: // swBlendReplace
-			for py := py0; py <= py1; py++ {
-				dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
-				for i := 0; i < n; i++ {
-					swBlendReplacePix((*[4]byte)(dst[i*4:]), s0, s1, s2, sa)
+			r.runRows(px0, px1, py0, py1, func(a0, a1 int) {
+				for py := a0; py <= a1; py++ {
+					dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
+					for i := 0; i < n; i++ {
+						swBlendReplacePix((*[4]byte)(dst[i*4:]), s0, s1, s2, sa)
+					}
 				}
-			}
+			})
 		}
 		return
 	}
@@ -261,7 +277,44 @@ func (r *Renderer_SW) rasterRect(q *swQuadState, v0, v1, v2, v3 swVertex, mode i
 			// Dominant case: alpha-over needs only the premultiplied rgb + alpha
 			// from the table, so skip the raw-rgb loads and the generic per-pixel
 			// blend call/switch entirely.
-			for py := py0; py <= py1; py++ {
+			r.runRows(px0, px1, py0, py1, func(a0, a1 int) {
+				for py := a0; py <= a1; py++ {
+					wy := float32(r.h) - float32(py) - 0.5
+					tL := (wy - l0.y) / (l1.y - l0.y)
+					tR := (wy - r0.y) / (r1.y - r0.y)
+					ul := l0.u + (l1.u-l0.u)*tL
+					ur := r0.u + (r1.u-r0.u)*tR
+					vl := l0.v + (l1.v-l0.v)*tL
+					vr := r0.v + (r1.v-r0.v)*tR
+					uFP := int32((ul+tx0*(ur-ul))*float32(texW)*(1<<swFP) + 0.5)
+					vFP := int32((vl+tx0*(vr-vl))*float32(texH)*(1<<swFP) + 0.5)
+					du := int32((ur - ul) * float32(texW) * (1 << swFP) / float32(wSpanPix))
+					dv := int32((vr - vl) * float32(texH) * (1 << swFP) / float32(wSpanPix))
+					dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
+					for i := 0; i < n; i++ {
+						sx := int(uFP >> swFP)
+						if sx < 0 {
+							sx = 0
+						} else if sx >= texW {
+							sx = texW - 1
+						}
+						sy := int(vFP >> swFP)
+						if sy < 0 {
+							sy = 0
+						} else if sy >= texH {
+							sy = texH - 1
+						}
+						e := int(texData[sy*texStride+sx]) * 8
+						swBlendAlphaOver((*[4]byte)(dst[i*4:]), int(tab[e]), int(tab[e+1]), int(tab[e+2]), int(tab[e+3]))
+						uFP += du
+						vFP += dv
+					}
+				}
+			})
+			return
+		}
+		r.runRows(px0, px1, py0, py1, func(a0, a1 int) {
+			for py := a0; py <= a1; py++ {
 				wy := float32(r.h) - float32(py) - 0.5
 				tL := (wy - l0.y) / (l1.y - l0.y)
 				tR := (wy - r0.y) / (r1.y - r0.y)
@@ -274,6 +327,11 @@ func (r *Renderer_SW) rasterRect(q *swQuadState, v0, v1, v2, v3 swVertex, mode i
 				du := int32((ur - ul) * float32(texW) * (1 << swFP) / float32(wSpanPix))
 				dv := int32((vr - vl) * float32(texH) * (1 << swFP) / float32(wSpanPix))
 				dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
+				// mode is constant for the whole draw, so dispatch once per pixel on
+				// scalars loaded straight from the table — no [3]int temporaries and no
+				// old swBlendPix call (its array params and per-pixel mode switch were
+				// the hottest overhead in this loop). Each case is byte-identical to
+				// the matching swBlendPix branch.
 				for i := 0; i < n; i++ {
 					sx := int(uFP >> swFP)
 					if sx < 0 {
@@ -288,14 +346,98 @@ func (r *Renderer_SW) rasterRect(q *swQuadState, v0, v1, v2, v3 swVertex, mode i
 						sy = texH - 1
 					}
 					e := int(texData[sy*texStride+sx]) * 8
-					swBlendAlphaOver((*[4]byte)(dst[i*4:]), int(tab[e]), int(tab[e+1]), int(tab[e+2]), int(tab[e+3]))
+					p := (*[4]byte)(dst[i*4:])
+					// [0..2]=premul rgb, [3]=sa, [4..6]=raw rgb (see buildPalTable).
+					switch mode {
+					case swBlendAddOneOne:
+						swBlendAddOneOnePix(p, int(tab[e+4]), int(tab[e+5]), int(tab[e+6]), int(tab[e+3]))
+					case swBlendAddSrcAlphaOne:
+						swBlendAddSrcAlphaOnePix(p, int(tab[e]), int(tab[e+1]), int(tab[e+2]), int(tab[e+3]))
+					case swBlendAddOneInvAlpha:
+						swBlendAddOneInvAlphaPix(p, int(tab[e+4]), int(tab[e+5]), int(tab[e+6]), int(tab[e+3]))
+					case swBlendAddZeroInvAlpha:
+						swBlendAddZeroInvAlphaPix(p, int(tab[e+3]))
+					case swBlendSubOneOne:
+						swBlendSubOneOnePix(p, int(tab[e+4]), int(tab[e+5]), int(tab[e+6]), int(tab[e+3]))
+					case swBlendSubSrcAlphaOne:
+						swBlendSubSrcAlphaOnePix(p, int(tab[e]), int(tab[e+1]), int(tab[e+2]), int(tab[e+3]))
+					default: // swBlendReplace
+						swBlendReplacePix(p, int(tab[e+4]), int(tab[e+5]), int(tab[e+6]), int(tab[e+3]))
+					}
 					uFP += du
 					vFP += dv
 				}
 			}
-			return
-		}
-		for py := py0; py <= py1; py++ {
+		})
+		return
+	}
+
+	// RGBA source.
+	if tex.filter {
+		r.runRows(px0, px1, py0, py1, func(a0, a1 int) {
+			for py := a0; py <= a1; py++ {
+				wy := float32(r.h) - float32(py) - 0.5
+				tL := (wy - l0.y) / (l1.y - l0.y)
+				tR := (wy - r0.y) / (r1.y - r0.y)
+				ul := l0.u + (l1.u-l0.u)*tL
+				ur := r0.u + (r1.u-r0.u)*tR
+				vl := l0.v + (l1.v-l0.v)*tL
+				vr := r0.v + (r1.v-r0.v)*tR
+				uStep := (ur - ul) / float32(wSpanPix)
+				vStep := (vr - vl) / float32(wSpanPix)
+				u := ul + tx0*(ur-ul)
+				vv := vl + tx0*(vr-vl)
+				dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
+				for i := 0; i < n; i++ {
+					rr, gg, bb, aa := tex.sampleRGBAFiltered(u, vv)
+					if q.mask == -1 {
+						aa = 1
+					}
+					rr, gg, bb, aa = applySpritePalfx(rr, gg, bb, aa, q, true, q.alpha)
+					rr, gg, bb = tintMix(rr, gg, bb, aa, q.tint)
+					sa := quant(aa)
+					s0, s1, s2 := quant(rr), quant(gg), quant(bb)
+					sp0 := sat8(mul255(s0, sa))
+					sp1 := sat8(mul255(s1, sa))
+					sp2 := sat8(mul255(s2, sa))
+					p := (*[4]byte)(dst[i*4:])
+					// mode is constant per draw, so dispatch once per pixel on the
+					// scalar source values — no [3]int temporaries and no per-pixel
+					// mode switch. Each case is byte-identical to the old branch it
+					// replaces.
+					switch mode {
+					case swBlendAddAlphaOver:
+						swBlendAlphaOver(p, sp0, sp1, sp2, sa)
+					case swBlendAddOneOne:
+						swBlendAddOneOnePix(p, s0, s1, s2, sa)
+					case swBlendAddSrcAlphaOne:
+						swBlendAddSrcAlphaOnePix(p, sp0, sp1, sp2, sa)
+					case swBlendAddOneInvAlpha:
+						swBlendAddOneInvAlphaPix(p, s0, s1, s2, sa)
+					case swBlendAddZeroInvAlpha:
+						swBlendAddZeroInvAlphaPix(p, sa)
+					case swBlendSubOneOne:
+						swBlendSubOneOnePix(p, s0, s1, s2, sa)
+					case swBlendSubSrcAlphaOne:
+						swBlendSubSrcAlphaOnePix(p, sp0, sp1, sp2, sa)
+					default: // swBlendReplace
+						swBlendReplacePix(p, s0, s1, s2, sa)
+					}
+					u += uStep
+					vv += vStep
+				}
+			}
+		})
+		return
+	}
+
+	// RGBA nearest: fixed-point texel stepping, per-pixel PalFX.
+	bpp := int(tex.depth / 8)
+	if bpp < 1 {
+		bpp = 1
+	}
+	r.runRows(px0, px1, py0, py1, func(a0, a1 int) {
+		for py := a0; py <= a1; py++ {
 			wy := float32(r.h) - float32(py) - 0.5
 			tL := (wy - l0.y) / (l1.y - l0.y)
 			tR := (wy - r0.y) / (r1.y - r0.y)
@@ -308,11 +450,6 @@ func (r *Renderer_SW) rasterRect(q *swQuadState, v0, v1, v2, v3 swVertex, mode i
 			du := int32((ur - ul) * float32(texW) * (1 << swFP) / float32(wSpanPix))
 			dv := int32((vr - vl) * float32(texH) * (1 << swFP) / float32(wSpanPix))
 			dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
-			// mode is constant for the whole draw, so dispatch once per pixel on
-			// scalars loaded straight from the table — no [3]int temporaries and no
-			// old swBlendPix call (its array params and per-pixel mode switch were
-			// the hottest overhead in this loop). Each case is byte-identical to
-			// the matching swBlendPix branch.
 			for i := 0; i < n; i++ {
 				sx := int(uFP >> swFP)
 				if sx < 0 {
@@ -326,49 +463,14 @@ func (r *Renderer_SW) rasterRect(q *swQuadState, v0, v1, v2, v3 swVertex, mode i
 				} else if sy >= texH {
 					sy = texH - 1
 				}
-				e := int(texData[sy*texStride+sx]) * 8
-				p := (*[4]byte)(dst[i*4:])
-				// [0..2]=premul rgb, [3]=sa, [4..6]=raw rgb (see buildPalTable).
-				switch mode {
-				case swBlendAddOneOne:
-					swBlendAddOneOnePix(p, int(tab[e+4]), int(tab[e+5]), int(tab[e+6]), int(tab[e+3]))
-				case swBlendAddSrcAlphaOne:
-					swBlendAddSrcAlphaOnePix(p, int(tab[e]), int(tab[e+1]), int(tab[e+2]), int(tab[e+3]))
-				case swBlendAddOneInvAlpha:
-					swBlendAddOneInvAlphaPix(p, int(tab[e+4]), int(tab[e+5]), int(tab[e+6]), int(tab[e+3]))
-				case swBlendAddZeroInvAlpha:
-					swBlendAddZeroInvAlphaPix(p, int(tab[e+3]))
-				case swBlendSubOneOne:
-					swBlendSubOneOnePix(p, int(tab[e+4]), int(tab[e+5]), int(tab[e+6]), int(tab[e+3]))
-				case swBlendSubSrcAlphaOne:
-					swBlendSubSrcAlphaOnePix(p, int(tab[e]), int(tab[e+1]), int(tab[e+2]), int(tab[e+3]))
-				default: // swBlendReplace
-					swBlendReplacePix(p, int(tab[e+4]), int(tab[e+5]), int(tab[e+6]), int(tab[e+3]))
+				o := sy*texStride + sx*bpp
+				rr := float32(texData[o]) / 255
+				gg := float32(texData[o+1]) / 255
+				bb := float32(texData[o+2]) / 255
+				var aa float32 = 1
+				if tex.depth >= 32 {
+					aa = float32(texData[o+3]) / 255
 				}
-				uFP += du
-				vFP += dv
-			}
-		}
-		return
-	}
-
-	// RGBA source.
-	if tex.filter {
-		for py := py0; py <= py1; py++ {
-			wy := float32(r.h) - float32(py) - 0.5
-			tL := (wy - l0.y) / (l1.y - l0.y)
-			tR := (wy - r0.y) / (r1.y - r0.y)
-			ul := l0.u + (l1.u-l0.u)*tL
-			ur := r0.u + (r1.u-r0.u)*tR
-			vl := l0.v + (l1.v-l0.v)*tL
-			vr := r0.v + (r1.v-r0.v)*tR
-			uStep := (ur - ul) / float32(wSpanPix)
-			vStep := (vr - vl) / float32(wSpanPix)
-			u := ul + tx0*(ur-ul)
-			vv := vl + tx0*(vr-vl)
-			dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
-			for i := 0; i < n; i++ {
-				rr, gg, bb, aa := tex.sampleRGBAFiltered(u, vv)
 				if q.mask == -1 {
 					aa = 1
 				}
@@ -380,10 +482,7 @@ func (r *Renderer_SW) rasterRect(q *swQuadState, v0, v1, v2, v3 swVertex, mode i
 				sp1 := sat8(mul255(s1, sa))
 				sp2 := sat8(mul255(s2, sa))
 				p := (*[4]byte)(dst[i*4:])
-				// mode is constant per draw, so dispatch once per pixel on the
-				// scalar source values — no [3]int temporaries and no per-pixel
-				// mode switch. Each case is byte-identical to the old branch it
-				// replaces.
+				// Same scalar mode dispatch as the filtered loop above.
 				switch mode {
 				case swBlendAddAlphaOver:
 					swBlendAlphaOver(p, sp0, sp1, sp2, sa)
@@ -402,86 +501,11 @@ func (r *Renderer_SW) rasterRect(q *swQuadState, v0, v1, v2, v3 swVertex, mode i
 				default: // swBlendReplace
 					swBlendReplacePix(p, s0, s1, s2, sa)
 				}
-				u += uStep
-				vv += vStep
+				uFP += du
+				vFP += dv
 			}
 		}
-		return
-	}
-
-	// RGBA nearest: fixed-point texel stepping, per-pixel PalFX.
-	bpp := int(tex.depth / 8)
-	if bpp < 1 {
-		bpp = 1
-	}
-	for py := py0; py <= py1; py++ {
-		wy := float32(r.h) - float32(py) - 0.5
-		tL := (wy - l0.y) / (l1.y - l0.y)
-		tR := (wy - r0.y) / (r1.y - r0.y)
-		ul := l0.u + (l1.u-l0.u)*tL
-		ur := r0.u + (r1.u-r0.u)*tR
-		vl := l0.v + (l1.v-l0.v)*tL
-		vr := r0.v + (r1.v-r0.v)*tR
-		uFP := int32((ul+tx0*(ur-ul))*float32(texW)*(1<<swFP) + 0.5)
-		vFP := int32((vl+tx0*(vr-vl))*float32(texH)*(1<<swFP) + 0.5)
-		du := int32((ur - ul) * float32(texW) * (1 << swFP) / float32(wSpanPix))
-		dv := int32((vr - vl) * float32(texH) * (1 << swFP) / float32(wSpanPix))
-		dst := r.pix[py*r.pitch+px0*4 : py*r.pitch+(px1+1)*4]
-		for i := 0; i < n; i++ {
-			sx := int(uFP >> swFP)
-			if sx < 0 {
-				sx = 0
-			} else if sx >= texW {
-				sx = texW - 1
-			}
-			sy := int(vFP >> swFP)
-			if sy < 0 {
-				sy = 0
-			} else if sy >= texH {
-				sy = texH - 1
-			}
-			o := sy*texStride + sx*bpp
-			rr := float32(texData[o]) / 255
-			gg := float32(texData[o+1]) / 255
-			bb := float32(texData[o+2]) / 255
-			var aa float32 = 1
-			if tex.depth >= 32 {
-				aa = float32(texData[o+3]) / 255
-			}
-			if q.mask == -1 {
-				aa = 1
-			}
-			rr, gg, bb, aa = applySpritePalfx(rr, gg, bb, aa, q, true, q.alpha)
-			rr, gg, bb = tintMix(rr, gg, bb, aa, q.tint)
-			sa := quant(aa)
-			s0, s1, s2 := quant(rr), quant(gg), quant(bb)
-			sp0 := sat8(mul255(s0, sa))
-			sp1 := sat8(mul255(s1, sa))
-			sp2 := sat8(mul255(s2, sa))
-			p := (*[4]byte)(dst[i*4:])
-			// Same scalar mode dispatch as the filtered loop above.
-			switch mode {
-			case swBlendAddAlphaOver:
-				swBlendAlphaOver(p, sp0, sp1, sp2, sa)
-			case swBlendAddOneOne:
-				swBlendAddOneOnePix(p, s0, s1, s2, sa)
-			case swBlendAddSrcAlphaOne:
-				swBlendAddSrcAlphaOnePix(p, sp0, sp1, sp2, sa)
-			case swBlendAddOneInvAlpha:
-				swBlendAddOneInvAlphaPix(p, s0, s1, s2, sa)
-			case swBlendAddZeroInvAlpha:
-				swBlendAddZeroInvAlphaPix(p, sa)
-			case swBlendSubOneOne:
-				swBlendSubOneOnePix(p, s0, s1, s2, sa)
-			case swBlendSubSrcAlphaOne:
-				swBlendSubSrcAlphaOnePix(p, sp0, sp1, sp2, sa)
-			default: // swBlendReplace
-				swBlendReplacePix(p, s0, s1, s2, sa)
-			}
-			uFP += du
-			vFP += dv
-		}
-	}
+	})
 }
 
 // ---- Generic affine-triangle path (rotation, trapezoid, tiled quads) ----
@@ -500,50 +524,52 @@ func (r *Renderer_SW) rasterGeneric(q *swQuadState, v0, v1, v2, v3 swVertex, mod
 	}
 	r.markDirty(int32(px0), int32(py0), int32(px1+1), int32(py1+1))
 
-	for py := py0; py <= py1; py++ {
-		pY := float32(r.h) - float32(py) - 0.5
-		dstRow := r.pix[py*r.pitch : py*r.pitch+(px1+1)*4]
-		for px := px0; px <= px1; px++ {
-			pX := float32(px) + 0.5
-			var u, vv float32
-			var inside bool
-			// Triangle 1: (v0, v1, v2); shared edge v1-v2 is exclusive here.
-			W1, W2, det := baryWeights(pX, pY, v0, v1, v2)
-			W0 := det - W1 - W2
-			if triInside(W0, W1, W2, det, true) {
-				inv := 1 / det
-				u = v0.u + (W1*inv)*(v1.u-v0.u) + (W2*inv)*(v2.u-v0.u)
-				vv = v0.v + (W1*inv)*(v1.v-v0.v) + (W2*inv)*(v2.v-v0.v)
-				inside = true
-			} else {
-				// Triangle 2: (v1, v2, v3); shared edge v1-v2 is inclusive.
-				W1, W2, det = baryWeights(pX, pY, v1, v2, v3)
-				W0 = det - W1 - W2
-				if triInside(W0, W1, W2, det, false) {
+	r.runRows(px0, px1, py0, py1, func(a0, a1 int) {
+		for py := a0; py <= a1; py++ {
+			pY := float32(r.h) - float32(py) - 0.5
+			dstRow := r.pix[py*r.pitch : py*r.pitch+(px1+1)*4]
+			for px := px0; px <= px1; px++ {
+				pX := float32(px) + 0.5
+				var u, vv float32
+				var inside bool
+				// Triangle 1: (v0, v1, v2); shared edge v1-v2 is exclusive here.
+				W1, W2, det := baryWeights(pX, pY, v0, v1, v2)
+				W0 := det - W1 - W2
+				if triInside(W0, W1, W2, det, true) {
 					inv := 1 / det
-					u = v1.u + (W1*inv)*(v2.u-v1.u) + (W2*inv)*(v3.u-v1.u)
-					vv = v1.v + (W1*inv)*(v2.v-v1.v) + (W2*inv)*(v3.v-v1.v)
+					u = v0.u + (W1*inv)*(v1.u-v0.u) + (W2*inv)*(v2.u-v0.u)
+					vv = v0.v + (W1*inv)*(v1.v-v0.v) + (W2*inv)*(v2.v-v0.v)
 					inside = true
-				}
-			}
-			if !inside {
-				continue
-			}
-			if q.isTrapez {
-				// Shader trapezoid correction: rebuild u from the fragment's
-				// window x and the interpolated v.
-				b0 := q.x1x2x4x3[2] + vv*(q.x1x2x4x3[0]-q.x1x2x4x3[2])
-				b1 := q.x1x2x4x3[3] + vv*(q.x1x2x4x3[1]-q.x1x2x4x3[3])
-				gap := b1 - b0
-				if gap > 0.0001 || gap < -0.0001 {
-					u = (pX - b0) / gap
 				} else {
-					u = 0.5
+					// Triangle 2: (v1, v2, v3); shared edge v1-v2 is inclusive.
+					W1, W2, det = baryWeights(pX, pY, v1, v2, v3)
+					W0 = det - W1 - W2
+					if triInside(W0, W1, W2, det, false) {
+						inv := 1 / det
+						u = v1.u + (W1*inv)*(v2.u-v1.u) + (W2*inv)*(v3.u-v1.u)
+						vv = v1.v + (W1*inv)*(v2.v-v1.v) + (W2*inv)*(v3.v-v1.v)
+						inside = true
+					}
 				}
+				if !inside {
+					continue
+				}
+				if q.isTrapez {
+					// Shader trapezoid correction: rebuild u from the fragment's
+					// window x and the interpolated v.
+					b0 := q.x1x2x4x3[2] + vv*(q.x1x2x4x3[0]-q.x1x2x4x3[2])
+					b1 := q.x1x2x4x3[3] + vv*(q.x1x2x4x3[1]-q.x1x2x4x3[3])
+					gap := b1 - b0
+					if gap > 0.0001 || gap < -0.0001 {
+						u = (pX - b0) / gap
+					} else {
+						u = 0.5
+					}
+				}
+				shadePix((*[4]byte)(dstRow[px*4:]), u, vv, q, mode, tab)
 			}
-			shadePix((*[4]byte)(dstRow[px*4:]), u, vv, q, mode, tab)
 		}
-	}
+	})
 }
 
 // baryWeights returns the unnormalized barycentric weights W1, W2 and the
