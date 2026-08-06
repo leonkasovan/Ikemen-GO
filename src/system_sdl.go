@@ -99,6 +99,8 @@ func (s *System) newWindow(w, h int) (*Window, error) {
 			windowFlags |= sdl.WINDOW_OPENGL
 		} else if renderName == "SDL2 Software" {
 			// No GL or Vulkan API required; SDL2 renders the final blit itself.
+		} else if renderName == "Direct3D 11" {
+			// No GL or Vulkan API required; D3D11 renders through the SDL window handle.
 		} else {
 			windowFlags |= sdl.WINDOW_VULKAN
 		}

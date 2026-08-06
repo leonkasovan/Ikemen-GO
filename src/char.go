@@ -3873,6 +3873,7 @@ func (c *Char) load(def string) error {
 				}
 				shaders = false
 				isVulkan := strings.HasPrefix(gfx.GetName(), "Vulkan")
+				isDX := strings.HasPrefix(gfx.GetName(), "Direct3D")
 
 				for key, val := range is {
 					shaderPath := val
@@ -3881,6 +3882,10 @@ func (c *Char) load(def string) error {
 					if isVulkan {
 						if !strings.HasSuffix(strings.ToLower(shaderPath), ".spv") {
 							shaderPath += ".spv"
+						}
+					} else if isDX {
+						if !strings.HasSuffix(strings.ToLower(shaderPath), ".cso") {
+							shaderPath += ".cso"
 						}
 					}
 

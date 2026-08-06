@@ -62,6 +62,9 @@ func selectRenderer(cfgVal string) (Renderer, FontRenderer) {
 	case "Vulkan 1.3":
 		gfx = &Renderer_VK{}
 		gfxFont = &FontRenderer_VK{}
+	case "Direct3D 11":
+		gfx = &Renderer_DX{}
+		gfxFont = &FontRenderer_DX{}
 	case "SDL2 Software":
 		gfx = &Renderer_SW{}
 		gfxFont = &FontRenderer_SW{}

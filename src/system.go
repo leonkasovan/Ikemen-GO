@@ -458,6 +458,17 @@ func (s *System) init(w, h int32) *lua.LState {
 				if err != nil {
 					chk(err)
 				}
+			} else if strings.HasPrefix(renderName, "Direct3D") {
+				// Load compiled HLSL shaders
+				s.externalShaders[0][i], err = os.ReadFile(shaderLocation + ".vert.cso")
+				if err != nil {
+					chk(err)
+				}
+
+				s.externalShaders[1][i], err = os.ReadFile(shaderLocation + ".frag.cso")
+				if err != nil {
+					chk(err)
+				}
 			}
 		}
 	}
