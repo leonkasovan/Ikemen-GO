@@ -139,7 +139,7 @@ those calls only.
 | `SetVertexData` | Per-call `D3D11_USAGE_DYNAMIC` vertex buffer, `IASetVertexBuffers` + `IASetIndexBuffer` + `IASetInputLayout`. |
 | `RenderQuad` | Draw therecords, IA topology triangle-strip, 4 verts, `Draw(4,0)`. |
 | `RenderElements` | `DrawIndexed`. |
-| `LoadCustomSpriteShader` / `SetSpritePipeline` | Compile HLSL via `D3DCompile`, cache `ID3D11VertexShader`/`PixelShader` + `ID3D11InputLayout` in a map[shaderName]. "Pipeline" = the (VS, PS, blend, sampler) tuple. |
+| `LoadCustomSpriteShader` / `SetSpritePipeline` | Create the PS directly from `.cso` bytecode (`CreatePixelShader`); `needsGrabPass` via RDEF parsing (§7.1); cache `ID3D11PixelShader` in a map[shaderName]. "Pipeline" = the (PS, blend, sampler) tuple. |
 | `NeedsGrabPass` / `ResolveBackBuffer` | Copy backbuffer to staging (`CopyResource` + `Map`) for readback, return as a `Texture_DX`. |
 | `ReadPixels` | Same staging readback path. |
 | `PerspectiveProjectionMatrix` / `OrthographicProjectionMatrix` | Pure math (mgl), renderer-agnostic — reuse `render.go` math, just return the matrix into a cbuffer. |
@@ -203,6 +203,71 @@ Do **not** transpile GLSL→HLSL at build time. A hand-written HLSL set is
 ~1 day, auditable, and removes a SPIRV-Cross/glslang toolchain dependency
 from the build.
 
+### 7.1 Custom sprite shaders & grab-pass detection
+
+User sprite shaders (the `shaders` block in char defs) ship as precompiled
+`.cso` bytecode — `char.go` appends `.cso` for DX, mirroring the `.spv`
+treatment for Vulkan. Two things consume them:
+
+- **PS creation.** The bytecode is handed straight to `CreatePixelShader`
+  (`dx_create_ps`); `D3DCompile` is only for HLSL *source*, never for `.cso`
+  bytes. (An early bug ran the bytecode through `D3DCompile`, which can
+  never succeed — the fixed path creates the PS directly from the blob.)
+- **Grab-pass detection.** `needsGrabPass` (does the shader sample
+  `bgl_RenderedTexture`?) is decided by `dxbcHasResource`, which parses the
+  DXBC container's **RDEF** chunk for the resource name instead of
+  `bytes.Contains` over the whole blob. `bytes.Contains` was fragile — a
+  coincidental match in SHDR/STAT bytecode would false-positive — and
+  blind to the resource table entirely.
+
+#### DXBC container header
+
+The container header is not a fixed 20 bytes: modern `d3dcompiler_47`
+stores a 16-byte checksum, pushing the chunk-offset array to byte 32.
+`dxbcRDEFChunk` tries both layouts and bounds-checks every offset.
+
+| Field | Classic (old fxc) | Modern (d3dcompiler_47) |
+|---|---|---|
+| Magic | `"DXBC"` @ 0 | `"DXBC"` @ 0 |
+| Checksum | 4 bytes @ 4 | 16 bytes @ 4 |
+| Version | @ 12 | @ 20 |
+| Total size | @ 16 | @ 24 |
+| `numChunks` | @ 20 | @ 28 |
+| Chunk offsets | @ 24 | @ 32 |
+
+Each chunk is an 8-byte header (fourcc + size) followed by its data; the
+RDEF chunk is located by its `RDEF` fourcc.
+
+#### RDEF layouts
+
+The RDEF chunk layout is **shared between modern and classic compilers** —
+only the header size differs:
+
+| Offset | Field |
+|---|---|
+| 0x08 | bound-resource count |
+| 0x0c | header size = binding-table start |
+| table | 32-byte `D3D11_SHADER_INPUT_BIND_DESC` entries |
+| tail | null-terminated names; `Name` is a byte offset relative to the RDEF data start |
+
+Modern `d3dcompiler_47` (Windows 10+) inserts a 32-byte `"RD11"` block at
+`0x1c`, making the header 60 bytes for `ps_5_0`/`vs_5_0`; classic fxc (e.g.
+`"HLSL Shader Compiler 6.3.9600"`, Windows 8.1 era) has a 28-byte header
+with no `RD11` block. Both were verified byte-for-byte against real compiler
+output (modern `d3dcompiler_47` 10.x blobs and classic 6.3.9600 `.cso` files
+from the community). The parser reads the count and header-size fields
+directly, so it does not depend on the `RD11` marker at all.
+
+`rdefTableHasName` walks the binding table, resolves each `Name` offset, and
+compares the null-terminated string against `bgl_RenderedTexture`. All reads
+are bounds-checked, and the table-fit check uses division so crafted
+count/offset fields cannot overflow 32-bit `int` (`ARCH=386`).
+
+`src/render_dx_test.go` pins this down: a real `d3dcompiler_47`-compiled
+blob fixture, synthetic modern/classic containers (the classic builder
+mirrors the verified 6.3.9600 layout), malformed inputs, and crafted
+huge-offset cases.
+
 ## 8. Files & integration points
 
 New:
@@ -229,7 +294,7 @@ pipeline (all gated behind `IsModelEnabled()`/`IsShadowEnabled()`).
 | Phase | Scope | ≈ Size | Status |
 |---|---|---|---|
 | **0. Spike** | Cgo D3D11 device + swapchain on an SDL2 HWND; clear to a color; `Present`. Validates the Win32-via-SDL `HWND` extraction and the static-link path. | ~300 LoC, days | **done** — device + flip-discard swapchain created on the SDL2 `HWND`; FXC/D3DCompile path verified; linked against `-ld3d11 -ldxgi -ld3dcompiler` under the Makefile's static-runtime link. |
-| **1. MVP renderer** | Sprite + font + palette atlas + custom sprite shaders + blend + scissor + grab pass. `IsModelEnabled/IsShadowEnabled → false`; stub model/shadow/cube/LUT. | ~1.7k LoC | **done** — `render_dx.go` (D3D11 Cgo shim + `Renderer_DX`) + `render_dx_font.go` (`FontRenderer_DX`/`Font_DX`) wired through `util_desktop.go`; 6 HLSL shaders compiled at runtime via `D3DCompile`. Renders an 8-player kfm match at solid 60 FPS on Intel graphics. MSAA (2/4/8) supported; models/shadows/cubemaps stubbed. Sprite batching rides the `flushSpriteQueueBatched` generic fallback like the other non-GL33 backends. |
+| **1. MVP renderer** | Sprite + font + palette atlas + custom sprite shaders + blend + scissor + grab pass. `IsModelEnabled/IsShadowEnabled → false`; stub model/shadow/cube/LUT. | ~1.7k LoC | **done** — `render_dx.go` (D3D11 Cgo shim + `Renderer_DX`) + `render_dx_font.go` (`FontRenderer_DX`/`Font_DX`) wired through `util_desktop.go`; 6 HLSL shaders compiled at runtime via `D3DCompile`. Renders an 8-player kfm match at solid 60 FPS on Intel graphics. MSAA (2/4/8) supported; models/shadows/cubemaps stubbed. Sprite batching rides the `flushSpriteQueueBatched` generic fallback like the other non-GL33 backends. Grab-pass detection parses the DXBC RDEF (§7.1). |
 | **2. Feature parity** | RenderScale path, MSAA, VSync(-1 auto, 0 off, 1 on), RendererDebugMode → `ID3D11InfoQueue`, ReadPixels, PIX-friendly object naming. | concurrent with P1 | **mostly done** — MSAA (2/4/8), VSync (`Present` interval), ReadPixels (bottom-up, matches GL), ResizeBuffers-on-window-resize all work. Not done: RenderScale (mirrors GL33, which ignores it), InfoQueue debug-name tagging, advanced `ID3D11InfoQueue` filtering. |
 | **3. Full 3D** | Port model/shadow/cubemap/IBL HLSL, implement `prepareModel*`/`prepareShadowMap*`/`RenderCubeMap`/`RenderFilteredCubeMap`/`RenderLUT`. Bring `IsModelEnabled/IsShadowEnabled` to `true`. | +3–5k LoC, 2–4 weeks | **not started** — `newModelTexture`/`newDataTexture`/`newHDRTexture`/`newCubeMapTexture` are implemented (so stage environments load cleanly), but the model/shadow/IBL draw pipelines are stubbed. |
 | **4. Promote** | Default desktop `RenderMode = Direct3D 11`; keep GL as fallback. | config flip | **not started** — default stays `OpenGL 3.3` until DK11 is proven across more hardware/drivers. |
@@ -246,6 +311,20 @@ only matters once model/IBL scenes are exercised in matches.
   non-trivial scalar splats like `float3((a+b+c)/3.0)` with X3014 — the
   shaders use explicit `float3(s, s, s)` instead. Plain `float3(scalar)` with
   a bare variable name works; only parenthesized expressions trip it.
+- **RDEF format varies by d3dcompiler version (discovered during P1).**
+  Modern `d3dcompiler_47` (Windows 10+) emits an `"RD11"`-block RDEF
+  (60-byte header); older compilers (e.g. fxc `"6.3.9600"`, Windows 8.1
+  era) emit the same layout with a 28-byte header and no `RD11` block. Both
+  use resource count @ 8 and table start @ 12, so one parser handles both
+  (§7.1) — verified byte-for-byte against real compiler output from each
+  era.
+- **ResizeBuffers `DXGI_ERROR_INVALID_CALL` (0x887a0001) on window resize.**
+  D3D11 rejects `ResizeBuffers` while any view of the swapchain back buffer
+  is bound to the pipeline — `EndFrame`'s final post pass leaves
+  `backbufferRTV` bound, so the next frame's resize failed and retried every
+  frame. `checkResize` now unbinds the render target (`OMSetRenderTargets`
+  NULL, via `dx_unbind_rt`) before resizing and defers while the window is
+  minimized (SDL `WINDOW_MINIMIZED`), retrying once restored.
 - **Static link.** SDL2/FFmpeg/XMP are built from source and static-linked.
   D3D is a Windows system API — `d3d11.dll`/`dxgi.dll`/`d3dcompiler_47.dll`
   stay dynamic (they're OS components, not redistributable libs). Document
@@ -271,7 +350,8 @@ through `util_desktop.go` as `RenderMode = Direct3D 11`. Phases 0–1 are done:
 the MVP stubs models/shadows/cubemaps like `render_sw` and ships 4 vertex + 3
 fragment HLSL shaders (compiled at init, not precompiled `.cso`) — enough to
 run matches at 60 FPS on Intel graphics. Custom user sprite shaders follow
-the Vulkan pattern (`.cso` bytecode, `NeedsGrabPass` detected by scanning the
-DXBC reflection section for the `bgl_RenderedTexture` resource name).
+the Vulkan pattern (`.cso` bytecode, `NeedsGrabPass` detected by parsing the
+DXBC RDEF section for the `bgl_RenderedTexture` resource name — one parser
+handles both the modern `RD11` and classic 28-byte-header layouts, §7.1).
 External post shaders are also `.vert.cso`/`.frag.cso`. The remaining work
 is Phase 3 (full 3D / IBL) and Phase 4 (default promotion).

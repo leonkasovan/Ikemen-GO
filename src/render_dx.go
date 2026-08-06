@@ -3,13 +3,11 @@
 package main
 
 import (
-	"bytes"
 	"container/list"
 	_ "embed"
 	"encoding/binary"
 	"fmt"
 	"math"
-	"reflect"
 	"runtime"
 	"sync"
 	"unsafe"
@@ -338,6 +336,22 @@ void* dx_create_vb(void* device, int size) {
 	return b;
 }
 
+void* dx_create_ib(void* device, int size) {
+	D3D11_BUFFER_DESC desc;
+	memset(&desc, 0, sizeof(desc));
+	desc.ByteWidth = (UINT)size;
+	desc.Usage = D3D11_USAGE_DYNAMIC;
+	desc.BindFlags = D3D11_BIND_INDEX_BUFFER;
+	desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+	ID3D11Buffer* b = NULL;
+	HRESULT hr = ((ID3D11Device*)device)->lpVtbl->CreateBuffer((ID3D11Device*)device, &desc, NULL, &b);
+	if (FAILED(hr)) {
+		snprintf(dx_err, sizeof(dx_err), "CreateBuffer(IB) failed hr=0x%08lx", hr);
+		return NULL;
+	}
+	return b;
+}
+
 void* dx_compile(const void* src, int len, int vs) {
 	ID3D10Blob* blob = NULL;
 	ID3D10Blob* err = NULL;
@@ -422,9 +436,15 @@ void dx_set_vb(void* ctx, void* vb, int stride) {
 	UINT offsets[1] = { 0 };
 	((ID3D11DeviceContext*)ctx)->lpVtbl->IASetVertexBuffers((ID3D11DeviceContext*)ctx, 0, 1, bufs, strides, offsets);
 }
+void dx_set_ib(void* ctx, void* ib) {
+	((ID3D11DeviceContext*)ctx)->lpVtbl->IASetIndexBuffer((ID3D11DeviceContext*)ctx, (ID3D11Buffer*)ib, DXGI_FORMAT_R32_UINT, 0);
+}
 void dx_set_rt(void* ctx, void* rtv, void* dsv) {
 	ID3D11RenderTargetView* rtvs[1] = { (ID3D11RenderTargetView*)rtv };
 	((ID3D11DeviceContext*)ctx)->lpVtbl->OMSetRenderTargets((ID3D11DeviceContext*)ctx, 1, rtvs, (ID3D11DepthStencilView*)dsv);
+}
+void dx_unbind_rt(void* ctx) {
+	((ID3D11DeviceContext*)ctx)->lpVtbl->OMSetRenderTargets((ID3D11DeviceContext*)ctx, 0, NULL, NULL);
 }
 void dx_set_viewport(void* ctx, int x, int y, int w, int h) {
 	D3D11_VIEWPORT vp;
@@ -705,7 +725,8 @@ func (t *Texture_DX) SetPixelData(data []float32) {
 	if len(data) > 0 {
 		p = unsafe.Pointer(&data[0])
 	}
-	C.dx_update_sub(r.ctx, t.resource, p, C.int(t.width*4), 0, 0, C.int(t.width), C.int(t.height))
+	// Float data textures (depth 128 / RGBA32F) are 16 bytes per pixel.
+	C.dx_update_sub(r.ctx, t.resource, p, C.int(int(t.width)*t.bpp()), 0, 0, C.int(t.width), C.int(t.height))
 }
 
 func (t *Texture_DX) IsValid() bool {
@@ -915,6 +936,12 @@ type Renderer_DX struct {
 	currentCustom   uint32
 	postShaders     []dxPostShader
 
+	modelIndexBuffer     [2]unsafe.Pointer
+	modelIndexBufferSize [2]int
+	currentIB            unsafe.Pointer
+
+	resizeFailed bool
+
 	state dxState
 
 	vsyncInterval int
@@ -936,9 +963,10 @@ func (r *Renderer_DX) Init() {
 	if err != nil {
 		panic(fmt.Sprintf("Direct3D 11: SDL_GetWindowWMInfo failed: %v", err))
 	}
-	f, _ := reflect.TypeOf(info).Elem().FieldByName("dummy")
-	off := f.Offset
-	r.hwnd = *(*unsafe.Pointer)(unsafe.Pointer(uintptr(unsafe.Pointer(info)) + off))
+	if info.Subsystem != sdl.SYSWM_WINDOWS {
+		panic(fmt.Sprintf("Direct3D 11: unexpected window subsystem (%d), expected SYSWM_WINDOWS", info.Subsystem))
+	}
+	r.hwnd = info.GetWindowsInfo().Window
 
 	r.device = C.dx_create_device(C.int(Btoi(sys.cfg.Video.RendererDebugMode)))
 	if r.device == nil {
@@ -1225,6 +1253,12 @@ func (r *Renderer_DX) Close() {
 	C.dx_release(r.backbufferRTV)
 	C.dx_release(r.backbuffer)
 	C.dx_release(r.swapchain)
+	for i := range r.modelIndexBuffer {
+		if r.modelIndexBuffer[i] != nil {
+			C.dx_release(r.modelIndexBuffer[i])
+		}
+	}
+	r.currentIB = nil
 	C.dx_release(r.ctx)
 	C.dx_release(r.device)
 }
@@ -1254,12 +1288,33 @@ func (r *Renderer_DX) checkResize() {
 	if int32(w) == r.winW && int32(h) == r.winH {
 		return
 	}
-	if C.dx_resize(r.swapchain, C.int(w), C.int(h)) != 0 {
-		LogMessage("[Direct3D 11] ResizeBuffers failed: %s", C.GoString(C.dx_last_error()))
+	// ResizeBuffers fails with DXGI_ERROR_INVALID_CALL while any view of the
+	// swapchain back buffer is still bound to the pipeline. EndFrame leaves
+	// backbufferRTV bound after the final post pass, so unbind it first.
+	// Also defer while the window is minimized (resizing to a hidden size can
+	// fail); the resize is retried once the window is restored.
+	if sys.window.GetFlags()&sdl.WINDOW_MINIMIZED != 0 {
 		return
 	}
+	r.unbindRT()
+	if C.dx_resize(r.swapchain, C.int(w), C.int(h)) != 0 {
+		// Log the first failure only; keep retrying silently each frame so a
+		// persistent driver rejection can't spam the log (winW/winH are left
+		// stale on purpose so the resize is retried until it succeeds).
+		if !r.resizeFailed {
+			r.resizeFailed = true
+			LogMessage("[Direct3D 11] ResizeBuffers failed: %s", C.GoString(C.dx_last_error()))
+		}
+		return
+	}
+	r.resizeFailed = false
 	r.winW, r.winH = int32(w), int32(h)
 	r.createBackbuffer()
+}
+
+func (r *Renderer_DX) unbindRT() {
+	r.state.rtv, r.state.dsv = nil, nil
+	C.dx_unbind_rt(r.ctx)
 }
 
 func (r *Renderer_DX) EndFrame() {
@@ -1654,6 +1709,9 @@ func (r *Renderer_DX) flushUniforms() {
 func (r *Renderer_DX) RenderElements(mode PrimitiveMode, count, offset int) {
 	r.flushUniforms()
 	r.bindTopology(r.mapPrimitiveMode(mode))
+	if r.currentIB != nil {
+		C.dx_set_ib(r.ctx, r.currentIB)
+	}
 	C.dx_draw_indexed(r.ctx, C.int(count), C.int(offset))
 }
 
@@ -1758,6 +1816,100 @@ func (r *Renderer_DX) SetTexture(name string, tex Texture) {
 	}
 }
 
+// dxbcHasResource reports whether the given DXBC shader bytecode declares a
+// resource bound under the given name, by parsing the container's RDEF
+// (resource definition) section instead of scanning the raw bytes. A malformed
+// or unrecognized container conservatively reports false.
+func dxbcHasResource(shaderData []byte, name string) bool {
+	rdef := dxbcRDEFChunk(shaderData)
+	if rdef == nil {
+		return false
+	}
+	// Both modern d3dcompiler_47 (which inserts a 32-byte "RD11" block into
+	// the header, giving a 60-byte header for ps_5_0/vs_5_0) and classic fxc
+	// (e.g. "HLSL Shader Compiler 6.3.9600", 28-byte header, no RD11 block)
+	// place the bound-resource count at offset 8 and the header size (table
+	// start) at offset 12, so parsing is identical for both. The RD11 block
+	// only changes the header size, not the field positions.
+	if len(rdef) < 16 {
+		return false
+	}
+	count := int(binary.LittleEndian.Uint32(rdef[8:12]))
+	tableStart := int(binary.LittleEndian.Uint32(rdef[12:16]))
+	// The division-based fit check avoids int overflow on 32-bit builds when
+	// a crafted shader supplies huge count/offset fields.
+	if count <= 0 || tableStart < 16 || tableStart > len(rdef) ||
+		count > (len(rdef)-tableStart)/dxRDEFBindSize {
+		return false
+	}
+	return rdefTableHasName(rdef, tableStart, count, name)
+}
+
+// dxbcRDEFChunk locates the RDEF chunk's data inside a DXBC container. Modern
+// d3dcompiler_47 stores a 16-byte checksum, so the chunk-offset array starts
+// at byte 32; older compilers use a 4-byte checksum (array at byte 20). Both
+// layouts are tried, with each offset bounds-checked.
+func dxbcRDEFChunk(shaderData []byte) []byte {
+	if len(shaderData) < 4 || string(shaderData[:4]) != "DXBC" {
+		return nil
+	}
+layouts:
+	for _, hdr := range [][2]int{{28, 32}, {16, 20}} {
+		numField, offField := hdr[0], hdr[1]
+		if len(shaderData) < offField+4 {
+			continue
+		}
+		numChunks := int(binary.LittleEndian.Uint32(shaderData[numField : numField+4]))
+		if numChunks <= 0 || numChunks > 64 || offField+4*numChunks > len(shaderData) {
+			continue
+		}
+		for i := 0; i < numChunks; i++ {
+			off := int(binary.LittleEndian.Uint32(shaderData[offField+4*i:]))
+			if off < 0 || off+8 > len(shaderData) {
+				// Invalid offset table for this header layout; try the other.
+				continue layouts
+			}
+			if string(shaderData[off:off+4]) != "RDEF" {
+				continue
+			}
+			chunkSize := int(binary.LittleEndian.Uint32(shaderData[off+4 : off+8]))
+			if off+8+chunkSize > len(shaderData) {
+				continue layouts
+			}
+			return shaderData[off+8 : off+8+chunkSize]
+		}
+	}
+	return nil
+}
+
+const (
+	dxRDEFBindSize = 32 // D3D11_SHADER_INPUT_BIND_DESC
+)
+
+// rdefTableHasName walks the resource binding table, resolving each entry's
+// Name field (a byte offset relative to the RDEF data start) and comparing the
+// null-terminated string against the target name.
+func rdefTableHasName(rdef []byte, tableStart, count int, name string) bool {
+	for i := 0; i < count; i++ {
+		entry := tableStart + i*dxRDEFBindSize
+		nameOff := int(binary.LittleEndian.Uint32(rdef[entry : entry+4]))
+		if nameOff < 0 || nameOff >= len(rdef) {
+			return false
+		}
+		end := nameOff
+		for end < len(rdef) && rdef[end] != 0 {
+			end++
+		}
+		if end >= len(rdef) {
+			return false
+		}
+		if string(rdef[nameOff:end]) == name {
+			return true
+		}
+	}
+	return false
+}
+
 func (r *Renderer_DX) LoadCustomSpriteShader(shaderName string, shaderData []byte) uint32 {
 	if id, ok := r.customShaderMap[shaderName]; ok {
 		return id
@@ -1766,18 +1918,14 @@ func (r *Renderer_DX) LoadCustomSpriteShader(shaderName string, shaderData []byt
 		LogMessage("[Direct3D 11] Custom shader %s has no data", shaderName)
 		return 0
 	}
-	blob := C.dx_compile(unsafe.Pointer(&shaderData[0]), C.int(len(shaderData)), 0)
-	if blob == nil {
-		LogMessage("[Direct3D 11] Failed to compile custom shader %s: %s", shaderName, C.GoString(C.dx_last_error()))
-		return 0
-	}
-	ps := C.dx_create_ps(r.device, C.dx_blob_ptr(blob), C.int(C.dx_blob_size(blob)))
-	C.dx_release(blob)
+	// shaderData is precompiled .cso (DXBC) bytecode loaded by char.go, so create
+	// the pixel shader directly from it (D3DCompile only accepts HLSL source).
+	ps := C.dx_create_ps(r.device, unsafe.Pointer(&shaderData[0]), C.int(len(shaderData)))
 	if ps == nil {
 		LogMessage("[Direct3D 11] Failed to create custom shader %s: %s", shaderName, C.GoString(C.dx_last_error()))
 		return 0
 	}
-	needsGrabPass := bytes.Contains(shaderData, []byte("bgl_RenderedTexture"))
+	needsGrabPass := dxbcHasResource(shaderData, "bgl_RenderedTexture")
 	id := r.nextShaderID
 	r.nextShaderID++
 	r.customShaders[id] = &dxCustomShader{ps: ps, needsGrabPass: needsGrabPass}
@@ -1911,4 +2059,31 @@ func (r *Renderer_DX) SetShadowFrameTexture(i uint32)                       {}
 func (r *Renderer_DX) SetShadowFrameCubeTexture(i uint32)                   {}
 func (r *Renderer_DX) SetModelVertexData(bufferIndex uint32, values []byte) {}
 func (r *Renderer_DX) SetModelIndexData(bufferIndex uint32, values ...uint32) {
+	if len(values) == 0 {
+		return
+	}
+	size := len(values) * 4
+	if r.modelIndexBuffer[bufferIndex] == nil || size > r.modelIndexBufferSize[bufferIndex] {
+		if r.modelIndexBuffer[bufferIndex] != nil {
+			C.dx_release(r.modelIndexBuffer[bufferIndex])
+		}
+		r.modelIndexBuffer[bufferIndex] = C.dx_create_ib(r.device, C.int(size))
+		if r.modelIndexBuffer[bufferIndex] == nil {
+			LogMessage("[Direct3D 11] Failed to create index buffer: %s", C.GoString(C.dx_last_error()))
+			return
+		}
+		r.modelIndexBufferSize[bufferIndex] = size
+		r.currentIB = r.modelIndexBuffer[bufferIndex]
+	}
+	p := C.dx_map_vb(r.ctx, r.modelIndexBuffer[bufferIndex])
+	if p == nil {
+		LogMessage("[Direct3D 11] Failed to map index buffer: %s", C.GoString(C.dx_last_error()))
+		return
+	}
+	dst := unsafe.Slice((*byte)(p), r.modelIndexBufferSize[bufferIndex])
+	for i, v := range values {
+		binary.LittleEndian.PutUint32(dst[i*4:], v)
+	}
+	C.dx_unmap_vb(r.ctx, r.modelIndexBuffer[bufferIndex])
+	r.currentIB = r.modelIndexBuffer[bufferIndex]
 }
