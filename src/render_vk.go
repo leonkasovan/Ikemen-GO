@@ -527,6 +527,11 @@ func (t *Texture_VK) SetDataG(textureData []byte, mag, min, ws, wt TextureSampli
 	}
 }
 func (t *Texture_VK) SetPixelData(textureData []float32) {
+	// Empty data (e.g. a zero-joint skin's joint matrix texture) is a no-op;
+	// it would stage 0 bytes and then copy uninitialized memory into the image.
+	if len(textureData) == 0 {
+		return
+	}
 	if t.depth == 96 {
 		textureData = gfx.(*Renderer_VK).rgbToRGBA(textureData)
 	}

@@ -517,6 +517,11 @@ func (t *Texture_GL33) SetDataG(data []byte, mag, min, ws, wt TextureSamplingPar
 }
 
 func (t *Texture_GL33) SetPixelData(data []float32) {
+	// Empty data (e.g. a zero-joint skin's joint matrix texture) is a no-op;
+	// &data[0] on an empty slice would panic.
+	if len(data) == 0 {
+		return
+	}
 	format := t.MapInternalFormat(Max(t.depth/4, 8))
 	internalFormat := t.MapInternalFormat(Max(t.depth, 8))
 

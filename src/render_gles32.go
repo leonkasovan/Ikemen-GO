@@ -599,6 +599,11 @@ func (t *Texture_GLES32) SetDataG(data []byte, mag, min, ws, wt TextureSamplingP
 }
 
 func (t *Texture_GLES32) SetPixelData(data []float32) {
+	// Empty data (e.g. a zero-joint skin's joint matrix texture) is a no-op;
+	// &data[0] on an empty slice would panic.
+	if len(data) == 0 {
+		return
+	}
 	r := gfx.(*Renderer_GLES32)
 	r.SetActiveTexture0() //gl.ActiveTexture(gl.TEXTURE0)
 
@@ -609,6 +614,9 @@ func (t *Texture_GLES32) SetPixelData(data []float32) {
 }
 
 func (t Texture_GLES32) CopyData(src *Texture) {
+	if src == nil {
+		return
+	}
 	r := gfx.(*Renderer_GLES32)
 	r.SetActiveTexture0() //gl.ActiveTexture(gl.TEXTURE0)
 
