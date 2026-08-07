@@ -695,7 +695,7 @@ const (
 	dxTopoFan       = 6
 
 	dxBlendOpAdd    = 1
-	dxBlendOpRevSub = 4
+	dxBlendOpRevSub = 3 // D3D11_BLEND_OP_REV_SUBTRACT (4 is D3D11_BLEND_OP_MIN, which clamps dst to min(dst,src) and blacks out transparent texels)
 
 	dxBlendZero        = 1
 	dxBlendOne         = 2
@@ -754,11 +754,15 @@ func (t *Texture_DX) setFilterParams(r *Renderer_DX) {
 }
 
 func (t *Texture_DX) SetData(data []byte) {
+	// nil/empty data means "allocate storage where supported" (CreateTextureAtlas
+	// passes nil); it is a no-op here, matching VK/SW. Uploading would pass a NULL
+	// pSrcData to UpdateSubresource and crash. Atlas storage is cleared via
+	// clearTexture -> SetSubData with a real zero buffer.
+	if len(data) == 0 {
+		return
+	}
 	r := gfx.(*Renderer_DX)
 	if t.palSlot {
-		if len(data) == 0 {
-			return
-		}
 		C.dx_update_sub(r.ctx, t.resource, unsafe.Pointer(&data[0]), 1024, C.int(t.offsetX), C.int(t.offsetY), 256, 1)
 		return
 	}
@@ -772,6 +776,9 @@ func (t *Texture_DX) SetData(data []byte) {
 }
 
 func (t *Texture_DX) SetSubData(data []byte, x, y, width, height, stride int32) {
+	if len(data) == 0 {
+		return
+	}
 	r := gfx.(*Renderer_DX)
 	rowPitch := stride
 	bpp := int32(t.bpp())
@@ -787,6 +794,9 @@ func (t *Texture_DX) SetSubData(data []byte, x, y, width, height, stride int32) 
 }
 
 func (t *Texture_DX) SetDataG(data []byte, mag, min, ws, wt TextureSamplingParam) {
+	if len(data) == 0 {
+		return
+	}
 	r := gfx.(*Renderer_DX)
 	if t.sampler == nil {
 		t.sampler = r.getSampler(mag, min, ws, wt)
@@ -803,13 +813,14 @@ func (t *Texture_DX) SetDataG(data []byte, mag, min, ws, wt TextureSamplingParam
 }
 
 func (t *Texture_DX) SetPixelData(data []float32) {
-	r := gfx.(*Renderer_DX)
-	var p unsafe.Pointer
-	if len(data) > 0 {
-		p = unsafe.Pointer(&data[0])
+	// Empty data (e.g. a zero-joint skin's joint matrix texture) is a no-op;
+	// uploading it would pass a NULL pSrcData to UpdateSubresource and crash.
+	if len(data) == 0 {
+		return
 	}
+	r := gfx.(*Renderer_DX)
 	// Float data textures (depth 128 / RGBA32F) are 16 bytes per pixel.
-	C.dx_update_sub(r.ctx, t.resource, p, C.int(int(t.width)*t.bpp()), 0, 0, C.int(t.width), C.int(t.height))
+	C.dx_update_sub(r.ctx, t.resource, unsafe.Pointer(&data[0]), C.int(int(t.width)*t.bpp()), 0, 0, C.int(t.width), C.int(t.height))
 }
 
 func (t *Texture_DX) IsValid() bool {
