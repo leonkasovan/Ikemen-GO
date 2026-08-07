@@ -1386,6 +1386,7 @@ func (dl DrawList) draw(layerno int32, under bool, cameraX, cameraY, cameraScl f
 
 	// Common variables
 	shake := sys.envShake.getOffset()
+	fightClip, clipFight := sys.fightDrawClip()
 
 	// Draw only the filtered items
 	for _, idx := range sortList {
@@ -1452,6 +1453,10 @@ func (dl DrawList) draw(layerno int32, under bool, cameraX, cameraY, cameraScl f
 			window[2] = int32(cs * (w[2] - w[0]) * sys.widthScale)
 			window[3] = int32(cs * (w[3] - w[1]) * sys.heightScale)
 
+			drawwindow = &window
+		}
+		if clipFight {
+			window := intersectRect(*drawwindow, fightClip)
 			drawwindow = &window
 		}
 
@@ -2112,7 +2117,11 @@ func (a *Anim) Copy() *Anim {
 	newAnim.anim.totaltime = a.anim.totaltime
 	newAnim.anim.frames = a.anim.frames
 	newAnim.anim.interpolate_blend_srcalpha = a.anim.interpolate_blend_srcalpha
+	newAnim.anim.interpolate_blend_dstalpha = a.anim.interpolate_blend_dstalpha
 	newAnim.anim.interpolate_scale = a.anim.interpolate_scale
+	newAnim.anim.interpolate_blend = a.anim.interpolate_blend
+	newAnim.anim.interpolate_offset = a.anim.interpolate_offset
+	newAnim.anim.interpolate_angle = a.anim.interpolate_angle
 	newAnim.anim.mask = a.anim.mask
 	newAnim.anim.srcAlpha = a.anim.srcAlpha
 	newAnim.anim.dstAlpha = a.anim.dstAlpha
@@ -2218,15 +2227,26 @@ func (a *Anim) SetWindow(window [4]float32) {
 	}
 
 	a.windowInit = window
+	a.window = a.drawWindow()
+}
+
+func (a *Anim) drawWindow() [4]int32 {
+	if a.windowInit == [4]float32{0, 0, 0, 0} {
+		return a.window
+	}
+	// Pixel bounds depend on the aspect state selected for this draw pass.
+	window := a.windowInit
 	x := window[0]/a.localScale + float32(a.offsetX)
 	y := window[1] / a.localScale
 	w := (window[2] - window[0]) / a.localScale
 	h := (window[3] - window[1]) / a.localScale
 	// Truncate to int32 first, like before PR #3575, to avoid an off-by-one error
-	a.window[0] = int32((x + float32(int32(sys.gameWidth)-320)/2) * sys.widthScale)
-	a.window[1] = int32((y + float32(int32(sys.gameHeight)-240)) * sys.heightScale)
-	a.window[2] = int32(w*sys.widthScale + 0.5)
-	a.window[3] = int32(h*sys.heightScale + 0.5)
+	return [4]int32{
+		int32((x + float32(int32(sys.gameWidth)-320)/2) * sys.widthScale),
+		int32((y + float32(int32(sys.gameHeight)-240)) * sys.heightScale),
+		int32(w*sys.widthScale + 0.5),
+		int32(h*sys.heightScale + 0.5),
+	}
 }
 
 func (a *Anim) SetVelocity(xvel, yvel float32) {
@@ -2337,7 +2357,8 @@ func (a *Anim) Draw(ln int16) {
 	// so we force integer divsion by casting
 	// the result of sys.gameWidth subtraction to int.
 	// we do the same thing to sys.gameHeight just in case
-	a.anim.Draw(&a.window, a.x+a.vel[0]-xsoffset+float32(int(sys.gameWidth-320)/2),
+	window := a.drawWindow()
+	a.anim.Draw(&window, a.x+a.vel[0]-xsoffset+float32(int(sys.gameWidth-320)/2),
 		a.y+a.vel[1]+float32(int(sys.gameHeight-240)), 1, 1, xscl, xscl, a.yscl,
 		xshear, a.rot, 0, a.palfx, a.facing, [2]float32{1, 1}, a.projection, a.fLength, 0, false, CustomShaderRenderData{})
 }

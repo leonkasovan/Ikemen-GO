@@ -2042,6 +2042,21 @@ func (m *Motif) mergeWithInheritance(specs []InheritSpec) {
 		return strings.Contains(fullKeyLower, ".itemname.") || strings.Contains(fullKeyLower, ".valuename.")
 	}
 
+	shouldSkipAnimSpr := func(dstPrefix, suf string) bool {
+		// Avoid inheriting anim/spr for parameters that represent optional independent elements.
+		if !strings.EqualFold(suf, "anim") && !strings.EqualFold(suf, "spr") {
+			return false
+		}
+
+		lowerPrefix := strings.ToLower(dstPrefix)
+		for _, prefix := range []string{".face.random.", ".face2.random.", ".face.slot.", ".face2.slot.", ".palmenu.preview."} {
+			if strings.Contains(lowerPrefix, prefix) {
+				return true
+			}
+		}
+		return false
+	}
+
 	// Ensure a section exists in the user ini when we need to mirror
 	// a user-originated inherited key into it.
 	ensureUserSection := func(name string) *ini.Section {
@@ -2106,6 +2121,9 @@ func (m *Motif) mergeWithInheritance(specs []InheritSpec) {
 			lowerDst := strings.ToLower(sp.DstPrefix)
 			if strings.Contains(lowerDst, ".palmenu.preview.") &&
 				(strings.EqualFold(suf, "anim") || strings.EqualFold(suf, "spr")) {
+				continue
+			}
+			if shouldSkipAnimSpr(sp.DstPrefix, suf) {
 				continue
 			}
 			lowerFull := strings.ToLower(dstKey)
@@ -3002,49 +3020,16 @@ func (m *Motif) step() {
 
 // drawAspectBars renders black bars when the fight aspect and motif aspect differ.
 func (m *Motif) drawAspectBars() {
-	if !sys.shouldPersistMotifAspect() {
+	viewport, ok := sys.fightDrawClip()
+	if !ok {
 		return
 	}
-	fightAspect := sys.getFightAspect()
-	motifAspect := sys.getMotifAspect()
-
-	if fightAspect <= 0 || motifAspect <= 0 || fightAspect == motifAspect {
-		return
-	}
-
-	sw := sys.scrrect[2]
-	sh := sys.scrrect[3]
-
-	// Collect up to two bar rectangles (pillarbox or letterbox).
-	var rects [][4]int32
-
-	if fightAspect < motifAspect {
-		// Fight view is narrower than the motif (e.g. 4:3 fight on 16:9 motif):
-		// add vertical bars on the left and right.
-		contentWidth := int32(float32(sh) * fightAspect)
-		if contentWidth > 0 && contentWidth < sw {
-			offsetX := (sw - contentWidth) / 2
-			leftBar := [4]int32{0, 0, offsetX, sh}
-			rightBarWidth := sw - (offsetX + contentWidth)
-			if rightBarWidth < 0 {
-				rightBarWidth = 0
-			}
-			rightBar := [4]int32{offsetX + contentWidth, 0, rightBarWidth, sh}
-			rects = append(rects, leftBar, rightBar)
-		}
-	} else if fightAspect > motifAspect {
-		// Fight view is wider than the motif: add horizontal bars top and bottom.
-		contentHeight := int32(float32(sw) / fightAspect)
-		if contentHeight > 0 && contentHeight < sh {
-			offsetY := (sh - contentHeight) / 2
-			topBar := [4]int32{0, 0, sw, offsetY}
-			bottomBarHeight := sh - (offsetY + contentHeight)
-			if bottomBarHeight < 0 {
-				bottomBarHeight = 0
-			}
-			bottomBar := [4]int32{0, offsetY + contentHeight, sw, bottomBarHeight}
-			rects = append(rects, topBar, bottomBar)
-		}
+	screen := sys.scrrect
+	rects := [4][4]int32{
+		{screen[0], screen[1], viewport[0] - screen[0], screen[3]},
+		{viewport[0] + viewport[2], screen[1], screen[0] + screen[2] - viewport[0] - viewport[2], screen[3]},
+		{viewport[0], screen[1], viewport[2], viewport[1] - screen[1]},
+		{viewport[0], viewport[1] + viewport[3], viewport[2], screen[1] + screen[3] - viewport[1] - viewport[3]},
 	}
 
 	for _, r := range rects {
@@ -3075,9 +3060,8 @@ func (m *Motif) draw(layerno int16) {
 		defer sys.restoreAspectState(prev)
 	}
 	// Draw black bars if fight aspect and motif aspect differ.
-	if layerno == 1 && sys.shouldPersistMotifAspect() &&
-		(!sys.middleOfMatch() || m.di.active ||
-			m.me.active && m.me.state != ME_OpeningOut && m.me.state != ME_ClosingIn) {
+	if layerno == 1 && sys.shouldComposeFullResolution() &&
+		(!sys.middleOfMatch() || sys.motifOverlayActive()) {
 		m.drawAspectBars()
 	}
 	if m.ch.active {
@@ -3107,13 +3091,18 @@ func (m *Motif) draw(layerno int16) {
 	if m.me.active {
 		m.me.draw(m, layerno)
 	}
-	// Screen fading
-	if layerno == 3 {
-		if m.fadeOut.isActive() {
-			m.fadeOut.draw()
-		} else if m.fadeIn.isActive() {
-			m.fadeIn.draw()
-		}
+}
+
+func (m *Motif) drawFade() {
+	if m.shouldScopeMotifAspect() {
+		prev := sys.captureAspectState()
+		sys.setGameSize(sys.scrrect[2], sys.scrrect[3])
+		defer sys.restoreAspectState(prev)
+	}
+	if m.fadeOut.isActive() {
+		m.fadeOut.draw()
+	} else if m.fadeIn.isActive() {
+		m.fadeIn.draw()
 	}
 }
 
@@ -3406,7 +3395,6 @@ func (me *MotifMenu) step(m *Motif) {
 		if m.fadeOut.isActive() {
 			return
 		}
-		sys.enterMotifAspect()
 		if err := sys.luaLState.DoString("menuInit()"); err != nil {
 			sys.luaLState.RaiseError("Error executing Lua code: %v\n", err.Error())
 		}
@@ -3421,9 +3409,6 @@ func (me *MotifMenu) step(m *Motif) {
 	case ME_ClosingOut:
 		if m.fadeOut.isActive() {
 			return
-		}
-		if !m.di.active {
-			sys.leaveMotifAspect()
 		}
 		if pm != nil {
 			pm.FadeIn.FadeData.init(m.fadeIn, true)
@@ -3473,7 +3458,6 @@ func (ch *MotifChallenger) reset(m *Motif) {
 	ch.initialized = false
 	ch.endTimer = -1
 	ch.controllerNo = -1
-	//sys.leaveMotifAspect()
 }
 
 func (ch *MotifChallenger) init(m *Motif) {
@@ -3491,7 +3475,6 @@ func (ch *MotifChallenger) init(m *Motif) {
 		return
 	}
 	ch.controllerNo = controllerNo
-	//sys.enterMotifAspect()
 
 	if err := sys.luaLState.DoString("hook.run('game.challenger_init')"); err != nil {
 		sys.luaLState.RaiseError("Error executing Lua hook: %s\n%v", "game.challenger_init", err.Error())
@@ -3604,7 +3587,6 @@ func (co *MotifContinue) reset(m *Motif) {
 	co.endTimer = -1
 	co.waitTimer = 0
 	co.showEndAnim = false
-	sys.leaveMotifAspect()
 }
 
 func (co *MotifContinue) extractAndSortKeysDescending(m *Motif) []string {
@@ -3639,7 +3621,6 @@ func (co *MotifContinue) init(m *Motif) {
 		co.initialized = true
 		return
 	}
-	sys.enterMotifAspect()
 	if err := sys.luaLState.DoString("hook.run('game.continue_init')"); err != nil {
 		sys.luaLState.RaiseError("Error executing Lua hook: %s\n%v", "game.continue_init", err.Error())
 	}
@@ -4252,8 +4233,6 @@ func (di *MotifDialogue) reset(m *Motif) {
 			pn:  -1,
 		}
 	}
-
-	//sys.leaveMotifAspect()
 }
 
 func (di *MotifDialogue) clear(m *Motif) {
@@ -4273,7 +4252,6 @@ func (di *MotifDialogue) clear(m *Motif) {
 	if m.DialogueInfo.P2.Face.Active.AnimData != nil {
 		m.DialogueInfo.P2.Face.Active.AnimData.anim = nil
 	}
-	sys.leaveMotifAspect()
 }
 
 func (di *MotifDialogue) initDefaults(m *Motif) {
@@ -4370,7 +4348,6 @@ func (di *MotifDialogue) init(m *Motif, matchEnd bool) {
 	if matchEnd && sys.fightScreen.round.fadeOut.isActive() {
 		sys.fightScreen.round.fadeOut.reset()
 	}
-	sys.enterMotifAspect()
 
 	lines, pn, _ := di.getDialogueLines()
 	di.char = sys.chars[pn-1][0]
@@ -5876,7 +5853,6 @@ func (vi *MotifVictory) reset(m *Motif) {
 	m.VictoryScreen.WinQuote.TextSpriteData.textDelay = 0
 	vi.endTimer = -1
 	vi.clear(m)
-	sys.leaveMotifAspect()
 }
 
 func (vi *MotifVictory) clearProps(props *PlayerVictoryProperties) {
@@ -6162,8 +6138,6 @@ func (vi *MotifVictory) init(m *Motif) {
 			}
 		}
 	}
-
-	sys.enterMotifAspect()
 
 	//fmt.Printf("[Victory] init: enabled=%v winnerTeam=%d cpu.enabled=%v p1.num=%d p2.num=%d\n", m.VictoryScreen.Enabled, sys.winnerTeam(), m.VictoryScreen.Cpu.Enabled, m.VictoryScreen.P1.Num, m.VictoryScreen.P2.Num)
 
@@ -6604,7 +6578,6 @@ type MotifWin struct {
 func (wi *MotifWin) assignStates(p1States, p2States [4][]int32) {
 	wi.p1States = p1States
 	wi.p2States = p2States
-	sys.leaveMotifAspect()
 }
 
 func (wi *MotifWin) reset(m *Motif) {
@@ -6654,7 +6627,6 @@ func (wi *MotifWin) init(m *Motif) {
 		wi.initialized = true
 		return
 	}
-	sys.enterMotifAspect()
 
 	if !wi.soundsEnabled {
 		sys.clearAllSound()

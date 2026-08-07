@@ -183,19 +183,15 @@ func (dc *DebugClsn) Add(clsn [][4]float32, x, y, xs, ys, angle float32) {
 	y = (y*sys.cam.Scale - sys.cam.Pos[1]) + sys.cam.GroundLevel()
 	xs *= sys.cam.Scale
 	ys *= sys.cam.Scale
-	sw := float32(sys.gameWidth)
-	sh := float32(0)
 
 	for i := 0; i < len(clsn); i++ {
-		offx := sw / 2
-		offy := sh
 		rect := [7]float32{
 			Abs(xs) * clsn[i][0],           // [0] x position (left)
 			Abs(ys) * clsn[i][1],           // [1] y position (top)
 			xs * (clsn[i][2] - clsn[i][0]), // [2] width
 			ys * (clsn[i][3] - clsn[i][1]), // [3] height
-			(x + offx) * sys.widthScale,    // [4] rotation center x
-			(y + offy) * sys.heightScale,   // [5] rotation center y
+			x,                              // [4] rotation center x, relative to screen center
+			y,                              // [5] rotation center y
 			angle,                          // [6] rotation angle
 		}
 
@@ -207,6 +203,11 @@ func (dc *DebugClsn) Add(clsn [][4]float32, x, y, xs, ys, angle float32) {
 func (dc *DebugClsn) draw(color uint32, blendAlpha [2]int32) {
 	if len(dc.rects) == 0 {
 		return
+	}
+
+	drawwindow := &sys.scrrect
+	if viewport, ok := sys.fightDrawClip(); ok {
+		drawwindow = &viewport
 	}
 
 	// Initialize the palette texture for this specific rect type if it doesn't exist yet
@@ -239,9 +240,9 @@ func (dc *DebugClsn) draw(color uint32, blendAlpha [2]int32) {
 			blendAlpha:     blendAlpha,
 			mask:           -1,
 			pfx:            nil,
-			window:         &sys.scrrect,
-			rcx:            c[4],
-			rcy:            c[5],
+			window:         drawwindow,
+			rcx:            (c[4] + sys.gameWidth/2) * sys.widthScale,
+			rcy:            c[5] * sys.heightScale,
 			projectionMode: 0,
 			fLength:        0,
 			xOffset:        0,
@@ -4394,8 +4395,13 @@ func (c *Char) loadPalettes() {
 			gi.palInfo[i] = pal
 		}
 
-		// If no ACT files were successfully loaded, remove the default [1, 1] mapping
-		if tmp == 0 {
+		if tmp > 0 {
+			// Ensure [1, 1] exists so RemapPal can use the SFFv1 base palette as source.
+			if _, ok := gi.palettedata.palList.PalTable[[...]uint16{1, 1}]; !ok {
+				gi.palettedata.palList.PalTable[[...]uint16{1, 1}] = 0
+			}
+		} else {
+			// If no ACT files were successfully loaded, remove the default [1, 1] mapping.
 			delete(gi.palettedata.palList.PalTable, [...]uint16{1, 1})
 		}
 	} else {
@@ -4409,6 +4415,14 @@ func (c *Char) loadPalettes() {
 				gi.palettedata.palList.SetSource(i, pData)
 				gi.palettedata.palList.PalTex[i] = NewTextureFromPalette(pData)
 			}
+		}
+
+		// Copy duplicate palette mappings from the SFFv2.
+		plist := &gi.palettedata.palList
+		plist.duplicatePals = make(map[int][]int)
+
+		for physical, duplicates := range gi.sff.palList.duplicatePals {
+			plist.duplicatePals[physical] = append([]int(nil), duplicates...)
 		}
 
 		// Overwrite SFF palettes with ACT palettes
@@ -6071,7 +6085,10 @@ func (c *Char) screenPosY() float32 {
 
 func (c *Char) screenHeight() float32 {
 	// We need both match and screenpack aspects because of victory and game over screens
-	aspect := sys.getCurrentAspect()
+	aspect := sys.getFightAspect()
+	if !sys.middleOfMatch() {
+		aspect = sys.getCurrentAspect()
+	}
 
 	// Compute height from width
 	height := float32(c.stOgi().localcoord[0]) / aspect
@@ -9363,6 +9380,12 @@ func (c *Char) remapPal(pfx *PalFX, src [2]int32, dst [2]int32) {
 		// Always remap the requested source palette
 		plist.Remap(si, di)
 
+		// Also remap logical palettes that contain the same palette data.
+		// This handles SFFv2 sprites using a duplicated palette entry.
+		// https://github.com/ikemen-engine/Ikemen-GO/issues/3854
+		for _, duplicate := range plist.duplicatePals[si] {
+			plist.Remap(duplicate, di)
+		}
 		// For SFFv1, remapping 1,1 should also remap whatever palettes sprites 0,0 and 9000,0 use
 		// TODO: Because 9000,0 is not hardcoded in Ikemen, this might create trouble for custom portraits
 		if src[0] == 1 && src[1] == 1 && c.gi().sff.header.Version[0] == 1 {
@@ -9427,11 +9450,15 @@ func (c *Char) getDrawPal(palIndex int) [2]int32 {
 }
 
 func (c *Char) drawPal() [2]int32 {
-	palMap := c.getPalMap()
-	if len(palMap) == 0 {
+	if c.anim == nil || c.anim.spr == nil {
 		return [2]int32{0, 0}
 	}
-	return c.getDrawPal(palMap[0])
+	palMap := c.getPalMap()
+	source := c.anim.spr.palidx
+	if source >= 0 && source < len(palMap) {
+		source = palMap[source]
+	}
+	return c.getDrawPal(source)
 }
 
 type RemapTable map[int32][2]int32
