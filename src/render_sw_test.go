@@ -309,7 +309,6 @@ func TestSWFontGlyphNoOverlap(t *testing.T) {
 	q := &swQuadState{
 		isFlat:    false,
 		mask:      0,
-		texUV:     [4]float32{0, 0, 1, 1},
 		fontMode:  true,
 		fontCov:   cov,
 		fontColor: [4]float32{1, 1, 1, 1},
@@ -467,6 +466,97 @@ func TestSWClippedQuadUV(t *testing.T) {
 		if rr < 50 || bb > 150 {
 			t.Fatalf("clipped filtered px63: got (%d,..,%d), want red-dominant mix", rr, bb)
 		}
+	}
+}
+
+// Batched-path sub-rect UVs must sample only the sprite's sub-rect, not the
+// whole texture. Regression: flushSWQueue hardcoded 0/1 vertex UVs and stashed
+// dc.uv in a texUV field the rasterizer never applied, so a batched sprite
+// with a sub-rect UV (SFF atlas glyphs) sampled the entire atlas texture.
+func TestSWBatchSubRectUV(t *testing.T) {
+	cols := [][4]byte{{255, 0, 0, 255}, {0, 255, 0, 255}, {0, 0, 255, 255}, {255, 255, 0, 255}}
+	newDC := func(tex, pal Texture) SpriteDrawCall {
+		return SpriteDrawCall{
+			isFlat:   false,
+			mask:     -1,
+			tex:      tex,
+			paltex:   pal,
+			blendEq:  BlendAdd,
+			blendSrc: BlendOne,
+			blendDst: BlendOneMinusSrcAlpha,
+			// Full-screen quad (64x16) window coords (y-up): p1=(0,0) p2=(64,0)
+			// p3=(64,16) p4=(0,16).
+			corners: [8]float32{0, 0, 64, 0, 64, 16, 0, 16},
+			// Sub-rect covering texture columns 2..3 (blue, yellow) only.
+			uv:    [4]float32{0.5, 0, 1, 1},
+			spfx:  ShaderPalFX{mult: [3]float32{1, 1, 1}},
+			alpha: 1,
+		}
+	}
+
+	// RGBA source.
+	r := newSWTestRenderer(64, 16)
+	rgba := &swTexture{width: 4, height: 1, depth: 32, serial: 70}
+	rgba.data = make([]byte, 16)
+	for i := 0; i < 4; i++ {
+		copy(rgba.data[i*4:], cols[i][:])
+	}
+	r.flushSWQueue([]SpriteDrawCall{newDC(rgba, nil)})
+	rr, gg, bb, _ := swPix(r, 8, 8)
+	if rr != 0 || gg != 0 || bb != 255 {
+		t.Fatalf("RGBA batch left: got (%d,%d,%d), want blue (col 2)", rr, gg, bb)
+	}
+	rr, gg, bb, _ = swPix(r, 48, 8)
+	if rr != 255 || gg != 255 || bb != 0 {
+		t.Fatalf("RGBA batch right: got (%d,%d,%d), want yellow (col 3)", rr, gg, bb)
+	}
+
+	// Paletted source.
+	r = newSWTestRenderer(64, 16)
+	palTex := &swTexture{width: 4, height: 1, depth: 8, serial: 71}
+	palTex.data = []byte{0, 1, 2, 3}
+	pal := &swTexture{width: 256, height: 1, depth: 32, palSlot: true, serial: 72}
+	pal.data = make([]byte, 1024)
+	for i := 0; i < 4; i++ {
+		copy(pal.data[i*4:], cols[i][:])
+	}
+	r.flushSWQueue([]SpriteDrawCall{newDC(palTex, pal)})
+	rr, gg, bb, _ = swPix(r, 8, 8)
+	if rr != 0 || gg != 0 || bb != 255 {
+		t.Fatalf("pal batch left: got (%d,%d,%d), want blue (col 2)", rr, gg, bb)
+	}
+	rr, gg, bb, _ = swPix(r, 48, 8)
+	if rr != 255 || gg != 255 || bb != 0 {
+		t.Fatalf("pal batch right: got (%d,%d,%d), want yellow (col 3)", rr, gg, bb)
+	}
+}
+
+// markDirty must accumulate the union of touched rects, clamp to the
+// framebuffer, and reject fully off-screen rects. Regression: the rect was
+// tracked per-frame but present() uploaded the whole texture via
+// Update(nil, ...), so the tracking had no effect.
+func TestSWDirtyRectAccumulation(t *testing.T) {
+	r := newSWTestRenderer(64, 48)
+	r.markDirty(10, 20, 30, 40)
+	r.markDirty(5, 25, 50, 35)
+	if !r.dirty {
+		t.Fatal("dirty flag not set after markDirty")
+	}
+	if r.dirtyX0 != 5 || r.dirtyY0 != 20 || r.dirtyX1 != 50 || r.dirtyY1 != 40 {
+		t.Fatalf("dirty rect = (%d,%d)-(%d,%d), want (5,20)-(50,40)",
+			r.dirtyX0, r.dirtyY0, r.dirtyX1, r.dirtyY1)
+	}
+	// Off-screen edges clamp to the framebuffer.
+	r.markDirty(-10, -10, 100, 100)
+	if r.dirtyX0 != 0 || r.dirtyY0 != 0 || r.dirtyX1 != 64 || r.dirtyY1 != 48 {
+		t.Fatalf("clamped dirty rect = (%d,%d)-(%d,%d), want (0,0)-(64,48)",
+			r.dirtyX0, r.dirtyY0, r.dirtyX1, r.dirtyY1)
+	}
+	// Fully off-screen rects must not mark dirty at all.
+	r2 := newSWTestRenderer(64, 48)
+	r2.markDirty(100, 100, 120, 120)
+	if r2.dirty {
+		t.Fatal("fully off-screen rect must not mark dirty")
 	}
 }
 

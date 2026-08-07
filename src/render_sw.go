@@ -241,7 +241,6 @@ func (r *Renderer_SW) dumpFrame() {
 	}
 }
 
-
 func (r *Renderer_SW) Await() {}
 
 func (r *Renderer_SW) present() {
@@ -251,8 +250,17 @@ func (r *Renderer_SW) present() {
 	if r.dirty {
 		// r.pix is [R,G,B,A]; the streaming texture is ABGR8888 which on
 		// little-endian is the same byte order, so the upload is a direct copy.
-		if err := r.target.Update(nil, unsafe.Pointer(&r.pix[0]), int(r.pitch)); err != nil {
-			LogError("[SDL2 Software] texture update failed: %v", err)
+		// Only the region touched this frame is uploaded: SDL_UpdateTexture
+		// expects the pixel pointer at the rect's top-left corner and the full
+		// framebuffer row stride as pitch.
+		w := r.dirtyX1 - r.dirtyX0
+		h := r.dirtyY1 - r.dirtyY0
+		if w > 0 && h > 0 {
+			rect := &sdl.Rect{X: r.dirtyX0, Y: r.dirtyY0, W: w, H: h}
+			off := int(r.dirtyY0)*r.pitch + int(r.dirtyX0)*4
+			if err := r.target.Update(rect, unsafe.Pointer(&r.pix[off]), int(r.pitch)); err != nil {
+				LogError("[SDL2 Software] texture update failed: %v", err)
+			}
 		}
 		r.dirty = false
 	}
@@ -587,7 +595,6 @@ func (r *Renderer_SW) RenderQuad() {
 		isTrapez:   r.curIsTrapez,
 		x1x2x4x3:   r.curX1x2x4x3,
 		tint:       r.curTint,
-		texUV:      [4]float32{0, 0, 1, 1},
 		add:        r.curAdd,
 		mult:       r.curMult,
 		alpha:      r.curAlpha,
@@ -621,7 +628,6 @@ func (r *Renderer_SW) flushSWQueue(queue []SpriteDrawCall) {
 			isTrapez:   dc.isTrapez,
 			x1x2x4x3:   dc.x1x2x4x3,
 			tint:       dc.tint,
-			texUV:      dc.uv,
 			add:        dc.spfx.add,
 			mult:       dc.spfx.mult,
 			alpha:      dc.alpha,
@@ -642,13 +648,18 @@ func (r *Renderer_SW) flushSWQueue(queue []SpriteDrawCall) {
 			q.pal = p
 		}
 		c := dc.corners
-		// Corner -> vertex UV convention (normalized [0,1] + texUV mapping):
-		// v0 = p2 (u2,v2), v1 = p3 (u2,v1), v2 = p1 (u1,v2), v3 = p4 (u1,v1).
+		// Corner -> vertex UV convention: the vertex UVs carry the absolute
+		// sub-rect coords {u1,v1,u2,v2}, matching drawQuadsUV and the GLES32
+		// instanced shader (v0 = p2 (u2,v2), v1 = p3 (u2,v1), v2 = p1 (u1,v2),
+		// v3 = p4 (u1,v1)). Previously the 0/1 corners were paired with a texUV
+		// field that the rasterizer never applied, so sub-rect sprites (SFF
+		// atlas glyphs) sampled the whole texture.
+		uv := dc.uv
 		r.rasterizeQuadWindow(&q,
-			swVertex{c[2], c[3], 1, 1},
-			swVertex{c[4], c[5], 1, 0},
-			swVertex{c[0], c[1], 0, 1},
-			swVertex{c[6], c[7], 0, 0},
+			swVertex{c[2], c[3], uv[2], uv[3]},
+			swVertex{c[4], c[5], uv[2], uv[1]},
+			swVertex{c[0], c[1], uv[0], uv[3]},
+			swVertex{c[6], c[7], uv[0], uv[1]},
 		)
 	}
 	drawCallStats.TotalBatches += len(queue)

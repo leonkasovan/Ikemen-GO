@@ -19,7 +19,6 @@ type swQuadState struct {
 	isTrapez         bool
 	x1x2x4x3         [4]float32 // trapezoid correction bounds (shader uniform)
 	tint             [4]float32
-	texUV            [4]float32 // {u1,v1,u2,v2} sprite rect within the texture
 	tex, pal         *swTexture
 	add, mult        [3]float32
 	alpha, gray, hue float32

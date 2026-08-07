@@ -304,7 +304,6 @@ func (r *Renderer_SW) drawFontGlyph(f *Font_SW, g *swGlyph,
 	q := swQuadState{
 		isFlat:     false,
 		mask:       0,
-		texUV:      [4]float32{0, 0, 1, 1},
 		fontMode:   true,
 		fontCov:    g.tex,
 		fontColor:  [4]float32{Min(f.color.r, 1), Min(f.color.g, 1), Min(f.color.b, 1), Min(f.color.a, 1)},
