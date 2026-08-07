@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"math"
 	"runtime"
+	"strconv"
+	"strings"
 	"sync"
 	"unsafe"
 
@@ -288,6 +290,23 @@ void* dx_create_rasterizer(void* device, int scissorEnable) {
 	}
 	return s;
 }
+void* dx_create_rasterizer_ex(void* device, int scissorEnable, int cullMode, int frontCCW) {
+	// cullMode: 1=D3D11_CULL_NONE, 2=D3D11_CULL_FRONT, 3=D3D11_CULL_BACK (GL-compatible CCW front)
+	D3D11_RASTERIZER_DESC desc;
+	memset(&desc, 0, sizeof(desc));
+	desc.FillMode = D3D11_FILL_SOLID;
+	desc.CullMode = (D3D11_CULL_MODE)cullMode;
+	desc.FrontCounterClockwise = frontCCW ? TRUE : FALSE;
+	desc.ScissorEnable = scissorEnable ? TRUE : FALSE;
+	desc.DepthClipEnable = TRUE;
+	ID3D11RasterizerState* s = NULL;
+	HRESULT hr = ((ID3D11Device*)device)->lpVtbl->CreateRasterizerState((ID3D11Device*)device, &desc, &s);
+	if (FAILED(hr)) {
+		snprintf(dx_err, sizeof(dx_err), "CreateRasterizerState(cull=%d) failed hr=0x%08lx", cullMode, hr);
+		return NULL;
+	}
+	return s;
+}
 
 void* dx_create_dsstate(void* device, int depthEnable, int depthWrite) {
 	D3D11_DEPTH_STENCIL_DESC desc;
@@ -426,6 +445,50 @@ void* dx_create_il_pos(void* device, const void* blobPtr, int blobSize) {
 	return il;
 }
 
+void* dx_create_il_model(void* device, const void* blobPtr, int blobSize) {
+	// Model vertex data is structure-of-arrays: one D3D11 input slot per
+	// attribute (slot 0..10), each with per-attribute stride and a byte offset
+	// into the shared vertex buffer (mirrors the GL/VK multi-binding layout).
+	// Slot 0 carries the sequential per-vertex vertexId prefix (R32_UINT),
+	// which the GL path reads via the inVertexId attribute. SV_VertexID cannot
+	// replace it: for indexed draws it yields the index-buffer value, not the
+	// sequential vertex number the morph-target math needs.
+	D3D11_INPUT_ELEMENT_DESC desc[11];
+	memset(desc, 0, sizeof(desc));
+	desc[0].SemanticName = "VERTEXID"; desc[0].Format = DXGI_FORMAT_R32_UINT;          desc[0].InputSlot = 0; desc[0].AlignedByteOffset = 0;
+	desc[1].SemanticName = "POSITION"; desc[1].Format = DXGI_FORMAT_R32G32B32_FLOAT;   desc[1].InputSlot = 1; desc[1].AlignedByteOffset = 0;
+	desc[2].SemanticName = "TEXCOORD"; desc[2].Format = DXGI_FORMAT_R32G32_FLOAT;       desc[2].InputSlot = 2; desc[2].AlignedByteOffset = 0;
+	desc[3].SemanticName = "NORMAL";   desc[3].Format = DXGI_FORMAT_R32G32B32_FLOAT;   desc[3].InputSlot = 3; desc[3].AlignedByteOffset = 0;
+	desc[4].SemanticName = "TANGENT";  desc[4].Format = DXGI_FORMAT_R32G32B32A32_FLOAT; desc[4].InputSlot = 4; desc[4].AlignedByteOffset = 0;
+	desc[5].SemanticName = "COLOR";    desc[5].Format = DXGI_FORMAT_R32G32B32A32_FLOAT; desc[5].InputSlot = 5; desc[5].AlignedByteOffset = 0;
+	// HLSL semantics like JOINTS0/JOINTS1 compile to semantic name "JOINTS"
+	// with SemanticIndex 0/1 (same for WEIGHTS). The IL must mirror that
+	// exactly or CreateInputLayout fails with E_INVALIDARG.
+	desc[6].SemanticName = "JOINTS";  desc[6].SemanticIndex = 0; desc[6].Format = DXGI_FORMAT_R32G32B32A32_FLOAT; desc[6].InputSlot = 6; desc[6].AlignedByteOffset = 0;
+	desc[7].SemanticName = "WEIGHTS"; desc[7].SemanticIndex = 0; desc[7].Format = DXGI_FORMAT_R32G32B32A32_FLOAT; desc[7].InputSlot = 7; desc[7].AlignedByteOffset = 0;
+	desc[8].SemanticName = "JOINTS";  desc[8].SemanticIndex = 1; desc[8].Format = DXGI_FORMAT_R32G32B32A32_FLOAT; desc[8].InputSlot = 8; desc[8].AlignedByteOffset = 0;
+	desc[9].SemanticName = "WEIGHTS"; desc[9].SemanticIndex = 1; desc[9].Format = DXGI_FORMAT_R32G32B32A32_FLOAT; desc[9].InputSlot = 9; desc[9].AlignedByteOffset = 0;
+	desc[10].SemanticName = "OUTLINE"; desc[10].Format = DXGI_FORMAT_R32G32B32A32_FLOAT; desc[10].InputSlot = 10; desc[10].AlignedByteOffset = 0;
+	ID3D11InputLayout* il = NULL;
+	HRESULT hr = ((ID3D11Device*)device)->lpVtbl->CreateInputLayout((ID3D11Device*)device, desc, 11, blobPtr, (SIZE_T)blobSize, &il);
+	if (FAILED(hr)) {
+		snprintf(dx_err, sizeof(dx_err), "CreateInputLayout(model) failed hr=0x%08lx", hr);
+		return NULL;
+	}
+	return il;
+}
+void dx_set_vb_slots(void* ctx, void* vb, int firstSlot, int count, const int* strides, const int* offsets) {
+	ID3D11Buffer* bufs[16];
+	UINT stridesU[16];
+	UINT offsetsU[16];
+	for (int i = 0; i < count; i++) {
+		bufs[i] = (ID3D11Buffer*)vb;
+		stridesU[i] = (UINT)strides[i];
+		offsetsU[i] = (UINT)offsets[i];
+	}
+	((ID3D11DeviceContext*)ctx)->lpVtbl->IASetVertexBuffers((ID3D11DeviceContext*)ctx, (UINT)firstSlot, (UINT)count, bufs, stridesU, offsetsU);
+}
+
 void dx_set_vs(void* ctx, void* vs) { ((ID3D11DeviceContext*)ctx)->lpVtbl->VSSetShader((ID3D11DeviceContext*)ctx, (ID3D11VertexShader*)vs, NULL, 0); }
 void dx_set_ps(void* ctx, void* ps) { ((ID3D11DeviceContext*)ctx)->lpVtbl->PSSetShader((ID3D11DeviceContext*)ctx, (ID3D11PixelShader*)ps, NULL, 0); }
 void dx_set_il(void* ctx, void* il) { ((ID3D11DeviceContext*)ctx)->lpVtbl->IASetInputLayout((ID3D11DeviceContext*)ctx, (ID3D11InputLayout*)il); }
@@ -434,6 +497,12 @@ void dx_set_vb(void* ctx, void* vb, int stride) {
 	ID3D11Buffer* bufs[1] = { (ID3D11Buffer*)vb };
 	UINT strides[1] = { (UINT)stride };
 	UINT offsets[1] = { 0 };
+	((ID3D11DeviceContext*)ctx)->lpVtbl->IASetVertexBuffers((ID3D11DeviceContext*)ctx, 0, 1, bufs, strides, offsets);
+}
+void dx_set_vb_ex(void* ctx, void* vb, int stride, int offset) {
+	ID3D11Buffer* bufs[1] = { (ID3D11Buffer*)vb };
+	UINT strides[1] = { (UINT)stride };
+	UINT offsets[1] = { (UINT)offset };
 	((ID3D11DeviceContext*)ctx)->lpVtbl->IASetVertexBuffers((ID3D11DeviceContext*)ctx, 0, 1, bufs, strides, offsets);
 }
 void dx_set_ib(void* ctx, void* ib) {
@@ -478,6 +547,14 @@ void dx_set_cb_ps(void* ctx, int slot, void* cb) {
 void dx_set_srv_ps(void* ctx, int slot, void* srv) {
 	ID3D11ShaderResourceView* srvs[1] = { (ID3D11ShaderResourceView*)srv };
 	((ID3D11DeviceContext*)ctx)->lpVtbl->PSSetShaderResources((ID3D11DeviceContext*)ctx, (UINT)slot, 1, srvs);
+}
+void dx_set_srv_vs(void* ctx, int slot, void* srv) {
+	ID3D11ShaderResourceView* srvs[1] = { (ID3D11ShaderResourceView*)srv };
+	((ID3D11DeviceContext*)ctx)->lpVtbl->VSSetShaderResources((ID3D11DeviceContext*)ctx, (UINT)slot, 1, srvs);
+}
+void dx_set_sampler_vs(void* ctx, int slot, void* s) {
+	ID3D11SamplerState* samps[1] = { (ID3D11SamplerState*)s };
+	((ID3D11DeviceContext*)ctx)->lpVtbl->VSSetSamplers((ID3D11DeviceContext*)ctx, (UINT)slot, 1, samps);
 }
 void dx_set_sampler_ps(void* ctx, int slot, void* s) {
 	ID3D11SamplerState* samps[1] = { (ID3D11SamplerState*)s };
@@ -585,6 +662,12 @@ var dxIdentVS string
 
 //go:embed shaders/ident_ps.hlsl
 var dxIdentPS string
+
+//go:embed shaders/model_vs.hlsl
+var dxModelVS string
+
+//go:embed shaders/model_ps.hlsl
+var dxModelPS string
 
 const (
 	dxFmtRGBA8   = 28
@@ -831,6 +914,92 @@ type dxUniforms struct {
 	p                     [16][4]float32
 }
 
+// D3D11 cull mode values (D3D11_CULL_MODE).
+const (
+	dxCullNone  = 1
+	dxCullFront = 2
+	dxCullBack  = 3
+)
+
+// Model VS cbuffer field indices (dxModelVSUniforms).
+const (
+	mdlNumJoints = iota
+	mdlNumTargets
+	mdlMorphDim
+	mdlNumVertices
+)
+
+const (
+	mdlMeshOutline = iota
+	mdlUseJoint0
+	mdlUseJoint1
+	mdlUseNormal
+)
+
+const (
+	mdlUseTangent = iota
+	mdlUseVertColor
+	mdlUseOutline
+	mdlPadVS
+)
+
+// Model vertex attribute slot indices (0-based into modelAttrStrides/Offsets;
+// D3D11 input slot = index+1).
+const (
+	mdlSlotPosition = iota
+	mdlSlotUV
+	mdlSlotNormal
+	mdlSlotTangent
+	mdlSlotVertColor
+	mdlSlotJoints0
+	mdlSlotWeights0
+	mdlSlotJoints1
+	mdlSlotWeights1
+	mdlSlotOutline
+	mdlSlotCount
+)
+
+// Light float4 sub-vectors.
+const (
+	mdlLightDirRange = iota
+	mdlLightColorInt
+	mdlLightPosCone
+	mdlLightMisc
+)
+
+// Model pipeline uniforms. Layouts must match model_vs.hlsl / model_ps.hlsl.
+type dxModelVSUniforms struct {
+	model, normalMatrix, view, projection [16]float32
+	lightMatrices                         [4][16]float32
+	cameraPosition                        [4]float32
+	numData                               [4]int32 // numJoints, numTargets, morphTargetTextureDimension, numVertices
+	morphTargetWeight                     [2][4]float32
+	morphTargetOffset                     [4]float32
+	meshData                              [4]float32 // meshOutline, useJoint0, useJoint1, useNormal
+	flagsData                             [4]float32 // useTangent, useVertColor, useOutlineAttribute, pad
+}
+
+type dxModelPSUniforms struct {
+	lights                        [4][4][4]float32 // 4 lights x 4 float4 (dir/range, color/intensity, pos/innerCos, outerCos/type/bias/far)
+	environmentRotation           [3][4]float32
+	cameraPosition                [4]float32
+	envMisc                       [4]float32 // x=environmentIntensity y=mipCount
+	texTransform                  [3][4]float32
+	normalMapTransform            [3][4]float32
+	metallicRoughnessMapTransform [3][4]float32
+	ambientOcclusionMapTransform  [3][4]float32
+	emissionMapTransform          [3][4]float32
+	baseColorFactor               [4]float32
+	emission                      [4]float32
+	metallicRoughness             [4]float32
+	matMisc                       [4]float32 // x=ambientOcclusionStrength y=alphaThreshold z=unlit w=enableAlpha
+	palfxMisc                     [4]float32 // x=gray y=hue z=meshOutline w=neg
+	add                           [4]float32
+	mult                          [4]float32
+	texFlags                      [4]float32 // x=useTexture y=useNormalMap z=useMetallicRoughnessMap w=useEmissionMap
+	miscFlags                     [4]float32 // x=useAmbientOcclusionMap y=useShadowMap
+}
+
 type dxFontUniforms struct {
 	textColor  [4]float32
 	resolution [4]float32
@@ -940,6 +1109,26 @@ type Renderer_DX struct {
 	modelIndexBufferSize [2]int
 	currentIB            unsafe.Pointer
 
+	vsModel, psModel      unsafe.Pointer
+	ilModel               unsafe.Pointer
+	cbModelVS, cbModelPS  unsafe.Pointer
+	modelVSUniforms       dxModelVSUniforms
+	modelPSUniforms       dxModelPSUniforms
+	cbModelVSDirty        bool
+	cbModelPSDirty        bool
+	modelPipelineActive   bool
+	modelAttrStrides      [11]int32 // index = D3D11 input slot (0 = vertexId prefix, 1..10 = attributes)
+	modelAttrOffsets      [11]int32
+	currentVB             unsafe.Pointer
+	modelVertexBuffer     [2]unsafe.Pointer
+	modelVertexBufferSize [2]int
+	rsCull                [4]unsafe.Pointer // 1=NONE, 2=FRONT, 3=BACK (D3D11_CULL_MODE)
+	dsTest                unsafe.Pointer
+	vsSrv                 [4]unsafe.Pointer
+	vsSampler             [4]unsafe.Pointer
+	dummyTex              *Texture_DX
+	dummyCube             *Texture_DX
+
 	resizeFailed bool
 
 	state dxState
@@ -1042,6 +1231,8 @@ func (r *Renderer_DX) Init() {
 	chkRes(r.dsOff)
 	r.dsOn = C.dx_create_dsstate(r.device, 1, 1)
 	chkRes(r.dsOn)
+	r.dsTest = C.dx_create_dsstate(r.device, 1, 0)
+	chkRes(r.dsTest)
 
 	var vsSpriteBlob, vsIdentBlob unsafe.Pointer
 	r.vsSprite, vsSpriteBlob = r.compileShader(dxSpriteVS, true)
@@ -1078,6 +1269,35 @@ func (r *Renderer_DX) Init() {
 	chkRes(r.cbFont)
 	r.cbPost = C.dx_create_cb(r.device, C.int(unsafe.Sizeof(dxPostUniforms{})))
 	chkRes(r.cbPost)
+
+	// Model pipeline (Phase A+B): compile HLSL shaders, create input layout, constant buffers.
+	var modelBlob unsafe.Pointer
+	r.vsModel, modelBlob = r.compileShader(dxModelVS, true)
+	r.ilModel = C.dx_create_il_model(r.device, C.dx_blob_ptr(modelBlob), C.int(C.dx_blob_size(modelBlob)))
+	chkRes(r.ilModel)
+	C.dx_release(modelBlob)
+	r.psModel, modelBlob = r.compileShader(dxModelPS, false)
+	C.dx_release(modelBlob)
+	r.cbModelVS = C.dx_create_cb(r.device, C.int(unsafe.Sizeof(dxModelVSUniforms{})))
+	chkRes(r.cbModelVS)
+	r.cbModelPS = C.dx_create_cb(r.device, C.int(unsafe.Sizeof(dxModelPSUniforms{})))
+	chkRes(r.cbModelPS)
+	// Model rasterizer states (scissor off, GL-compatible CCW front): NONE / FRONT / BACK.
+	r.rsCull[dxCullNone] = C.dx_create_rasterizer_ex(r.device, 0, dxCullNone, 1)
+	chkRes(r.rsCull[dxCullNone])
+	r.rsCull[dxCullFront] = C.dx_create_rasterizer_ex(r.device, 0, dxCullFront, 1)
+	chkRes(r.rsCull[dxCullFront])
+	r.rsCull[dxCullBack] = C.dx_create_rasterizer_ex(r.device, 0, dxCullBack, 1)
+	chkRes(r.rsCull[dxCullBack])
+	// Dummy 1x1 textures for unbound model sampler slots (env==nil, unused maps).
+	r.dummyTex = r.newTextureInternal(1, 1, 32, false)
+	r.dummyTex.SetData([]byte{255, 255, 255, 255})
+	r.dummyCube = r.newCubeMapTexture(1, false, 0).(*Texture_DX)
+	// Sensible defaults for the model constant buffers.
+	r.modelVSUniforms.numData[mdlMorphDim] = 1
+	r.modelPSUniforms.matMisc[1] = 0.5 // alphaThreshold
+	r.modelPSUniforms.baseColorFactor = [4]float32{1, 1, 1, 1}
+	r.modelPSUniforms.mult = [4]float32{1, 1, 1, 1}
 
 	r.customShaders = make(map[uint32]*dxCustomShader)
 	r.customShaderMap = make(map[string]uint32)
@@ -1253,6 +1473,24 @@ func (r *Renderer_DX) Close() {
 	C.dx_release(r.backbufferRTV)
 	C.dx_release(r.backbuffer)
 	C.dx_release(r.swapchain)
+	C.dx_release(r.vsModel)
+	C.dx_release(r.psModel)
+	C.dx_release(r.ilModel)
+	C.dx_release(r.cbModelVS)
+	C.dx_release(r.cbModelPS)
+	for i := 0; i < len(r.rsCull); i++ {
+		if r.rsCull[i] != nil {
+			C.dx_release(r.rsCull[i])
+		}
+	}
+	if r.dsTest != nil {
+		C.dx_release(r.dsTest)
+	}
+	for i := range r.modelVertexBuffer {
+		if r.modelVertexBuffer[i] != nil {
+			C.dx_release(r.modelVertexBuffer[i])
+		}
+	}
 	for i := range r.modelIndexBuffer {
 		if r.modelIndexBuffer[i] != nil {
 			C.dx_release(r.modelIndexBuffer[i])
@@ -1707,7 +1945,26 @@ func (r *Renderer_DX) flushUniforms() {
 }
 
 func (r *Renderer_DX) RenderElements(mode PrimitiveMode, count, offset int) {
-	r.flushUniforms()
+	if r.modelPipelineActive {
+		if r.currentVB == nil || r.currentIB == nil {
+			LogMessage("[Direct3D 11] RenderElements: model pipeline active but VB/IB missing (vb=%v ib=%v)", r.currentVB != nil, r.currentIB != nil)
+		}
+		r.flushModelUniforms()
+		if r.currentVB != nil {
+			// This direct slot binding bypasses bindVB's state tracker, so
+			// clear it first: otherwise the next sprite/font bindVB sees
+			// state.vb == r.vb and early-returns, leaving the MODEL vertex
+			// buffer bound on slot 0 — the sprite quad then reads the model's
+			// vertexId prefix as positions and degenerates to a ~1px sliver
+			// (characters and the lifebar vanish on stage3d).
+			r.state.vb, r.state.vbStride = nil, 0
+			C.dx_set_vb_slots(r.ctx, r.currentVB, 0, mdlSlotCount+1,
+				(*C.int)(unsafe.Pointer(&r.modelAttrStrides[0])),
+				(*C.int)(unsafe.Pointer(&r.modelAttrOffsets[0])))
+		}
+	} else {
+		r.flushUniforms()
+	}
 	r.bindTopology(r.mapPrimitiveMode(mode))
 	if r.currentIB != nil {
 		C.dx_set_ib(r.ctx, r.currentIB)
@@ -1768,6 +2025,10 @@ func (r *Renderer_DX) SetUniformF(name string, values ...float32) {
 		copy(r.uniforms.iResolution[:], values)
 	case "palUV":
 		copy(r.uniforms.palUV[:], values)
+	case "tint":
+		copy(r.uniforms.tint[:], values)
+	case "x1x2x4x3":
+		copy(r.uniforms.x1x2x4x3[:], values)
 	}
 }
 
@@ -2015,8 +2276,8 @@ func (r *Renderer_DX) SetVSync(interval int) {
 
 func (r *Renderer_DX) NewWorkerThread() bool { return false }
 
-func (r *Renderer_DX) IsModelEnabled() bool  { return false }
-func (r *Renderer_DX) IsShadowEnabled() bool { return false }
+func (r *Renderer_DX) IsModelEnabled() bool  { return true }
+func (r *Renderer_DX) IsShadowEnabled() bool { return false } // Shadow maps are Phase C (DX backend)
 
 func (r *Renderer_DX) PerspectiveProjectionMatrix(angle, aspect, near, far float32) mgl.Mat4 {
 	return mgl.Perspective(angle, aspect, near, far)
@@ -2029,24 +2290,13 @@ func (r *Renderer_DX) OrthographicProjectionMatrix(left, right, bottom, top, nea
 func (r *Renderer_DX) prepareShadowMapPipeline(bufferIndex uint32) {}
 func (r *Renderer_DX) setShadowMapPipeline(doubleSided, invertFrontFace, useUV, useNormal, useTangent, useVertColor, useJoint0, useJoint1 bool, numVertices, vertAttrOffset uint32) {
 }
-func (r *Renderer_DX) ReleaseShadowPipeline()                                    {}
-func (r *Renderer_DX) prepareModelPipeline(bufferIndex uint32, env *Environment) {}
-func (r *Renderer_DX) SetModelPipeline(eq BlendEquation, src, dst BlendFunc, depthTest, depthMask, doubleSided, invertFrontFace, useUV, useNormal, useTangent, useVertColor, useJoint0, useJoint1, useOutlineAttribute bool, numVertices, vertAttrOffset uint32) {
-}
-func (r *Renderer_DX) SetMeshOutlinePipeline(invertFrontFace bool, meshOutline float32) {}
-func (r *Renderer_DX) ReleaseModelPipeline()                                            {}
-func (r *Renderer_DX) RenderShadowMapElements(mode PrimitiveMode, count, offset int)    {}
-func (r *Renderer_DX) RenderCubeMap(envTexture Texture, cubeTexture Texture)            {}
+func (r *Renderer_DX) ReleaseShadowPipeline()                                        {}
+func (r *Renderer_DX) RenderShadowMapElements(mode PrimitiveMode, count, offset int) {}
+func (r *Renderer_DX) RenderCubeMap(envTexture Texture, cubeTexture Texture)         {}
 func (r *Renderer_DX) RenderFilteredCubeMap(distribution int32, cubeTexture Texture, filteredTexture Texture, mipmapLevel, sampleCount int32, roughness float32) {
 }
 func (r *Renderer_DX) RenderLUT(distribution int32, cubeTexture Texture, lutTexture Texture, sampleCount int32) {
 }
-func (r *Renderer_DX) SetModelUniformI(name string, val int)               {}
-func (r *Renderer_DX) SetModelUniformF(name string, values ...float32)     {}
-func (r *Renderer_DX) SetModelUniformFv(name string, values []float32)     {}
-func (r *Renderer_DX) SetModelUniformMatrix(name string, value []float32)  {}
-func (r *Renderer_DX) SetModelUniformMatrix3(name string, value []float32) {}
-func (r *Renderer_DX) SetModelTexture(name string, t Texture)              {}
 func (r *Renderer_DX) SetShadowMapUniformI(name string, val int)           {}
 func (r *Renderer_DX) SetShadowMapUniformF(name string, values ...float32) {}
 func (r *Renderer_DX) SetShadowMapUniformFv(name string, values []float32) {}
@@ -2054,10 +2304,537 @@ func (r *Renderer_DX) SetShadowMapUniformMatrix(name string, value []float32) {
 }
 func (r *Renderer_DX) SetShadowMapUniformMatrix3(name string, value []float32) {
 }
-func (r *Renderer_DX) SetShadowMapTexture(name string, t Texture)           {}
-func (r *Renderer_DX) SetShadowFrameTexture(i uint32)                       {}
-func (r *Renderer_DX) SetShadowFrameCubeTexture(i uint32)                   {}
-func (r *Renderer_DX) SetModelVertexData(bufferIndex uint32, values []byte) {}
+func (r *Renderer_DX) SetShadowMapTexture(name string, t Texture) {}
+func (r *Renderer_DX) SetShadowFrameTexture(i uint32)             {}
+func (r *Renderer_DX) SetShadowFrameCubeTexture(i uint32)         {}
+
+func (r *Renderer_DX) bindSRVV(slot int, srv unsafe.Pointer) {
+	if r.vsSrv[slot] == srv {
+		return
+	}
+	r.vsSrv[slot] = srv
+	C.dx_set_srv_vs(r.ctx, C.int(slot), srv)
+}
+
+func (r *Renderer_DX) bindSamplerV(slot int, s unsafe.Pointer) {
+	if r.vsSampler[slot] == s {
+		return
+	}
+	r.vsSampler[slot] = s
+	C.dx_set_sampler_vs(r.ctx, C.int(slot), s)
+}
+
+func (r *Renderer_DX) bindModelTextures() {
+	for i := 0; i < len(r.vsSrv); i++ {
+		if r.vsSrv[i] != nil {
+			r.bindSRVV(i, r.vsSrv[i])
+		}
+		if r.vsSampler[i] != nil {
+			r.bindSamplerV(i, r.vsSampler[i])
+		}
+	}
+}
+
+func (r *Renderer_DX) flushModelUniforms() {
+	if r.cbModelVSDirty {
+		C.dx_update_cb(r.ctx, r.cbModelVS, unsafe.Pointer(&r.modelVSUniforms), C.int(unsafe.Sizeof(dxModelVSUniforms{})))
+		r.cbModelVSDirty = false
+	}
+	if r.cbModelPSDirty {
+		C.dx_update_cb(r.ctx, r.cbModelPS, unsafe.Pointer(&r.modelPSUniforms), C.int(unsafe.Sizeof(dxModelPSUniforms{})))
+		r.cbModelPSDirty = false
+	}
+	if r.state.cbVS != r.cbModelVS {
+		r.state.cbVS = r.cbModelVS
+		C.dx_set_cb_vs(r.ctx, 0, r.cbModelVS)
+	}
+	if r.state.cbPS != r.cbModelPS {
+		r.state.cbPS = r.cbModelPS
+		C.dx_set_cb_ps(r.ctx, 0, r.cbModelPS)
+	}
+	r.bindModelTextures()
+}
+
+func (r *Renderer_DX) prepareModelPipeline(bufferIndex uint32, env *Environment) {
+	r.bindShaders(r.vsModel, r.psModel)
+	r.bindIL(r.ilModel)
+	r.currentVB = r.modelVertexBuffer[bufferIndex]
+	// Restore the matching index buffer too: ReleaseModelPipeline drops
+	// currentIB, and without this every model draw after the first pass would
+	// run DrawIndexed with no index buffer bound (currentIB == nil skips
+	// dx_set_ib) — the stage renders black on stage3d.
+	r.currentIB = r.modelIndexBuffer[bufferIndex]
+	r.modelPipelineActive = true
+	r.cbModelVSDirty = true
+	r.cbModelPSDirty = true
+
+	// Model pass renders into the same MSAA color target as sprites, with the
+	// shared depth buffer for depth testing. Clear depth like the VK backend.
+	target := r.rtMainRTV
+	if r.rtMsaaRTV != nil {
+		target = r.rtMsaaRTV
+	}
+	r.bindRT(target, r.depthDSV)
+	r.bindViewport(0, 0, r.width, r.height)
+	C.dx_clear_depth(r.ctx, r.depthDSV)
+
+	// Reset per-primitive VS state.
+	r.modelVSUniforms.meshData = [4]float32{}
+	r.modelVSUniforms.flagsData = [4]float32{}
+	r.modelVSUniforms.morphTargetWeight = [2][4]float32{}
+	r.modelVSUniforms.morphTargetOffset = [4]float32{}
+	r.modelVSUniforms.numData[mdlMorphDim] = 1
+
+	// Environment uniforms + sampler slots (Phase C renders the actual cubemaps;
+	// until then bind dummies so IBL sampling never faults).
+	r.modelPSUniforms.envMisc[0] = 0 // environmentIntensity
+	r.modelPSUniforms.envMisc[1] = 0 // mipCount
+	r.modelPSUniforms.environmentRotation = [3][4]float32{}
+	r.modelPSUniforms.lights = [4][4][4]float32{}
+	if env != nil {
+		r.modelPSUniforms.envMisc[0] = env.environmentIntensity
+		r.modelPSUniforms.envMisc[1] = float32(env.mipmapLevels)
+		// Match the VK backend's environment rotation.
+		rotation := mgl.Rotate3DX(math.Pi).Mul3(mgl.Rotate3DY(0.5 * math.Pi))
+		for i := 0; i < 3; i++ {
+			r.modelPSUniforms.environmentRotation[i] = [4]float32{
+				rotation[i*3], rotation[i*3+1], rotation[i*3+2], 0,
+			}
+		}
+		if env.lambertianTexture != nil && env.lambertianTexture.tex != nil {
+			if tx, ok := env.lambertianTexture.tex.(*Texture_DX); ok {
+				r.bindSRV(5, tx.srv)
+				r.bindSampler(5, tx.sampler)
+			}
+		}
+		if env.GGXTexture != nil && env.GGXTexture.tex != nil {
+			if tx, ok := env.GGXTexture.tex.(*Texture_DX); ok {
+				r.bindSRV(6, tx.srv)
+				r.bindSampler(6, tx.sampler)
+			}
+		}
+		if env.GGXLUT != nil && env.GGXLUT.tex != nil {
+			if tx, ok := env.GGXLUT.tex.(*Texture_DX); ok {
+				r.bindSRV(7, tx.srv)
+				r.bindSampler(7, tx.sampler)
+			}
+		}
+	}
+
+	// Dummy bindings for every PS model slot (5 = lambertian, 6 = GGX, 7 = LUT).
+	r.bindSRV(5, r.dummyCube.srv)
+	r.bindSampler(5, r.dummyCube.sampler)
+	r.bindSRV(6, r.dummyCube.srv)
+	r.bindSampler(6, r.dummyCube.sampler)
+	r.bindSRV(7, r.dummyTex.srv)
+	r.bindSampler(7, r.dummyTex.sampler)
+	r.bindSRV(0, r.dummyTex.srv)
+	r.bindSampler(0, r.dummyTex.sampler)
+	r.bindSRV(1, r.dummyTex.srv)
+	r.bindSampler(1, r.dummyTex.sampler)
+	r.bindSRV(2, r.dummyTex.srv)
+	r.bindSampler(2, r.dummyTex.sampler)
+	r.bindSRV(3, r.dummyTex.srv)
+	r.bindSampler(3, r.dummyTex.sampler)
+	r.bindSRV(4, r.dummyTex.srv)
+	r.bindSampler(4, r.dummyTex.sampler)
+	r.bindSRVV(0, r.dummyTex.srv)
+	r.bindSamplerV(0, r.dummyTex.sampler)
+	r.bindSRVV(1, r.dummyTex.srv)
+	r.bindSamplerV(1, r.dummyTex.sampler)
+}
+
+func (r *Renderer_DX) SetModelPipeline(eq BlendEquation, src, dst BlendFunc, depthTest, depthMask, doubleSided, invertFrontFace, useUV, useNormal, useTangent, useVertColor, useJoint0, useJoint1, useOutlineAttribute bool, numVertices, vertAttrOffset uint32) {
+	r.EnableBlending(eq, src, dst)
+
+	// Depth state: test + write, test only, or off.
+	switch {
+	case depthTest && depthMask:
+		r.bindDS(r.dsOn)
+	case depthTest:
+		r.bindDS(r.dsTest)
+	default:
+		r.bindDS(r.dsOff)
+	}
+
+	// Culling. rsCull states use CCW front faces (GL-compatible).
+	cull := dxCullBack
+	if doubleSided {
+		cull = dxCullNone
+	} else if invertFrontFace {
+		cull = dxCullFront
+	}
+	r.bindRS(r.rsCull[cull])
+
+	// Structure-of-arrays vertex layout: each attribute occupies a contiguous
+	// block of numVertices*stride bytes. Mirror the GL33 offset math. Slot 0
+	// carries the sequential vertexId prefix (stride 4). Unused slots keep
+	// offset 0 (buffer base) so the driver's stride-0 fetch for an attribute
+	// the shader discards via its use-flag always lands inside the buffer.
+	for i := 0; i < 11; i++ {
+		r.modelAttrStrides[i] = 0
+		r.modelAttrOffsets[i] = 0
+	}
+	r.modelAttrStrides[0] = 4
+	r.modelAttrOffsets[0] = int32(vertAttrOffset)
+	offset := vertAttrOffset + 4*numVertices
+	setSlot := func(d3dSlot int, stride uint32) {
+		r.modelAttrStrides[d3dSlot] = int32(stride)
+		r.modelAttrOffsets[d3dSlot] = int32(offset)
+		offset += stride * numVertices
+	}
+	setSlot(mdlSlotPosition+1, 12)
+	if useUV {
+		setSlot(mdlSlotUV+1, 8)
+	}
+	if useNormal {
+		setSlot(mdlSlotNormal+1, 12)
+	}
+	if useTangent {
+		setSlot(mdlSlotTangent+1, 16)
+	}
+	if useVertColor {
+		setSlot(mdlSlotVertColor+1, 16)
+	}
+	if useJoint0 {
+		setSlot(mdlSlotJoints0+1, 16)
+		setSlot(mdlSlotWeights0+1, 16)
+		if useJoint1 {
+			setSlot(mdlSlotJoints1+1, 16)
+			setSlot(mdlSlotWeights1+1, 16)
+		}
+	}
+	if useOutlineAttribute {
+		setSlot(mdlSlotOutline+1, 16)
+	}
+
+	// Shader branch flags (match the HLSL meshData/flagsData fields).
+	r.modelVSUniforms.meshData[mdlUseJoint0] = float32(Btoi(useJoint0))
+	r.modelVSUniforms.meshData[mdlUseJoint1] = float32(Btoi(useJoint1))
+	r.modelVSUniforms.meshData[mdlUseNormal] = float32(Btoi(useNormal))
+	r.modelVSUniforms.flagsData[mdlUseTangent] = float32(Btoi(useTangent))
+	r.modelVSUniforms.flagsData[mdlUseVertColor] = float32(Btoi(useVertColor))
+	r.modelVSUniforms.flagsData[mdlUseOutline] = float32(Btoi(useOutlineAttribute))
+	r.modelVSUniforms.numData[mdlNumVertices] = int32(numVertices)
+	r.cbModelVSDirty = true
+}
+
+func (r *Renderer_DX) SetMeshOutlinePipeline(invertFrontFace bool, meshOutline float32) {
+	// Outline pass draws the back faces, expanded by meshOutline.
+	cull := dxCullBack
+	if invertFrontFace {
+		cull = dxCullFront
+	}
+	r.bindRS(r.rsCull[cull])
+	r.modelVSUniforms.meshData[mdlMeshOutline] = meshOutline
+	r.modelPSUniforms.palfxMisc[2] = meshOutline
+	r.cbModelVSDirty = true
+	r.cbModelPSDirty = true
+}
+
+func (r *Renderer_DX) ReleaseModelPipeline() {
+	r.modelPipelineActive = false
+	// The model pass leaves the back-face-culling rasterizer (which also has
+	// hardware scissor disabled) and the depth test/write states bound, and the
+	// sprite/font paths only re-bind the rasterizer through the scissor
+	// helpers — which early-return when the scissor state is unchanged. Restore
+	// the sprite defaults here so characters, the lifebar and fonts never
+	// inherit the model's cull/depth state. Mirrors the GL33 sprite pipeline,
+	// which explicitly disables DEPTH_TEST and CULL_FACE.
+	if r.state.scissorOn {
+		r.bindRS(r.rsScissor)
+	} else {
+		r.bindRS(r.rsDefault)
+	}
+	r.bindDS(r.dsOff)
+	// Drop the model buffers so a stray non-model RenderElements can never
+	// bind the stale model index buffer (GL33's ReleaseModelPipeline does the
+	// equivalent cleanup of its vertex attrib arrays). prepareModelPipeline
+	// re-assigns currentVB and currentIB from the buffer arrays on the next
+	// model pass.
+	r.currentVB = nil
+	r.currentIB = nil
+}
+
+func (r *Renderer_DX) SetModelUniformI(name string, val int) {
+	r.cbModelVSDirty = true
+	r.cbModelPSDirty = true
+	switch name {
+	case "numJoints":
+		r.modelVSUniforms.numData[mdlNumJoints] = int32(val)
+	case "numTargets":
+		r.modelVSUniforms.numData[mdlNumTargets] = int32(val)
+	case "morphTargetTextureDimension":
+		r.modelVSUniforms.numData[mdlMorphDim] = int32(val)
+	case "numVertices":
+		r.modelVSUniforms.numData[mdlNumVertices] = int32(val)
+	case "unlit":
+		r.modelPSUniforms.matMisc[2] = float32(val)
+	case "enableAlpha":
+		r.modelPSUniforms.matMisc[3] = float32(val)
+	case "neg":
+		r.modelPSUniforms.palfxMisc[3] = float32(val)
+	case "useTexture":
+		r.modelPSUniforms.texFlags[0] = float32(val)
+	case "useNormalMap":
+		r.modelPSUniforms.texFlags[1] = float32(val)
+	case "useMetallicRoughnessMap":
+		r.modelPSUniforms.texFlags[2] = float32(val)
+	case "useEmissionMap":
+		r.modelPSUniforms.texFlags[3] = float32(val)
+	case "useAmbientOcclusionMap":
+		r.modelPSUniforms.miscFlags[0] = float32(val)
+	case "useShadowMap":
+		r.modelPSUniforms.miscFlags[1] = float32(val)
+	default:
+		if idx, field, ok := parseModelLightName(name); ok && field == "type" {
+			r.modelPSUniforms.lights[idx][mdlLightMisc][1] = float32(val)
+		}
+	}
+}
+
+func (r *Renderer_DX) SetModelUniformF(name string, values ...float32) {
+	r.cbModelVSDirty = true
+	r.cbModelPSDirty = true
+	switch name {
+	case "metallicRoughness":
+		if len(values) >= 2 {
+			r.modelPSUniforms.metallicRoughness[0] = values[0]
+			r.modelPSUniforms.metallicRoughness[1] = values[1]
+		}
+	case "ambientOcclusionStrength":
+		if len(values) >= 1 {
+			r.modelPSUniforms.matMisc[0] = values[0]
+		}
+	case "cameraPosition":
+		if len(values) >= 3 {
+			r.modelVSUniforms.cameraPosition = [4]float32{values[0], values[1], values[2], 0}
+			r.modelPSUniforms.cameraPosition = [4]float32{values[0], values[1], values[2], 0}
+		}
+	case "morphTargetOffset":
+		if len(values) >= 4 {
+			r.modelVSUniforms.morphTargetOffset = [4]float32{values[0], values[1], values[2], values[3]}
+		}
+	case "alphaThreshold":
+		if len(values) >= 1 {
+			r.modelPSUniforms.matMisc[1] = values[0]
+		}
+	case "hue":
+		if len(values) >= 1 {
+			r.modelPSUniforms.palfxMisc[1] = values[0]
+		}
+	case "gray":
+		if len(values) >= 1 {
+			r.modelPSUniforms.palfxMisc[0] = values[0]
+		}
+	case "meshOutline":
+		if len(values) >= 1 {
+			r.modelVSUniforms.meshData[mdlMeshOutline] = values[0]
+			r.modelPSUniforms.palfxMisc[2] = values[0]
+		}
+	default:
+		if idx, field, ok := parseModelLightName(name); ok {
+			light := &r.modelPSUniforms.lights[idx]
+			switch field {
+			case "direction":
+				if len(values) >= 3 {
+					light[mdlLightDirRange][0], light[mdlLightDirRange][1], light[mdlLightDirRange][2] = values[0], values[1], values[2]
+				}
+			case "range":
+				if len(values) >= 1 {
+					light[mdlLightDirRange][3] = values[0]
+				}
+			case "color":
+				if len(values) >= 3 {
+					light[mdlLightColorInt][0], light[mdlLightColorInt][1], light[mdlLightColorInt][2] = values[0], values[1], values[2]
+				}
+			case "intensity":
+				if len(values) >= 1 {
+					light[mdlLightColorInt][3] = values[0]
+				}
+			case "position":
+				if len(values) >= 3 {
+					light[mdlLightPosCone][0], light[mdlLightPosCone][1], light[mdlLightPosCone][2] = values[0], values[1], values[2]
+				}
+			case "innerConeCos":
+				if len(values) >= 1 {
+					light[mdlLightPosCone][3] = values[0]
+				}
+			case "outerConeCos":
+				if len(values) >= 1 {
+					light[mdlLightMisc][0] = values[0]
+				}
+			case "shadowBias":
+				if len(values) >= 1 {
+					light[mdlLightMisc][2] = values[0]
+				}
+			case "shadowMapFar":
+				if len(values) >= 1 {
+					light[mdlLightMisc][3] = values[0]
+				}
+			}
+		}
+	}
+}
+
+func (r *Renderer_DX) SetModelUniformFv(name string, values []float32) {
+	r.cbModelVSDirty = true
+	r.cbModelPSDirty = true
+	switch name {
+	case "add":
+		copy(r.modelPSUniforms.add[:], values)
+	case "mult":
+		copy(r.modelPSUniforms.mult[:], values)
+	case "baseColorFactor":
+		copy(r.modelPSUniforms.baseColorFactor[:], values)
+	case "emission":
+		copy(r.modelPSUniforms.emission[:], values)
+	case "morphTargetWeight":
+		copy(r.modelVSUniforms.morphTargetWeight[0][:], values)
+		if len(values) > 4 {
+			copy(r.modelVSUniforms.morphTargetWeight[1][:], values[4:])
+		}
+	}
+}
+
+func (r *Renderer_DX) SetModelUniformMatrix(name string, value []float32) {
+	r.cbModelVSDirty = true
+	switch name {
+	case "model":
+		copy(r.modelVSUniforms.model[:], value)
+	case "normalMatrix":
+		copy(r.modelVSUniforms.normalMatrix[:], value)
+	case "view":
+		copy(r.modelVSUniforms.view[:], value)
+	case "projection":
+		copy(r.modelVSUniforms.projection[:], value)
+	default:
+		if idx, ok := parseModelLightMatrixName(name); ok {
+			copy(r.modelVSUniforms.lightMatrices[idx][:], value)
+		}
+	}
+}
+
+func (r *Renderer_DX) SetModelUniformMatrix3(name string, value []float32) {
+	r.cbModelPSDirty = true
+	var dst *[3][4]float32
+	switch name {
+	case "texTransform":
+		dst = &r.modelPSUniforms.texTransform
+	case "normalMapTransform":
+		dst = &r.modelPSUniforms.normalMapTransform
+	case "metallicRoughnessMapTransform":
+		dst = &r.modelPSUniforms.metallicRoughnessMapTransform
+	case "ambientOcclusionMapTransform":
+		dst = &r.modelPSUniforms.ambientOcclusionMapTransform
+	case "emissionMapTransform":
+		dst = &r.modelPSUniforms.emissionMapTransform
+	}
+	if dst != nil {
+		for i := 0; i < 3; i++ {
+			if i*3+2 < len(value) {
+				dst[i] = [4]float32{value[i*3], value[i*3+1], value[i*3+2], 0}
+			}
+		}
+	}
+}
+
+func (r *Renderer_DX) SetModelTexture(name string, t Texture) {
+	if t == nil {
+		return
+	}
+	tx, ok := t.(*Texture_DX)
+	if !ok {
+		return
+	}
+	switch name {
+	case "jointMatrices":
+		r.bindSRVV(0, tx.srv)
+		r.bindSamplerV(0, tx.sampler)
+	case "morphTargetValues":
+		r.bindSRVV(1, tx.srv)
+		r.bindSamplerV(1, tx.sampler)
+	case "tex":
+		r.bindSRV(0, tx.srv)
+		r.bindSampler(0, tx.sampler)
+	case "normalMap":
+		r.bindSRV(1, tx.srv)
+		r.bindSampler(1, tx.sampler)
+	case "metallicRoughnessMap":
+		r.bindSRV(2, tx.srv)
+		r.bindSampler(2, tx.sampler)
+	case "ambientOcclusionMap":
+		r.bindSRV(3, tx.srv)
+		r.bindSampler(3, tx.sampler)
+	case "emissionMap":
+		r.bindSRV(4, tx.srv)
+		r.bindSampler(4, tx.sampler)
+	}
+}
+
+func (r *Renderer_DX) SetModelVertexData(bufferIndex uint32, values []byte) {
+	if len(values) == 0 {
+		return
+	}
+	if r.modelVertexBuffer[bufferIndex] != nil {
+		C.dx_release(r.modelVertexBuffer[bufferIndex])
+	}
+	vb := C.dx_create_vb(r.device, C.int(len(values)))
+	if vb == nil {
+		LogMessage("[Direct3D 11] Failed to create model vertex buffer: %s", C.GoString(C.dx_last_error()))
+		return
+	}
+	r.modelVertexBuffer[bufferIndex] = vb
+	r.modelVertexBufferSize[bufferIndex] = len(values)
+	p := C.dx_map_vb(r.ctx, vb)
+	if p == nil {
+		LogMessage("[Direct3D 11] Failed to map model vertex buffer: %s", C.GoString(C.dx_last_error()))
+		return
+	}
+	copy(unsafe.Slice((*byte)(p), len(values)), values)
+	C.dx_unmap_vb(r.ctx, vb)
+	r.currentVB = vb
+}
+
+// parseModelLightName parses "lights[N].field" returning the light index and field.
+func parseModelLightName(name string) (idx int, field string, ok bool) {
+	const prefix = "lights["
+	if !strings.HasPrefix(name, prefix) {
+		return 0, "", false
+	}
+	rest := name[len(prefix):]
+	end := strings.IndexByte(rest, ']')
+	if end < 0 {
+		return 0, "", false
+	}
+	n, err := strconv.Atoi(rest[:end])
+	if err != nil || n < 0 || n >= 4 {
+		return 0, "", false
+	}
+	tail := rest[end+1:]
+	if !strings.HasPrefix(tail, ".") {
+		return 0, "", false
+	}
+	return n, tail[1:], true
+}
+
+// parseModelLightMatrixName parses "lightMatrices[N]" returning the matrix index.
+func parseModelLightMatrixName(name string) (idx int, ok bool) {
+	const prefix = "lightMatrices["
+	if !strings.HasPrefix(name, prefix) {
+		return 0, false
+	}
+	rest := name[len(prefix):]
+	end := strings.IndexByte(rest, ']')
+	if end < 0 {
+		return 0, false
+	}
+	n, err := strconv.Atoi(rest[:end])
+	if err != nil || n < 0 || n >= 4 {
+		return 0, false
+	}
+	return n, true
+}
 func (r *Renderer_DX) SetModelIndexData(bufferIndex uint32, values ...uint32) {
 	if len(values) == 0 {
 		return

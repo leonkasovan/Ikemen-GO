@@ -1,10 +1,13 @@
 # DirectX Renderer — Research
 
-Status: **Phases 0–1 implemented and verified.** A working D3D 11 backend
-(`render_dx.go`, `render_dx_font.go`, 6 embedded HLSL shaders) renders a full
-8-player kfm match at solid 60 FPS on an Intel GPU. Set `RenderMode = Direct3D 11`
-in `config.ini` to use it. Phases 2–4 (RenderScale polish, full 3D, default
-promotion) remain.
+Status: **Phases 0–1 implemented and verified; Phase 3 (model pipeline)
+partially implemented (A+B: core model pass, unlit/base-color materials).** A
+working D3D 11 backend (`render_dx.go`, `render_dx_font.go`, 8 embedded HLSL
+shaders) renders a full 8-player kfm match at solid 60 FPS on an Intel GPU
+and draws GLB-model stage backgrounds (`stage3d.def`-style) through the real
+model pipeline. Set `RenderMode = Direct3D 11` in `config.ini` to use it.
+Remaining: Phase 3 C–E (shadow maps, cubemap/IBL passes), Phase 2 polish,
+Phase 4 default promotion.
 
 This doc maps how the Direct3D backend slots into Ikemen-GO's renderer
 architecture and tracks phase completion.
@@ -143,8 +146,10 @@ those calls only.
 | `NeedsGrabPass` / `ResolveBackBuffer` | Copy backbuffer to staging (`CopyResource` + `Map`) for readback, return as a `Texture_DX`. |
 | `ReadPixels` | Same staging readback path. |
 | `PerspectiveProjectionMatrix` / `OrthographicProjectionMatrix` | Pure math (mgl), renderer-agnostic — reuse `render.go` math, just return the matrix into a cbuffer. |
-| `prepareModelPipeline` / `prepareShadowMapPipeline` / `RenderCubeMap` / `RenderFilteredCubeMap` / `RenderLUT` / `RenderShadowMapElements` | **Stub in MVP** — see §6. |
-| `IsModelEnabled` / `IsShadowEnabled` | `false` in MVP. |
+| `prepareModelPipeline` / `SetModelPipeline` / `SetMeshOutlinePipeline` / `SetModelUniform*` / `SetModelTexture` / `SetModelVertexData` / `SetModelIndexData` / `RenderElements` | **Implemented (Phase A+B).** `IsModelEnabled()` is `true`; models render through the real pipeline. SoA vertex layout: slot 0 = sequential vertexId prefix (R32_UINT, `VERTEXID` semantic), slots 1–10 = per-attribute blocks with per-slot stride + byte offset (mirrors GL/VK multi-binding). HLSL port of `model.vert/frag.glsl` (`model_vs.hlsl` / `model_ps.hlsl`, embedded, compiled at init via `D3DCompile`). |
+| `prepareShadowMapPipeline` / `RenderCubeMap` / `RenderFilteredCubeMap` / `RenderLUT` / `RenderShadowMapElements` | **Stub (Phase C)** — `IsShadowEnabled()` is `false`, shadow/IBL passes not yet implemented. |
+| `IsModelEnabled` | `true` (Phase A+B). |
+| `IsShadowEnabled` | `false` until Phase C. |
 | `SetVSync` | flip the `Present` interval. |
 | `NewWorkerThread` | `false` for D3D11 (immediate-context is single-threaded; MTK would need D3D12). |
 
@@ -296,7 +301,7 @@ pipeline (all gated behind `IsModelEnabled()`/`IsShadowEnabled()`).
 | **0. Spike** | Cgo D3D11 device + swapchain on an SDL2 HWND; clear to a color; `Present`. Validates the Win32-via-SDL `HWND` extraction and the static-link path. | ~300 LoC, days | **done** — device + flip-discard swapchain created on the SDL2 `HWND`; FXC/D3DCompile path verified; linked against `-ld3d11 -ldxgi -ld3dcompiler` under the Makefile's static-runtime link. |
 | **1. MVP renderer** | Sprite + font + palette atlas + custom sprite shaders + blend + scissor + grab pass. `IsModelEnabled/IsShadowEnabled → false`; stub model/shadow/cube/LUT. | ~1.7k LoC | **done** — `render_dx.go` (D3D11 Cgo shim + `Renderer_DX`) + `render_dx_font.go` (`FontRenderer_DX`/`Font_DX`) wired through `util_desktop.go`; 6 HLSL shaders compiled at runtime via `D3DCompile`. Renders an 8-player kfm match at solid 60 FPS on Intel graphics. MSAA (2/4/8) supported; models/shadows/cubemaps stubbed. Sprite batching rides the `flushSpriteQueueBatched` generic fallback like the other non-GL33 backends. Grab-pass detection parses the DXBC RDEF (§7.1). |
 | **2. Feature parity** | RenderScale path, MSAA, VSync(-1 auto, 0 off, 1 on), RendererDebugMode → `ID3D11InfoQueue`, ReadPixels, PIX-friendly object naming. | concurrent with P1 | **mostly done** — MSAA (2/4/8), VSync (`Present` interval), ReadPixels (bottom-up, matches GL), ResizeBuffers-on-window-resize all work. Not done: RenderScale (mirrors GL33, which ignores it), InfoQueue debug-name tagging, advanced `ID3D11InfoQueue` filtering. |
-| **3. Full 3D** | Port model/shadow/cubemap/IBL HLSL, implement `prepareModel*`/`prepareShadowMap*`/`RenderCubeMap`/`RenderFilteredCubeMap`/`RenderLUT`. Bring `IsModelEnabled/IsShadowEnabled` to `true`. | +3–5k LoC, 2–4 weeks | **not started** — `newModelTexture`/`newDataTexture`/`newHDRTexture`/`newCubeMapTexture` are implemented (so stage environments load cleanly), but the model/shadow/IBL draw pipelines are stubbed. |
+| **3. Full 3D** | Port model/shadow/cubemap/IBL HLSL, implement `prepareModel*`/`prepareShadowMap*`/`RenderCubeMap`/`RenderFilteredCubeMap`/`RenderLUT`. Bring `IsModelEnabled/IsShadowEnabled` to `true`. | +3–5k LoC, 2–4 weeks | **A+B done, C–E not started** — A+B implements the core model pass: `model_vs.hlsl`/`model_ps.hlsl` ports, the 11-slot SoA input layout (`VERTEXID` slot 0 + attribute blocks), `SetModelPipeline`/`SetModelUniform*`/`SetModelTexture`/`SetMeshOutlinePipeline`/`SetModelVertexData`/`SetModelIndexData`, model cbuffers, and model-path `RenderElements` (all 11 slots bound). `IsModelEnabled()` → `true`; unlit/base-color materials and morph targets/skinning (joint/morph textures) render. `IsShadowEnabled()` stays `false`; `prepareShadowMapPipeline`, `RenderCubeMap`, `RenderFilteredCubeMap`, `RenderLUT` remain stubs for Phase C. |
 | **4. Promote** | Default desktop `RenderMode = Direct3D 11`; keep GL as fallback. | config flip | **not started** — default stays `OpenGL 3.3` until DK11 is proven across more hardware/drivers. |
 
 A realistic "it's the Windows default" milestone is end of Phase 2; Phase 3
@@ -325,6 +330,51 @@ only matters once model/IBL scenes are exercised in matches.
   frame. `checkResize` now unbinds the render target (`OMSetRenderTargets`
   NULL, via `dx_unbind_rt`) before resizing and defers while the window is
   minimized (SDL `WINDOW_MINIMIZED`), retrying once restored.
+- **Missing sprite uniforms in `SetUniformF` (discovered during P2).** The
+  HLSL `SpriteUniforms` cbuffer declares `x1x2x4x3` and `tint`, but DX's
+  `SetUniformF` had no cases for them — `x1x2x4x3` is written by
+  `drawQuadsUV` for **every** quad and is required by the trapezoid path
+  (`isTrapez=1`) to remap the UV horizontally. With it stuck at
+  `(0,0,0,0)` the shader computed `gap = 0` → `uv.x = NaN`, so parallax
+  floors (stage `[BG Floor] type = parallax`, e.g. the bundled
+  `stageZ.def` / `interactivestage.def`) rendered as a solid black box at
+  the characters' feet, and flat-color rects (`tint` via `SetUniformF`,
+  used by `[BG Colour]` layers and screenfills) got a stale tint. Fixed by
+  adding both cases (mirrors `Renderer_VK.SetUniformF`); covered by the
+  `TestDXShadowSilhouette` trapezoid pass, which fails without the fix.
+- **Stage-model pass hides sprites/HUD (resolved).** The model pass binds its
+  vertex buffer through `dx_set_vb_slots`, which bypasses `bindVB`'s state
+  tracker (`state.vb`/`state.vbStride`). The next sprite/font `bindVB(r.vb,
+  16)` therefore saw the stale state and early-returned, leaving the MODEL
+  vertex buffer bound on input slot 0 — the sprite quad then read the
+  model's vertexId prefix as positions and degenerated to a ~1px sliver.
+  On `stage3d.def` every sprite (characters, lifebar) vanished while the
+  stage background rendered. `RenderElements`' model branch now clears
+  `state.vb` before the direct slot binding, and `ReleaseModelPipeline`
+  restores `rsDefault`/`dsOff` (the model pass leaves back-face culling +
+  depth-test states bound, and the sprite path only re-binds the rasterizer
+  through the scissor helpers, which early-return when the scissor state is
+  unchanged — the font/flat paths would otherwise inherit the model's cull
+  state). Verified by `TestDXSpriteAfterModel`, which reproduces the exact
+  model-pass → sprite-pass frame flow headlessly.
+- **3D-model stages render black (resolved for unlit stages in Phase A+B).**
+  Stage backgrounds that are entirely a GLB/glTF model (`[BGdef] model = …`,
+  e.g. the bundled `stage3d.def`) now render through the implemented model
+  pipeline — `IsModelEnabled() → true`, and the unlit-material path
+  (`matMisc.z = 1`, no lights, no environment) produces base color instead of
+  a black box. Verified by the headless `TestDXModelPipeline` probe, which
+  compiles the embedded model shaders, builds the 11-slot SoA input layout,
+  and draws a triangle through the real `SetModelPipeline`/`RenderElements`
+  chain. Stages that need shadow maps / IBL (lit PBR materials, `[Light]` /
+  `[Environment]` sections) still require Phase C.
+- **Legacy d3dcompiler HLSL quirks (discovered during Phase A+B).** MinGW's
+  `d3dcompiler_47` rejects scalar-splat constructors (`float3(1.0)`,
+  `float3(expr)`) with X3014 — the model shaders spell out all components
+  (`float3(1.0, 1.0, 1.0)`). It also normalizes semantics: `JOINTS0`/`JOINTS1`
+  compile to semantic name `JOINTS` with index 0/1 (same for `WEIGHTS`), so
+  the model input layout must declare `JOINTS`/`WEIGHTS` with `SemanticIndex`
+  rather than the literal `JOINTS0`/`JOINTS1` names or
+  `CreateInputLayout` fails with `E_INVALIDARG`.
 - **Static link.** SDL2/FFmpeg/XMP are built from source and static-linked.
   D3D is a Windows system API — `d3d11.dll`/`dxgi.dll`/`d3dcompiler_47.dll`
   stay dynamic (they're OS components, not redistributable libs). Document
@@ -346,12 +396,15 @@ only matters once model/IBL scenes are exercised in matches.
 
 Direct3D 11 via raw MinGW Cgo + `D3DCompile` (runtime HLSL compilation),
 scaffolded as `render_dx.go` behind `//go:build windows && !android`, wired
-through `util_desktop.go` as `RenderMode = Direct3D 11`. Phases 0–1 are done:
-the MVP stubs models/shadows/cubemaps like `render_sw` and ships 4 vertex + 3
-fragment HLSL shaders (compiled at init, not precompiled `.cso`) — enough to
-run matches at 60 FPS on Intel graphics. Custom user sprite shaders follow
-the Vulkan pattern (`.cso` bytecode, `NeedsGrabPass` detected by parsing the
-DXBC RDEF section for the `bgl_RenderedTexture` resource name — one parser
+through `util_desktop.go` as `RenderMode = Direct3D 11`. Phases 0–1 are done;
+Phase 3 A+B is done (core model pipeline): `model_vs.hlsl`/`model_ps.hlsl`
+ports, the 11-slot SoA input layout (`VERTEXID` prefix slot + per-attribute
+blocks), `SetModelPipeline`/`SetModelUniform*`/`SetModelTexture`/`SetModelIndexData`
+and the model-path `RenderElements`, so GLB stage backgrounds render
+(`stage3d.def`-style, unlit path) — verified by `TestDXModelPipeline`. Custom
+user sprite shaders follow the Vulkan pattern (`.cso` bytecode,
+`NeedsGrabPass` detected by parsing the DXBC RDEF section — one parser
 handles both the modern `RD11` and classic 28-byte-header layouts, §7.1).
 External post shaders are also `.vert.cso`/`.frag.cso`. The remaining work
-is Phase 3 (full 3D / IBL) and Phase 4 (default promotion).
+is Phase 3 C–E (shadow maps, cubemap/IBL), Phase 2 polish, and Phase 4
+default promotion.
