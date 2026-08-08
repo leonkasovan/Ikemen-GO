@@ -3869,6 +3869,17 @@ func (s *System) drawDebugText(logicState drawAspectState) {
 // and at the start of any round where a new character tags in for turns mode
 func (s *System) runMatch() (reload bool) {
 	LogMessage("[PHASE] Starting match #%d, round #%d", s.matchNo, s.roundNo)
+	// If a storyboard (e.g. a loading storyboard) is still active when the match
+	// starts, end it now. Otherwise it keeps drawing its scene over the fight
+	// screen: at the fight aspect its fullscreen background is scaled and
+	// positioned incorrectly, leaving storyboard content in the left/right
+	// edges of the background. Close its video resources and reset the
+	// storyboard (which clears every scene's backgrounds) so nothing lingers
+	// into the match.
+	if sys.storyboard.active {
+		sys.storyboard.Close()
+		sys.storyboard.reset()
+	}
 	// Reset variables
 	s.matchTime = 0
 	s.fightLoopEnd = false

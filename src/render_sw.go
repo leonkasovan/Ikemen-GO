@@ -264,6 +264,15 @@ func (r *Renderer_SW) present() {
 		}
 		r.dirty = false
 	}
+	// The SDL backbuffer is not auto-cleared between presents. When the scaled
+	// viewport (KeepAspect) is smaller than the window — e.g. a 16:9 storyboard
+	// followed by a 4:3 stage fight — the letterbox strips would otherwise keep
+	// the previous frame's pixels, leaving storyboard content visible in the
+	// left/right (or top/bottom) bars. Every other backend (GL/D3D/Vulkan)
+	// clears its full backbuffer each frame; clear here too so the strips are
+	// black like the other renderers.
+	_ = r.renderer.SetDrawColor(0, 0, 0, 255)
+	_ = r.renderer.Clear()
 	if sys.cfg.Video.KeepAspect {
 		x, y, w, h := sys.window.GetScaledViewportSize()
 		dst := &sdl.Rect{X: x, Y: y, W: w, H: h}
@@ -272,6 +281,37 @@ func (r *Renderer_SW) present() {
 		_ = r.renderer.Copy(r.target, nil, nil)
 	}
 	r.renderer.Present()
+	r.dumpWindow()
+}
+
+// dumpWindow writes the presented SDL backbuffer to a PNG every 60 frames when
+// IKEMEN_SW_DUMP_DIR is set. Unlike dumpFrame (which captures the engine
+// framebuffer), this captures what is actually blitted to the window, so
+// letterbox/presentation issues are visible.
+func (r *Renderer_SW) dumpWindow() {
+	dir := os.Getenv("IKEMEN_SW_DUMP_DIR")
+	if dir == "" || sys.frameCounter%60 != 0 {
+		return
+	}
+	winW, winH := sys.window.GetSize()
+	if winW <= 0 || winH <= 0 {
+		return
+	}
+	buf := make([]byte, winW*winH*4)
+	rect := &sdl.Rect{X: 0, Y: 0, W: int32(winW), H: int32(winH)}
+	if err := r.renderer.ReadPixels(rect, sdl.PIXELFORMAT_ABGR8888, unsafe.Pointer(&buf[0]), winW*4); err != nil {
+		return
+	}
+	img := image.NewRGBA(image.Rect(0, 0, winW, winH))
+	for y := 0; y < winH; y++ {
+		copy(img.Pix[y*winW*4:(y+1)*winW*4], buf[y*winW*4:(y+1)*winW*4])
+	}
+	fn := filepath.Join(dir, fmt.Sprintf("sw_win_%05d.png", sys.frameCounter))
+	if f, err := os.Create(fn); err == nil {
+		_ = png.Encode(f, img)
+		_ = f.Close()
+		LogMessage("[SDL2 Software] dumped window %d -> %s", sys.frameCounter, fn)
+	}
 }
 
 // markDirty extends the per-frame dirty bounding box (framebuffer coords).
