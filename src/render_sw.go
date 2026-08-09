@@ -137,6 +137,7 @@ type Renderer_SW struct {
 	curVerts                          [16]float32
 	curHasVerts                       bool
 	customShaderLogged                map[string]bool
+	blendStateLogged                  map[string]bool // one-time warnings for unsupported blend states
 
 	// Dirty-rect tracking: only the touched region is uploaded at present.
 	dirty                              bool
@@ -180,6 +181,7 @@ func (r *Renderer_SW) Init() {
 	r.dirty = true
 	r.dirtyX0, r.dirtyY0, r.dirtyX1, r.dirtyY1 = 0, 0, r.w, r.h
 	r.customShaderLogged = make(map[string]bool)
+	r.blendStateLogged = make(map[string]bool)
 	LogMessage("[SDL2 Software] Framebuffer %dx%d (CPU compositing)", r.w, r.h)
 }
 

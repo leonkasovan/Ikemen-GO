@@ -75,7 +75,7 @@ func (r *Renderer_SW) rasterizeQuadWindow(q *swQuadState, v0, v1, v2, v3 swVerte
 	if q.pal != nil && (q.tex == nil || q.tex.depth != 8) {
 		q.pal = nil
 	}
-	mode := swBlendMode(q)
+	mode := r.swBlendMode(q)
 	var tab []byte
 	if q.pal != nil {
 		t := buildPalTable(q.pal, q)

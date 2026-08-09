@@ -2,7 +2,10 @@
 
 package main
 
-import "math"
+import (
+	"fmt"
+	"math"
+)
 
 // Per-pixel color math for the software renderer, ported from the GL33 sprite
 // shader (shaders/sprite.frag.glsl) and the sibling C++ software renderer
@@ -198,9 +201,15 @@ const (
 	swBlendReplace                // no blending (or unmapped state)
 )
 
-// swBlendMode resolves the per-draw blend state to a mode constant.
-func swBlendMode(q *swQuadState) int {
+// swBlendMode resolves the per-draw blend state to a mode constant. States the
+// rasterizer cannot emulate fall back to swBlendReplace (opaque overwrite); each
+// unsupported combination is reported once via warnUnmappedBlend instead of
+// failing silently, so a new blend combo reaching this backend shows up in the
+// log as an error instead of as mysteriously opaque sprites.
+func (r *Renderer_SW) swBlendMode(q *swQuadState) int {
 	if !q.blending {
+		// Explicitly disabled blending: Replace is the intended result, not a
+		// degradation, so it is not reported.
 		return swBlendReplace
 	}
 	if q.eq == BlendReverseSubtract {
@@ -210,6 +219,7 @@ func swBlendMode(q *swQuadState) int {
 		case q.src == BlendSrcAlpha && q.dst == BlendOne:
 			return swBlendSubSrcAlphaOne
 		}
+		r.warnUnmappedBlend(q)
 		return swBlendReplace
 	}
 	switch {
@@ -224,7 +234,55 @@ func swBlendMode(q *swQuadState) int {
 	case q.src == BlendZero && q.dst == BlendOneMinusSrcAlpha:
 		return swBlendAddZeroInvAlpha
 	}
+	r.warnUnmappedBlend(q)
 	return swBlendReplace
+}
+
+// warnUnmappedBlend logs one error per unique unsupported blend state (the same
+// dedup pattern as the custom-shader warning in RenderQuad). BlendDstColor /
+// BlendOneMinusDstColor factors are only produced by the model path today,
+// which is disabled on this backend, so this is expected to stay quiet — if it
+// fires, the new state should be added to the switches above.
+func (r *Renderer_SW) warnUnmappedBlend(q *swQuadState) {
+	// Nil-safe: newSWTestRenderer constructs the renderer without Init.
+	if r.blendStateLogged == nil {
+		r.blendStateLogged = make(map[string]bool)
+	}
+	key := fmt.Sprintf("%d/%d/%d", q.eq, q.src, q.dst)
+	if r.blendStateLogged[key] {
+		return
+	}
+	r.blendStateLogged[key] = true
+	LogError("[SDL2 Software] Unsupported blend state (eq=%s src=%s dst=%s) fell back to opaque Replace; sprites using it will not blend",
+		swBlendEqName(q.eq), swBlendFuncName(q.src), swBlendFuncName(q.dst))
+}
+
+func swBlendEqName(e BlendEquation) string {
+	switch e {
+	case BlendAdd:
+		return "Add"
+	case BlendReverseSubtract:
+		return "ReverseSubtract"
+	}
+	return fmt.Sprintf("BlendEquation(%d)", e)
+}
+
+func swBlendFuncName(f BlendFunc) string {
+	switch f {
+	case BlendOne:
+		return "One"
+	case BlendZero:
+		return "Zero"
+	case BlendSrcAlpha:
+		return "SrcAlpha"
+	case BlendOneMinusSrcAlpha:
+		return "OneMinusSrcAlpha"
+	case BlendDstColor:
+		return "DstColor"
+	case BlendOneMinusDstColor:
+		return "OneMinusDstColor"
+	}
+	return fmt.Sprintf("BlendFunc(%d)", f)
 }
 
 // swBlendAlphaOver blends one pixel with Add/SrcAlpha/OneMinusSrcAlpha using
