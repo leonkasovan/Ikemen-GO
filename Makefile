@@ -23,6 +23,11 @@
 #       mingw-w64-x86_64-go mingw-w64-x86_64-toolchain \
 #       mingw-w64-x86_64-nasm mingw-w64-x86_64-cmake
 #     pacman -S --noconfirm wget unzip
+#   Windows (w64devkit — self-contained, no package manager needed):
+#     Everything needed is already in w64devkit (gcc, make, cmake, go, ...).
+#     Optional: put yasm (or nasm) on PATH to enable FFmpeg x86 SIMD
+#     (accelerated swscale color conversion); without any assembler FFmpeg
+#     falls back to --disable-x86asm.
 #   Linux (Debian/Ubuntu):
 #     sudo apt update && sudo apt install -y \
 #       make cmake pkg-config gcc g++ nasm \
@@ -40,6 +45,11 @@
 # ============================================================================
 
 CONFIG ?= release
+# Recipes run under a real bash on MSYS2/Linux/macOS. Native Windows make
+# (e.g. w64devkit) cannot resolve /bin/bash and silently falls back to the
+# first sh on PATH (a POSIX-only busybox ash in w64devkit), so ALL recipe
+# shell code must stay POSIX-sh compatible — no bashisms ([[ ]], shopt,
+# read -ra, <<<, C-style for loops, ...).
 SHELL       := /bin/bash
 .SHELLFLAGS := -euo pipefail -c
 .ONESHELL:
@@ -78,20 +88,64 @@ else
 endif
 
 # ============================================================================
+# Windows Toolchain Identification — MSYS2 MinGW64 vs w64devkit
+# ============================================================================
+# Both environments provide a MinGW-w64 compiler, but they differ in how make
+# and its recipe shell behave, which changes PATH/Go handling, the CMake
+# generator, and the FFmpeg x86 assembler:
+#
+#   MSYS2 MINGW64  — Cygwin-based MSYS2 runtime with its own POSIX tools
+#                    (/usr/bin/cygpath, MSYSTEM env, /mingw64 package prefix).
+#                    `make` is MSYS2's GNU make and resolves POSIX paths.
+#   w64devkit      — Self-contained native MinGW-w64 toolchain. `make` is the
+#                    native Windows GNU make; recipes run under a POSIX-only
+#                    busybox ash; no cygpath. (Note: MSYSTEM can leak into this
+#                    shell when MSYS2 is also installed, so it is NOT used for
+#                    detection — only the wildcard checks below are.)
+#
+# Detection: MSYS2 always ships /usr/bin/cygpath.exe and /mingw64/bin (the
+# MINGW64 package prefix); w64devkit has neither. $(wildcard) resolves POSIX
+# paths under MSYS2's make but returns empty under native Windows make (there
+# is no C:\usr\...), which is exactly the split we need. Note: the MSYSTEM
+# env var is NOT reliable on its own — it leaks into a w64devkit shell when
+# MSYS2 is also installed.
+#
+# Override with `make WIN_TOOLCHAIN=msys2` / `make WIN_TOOLCHAIN=w64devkit`.
+ifeq ($(HOST_OS),windows)
+  ifndef WIN_TOOLCHAIN
+    ifneq ($(wildcard /usr/bin/cygpath),)
+      WIN_TOOLCHAIN := msys2
+    else ifneq ($(wildcard /mingw64/bin),)
+      WIN_TOOLCHAIN := msys2
+    else
+      WIN_TOOLCHAIN := w64devkit
+    endif
+  endif
+endif
+
+# ============================================================================
 # Environment — Windows-specific PATH and Go env
 # ============================================================================
 
 ifeq ($(HOST_OS),windows)
-  # /usr/bin first: MSYS2's make.exe handles .ONESHELL + env propagation
-  # correctly; the MinGW native make.exe in /mingw64/bin does not.
-  # /mingw64/bin still on PATH for gcc, g++, pkgconf, etc.
-  export PATH    := /usr/bin:/mingw64/bin:$(PATH)
-  export GOROOT ?= /mingw64/lib/go
-  # Default GOPATH for environments where it isn't set (MSYS2, CI, etc.)
-  export GOPATH  ?= $(HOME)/go
-  # Go build cache location — needed because %LocalAppData% may be unset
-  # in non-interactive MSYS2 shells.
-  export GOCACHE ?= $(HOME)/.cache/go-build
+  # MSYS2 shell: put /usr/bin first so MSYS2's make.exe (which handles
+  # .ONESHELL + POSIX env propagation correctly) wins over the MinGW native
+  # make.exe in /mingw64/bin, and point Go at the MSYS2 toolchain.
+  #
+  # Guarded on the toolchain being MSYS2: native Windows make (w64devkit)
+  # cannot use POSIX-style PATH entries — a colon-joined PATH would be
+  # unreadable by Windows executables like go.exe — so its environment is
+  # left untouched (the user's own PATH already provides gcc, go,
+  # pkg-config, ...).
+  ifeq ($(WIN_TOOLCHAIN),msys2)
+    export PATH    := /usr/bin:/mingw64/bin:$(PATH)
+    export GOROOT ?= /mingw64/lib/go
+    # Default GOPATH for environments where it isn't set (MSYS2, CI, etc.)
+    export GOPATH  ?= $(HOME)/go
+    # Go build cache location — needed because %LocalAppData% may be unset
+    # in non-interactive MSYS2 shells.
+    export GOCACHE ?= $(HOME)/.cache/go-build
+  endif
 else ifeq ($(HOST_OS),linux)
   # /usr/local/go/bin goes FIRST on Linux: a toolchain auto-installed by
   # `make check-go-env` (or manually placed at /usr/local/go) must take
@@ -219,11 +273,10 @@ PKG_CONFIG ?= pkg-config
 # Tools required for building — nasm is an x86 assembler, not available/needed on ARM64
 # On Linux, `go` is intentionally NOT required here: `make check-go-env`
 # auto-installs a supported toolchain when `go` is missing or too old.
-ifeq ($(HOST_ARCH),arm64)
-  BUILD_TOOLS := make cmake pkg-config gcc g++ unzip wget
-else
-  BUILD_TOOLS := make cmake pkg-config gcc g++ nasm unzip wget
-endif
+# Neither nasm nor yasm is required: FFmpeg falls back to --disable-x86asm
+# when no assembler is found, so assemblers are intentionally left out of
+# BUILD_TOOLS (w64devkit doesn't ship them; MSYS2 provides nasm).
+BUILD_TOOLS := make cmake pkg-config gcc g++ unzip wget
 ifneq ($(HOST_OS),linux)
   BUILD_TOOLS += go
 endif
@@ -357,14 +410,27 @@ GO_SOURCES := $(shell find src -name '*.go' -type f)
 
 ifeq ($(HOST_OS),windows)
 
+# POSIX-sh version of the SxS sanitizer. It runs at parse time via
+# $(shell), which native Windows make executes with the first sh on PATH
+# (a POSIX-only busybox ash in w64devkit). Two hard constraints:
+#   1. No bashisms ([[ ]], shopt, read -ra, <<<, C-style for loops, ...).
+#   2. No ')' characters in the script — make's own parser closes the
+#      $(shell ...) function at the first unbalanced ')' it sees (e.g. a
+#      shell `case` pattern terminator), truncating the script.
+# grep (instead of case) keeps the script free of ')'.
 _sxs_clean = $(shell v='$(strip $(subst v,,$(subst V,,$(1))))'; \
-  [[ "$$v" =~ ^[0-9.]+$$ ]] || { echo "0.0.0.0"; exit; }; \
-  IFS='.' read -ra p <<<"$$v"; \
-  for ((i=$${#p[@]}; i<4; i++)); do p+=("0"); done; \
-  out=(); for x in "$${p[@]:0:4}"; do \
-    [[ "$$x" =~ ^[0-9]+$$ ]] || x=0; ((x<0)) && x=0; ((x>65535)) && x=65535; \
-    out+=("$$x"); \
-  done; IFS='.'; echo "$${out[*]}" )
+  IFS='.'; set -- $$v; \
+  p1=$${1:-0}; p2=$${2:-0}; p3=$${3:-0}; p4=$${4:-0}; \
+  ok=1; \
+  for x in "$$p1" "$$p2" "$$p3" "$$p4"; do \
+    if printf '%s' "$$x" | grep -qvE '^[0-9]+$$'; then ok=0; fi; \
+  done; \
+  if [ "$$ok" = 0 ]; then echo 0.0.0.0; exit 0; fi; \
+  [ "$$p1" -gt 65535 ] && p1=65535; \
+  [ "$$p2" -gt 65535 ] && p2=65535; \
+  [ "$$p3" -gt 65535 ] && p3=65535; \
+  [ "$$p4" -gt 65535 ] && p4=65535; \
+  echo "$$p1.$$p2.$$p3.$$p4")
 
 SXS_VERSION := $(call _sxs_clean,$(APP_VERSION))
 
@@ -547,7 +613,16 @@ SDL2_CMAKE_FLAGS := \
 SDL2_CMAKE_GENERATOR :=
 
 ifeq ($(HOST_OS),windows)
-  SDL2_CMAKE_GENERATOR := -G "MSYS Makefiles" -DWIN32=TRUE
+  # "MSYS Makefiles" is correct inside a real MSYS2 shell (its make/sh
+  # understand the /c/... paths cmake emits there). Native Windows make
+  # (w64devkit) runs under a POSIX-only ash that cannot execute /c/...
+  # paths, so "MinGW Makefiles" + mingw32-make is the right generator for
+  # that environment (same WIN_TOOLCHAIN guard as the PATH export above).
+  ifeq ($(WIN_TOOLCHAIN),msys2)
+    SDL2_CMAKE_GENERATOR := -G "MSYS Makefiles" -DWIN32=TRUE
+  else
+    SDL2_CMAKE_GENERATOR := -G "MinGW Makefiles" -DWIN32=TRUE
+  endif
   SDL2_CMAKE_FLAGS += \
 	-DSDL_OPENGL=ON \
 	-DSDL_OPENGLES=OFF \
@@ -615,8 +690,7 @@ $(BUILD_PREFIX)/lib/libSDL2.a $(BUILD_PREFIX)/lib/libSDL2.so:
 		subdir="$$(find "$$tmp" -mindepth 1 -maxdepth 1 -type d | head -1)"
 		rm -rf "$(SDL2_SRCDIR)"
 		mkdir -p "$(SDL2_SRCDIR)"
-		shopt -s dotglob
-		mv "$$subdir"/* "$(SDL2_SRCDIR)"/ 2>/dev/null || true
+		cp -a "$$subdir"/. "$(SDL2_SRCDIR)"/
 		rm -rf "$$tmp" "$(BUILDDIR)/SDL2.zip"
 	fi
 	cmake -S "$(SDL2_SRCDIR)" -B "$(SDL2_BUILDDIR)" \
@@ -677,11 +751,24 @@ sdl2:
 # URL defined above as $(FFMPEG_URL)
 # ============================================================================
 
+# x86 assembler for FFmpeg's standalone asm (swscale/avcodec SIMD).
+# MSYS2 ships nasm (preferred); w64devkit ships neither, but yasm is
+# commonly on PATH (e.g. from an Android NDK install) and FFmpeg accepts it
+# via --x86asmexe. Prefer nasm, fall back to yasm; if neither is available
+# FFmpeg is configured with --disable-x86asm (still builds, just no SIMD).
+# This probe runs on every platform, so Linux/macOS also pass --x86asmexe
+# explicitly (and would use yasm if nasm were absent) — same result as
+# FFmpeg's own auto-detection, just explicit. Override with
+# `make X86ASM=</path/to/nasm|yasm>` (empty disables x86asm).
+X86ASM := $(shell command -v nasm 2>/dev/null || command -v yasm 2>/dev/null)
+# --disable-x86asm is required when building for ARM64 or without an assembler.
+NO_X86ASM := $(if $(or $(filter arm64,$(HOST_ARCH)),$(X86ASM)),,--disable-x86asm)
+
 ffmpeg: $(FFMPEG_LIBS)
 	@echo "    FFmpeg $$(PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig" $(PKG_CONFIG) --modversion libavformat) found"
 
 $(FFMPEG_LIBS):
-	@echo "==> Building static FFmpeg for $(HOST_OS)..."
+	@echo "==> Building static FFmpeg for $(HOST_OS) (x86 asm: $(if $(X86ASM),$(X86ASM),disabled))..."
 	mkdir -p $(BUILDDIR)
 	if [ ! -d "$(FFMPEG_SRCDIR)" ]; then
 		echo "==> Downloading $(FFMPEG_URL)..."
@@ -697,18 +784,22 @@ $(FFMPEG_LIBS):
 		subdir="$$(find "$$tmp" -mindepth 1 -maxdepth 1 -type d | head -1)"
 		rm -rf "$(FFMPEG_SRCDIR)"
 		mkdir -p "$(FFMPEG_SRCDIR)"
-		shopt -s dotglob
-		mv "$$subdir"/* "$(FFMPEG_SRCDIR)"/ 2>/dev/null || true
+		cp -a "$$subdir"/. "$(FFMPEG_SRCDIR)"/
 		rm -rf "$$tmp" "$(BUILDDIR)/FFmpeg.zip"
 	fi
+	@# configure is an eval-heavy POSIX script that crawls (and trips busybox
+	@# sed) under w64devkit's POSIX-only ash; running it under bash is fast
+	@# and safe on every supported platform.
 	cd "$(FFMPEG_SRCDIR)" && \
-		./configure \
+		bash ./configure \
 			--prefix="$(BUILD_PREFIX)" \
+			$(if $(filter windows,$(HOST_OS)),--target-os=mingw32,) \
 			--enable-static --disable-shared \
 			--disable-gpl --disable-nonfree \
 			--disable-debug --disable-doc --disable-programs --disable-everything \
 			--disable-autodetect --disable-avdevice --disable-pthreads \
-			$(if $(filter arm64,$(HOST_ARCH)),--disable-x86asm,) \
+			$(if $(NO_X86ASM),--disable-x86asm,) \
+			$(if $(X86ASM),--x86asmexe="$(X86ASM)",) \
 			--enable-avformat --enable-avcodec --enable-avutil \
 			--enable-swresample --enable-swscale \
 			--enable-avfilter --enable-filter=buffer,buffersink,format,scale,pad,crop \
@@ -758,8 +849,7 @@ $(XMP_LIB):
 		subdir="$$(find "$$tmp" -mindepth 1 -maxdepth 1 -type d | head -1)"
 		rm -rf "$(XMP_SRCDIR)"
 		mkdir -p "$(XMP_SRCDIR)"
-		shopt -s dotglob
-		mv "$$subdir"/* "$(XMP_SRCDIR)"/ 2>/dev/null || true
+		cp -a "$$subdir"/. "$(XMP_SRCDIR)"/
 		rm -rf "$$tmp" "$(BUILDDIR)/libxmp.zip"
 	fi
 	cmake -S "$(XMP_SRCDIR)" -B "$(XMP_BUILDDIR)" \
@@ -887,7 +977,7 @@ $(BINARY): $(GO_SOURCES) $(XMP_LIB) $(FFMPEG_LIBS)
 	@echo "    Go build tags: $(GO_TAGS) LDFLAGS: $(LDFLAGS_GO) CGO_CFLAGS: $(CGO_CFLAGS) CGO_LDFLAGS: $(CGO_LDFLAGS)"
 	case "$(HOST_OS)" in \
 		windows) \
-			_PC_WINPATH="$$(cygpath -m "$(BUILD_PREFIX)/lib/pkgconfig")" ; \
+			_PC_WINPATH="$$(cygpath -m "$(BUILD_PREFIX)/lib/pkgconfig" 2>/dev/null || echo "$(BUILD_PREFIX)/lib/pkgconfig")" ; \
 			_CGO_CFLAGS=$$( $(PKG_CONFIG) --with-path="$${_PC_WINPATH}" --cflags $(_CGO_PKGS) ) ; \
 			_CGO_LDFLAGS="-L$(BUILD_PREFIX)/lib $$( $(PKG_CONFIG) --with-path="$${_PC_WINPATH}" --static --libs $(_CGO_PKGS) )" ; \
 			GOEXPERIMENT="$$_GOEXPERIMENT" \
@@ -1026,8 +1116,7 @@ screenpack:
 		subdir="$$(find "$$tmp" -mindepth 1 -maxdepth 1 -type d | head -1)"
 		rm -rf "$(INSTALLDIR)"
 		mkdir -p "$(INSTALLDIR)"
-		shopt -s dotglob
-		mv "$$subdir"/* "$(INSTALLDIR)"/ 2>/dev/null || true
+		cp -a "$$subdir"/. "$(INSTALLDIR)"/
 		rm -rf "$$tmp" "$(BUILDDIR)/screenpack.zip"
 	fi
 	@echo "==> Screenpack ready in $(INSTALLDIR)"
@@ -1060,7 +1149,7 @@ FORCE:
 # Help
 # ============================================================================
 help:
-	@echo 'Ikemen-GO Build — $(HOST_OS) ($(HOST_ARCH))'
+	@echo 'Ikemen-GO Build — $(HOST_OS) ($(HOST_ARCH))$(if $(WIN_TOOLCHAIN), [$(WIN_TOOLCHAIN)],)'
 	@echo ''
 	@echo 'Targets:'
 	@echo '  all / release  Build release binary'
@@ -1102,6 +1191,10 @@ help:
 	@echo '  GO_INSTALL_DIR=<d> Install dir for auto-installed Go (default: /usr/local/go)'
 	@echo '  GO_MIN_VERSION=<v> Min Go version required; below it on Linux the latest'
 	@echo '                     Go is auto-installed (default: 1.22)'
+	@echo '  X86ASM=<path>      x86 assembler for FFmpeg SIMD (default: nasm,'
+	@echo '                     then yasm; if none found, x86asm is disabled)'
+	@echo '  WIN_TOOLCHAIN=<t>  Force Windows toolchain branch: msys2 or w64devkit'
+	@echo '                     (default: auto-detected)'
 	@echo ''
 	@echo 'Platform notes:'
 	@echo '  SDL2: Static from source (Windows); system lib via pkg-config'
