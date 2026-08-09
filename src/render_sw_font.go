@@ -301,6 +301,16 @@ func (r *Renderer_SW) drawFontGlyph(f *Font_SW, g *swGlyph,
 		return tx * scaleX, (rh - ty) * scaleY
 	}
 
+	// The scissor rect is passed through UNSCALED on purpose. The window rects
+	// handed to Printf are already in render-resolution (scrrect) space: font.go's
+	// drawWindow() multiplies the caller's text-space rect by sys.widthScale /
+	// sys.heightScale before it reaches us, and the debug HUD passes &s.scrrect
+	// directly. The glyph quads land in that same space via toWin below, because
+	// scaleX = r.w / f.windowWidth with f.windowWidth always == sys.gameWidth
+	// (set at LoadFont and refreshed every DrawTtf), so scaleX == sys.widthScale
+	// and likewise for Y. Scaling the scissor by (scaleX, scaleY) again would
+	// double-scale it and clip away text inside partial windows whenever the
+	// render resolution differs from the game resolution.
 	q := swQuadState{
 		isFlat:     false,
 		mask:       0,
