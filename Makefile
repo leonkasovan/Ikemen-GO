@@ -44,7 +44,13 @@
 #       molten-vk
 # ============================================================================
 
-CONFIG ?= release
+# Build configuration: release (default) or debug. `config=` is canonical;
+# the legacy uppercase `CONFIG=` is still accepted so old command lines and
+# scripts don't silently build the wrong configuration.
+config ?= $(if $(CONFIG),$(CONFIG),release)
+ifdef CONFIG
+$(warning CONFIG= is deprecated - use config= instead)
+endif
 # Recipes run under a real bash on MSYS2/Linux/macOS. Native Windows make
 # (e.g. w64devkit) cannot resolve /bin/bash and silently falls back to the
 # first sh on PATH (a POSIX-only busybox ash in w64devkit), so ALL recipe
@@ -338,7 +344,7 @@ LDFLAGS_BASE := \
 # - Linux: no -static; system libs (glibc, X11, pthreads, dl, etc.) stay
 #   dynamically linked. SDL2/FFmpeg/XMP .a files are embedded via CGO.
 # - macOS: no -static (not supported by Apple). Frameworks stay dynamic.
-ifeq ($(CONFIG),debug)
+ifeq ($(config),debug)
   IS_DEBUG := 1
 else
   IS_DEBUG :=
@@ -474,7 +480,7 @@ release: check-go-env deps-check xmp ffmpeg sdl2 $(BINARY)
 # ============================================================================
 
 debug:
-	$(MAKE) release CONFIG=debug
+	$(MAKE) release config=debug
 
 # ============================================================================
 # Dependency Checks
@@ -686,7 +692,11 @@ $(BUILD_PREFIX)/lib/libSDL2.a $(BUILD_PREFIX)/lib/libSDL2.so:
 		tmp="$(BUILDDIR)/SDL2.zip-extract"
 		rm -rf "$$tmp"
 		mkdir -p "$$tmp"
-		unzip -q "$(BUILDDIR)/SDL2.zip" -d "$$tmp"
+		# SDL's zip contains symlinks (android-project-ant/ -> ../android-project)
+		# that w64devkit's busybox unzip cannot create on Windows (needs the
+		# SeCreateSymbolicLinkPrivilege), aborting extraction. Exclude that
+		# legacy Android-Ant dir — not needed for a desktop build.
+		unzip -q "$(BUILDDIR)/SDL2.zip" -d "$$tmp" -x '*/android-project-ant/*'
 		subdir="$$(find "$$tmp" -mindepth 1 -maxdepth 1 -type d | head -1)"
 		rm -rf "$(SDL2_SRCDIR)"
 		mkdir -p "$(SDL2_SRCDIR)"
@@ -787,11 +797,12 @@ $(FFMPEG_LIBS):
 		cp -a "$$subdir"/. "$(FFMPEG_SRCDIR)"/
 		rm -rf "$$tmp" "$(BUILDDIR)/FFmpeg.zip"
 	fi
-	@# configure is an eval-heavy POSIX script that crawls (and trips busybox
-	@# sed) under w64devkit's POSIX-only ash; running it under bash is fast
-	@# and safe on every supported platform.
+	@# FFmpeg's configure is a plain POSIX sh script. Run it under `sh` so it
+	@# works everywhere: MSYS2/Linux/macOS sh is bash/dash (FFmpeg supports
+	@# both), and w64devkit's busybox ash handles it fine too — while `bash`
+	@# itself does not exist in w64devkit.
 	cd "$(FFMPEG_SRCDIR)" && \
-		bash ./configure \
+		sh ./configure \
 			--prefix="$(BUILD_PREFIX)" \
 			$(if $(filter windows,$(HOST_OS)),--target-os=mingw32,) \
 			--enable-static --disable-shared \
@@ -973,7 +984,7 @@ $(BINARY): $(GO_SOURCES) $(XMP_LIB) $(FFMPEG_LIBS)
 	@# ensured, which may differ from the toolchain seen at parse time.
 	@_GOEXPERIMENT=$$( GOEXPERIMENT=arenas go env GOEXPERIMENT 2>/dev/null | grep -q arenas && echo arenas || true ); \
 	echo "    GOEXPERIMENT=$${_GOEXPERIMENT:-<none>}"
-	@echo "==> Building $(BINNAME) ($(CONFIG), GOOS=$(GOOS) GOARCH=$(GOARCH))..."
+	@echo "==> Building $(BINNAME) ($(config), GOOS=$(GOOS) GOARCH=$(GOARCH))..."
 	@echo "    Go build tags: $(GO_TAGS) LDFLAGS: $(LDFLAGS_GO) CGO_CFLAGS: $(CGO_CFLAGS) CGO_LDFLAGS: $(CGO_LDFLAGS)"
 	case "$(HOST_OS)" in \
 		windows) \
@@ -1181,7 +1192,8 @@ help:
 	@echo '                       Windows: amd64 (default) or 386'
 	@echo '                       Linux:   amd64 (default) or arm64'
 	@echo '                       macOS:   arm64 (Apple Silicon) or amd64 (Intel)'
-	@echo '  CONFIG=debug       Debug build + memory instrumentation (default: release)'
+	@echo '  config=debug       Debug build + memory instrumentation (default: release)'
+	@echo '                       (legacy uppercase CONFIG=debug is also accepted)'
 	@echo '  APP_VERSION=X.Y    Set version string (default: nightly)'
 	@echo '  APP_BUILDTIME=X    Set build timestamp'
 	@echo '  VERBOSE=1          Verbose go build (-x -v): show every command and'
@@ -1210,7 +1222,7 @@ help:
 	@echo '  make                          # Native release'
 	@echo '  make debug                    # Native debug'
 	@echo '  make APP_VERSION=v1.0.0       # Tagged build'
-	@echo '  make APP_VERSION=v1.0.0 CONFIG=debug'
+	@echo '  make APP_VERSION=v1.0.0 config=debug'
 	@echo '  make install                  # Build + assemble runnable deploy/'
 	@echo '  rm -rf build/                 # Wipe ALL platform build trees'
 

@@ -78,13 +78,13 @@ pacman -S --noconfirm wget unzip
 | Command              | Description |
 |----------------------|-------------|
 | `make` / `make release` | Release build → binary (GUI subsystem on Windows) |
-| `make CONFIG=debug`  | Debug build (console + memory instrumentation) |
+| `make config=debug`  | Debug build (console + memory instrumentation) |
 | `make ffmpeg`        | Build FFmpeg libraries only |
 | `make xmp`           | Build libxmp only |
 | `make sdl2`          | Build SDL2 only |
 | `make screenpack`    | Clone/update Elecbyte screenpack into `deploy/` |
 | `make install`       | Release build + screenpack → `deploy/` |
-| `make install CONFIG=debug` | Debug build + screenpack → `deploy/` |
+| `make install config=debug` | Debug build + screenpack → `deploy/` |
 | `make install-remote` | Build binary, then scp it to a remote device (see [Deploying to a remote device](#deploying-to-a-remote-device)) |
 | `make appbundle`     | Create macOS `.app` bundle (I.K.E.M.E.N-Go.app) |
 | `make clean`         | Remove the current platform's build dir (e.g. `build/windows_amd64/`) — binary, libs, downloaded sources, everything for that platform |
@@ -95,7 +95,7 @@ pacman -S --noconfirm wget unzip
 
 | Variable        | Values              | Description |
 |-----------------|---------------------|-------------|
-| `CONFIG=debug`  | release / debug     | Debug build with memory instrumentation |
+| `config=debug`  | release / debug     | Debug build with memory instrumentation |
 | `ARCH=386`      | amd64 / 386         | Build 32-bit instead of 64-bit |
 | `APP_VERSION=X` | string              | Version string embedded in the binary (default: nightly) |
 | `APP_BUILDTIME` | date string         | Build timestamp (default: current date) |
@@ -106,12 +106,12 @@ pacman -S --noconfirm wget unzip
 
 ```bash
 make                          # Release
-make CONFIG=debug             # Debug build (console + memory instrumentation)
+make config=debug             # Debug build (console + memory instrumentation)
 make install                  # Release → deploy/
-make install CONFIG=debug     # Debug → deploy/
+make install config=debug     # Debug → deploy/
 make ARCH=386                 # 32-bit build
 make APP_VERSION=v1.0.0       # Tagged build
-make APP_VERSION=v1.0.0 CONFIG=debug
+make APP_VERSION=v1.0.0 config=debug
 ```
 
 ### Run
@@ -211,9 +211,9 @@ Build works as a normal Linux build (see prerequisites above). Two WSL-specific 
 ### Build
 
 ```bashmake                          # Native release → Ikemen_GO
-make CONFIG=debug             # Debug build
+make config=debug             # Debug build
 make install                  # Release → deploy/
-make install CONFIG=debug     # Debug → deploy/
+make install config=debug     # Debug → deploy/
 ```
 
 The Makefile detects your architecture and builds natively (x86-64 or ARM64)
@@ -254,9 +254,9 @@ brew install git make cmake pkg-config go nasm wget sdl2 molten-vk
 ### Build
 
 ```bashmake                          # Native release → Ikemen_GO
-make CONFIG=debug             # Debug build
+make config=debug             # Debug build
 make install                  # Release → deploy/
-make install CONFIG=debug     # Debug → deploy/
+make install config=debug     # Debug → deploy/
 make appbundle                # Create I.K.E.M.E.N-Go.app
 ```
 
@@ -521,7 +521,7 @@ the Elecbyte screenpack. The release CI bundles these automatically.
 ## Profiling with pprof (debug build only)
 
 The `debug` build tag activates an HTTP pprof server on `localhost:6060`.
-Start the game with a `CONFIG=debug` build and navigate to your desired screen
+Start the game with a `config=debug` build and navigate to your desired screen
 before profiling.
 
 ### Capturing profiles from a live process

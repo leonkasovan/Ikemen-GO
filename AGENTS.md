@@ -20,7 +20,7 @@ Run:
 
 ```bash
 make                    # Win64 release → Ikemen_GO.amd64.exe
-make CONFIG=debug       # Win64 debug
+make config=debug       # Win64 debug
 ```
 
 The Makefile sets `GOROOT=/mingw64/lib/go`, `GOPATH=$HOME/go`,
@@ -30,7 +30,7 @@ The Makefile sets `GOROOT=/mingw64/lib/go`, `GOPATH=$HOME/go`,
 
 ```bash
 make                    # Native release → Ikemen_GO.amd64 (linux_amd64) / Ikemen_GO.arm64 (linux_arm64)
-make CONFIG=debug       # Debug build
+make config=debug       # Debug build
 ```
 
 ## Build overview
@@ -49,7 +49,7 @@ Makefile and linked statically into the binary.
 | Command | Description |
 |---------|-------------|
 | `make` / `make release` | Release build |
-| `make CONFIG=debug` | Debug build (console + memory instrumentation) |
+| `make config=debug` | Debug build (console + memory instrumentation) |
 | `make ffmpeg` | Build FFmpeg libraries |
 | `make xmp` | Build libxmp |
 | `make sdl2` | Build SDL2 |
@@ -60,7 +60,7 @@ Makefile and linked statically into the binary.
 
 ## Options
 
-- `CONFIG=debug` — debug build (default: release)
+- `config=debug` — debug build (default: release)
 - `ARCH=386` — 32-bit Windows build (default: amd64)
 - `APP_VERSION=X.Y` — version string (default: nightly)
 - `APP_BUILDTIME=X` — build timestamp
