@@ -106,7 +106,13 @@ void* dx_create_swapchain(void* factory, void* device, void* hwnd, int w, int h)
 	desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
 	desc.BufferCount = 2;
 	desc.Scaling = DXGI_SCALING_STRETCH;
-	desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+	// BLT model (not flip): on some Intel iGPU/driver combinations a flip-model
+	// Present busy-waits a full core regardless of DXGI_PRESENT_DO_NOT_WAIT
+	// (observed at ~99% CPU with all samples inside dx_present, while a plain
+	// blocking Present also spins). BLT presents block on the refresh event in
+	// the runtime, which is reliable across drivers — the same choice SDL2's
+	// Windows D3D11 renderer defaults to.
+	desc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
 	desc.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
 	IDXGISwapChain1* sc = NULL;
 	HRESULT hr = ((IDXGIFactory2*)factory)->lpVtbl->CreateSwapChainForHwnd((IDXGIFactory2*)factory, (IUnknown*)device, (HWND)hwnd, &desc, NULL, NULL, &sc);
@@ -137,8 +143,28 @@ void* dx_get_backbuffer(void* swapchain) {
 	return tex;
 }
 
-void dx_present(void* swapchain, int interval) {
-	((IDXGISwapChain*)swapchain)->lpVtbl->Present((IDXGISwapChain*)swapchain, interval, 0);
+int dx_present(void* swapchain, int interval) {
+	// Present WITHOUT waiting for vsync, always. Every vsync-synced present on
+	// this Intel iGPU busy-waits a full core inside the driver — measured with
+	// all profile samples inside this function: blocking Present(1,0) ~98% CPU
+	// (flip model), DXGI_PRESENT_DO_NOT_WAIT ~98% (flip) and ~52-66% (BLT, the
+	// flag is ignored for BLT chains). The engine's own frame limiter
+	// (System.await, system.go) paces the loop to the target fps, so the
+	// driver never needs to throttle; interval is intentionally ignored. DWM
+	// composition in windowed mode keeps tearing negligible.
+	(void)interval;
+	return (int)((IDXGISwapChain*)swapchain)->lpVtbl->Present((IDXGISwapChain*)swapchain, 0, 0);
+}
+
+// dx_set_frame_latency caps the number of frames the driver queues ahead
+// (1 = lowest latency). Without it some drivers (notably Intel) busy-wait in
+// Present; this is the standard companion fix to the DO_NOT_WAIT present loop.
+void dx_set_frame_latency(void* device, int latency) {
+	IDXGIDevice1* dxgiDev = NULL;
+	HRESULT hr = ((ID3D11Device*)device)->lpVtbl->QueryInterface((ID3D11Device*)device, &IID_IDXGIDevice1, (void**)&dxgiDev);
+	if (FAILED(hr) || !dxgiDev) return;
+	dxgiDev->lpVtbl->SetMaximumFrameLatency(dxgiDev, (UINT)latency);
+	dxgiDev->lpVtbl->Release(dxgiDev);
 }
 
 void* dx_create_texture(void* device, int w, int h, int fmt, int bindFlags, int msaa, int mips, int arraySize, int cube, int usage, int cpuAccess) {
@@ -1146,6 +1172,11 @@ type Renderer_DX struct {
 
 	vsyncInterval int
 	msaa          int32
+
+	// presentErrLogged dedups the one-time Present-failure log in EndFrame
+	// (device removed/reset are fatal; DXGI_STATUS_OCCLUDED is a positive
+	// status code and is treated as success by the hr < 0 check).
+	presentErrLogged bool
 }
 
 func (r *Renderer_DX) GetName() string   { return "Direct3D 11" }
@@ -1176,6 +1207,9 @@ func (r *Renderer_DX) Init() {
 	if r.ctx == nil {
 		panic("Direct3D 11: failed to get immediate context")
 	}
+	// Cap the driver's queued-frame count. Without this some drivers (notably
+	// Intel) busy-wait inside Present, spinning a full core (see dx_present).
+	C.dx_set_frame_latency(r.device, 1)
 	w, h := sys.window.GetSize()
 	r.winW, r.winH = int32(w), int32(h)
 
@@ -1620,7 +1654,10 @@ func (r *Renderer_DX) EndFrame() {
 	if sys.cfg.Video.RendererDebugMode {
 		C.dx_pull_messages(r.device)
 	}
-	C.dx_present(r.swapchain, C.int(r.vsyncInterval))
+	if hr := C.dx_present(r.swapchain, C.int(r.vsyncInterval)); hr < 0 && !r.presentErrLogged {
+		r.presentErrLogged = true
+		LogError("[Direct3D 11] Present failed (hr=0x%08x); the device may have been removed or reset", uint32(hr))
+	}
 }
 
 func (r *Renderer_DX) Await() {
@@ -2278,6 +2315,11 @@ func (r *Renderer_DX) ReadPixels(data []uint8, width, height int) {
 	C.dx_release(staging)
 }
 
+// SetVSync is a no-op for Direct3D 11: dx_present always presents
+// unsynchronized (Present(0,0)) because vsync-synced presents busy-wait a
+// full core on some Intel iGPUs. Frame pacing is handled by the engine's own
+// limiter (System.await) instead, so the interval value is intentionally
+// ignored — see the dx_present comment.
 func (r *Renderer_DX) SetVSync(interval int) {
 	r.vsyncInterval = interval
 	if r.vsyncInterval < 0 {
