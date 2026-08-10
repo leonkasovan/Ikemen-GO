@@ -35,6 +35,45 @@ type swQuadState struct {
 	fontColor [4]float32 // min(textColor, 1), see font.frag.glsl
 }
 
+// swPalKey identifies a fully-resolved palette table: the palette texture
+// (identity + data version) plus every PalFX state buildPalTable reads. See
+// rasterizeQuadWindow for the memoization that turns the per-quad 2048-byte
+// table build (whose backing array escaped to the heap through the runRows
+// worker closures) into a pointer lookup after warm-up.
+type swPalKey struct {
+	palSerial uint64
+	palVer    uint64
+	mask      int32
+	neg       bool
+	alpha     uint32 // math.Float32bits
+	hue       uint32
+	gray      uint32
+	add       [3]uint32
+	mult      [3]uint32
+	tint      [4]uint32
+}
+
+func swPalKeyFor(q *swQuadState) swPalKey {
+	return swPalKey{
+		palSerial: q.pal.serial,
+		palVer:    q.pal.dataVersion,
+		mask:      q.mask,
+		neg:       q.neg,
+		alpha:     math.Float32bits(q.alpha),
+		hue:       math.Float32bits(q.hue),
+		gray:      math.Float32bits(q.gray),
+		add:       [3]uint32{math.Float32bits(q.add[0]), math.Float32bits(q.add[1]), math.Float32bits(q.add[2])},
+		mult:      [3]uint32{math.Float32bits(q.mult[0]), math.Float32bits(q.mult[1]), math.Float32bits(q.mult[2])},
+		tint:      [4]uint32{math.Float32bits(q.tint[0]), math.Float32bits(q.tint[1]), math.Float32bits(q.tint[2]), math.Float32bits(q.tint[3])},
+	}
+}
+
+// swPalTableCacheMax caps the palette table memo. Each entry is 2048 bytes;
+// a fight's distinct (palette × PalFX state) combos are small, so 1024 entries
+// (~2 MB worst case) is generous. When exceeded the cache is rebuilt — a rare,
+// single-frame event that only affects one draw call.
+const swPalTableCacheMax = 1024
+
 func isAxisRect(v0, v1, v2, v3 swVertex) bool {
 	const eps = 0.001
 	// Axis-aligned in window space...
@@ -78,8 +117,26 @@ func (r *Renderer_SW) rasterizeQuadWindow(q *swQuadState, v0, v1, v2, v3 swVerte
 	mode := r.swBlendMode(q)
 	var tab []byte
 	if q.pal != nil {
-		t := buildPalTable(q.pal, q)
-		tab = t[:]
+		// Memoize the PalFX-applied palette table. buildPalTable runs 256
+		// iterations of the float PalFX chain; rebuilding it per quad made the
+		// returned 2048-byte array escape into the runRows worker closures and
+		// heap-allocate on every draw. Keys are (palette identity + data
+		// version + PalFX state), so palette edits and animated PalFX both
+		// invalidate correctly while steady-state draws hit the cache.
+		if r.palTableCache == nil {
+			r.palTableCache = make(map[swPalKey]*[2048]byte)
+		}
+		key := swPalKeyFor(q)
+		if p, ok := r.palTableCache[key]; ok {
+			tab = p[:]
+		} else {
+			t := buildPalTable(q.pal, q)
+			r.palTableCache[key] = &t
+			tab = t[:]
+			if len(r.palTableCache) > swPalTableCacheMax {
+				r.palTableCache = make(map[swPalKey]*[2048]byte)
+			}
+		}
 	}
 	if !q.isTrapez && isAxisRect(v0, v1, v2, v3) {
 		r.rasterRect(q, v0, v1, v2, v3, mode, tab)

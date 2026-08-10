@@ -24,6 +24,7 @@ type swTexture struct {
 	data                 []byte
 	palSlot              bool // palette texture: data is w*h*4 RGBA bytes
 	serial               uint64
+	dataVersion          uint64 // bumped whenever data changes (palette cache key)
 	released             bool
 }
 
@@ -32,6 +33,7 @@ func (t *swTexture) SetData(data []byte) {
 		return
 	}
 	t.data = append(t.data[:0], data...)
+	t.dataVersion++
 }
 
 func (t *swTexture) SetSubData(data []byte, x, y, width, height, stride int32) {
@@ -61,10 +63,12 @@ func (t *swTexture) SetSubData(data []byte, x, y, width, height, stride int32) {
 				return
 			}
 			copy(t.data[dstOff:], src[:n])
+			t.dataVersion++
 			return
 		}
 		copy(t.data[dstOff:dstOff+int(width*bpp)], src)
 	}
+	t.dataVersion++
 }
 
 func (t *swTexture) SetDataG(data []byte, mag, min, ws, wt TextureSamplingParam) {
@@ -97,6 +101,7 @@ func (t *swTexture) CopyData(src *Texture) {
 	if s, ok := (*src).(*swTexture); ok && s.data != nil {
 		n := Min(len(s.data), len(t.data))
 		copy(t.data[:n], s.data[:n])
+		t.dataVersion++
 	}
 }
 
@@ -138,6 +143,19 @@ type Renderer_SW struct {
 	curHasVerts                       bool
 	customShaderLogged                map[string]bool
 	blendStateLogged                  map[string]bool // one-time warnings for unsupported blend states
+
+	// dumpQuad is the IKEMEN_SW_DUMP_QUAD debug flag, read once at Init.
+	// Checking os.Getenv on the render hot path allocates per quad (UTF-16
+	// env lookups escape into the runRows worker closures), which showed up
+	// as a significant per-frame allocation source in profiles.
+	dumpQuad bool
+
+	// Palette table cache: buildPalTable applies the PalFX chain to the
+	// 256-entry palette once per draw call. Memoizing by (palette identity +
+	// data version + PalFX state) turns the per-quad [2048]byte computation
+	// (whose backing array escaped to the heap through the rasterizer
+	// workers) into a pointer lookup after warm-up.
+	palTableCache map[swPalKey]*[2048]byte
 
 	// Dirty-rect tracking: only the touched region is uploaded at present.
 	dirty                              bool
@@ -182,6 +200,8 @@ func (r *Renderer_SW) Init() {
 	r.dirtyX0, r.dirtyY0, r.dirtyX1, r.dirtyY1 = 0, 0, r.w, r.h
 	r.customShaderLogged = make(map[string]bool)
 	r.blendStateLogged = make(map[string]bool)
+	r.dumpQuad = os.Getenv("IKEMEN_SW_DUMP_QUAD") == "1"
+	r.palTableCache = make(map[swPalKey]*[2048]byte)
 	LogMessage("[SDL2 Software] Framebuffer %dx%d (CPU compositing)", r.w, r.h)
 }
 
@@ -543,8 +563,9 @@ func (r *Renderer_SW) RenderQuad() {
 	}
 
 	// Debug: log all quads (with window-space bbox) for the first few frames
-	// when IKEMEN_SW_DUMP_QUAD=1, so we can see exactly what is drawn where.
-	if os.Getenv("IKEMEN_SW_DUMP_QUAD") == "1" && sys.frameCounter < 6 {
+	// when IKEMEN_SW_DUMP_QUAD=1 (read once at Init; checking the env var per
+	// quad allocated on the hot path), so we can see exactly what is drawn where.
+	if r.dumpQuad && sys.frameCounter < 6 {
 		mat := r.curProjection.Mul4(r.curModelview)
 		hw := float32(r.w) * 0.5
 		hh := float32(r.h) * 0.5
