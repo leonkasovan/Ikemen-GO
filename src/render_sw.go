@@ -8,11 +8,22 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"sync"
 	"unsafe"
 
 	mgl "github.com/go-gl/mathgl/mgl32"
 	"github.com/ikemen-engine/Ikemen-GO/packages/go-sdl2/sdl"
 )
+
+// swQuadStatePool recycles the per-quad rasterizer state. RenderQuad and
+// flushSWQueue take the state from the pool instead of building a fresh value:
+// for quads large enough to cross the parallel-row threshold the state escapes
+// into the row-pool jobs (via swRowDraw.q), and a fresh swQuadState per quad
+// showed up as the single largest flat allocation in the software renderer's
+// profiles. Values are zeroed on Get so no field leaks between draws.
+var swQuadStatePool = sync.Pool{
+	New: func() any { return &swQuadState{} },
+}
 
 // swTexture is the CPU-side texture for the software renderer. Pixel data lives
 // in ordinary Go memory: depth 8 = palette indices, 24 = RGB, 32 = RGBA bytes,
@@ -652,32 +663,35 @@ func (r *Renderer_SW) RenderQuad() {
 		v[i] = swVertex{x, y, r.curVerts[i*4+2], r.curVerts[i*4+3]}
 	}
 
-	q := swQuadState{
-		isFlat:     r.curIsFlat,
-		mask:       r.curMask,
-		isTrapez:   r.curIsTrapez,
-		x1x2x4x3:   r.curX1x2x4x3,
-		tint:       r.curTint,
-		add:        r.curAdd,
-		mult:       r.curMult,
-		alpha:      r.curAlpha,
-		gray:       r.curGray,
-		hue:        r.curHue,
-		neg:        r.curNeg,
-		eq:         r.curBlendEq,
-		src:        r.curBlendSrc,
-		dst:        r.curBlendDst,
-		blending:   r.curBlending,
-		hasScissor: r.curScissorOn,
-		scissor:    r.curScissor,
-	}
+	q := swQuadStatePool.Get().(*swQuadState)
+	*q = swQuadState{}
+	q.isFlat = r.curIsFlat
+	q.mask = r.curMask
+	q.isTrapez = r.curIsTrapez
+	q.x1x2x4x3 = r.curX1x2x4x3
+	q.tint = r.curTint
+	q.add = r.curAdd
+	q.mult = r.curMult
+	q.alpha = r.curAlpha
+	q.gray = r.curGray
+	q.hue = r.curHue
+	q.neg = r.curNeg
+	q.eq = r.curBlendEq
+	q.src = r.curBlendSrc
+	q.dst = r.curBlendDst
+	q.blending = r.curBlending
+	q.hasScissor = r.curScissorOn
+	q.scissor = r.curScissor
 	if t, ok := r.curTex.(*swTexture); ok {
 		q.tex = t
 	}
 	if p, ok := r.curPal.(*swTexture); ok {
 		q.pal = p
 	}
-	r.rasterizeQuadWindow(&q, v[0], v[1], v[2], v[3])
+	r.rasterizeQuadWindow(q, v[0], v[1], v[2], v[3])
+	// rasterizeQuadWindow (and its runRows workers) complete synchronously, so
+	// the state is free to return to the pool here.
+	swQuadStatePool.Put(q)
 }
 
 // flushSWQueue rasterizes the deferred sprite queue on the CPU. Called from
@@ -685,25 +699,25 @@ func (r *Renderer_SW) RenderQuad() {
 func (r *Renderer_SW) flushSWQueue(queue []SpriteDrawCall) {
 	for i := range queue {
 		dc := &queue[i]
-		q := swQuadState{
-			isFlat:     dc.isFlat,
-			mask:       dc.mask,
-			isTrapez:   dc.isTrapez,
-			x1x2x4x3:   dc.x1x2x4x3,
-			tint:       dc.tint,
-			add:        dc.spfx.add,
-			mult:       dc.spfx.mult,
-			alpha:      dc.alpha,
-			gray:       dc.gray,
-			hue:        dc.spfx.hue,
-			neg:        dc.spfx.neg,
-			eq:         dc.blendEq,
-			src:        dc.blendSrc,
-			dst:        dc.blendDst,
-			blending:   true,
-			hasScissor: dc.hasScissor,
-			scissor:    dc.scissor,
-		}
+		q := swQuadStatePool.Get().(*swQuadState)
+		*q = swQuadState{}
+		q.isFlat = dc.isFlat
+		q.mask = dc.mask
+		q.isTrapez = dc.isTrapez
+		q.x1x2x4x3 = dc.x1x2x4x3
+		q.tint = dc.tint
+		q.add = dc.spfx.add
+		q.mult = dc.spfx.mult
+		q.alpha = dc.alpha
+		q.gray = dc.gray
+		q.hue = dc.spfx.hue
+		q.neg = dc.spfx.neg
+		q.eq = dc.blendEq
+		q.src = dc.blendSrc
+		q.dst = dc.blendDst
+		q.blending = true
+		q.hasScissor = dc.hasScissor
+		q.scissor = dc.scissor
 		if t, ok := dc.tex.(*swTexture); ok {
 			q.tex = t
 		}
@@ -718,12 +732,13 @@ func (r *Renderer_SW) flushSWQueue(queue []SpriteDrawCall) {
 		// field that the rasterizer never applied, so sub-rect sprites (SFF
 		// atlas glyphs) sampled the whole texture.
 		uv := dc.uv
-		r.rasterizeQuadWindow(&q,
+		r.rasterizeQuadWindow(q,
 			swVertex{c[2], c[3], uv[2], uv[3]},
 			swVertex{c[4], c[5], uv[2], uv[1]},
 			swVertex{c[0], c[1], uv[0], uv[3]},
 			swVertex{c[6], c[7], uv[0], uv[1]},
 		)
+		swQuadStatePool.Put(q)
 	}
 	drawCallStats.TotalBatches += len(queue)
 }

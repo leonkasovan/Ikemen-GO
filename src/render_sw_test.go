@@ -813,6 +813,35 @@ func TestSWFlatFillModeWiring(t *testing.T) {
 	}
 }
 
+// The parallel path: quads >= swMinParallelPixels are split across the row
+// pool workers via pooled swRowJob copies of a stack swRowDraw (the old
+// per-chunk closures are gone). Verifies the pooled protocol produces exact
+// pixels and that the workers actually ran.
+func TestSWParallelRows(t *testing.T) {
+	initSWRows()
+	if swRows.n < 2 {
+		t.Skip("row pool has a single worker on this machine; parallel path unreachable")
+	}
+	r := newSWTestRenderer(256, 256) // 65536 px > swMinParallelPixels
+	q := swState()
+	q.isFlat = true
+	q.tint = [4]float32{0.5, 0.25, 1, 1} // opaque purple
+	q.src = BlendSrcAlpha                // alpha-over over zeroed fb
+	before := swRows.runs.Load()
+	r.rasterizeQuadWindow(q,
+		swVertex{256, 256, 1, 1}, swVertex{256, 0, 1, 0},
+		swVertex{0, 256, 0, 1}, swVertex{0, 0, 0, 0})
+	if swRows.runs.Load() == before {
+		t.Fatal("parallel path did not reach the row pool workers")
+	}
+	for _, p := range [][2]int{{128, 128}, {0, 0}, {255, 255}, {64, 192}} {
+		rr, gg, bb, aa := swPix(r, p[0], p[1])
+		if rr != 128 || gg != 64 || bb != 255 || aa != 255 {
+			t.Fatalf("parallel flat fill at %v: got (%d,%d,%d,%d), want (128,64,255,255)", p, rr, gg, bb, aa)
+		}
+	}
+}
+
 // Rotated quad through the generic path (45° rotation of a 4x4 sprite).
 func TestSWRotatedQuad(t *testing.T) {
 	r := newSWTestRenderer(64, 48)
