@@ -395,14 +395,14 @@ If you update the `reisen` dependency version, copy the updated source into
 
 | Build | Command | APK | Go `debug` tag | PProf |
 |-------|---------|-----|----------------|-------|
-| **Release** | `./tools/generate_android_via_native.sh --yes` | `build/ikemen-go.apk` | off | no-op |
-| **Debug** | `CONFIG=debug ./tools/generate_android_via_native.sh --yes` | `build/ikemen-go-debug.apk` | on | `:6060` |
+| **Release** | `./tools/generate_android_via_native.sh --yes` | `build/ikemen-go-arm64-v8a.apk` | off | no-op |
+| **Debug** | `CONFIG=debug ./tools/generate_android_via_native.sh --yes` | `build/ikemen-go-arm64-v8a-debug.apk` | on | `:6060` |
 
 ### Debugging with ADB
 
 ```bash
 # Install debug APK
-adb install -r build/ikemen-go-debug.apk
+adb install -r build/ikemen-go-arm64-v8a-debug.apk
 
 # Stream engine logcat output
 adb logcat -s ikemen
@@ -554,13 +554,13 @@ source-level annotations:
 GOROOT=/mingw64/lib/go go tool pprof -trim_path 'github.com/ikemen-engine/Ikemen-GO/' \
   -source_path /path/to/your/Ikemen-GO \
   -list 'main.toLValue' \
-  $HOME/pprof/pprof.Ikemen_GO_debug.exe.*.pb.gz
+  $HOME/pprof/pprof.Ikemen_GO.amd64_debug.exe.*.pb.gz
 
 # Or, if running from the project root:
 GOROOT=/mingw64/lib/go go tool pprof -trim_path 'github.com/ikemen-engine/Ikemen-GO/' \
   -source_path . \
   -list 'main.toLValue' \
-  $HOME/pprof/pprof.Ikemen_GO_debug.exe.*.pb.gz
+  $HOME/pprof/pprof.Ikemen_GO.amd64_debug.exe.*.pb.gz
 ```
 
 Common pprof commands:
