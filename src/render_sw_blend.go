@@ -14,10 +14,11 @@ import (
 
 const swFP = 16 // fixed-point fractional bits for the rasterizer
 
-// mul255 multiplies two 0..255 values and divides by 255 (rounded). This is the
-// single hottest helper in the software rasterizer — called up to 5x per
-// blended pixel from the swBlend*Pix helpers — so it must not use an integer
-// division. ((a*b + 127) * 32897) >> 23 is a magic-multiply that is
+// mul255 multiplies two 0..255 values and divides by 255 (rounded). The
+// per-pixel hot paths read it through the mul255Tab / oneMinusMul255 /
+// mul255SASATab lookup tables below; the raw function remains for the
+// per-draw call sites (buildPalTable, the flat-path premultiply) and the
+// table constructors. ((a*b + 127) * 32897) >> 23 is a magic-multiply that is
 // byte-exact with (a*b+127)/255 on all 65536 input pairs (verified
 // exhaustively) while staying division-free, so blending matches the original
 // rounding exactly (no visible shift). The intermediate (a*b+127)*32897 peaks
@@ -27,12 +28,51 @@ func mul255(a, b int) int { return ((a*b + 127) * 32897) >> 23 }
 // mul255SASATab precomputes mul255(sa, sa) for sa in 0..255. The alpha-over
 // and SrcAlpha-One formulas evaluate it per pixel; the 256-entry lookup
 // replaces the 4-op magic-multiply chain with a single hot-L1 load. Byte-exact
-// by construction (each entry is mul255(i, i), asserted by TestSWMul255SASATab).
+// by construction (each entry is mul255(i, i), asserted by TestSWMul255Exact).
 var mul255SASATab [256]byte
+
+// swByteToF32 precomputes float32(i) / 255 for i in 0..255. sampleRGBAFiltered
+// converts 16 texel bytes per pixel with this conversion (the hottest lines in
+// its profile); the lookup replaces the per-pixel convert-and-multiply with a
+// single hot-L1 load. Bit-exact by construction: each entry is the identical
+// float32 expression it replaces, asserted by TestSWLookupTablesExact.
+var swByteToF32 [256]float32
+
+// oneMinusMul255[sa][dr] = dr - mul255(dr, sa). Every alpha-over-style blend
+// helper evaluates this per channel per pixel; the 64 KB lookup turns the
+// mul255 magic-multiply chain into one indexed load. dr - mul255(dr, sa) is
+// always in [0, 255] (mul255(dr, sa) <= dr), so the byte conversion is exact.
+// The layout is sa-major: a pixel's four channels share one sa, so indexing
+// oneMinusMul255[sa][dr], [sa][dg], [sa][db], [sa][da] keeps all four loads in
+// the same 256-byte row (one or two cache lines) instead of four rows (four or
+// more lines). Byte-exact by construction (each entry is the formula it
+// replaces, asserted by TestSWLookupTablesExact).
+var oneMinusMul255 [256][256]byte
+
+// mul255Tab[sa][s] = mul255(s, sa) for s, sa in 0..255. The RGBA row loops and
+// shadePix premultiply the quantized source color with sat8(mul255(s, sa)) per
+// channel per pixel; the 64 KB lookup replaces the magic-multiply chain with
+// one indexed load. mul255(s, sa) <= s <= 255, so sat8 is a no-op on table
+// values — the byte is the final premultiplied channel. Like oneMinusMul255,
+// the layout is sa-major so the three channel loads of a pixel share one row.
+// Byte-exact by construction (each entry is mul255(s, sa), asserted by
+// TestSWLookupTablesExact).
+var mul255Tab [256][256]byte
 
 func init() {
 	for i := range mul255SASATab {
 		mul255SASATab[i] = byte(mul255(i, i))
+		swByteToF32[i] = float32(i) / 255
+	}
+	for sa := range oneMinusMul255 {
+		for dr := range oneMinusMul255[sa] {
+			oneMinusMul255[sa][dr] = byte(dr - mul255(dr, sa))
+		}
+	}
+	for sa := range mul255Tab {
+		for s := range mul255Tab[sa] {
+			mul255Tab[sa][s] = byte(mul255(s, sa))
+		}
 	}
 }
 
@@ -293,10 +333,10 @@ func swBlendFuncName(f BlendFunc) string {
 // (*[4]byte)(row[i*4:]).
 func swBlendAlphaOver(dst *[4]byte, sp0, sp1, sp2, sa int) {
 	dr, dg, db, da := int(dst[0]), int(dst[1]), int(dst[2]), int(dst[3])
-	dst[0] = byte(sp0 + dr - mul255(dr, sa))
-	dst[1] = byte(sp1 + dg - mul255(dg, sa))
-	dst[2] = byte(sp2 + db - mul255(db, sa))
-	dst[3] = byte(int(mul255SASATab[sa]) + da - mul255(da, sa))
+	dst[0] = byte(sp0 + int(oneMinusMul255[sa][dr]))
+	dst[1] = byte(sp1 + int(oneMinusMul255[sa][dg]))
+	dst[2] = byte(sp2 + int(oneMinusMul255[sa][db]))
+	dst[3] = byte(int(mul255SASATab[sa]) + int(oneMinusMul255[sa][da]))
 }
 
 // Scalar blend helpers used by every rasterizer inner loop (paletted, RGBA
@@ -329,19 +369,19 @@ func swBlendAddSrcAlphaOnePix(dst *[4]byte, sp0, sp1, sp2, sa int) {
 // swBlendAddOneInvAlphaPix — Add, One, OneMinusSrcAlpha.
 func swBlendAddOneInvAlphaPix(dst *[4]byte, s0, s1, s2, sa int) {
 	dr, dg, db, da := int(dst[0]), int(dst[1]), int(dst[2]), int(dst[3])
-	dst[0] = byte(dr + s0 - mul255(dr, sa))
-	dst[1] = byte(dg + s1 - mul255(dg, sa))
-	dst[2] = byte(db + s2 - mul255(db, sa))
-	dst[3] = byte(da + sa - mul255(da, sa))
+	dst[0] = byte(s0 + int(oneMinusMul255[sa][dr]))
+	dst[1] = byte(s1 + int(oneMinusMul255[sa][dg]))
+	dst[2] = byte(s2 + int(oneMinusMul255[sa][db]))
+	dst[3] = byte(sa + int(oneMinusMul255[sa][da]))
 }
 
 // swBlendAddZeroInvAlphaPix — Add, Zero, OneMinusSrcAlpha (scale dst by 1-sa).
 func swBlendAddZeroInvAlphaPix(dst *[4]byte, sa int) {
 	dr, dg, db, da := int(dst[0]), int(dst[1]), int(dst[2]), int(dst[3])
-	dst[0] = byte(dr - mul255(dr, sa))
-	dst[1] = byte(dg - mul255(dg, sa))
-	dst[2] = byte(db - mul255(db, sa))
-	dst[3] = byte(da - mul255(da, sa))
+	dst[0] = oneMinusMul255[sa][dr]
+	dst[1] = oneMinusMul255[sa][dg]
+	dst[2] = oneMinusMul255[sa][db]
+	dst[3] = oneMinusMul255[sa][da]
 }
 
 // swBlendSubOneOnePix — ReverseSubtract, One, One.

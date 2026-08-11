@@ -414,12 +414,12 @@ func shadePix(dst *[4]byte, u, v float32, q *swQuadState, mode int, tab []byte) 
 		bb *= q.mult[2]
 		sa = quant(aa)
 		s0, s1, s2 = quant(rr), quant(gg), quant(bb)
-		sp0, sp1, sp2 = sat8(mul255(s0, sa)), sat8(mul255(s1, sa)), sat8(mul255(s2, sa))
+		sp0, sp1, sp2 = int(mul255Tab[sa][s0]), int(mul255Tab[sa][s1]), int(mul255Tab[sa][s2])
 	} else if q.isFlat {
 		rr, gg, bb, aa := applySpritePalfx(q.tint[0], q.tint[1], q.tint[2], q.tint[3], q, true, 1)
 		sa = quant(aa)
 		s0, s1, s2 = quant(rr), quant(gg), quant(bb)
-		sp0, sp1, sp2 = sat8(mul255(s0, sa)), sat8(mul255(s1, sa)), sat8(mul255(s2, sa))
+		sp0, sp1, sp2 = int(mul255Tab[sa][s0]), int(mul255Tab[sa][s1]), int(mul255Tab[sa][s2])
 	} else if q.tex == nil {
 		return
 	} else if q.pal != nil {
@@ -441,7 +441,7 @@ func shadePix(dst *[4]byte, u, v float32, q *swQuadState, mode int, tab []byte) 
 		rr, gg, bb = tintMix(rr, gg, bb, aa, q.tint)
 		sa = quant(aa)
 		s0, s1, s2 = quant(rr), quant(gg), quant(bb)
-		sp0, sp1, sp2 = sat8(mul255(s0, sa)), sat8(mul255(s1, sa)), sat8(mul255(s2, sa))
+		sp0, sp1, sp2 = int(mul255Tab[sa][s0]), int(mul255Tab[sa][s1]), int(mul255Tab[sa][s2])
 	}
 	// mode is constant per draw; scalar dispatch like the rasterRect loops
 	// (byte-identical to the old swBlendPix cases).
@@ -554,11 +554,15 @@ func (t *swTexture) sampleRGBAFiltered(u, v float32) (float32, float32, float32,
 	// Corner texels (alpha = 1 for 24-bit sources), then lerp rows and column:
 	// r = lerp(lerp(r00,r10,fx), lerp(r01,r11,fx), fy). The float32 operation
 	// order is unchanged from the closure version, so results are bit-identical.
+	// The per-byte float32(i)/255 conversion uses the precomputed swByteToF32
+	// lookup (bit-exact with the old expression, asserted by
+	// TestSWLookupTablesExact) — these 16 conversions were the hottest lines in
+	// the function's profile.
 	if t.depth >= 32 {
-		r00, g00, b00, a00 := float32(d[o00])/255, float32(d[o00+1])/255, float32(d[o00+2])/255, float32(d[o00+3])/255
-		r10, g10, b10, a10 := float32(d[o10])/255, float32(d[o10+1])/255, float32(d[o10+2])/255, float32(d[o10+3])/255
-		r01, g01, b01, a01 := float32(d[o01])/255, float32(d[o01+1])/255, float32(d[o01+2])/255, float32(d[o01+3])/255
-		r11, g11, b11, a11 := float32(d[o11])/255, float32(d[o11+1])/255, float32(d[o11+2])/255, float32(d[o11+3])/255
+		r00, g00, b00, a00 := swByteToF32[d[o00]], swByteToF32[d[o00+1]], swByteToF32[d[o00+2]], swByteToF32[d[o00+3]]
+		r10, g10, b10, a10 := swByteToF32[d[o10]], swByteToF32[d[o10+1]], swByteToF32[d[o10+2]], swByteToF32[d[o10+3]]
+		r01, g01, b01, a01 := swByteToF32[d[o01]], swByteToF32[d[o01+1]], swByteToF32[d[o01+2]], swByteToF32[d[o01+3]]
+		r11, g11, b11, a11 := swByteToF32[d[o11]], swByteToF32[d[o11+1]], swByteToF32[d[o11+2]], swByteToF32[d[o11+3]]
 		r0 := r00 + (r10-r00)*fx
 		g0 := g00 + (g10-g00)*fx
 		b0f := b00 + (b10-b00)*fx
@@ -569,10 +573,10 @@ func (t *swTexture) sampleRGBAFiltered(u, v float32) (float32, float32, float32,
 		a1 := a01 + (a11-a01)*fx
 		return r0 + (r1-r0)*fy, g0 + (g1-g0)*fy, b0f + (b1f-b0f)*fy, a0 + (a1-a0)*fy
 	}
-	r00, g00, b00 := float32(d[o00])/255, float32(d[o00+1])/255, float32(d[o00+2])/255
-	r10, g10, b10 := float32(d[o10])/255, float32(d[o10+1])/255, float32(d[o10+2])/255
-	r01, g01, b01 := float32(d[o01])/255, float32(d[o01+1])/255, float32(d[o01+2])/255
-	r11, g11, b11 := float32(d[o11])/255, float32(d[o11+1])/255, float32(d[o11+2])/255
+	r00, g00, b00 := swByteToF32[d[o00]], swByteToF32[d[o00+1]], swByteToF32[d[o00+2]]
+	r10, g10, b10 := swByteToF32[d[o10]], swByteToF32[d[o10+1]], swByteToF32[d[o10+2]]
+	r01, g01, b01 := swByteToF32[d[o01]], swByteToF32[d[o01+1]], swByteToF32[d[o01+2]]
+	r11, g11, b11 := swByteToF32[d[o11]], swByteToF32[d[o11+1]], swByteToF32[d[o11+2]]
 	r0 := r00 + (r10-r00)*fx
 	g0 := g00 + (g10-g00)*fx
 	b0f := b00 + (b10-b00)*fx

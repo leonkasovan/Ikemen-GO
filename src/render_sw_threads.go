@@ -352,9 +352,9 @@ func (d *swRowDraw) draw(a0, a1 int) {
 				rr, gg, bb = tintMix(rr, gg, bb, aa, d.q.tint)
 				sa := quant(aa)
 				s0, s1, s2 := quant(rr), quant(gg), quant(bb)
-				sp0 := sat8(mul255(s0, sa))
-				sp1 := sat8(mul255(s1, sa))
-				sp2 := sat8(mul255(s2, sa))
+				sp0 := int(mul255Tab[sa][s0])
+				sp1 := int(mul255Tab[sa][s1])
+				sp2 := int(mul255Tab[sa][s2])
 				p := (*[4]byte)(dst[i*4:])
 				// mode is constant per draw, so dispatch once per pixel on the
 				// scalar source values — no [3]int temporaries and no per-pixel
@@ -433,9 +433,9 @@ func (d *swRowDraw) draw(a0, a1 int) {
 				rr, gg, bb = tintMix(rr, gg, bb, aa, d.q.tint)
 				sa := quant(aa)
 				s0, s1, s2 := quant(rr), quant(gg), quant(bb)
-				sp0 := sat8(mul255(s0, sa))
-				sp1 := sat8(mul255(s1, sa))
-				sp2 := sat8(mul255(s2, sa))
+				sp0 := int(mul255Tab[sa][s0])
+				sp1 := int(mul255Tab[sa][s1])
+				sp2 := int(mul255Tab[sa][s2])
 				p := (*[4]byte)(dst[i*4:])
 				// Same scalar mode dispatch as the filtered loop above.
 				switch d.mode {

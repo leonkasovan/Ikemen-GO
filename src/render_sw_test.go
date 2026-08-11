@@ -53,6 +53,36 @@ func TestSWMul255Exact(t *testing.T) {
 	}
 }
 
+// The blend, premultiply and sampler lookup tables must be byte/bit-exact with
+// the scalar math they replace. oneMinusMul255 drives every alpha-over-style
+// blend helper (swBlendAlphaOver / AddOneInvAlpha / AddZeroInvAlpha);
+// mul255Tab feeds the RGBA row loops' and shadePix's per-pixel premultiply;
+// swByteToF32 feeds the bilinear sampler's texel conversion. Any drift shows up
+// as visible ±1 color shifts or 1-ULP float differences — the same regression
+// classes the frozen-reference tests (TestSWBlendHelpersMatchSwBlendPix,
+// TestSWRGBAFilteredStable) guard against.
+func TestSWLookupTablesExact(t *testing.T) {
+	for sa := 0; sa <= 255; sa++ {
+		for dr := 0; dr <= 255; dr++ {
+			if got := int(oneMinusMul255[sa][dr]); got != dr-mul255(dr, sa) {
+				t.Fatalf("oneMinusMul255[%d][%d] = %d, want %d", sa, dr, got, dr-mul255(dr, sa))
+			}
+		}
+	}
+	for sa := 0; sa <= 255; sa++ {
+		for s := 0; s <= 255; s++ {
+			if got := int(mul255Tab[sa][s]); got != mul255(s, sa) {
+				t.Fatalf("mul255Tab[%d][%d] = %d, want %d", sa, s, got, mul255(s, sa))
+			}
+		}
+	}
+	for i := 0; i <= 255; i++ {
+		if math.Float32bits(swByteToF32[i]) != math.Float32bits(float32(i)/255) {
+			t.Fatalf("swByteToF32[%d] = %v, want %v", i, swByteToF32[i], float32(i)/255)
+		}
+	}
+}
+
 // Full-screen opaque flat fill must produce the exact color.
 func TestSWFlatFill(t *testing.T) {
 	r := newSWTestRenderer(64, 48)
