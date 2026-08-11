@@ -4048,6 +4048,11 @@ func (s *System) runMatch() (reload bool) {
 
 		// F4 pressed to reset round
 		if s.roundResetFlg && !s.postMatchFlg {
+			restartTurnsPreload := s.turnsPreloadActive()
+			if restartTurnsPreload {
+				// Restore and the background loader both write the standby character slots
+				s.loader.reset()
+			}
 			for i := 0; i < MaxPlayerNo; i++ {
 				if s.reloadPreserveVars[i] {
 					s.saveCharVars(i)
@@ -4055,6 +4060,9 @@ func (s *System) runMatch() (reload bool) {
 			}
 			s.roundBackup.Restore()
 			s.resetRound()
+			if restartTurnsPreload {
+				s.startNextTurnsPreload()
+			}
 		}
 
 		// Shift+F4 pressed to restart match
@@ -4355,6 +4363,8 @@ func (bk *RoundStartBackup) Save() {
 	// We save helpers as well because of "preserve" parameter
 	for i, chars := range sys.chars {
 		if len(chars) == 0 {
+			// Backups are reused, so discard characters saved for this slot in a previous round
+			bk.charBackup[i] = nil
 			continue
 		}
 
