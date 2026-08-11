@@ -1,5 +1,35 @@
 # Changelog
 
+## This fork (changes relative to upstream)
+
+This fork tracks upstream `ikemen-engine/Ikemen-GO` `develop` while adding the following improvements.
+
+### Renderers
+
+- **Direct3D 11 renderer (Windows)** — new `RenderMode = Direct3D 11` backend with HLSL shaders, font rendering, and index buffer support. Also fixes a vsync busy-wait that stalled Intel iGPUs.
+- **SDL2 Software renderer** — new `RenderMode = SDL2 Software` CPU backend (no GPU required) built on a heavily optimized software rasterizer: worker-pool parallel row rendering, precomputed lookup tables, palette table caching, and scalar blend dispatch.
+- **Instanced sprite batching** — `EnableSpriteBatching` queues and batches sprites to cut draw calls in sprite-heavy scenes.
+- **Framebuffer binding cache** — the GL33 and GLES32 renderers now skip redundant framebuffer binds per frame.
+- **`RenderScale`** — renders internally at 0.5–1.0 of the window resolution and upscales; ideal for low-power ARM devices (auto-set to `0.75` on armdevice builds).
+- **Texture & atlas optimizations** — configurable palette atlas size, lazy sprite texture creation, deterministic GPU texture `Release()`, `paltemp` → `palhash` memory reduction, and optimized font glyph atlases.
+- Scissor rects now scale correctly under RenderScale; the SDL backbuffer is cleared between presents; texture uploads handle sub-rects and empty data without panics.
+
+### Memory & performance
+
+- `[Debug] HeapMemoryLimit` + `debug.FreeOSMemory()` after loading keeps heap usage bounded.
+- Per-frame pooling of render vertex buffers, audio callback buffers, batch vertices, and video pixel buffers.
+- Lua table caching for config, motif, and select parameters.
+- `pprof` heap profiling and `[Debug] PerfLog` FPS logging in release builds; draw-call and sprite-batch logging for profiling.
+
+### Build & platform support
+
+- Fully static Windows build — SDL2 and FFmpeg built from source; no MinGW/SDL2 DLL dependencies.
+- Per-platform build directories, Windows toolchain auto-detection, architecture-suffixed binary names, and distinct `*_debug` binaries.
+- `make install-remote` (copy the binary to a device over SSH) and `make fetch-log` (pull logs back).
+- Android APK build scripts (Docker or native), Android 13 support, and `armeabi-v7a` ABI builds.
+- Vendored Go packages (OpenGL bindings, SDL2 headers, `beep`, `reisen`) for reproducible offline builds.
+- ARM handheld defaults tuned for low-power devices: 75% render scale, models/shadows/MSAA disabled, sprite batching + VSync enabled.
+
 ## [Unreleased]
 
 ### Changed

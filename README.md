@@ -12,6 +12,33 @@ Ikemen GO aims for backwards-compatibility on par with M.U.G.E.N version 1.1 Bet
 
 Refer to [our wiki](https://github.com/ikemen-engine/Ikemen-GO/wiki) to see a comprehensive list of new features that have been added in Ikemen GO.
 
+## This fork
+This repository is a fork of [ikemen-engine/Ikemen-GO](https://github.com/ikemen-engine/Ikemen-GO) that stays synced with upstream `develop` while adding rendering, performance, and build-system improvements on top.
+
+### Renderers
+- **Direct3D 11** renderer for Windows (`RenderMode = Direct3D 11`) with HLSL shaders, font rendering, and index buffer support.
+- **SDL2 Software** renderer (`RenderMode = SDL2 Software`) — CPU rendering with no GPU required, powered by a parallel software rasterizer (worker-pool row rendering, precomputed lookup tables, palette table caching, scalar blend dispatch).
+- **Instanced sprite batching** (`EnableSpriteBatching`) for fewer draw calls and faster sprite-heavy scenes.
+- **Framebuffer binding cache** in the OpenGL 3.3 and OpenGL ES 3.2 renderers to avoid redundant state changes.
+- **RenderScale** option (`0.5–1.0`) renders internally at a fraction of the window resolution and upscales — ideal for low-power ARM devices (auto-set to `0.75` on armdevice builds).
+- Palette atlas optimization with configurable memory/atlas settings, lazy texture creation, deterministic GPU texture release, and optimized font glyph atlases.
+- Fixes for D3D11 vsync busy-wait on Intel iGPUs, scissor rect scaling under RenderScale, SDL backbuffer clearing between presents, texture sub-rect uploads, and empty-texture handling.
+
+### Memory & performance
+- `HeapMemoryLimit` config with `FreeOSMemory` after loading to keep memory usage in check.
+- Pooled vertex, audio, batch, and video pixel buffers to reduce allocation churn.
+- Lua table caching for config, motif, and select parameters.
+- `pprof` heap debugging support and optional `PerfLog` FPS logging in release builds.
+- Draw call and sprite batch logging options for profiling.
+
+### Build & platform support
+- Fully static Windows build — SDL2 and FFmpeg compiled from source, no MinGW/SDL2 DLL dependencies.
+- Per-platform build directories, Windows toolchain auto-detection, and architecture-suffixed binary names (`Ikemen_GO.amd64.exe`, `*_debug` for debug builds).
+- `make install-remote` to copy the built binary to a device over SSH and `make fetch-log` to pull logs back.
+- Android APK build scripts (via Docker or natively), Android 13 support, and `armeabi-v7a` ABI builds.
+- Vendored Go packages (OpenGL bindings, SDL2 headers, `beep`, `reisen`) for reproducible offline builds.
+- ARM device defaults tuned for low-power handhelds (Mali-G31-class GPUs): 75% render scale, models/shadows/MSAA disabled, sprite batching and VSync enabled.
+
 ## Installing
 Ready-to-use builds are available in the [releases section](https://github.com/ikemen-engine/Ikemen-GO/releases). Stable releases use tags such as `v1.0.0`, while release candidates use tags such as `v1.0.0-rc.1` and are marked as pre-releases. [Nightly builds](https://github.com/ikemen-engine/Ikemen-GO/releases/tag/nightly) are updated after each commit to `develop` and may be less stable.
 
@@ -36,7 +63,7 @@ On **Linux** and **macOS**, the same Makefile detects your platform and builds a
 binary — `Ikemen_GO.amd64` / `Ikemen_GO.arm64` on Linux, `Ikemen_GO` on macOS — with
 SDL2, FFmpeg, and libxmp compiled in statically and system libraries linked dynamically.
 
-Use `make CONFIG=debug` for a debug build with memory instrumentation, `make install`
+Use `make config=debug` for a debug build with memory instrumentation, `make install`
 to assemble a runnable installation with screenpack assets, or `make install-remote`
 to copy the built binary to a device over SSH (e.g. an ARM handheld).
 See BUILDING.md for prerequisites and platform-specific details.
