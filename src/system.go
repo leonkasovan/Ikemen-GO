@@ -1317,8 +1317,16 @@ func (s *System) uiRawInput(btns []string, controllerIdx int) bool {
 			if raw == "" {
 				continue
 			}
-			// Canonicalize UI stick-direction tokens to the digital directions.
+			// MUGEN-style command-key references (e.g. $D = the key bound to Down,
+			// $U = Up, $B = Back, $F = Forward) resolve to the plain UI token.
+			// Supported set: single-letter buffer tokens (D/U/B/F/L/R, a-m, s, d, w)
+			// and stick-axis tokens (LS_*, RS_*, LT, RT). Multi-char command names
+			// like $esc are outside the buffer vocabulary and stay unmatched.
 			tok := raw
+			if strings.HasPrefix(tok, "$") {
+				tok = tok[1:]
+			}
+			// Canonicalize UI stick-direction tokens to the digital directions.
 			switch tok {
 			case "LS_Y+":
 				tok = "D"

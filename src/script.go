@@ -3792,6 +3792,14 @@ func systemScriptInit(l *lua.LState) {
 			cl := sys.commandLists[controllerIdx]
 			ib := sys.commandLists[controllerIdx].Buffer
 			var v int32
+			// MUGEN-style command-key references (e.g. $D = the key bound to Down,
+			// $U = Up, $B = Back, $F = Forward) resolve to the plain UI token.
+			// Supported set: single-letter buffer tokens (D/U/B/F/L/R, a-m, s, d, w)
+			// and stick-axis tokens (LS_*, RS_*, LT, RT). Multi-char command names
+			// like $esc are outside the buffer vocabulary and stay unmatched.
+			if strings.HasPrefix(key, "$") {
+				key = key[1:]
+			}
 			// Treat LS direction tokens as aliases for D/U/B/F.
 			switch key {
 			case "LS_Y+":
