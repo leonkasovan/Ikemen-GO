@@ -1,7 +1,6 @@
 package main
 
 import (
-	_ "embed" // Support for go:embed resources
 	"fmt"
 	"io/fs"
 	"math"
@@ -18,9 +17,6 @@ import (
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
-
-//go:embed resources/defaultMotif.ini
-var defaultMotif []byte
 
 // Motif parsing flow:
 // 1. A Motif struct is created, all maps are initialized and `default` struct tags

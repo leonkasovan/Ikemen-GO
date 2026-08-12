@@ -85,6 +85,8 @@ pacman -S --noconfirm wget unzip
 | `make screenpack`    | Clone/update Elecbyte screenpack into `deploy/` |
 | `make install`       | Release build + screenpack → `deploy/` |
 | `make install config=debug` | Debug build + screenpack → `deploy/` |
+| `make mugen`         | Self-contained `Mugen_GO(.exe)` drop-in for existing M.U.G.E.N game folders (SDL2 only; no FFmpeg/XMP; embedded assets) |
+| `make vet`           | Run `go vet` on `./src` with the current build tags (run after a build so the cgo headers are available) |
 | `make install-remote` | Build binary, then scp it to a remote device (see [Deploying to a remote device](#deploying-to-a-remote-device)) |
 | `make appbundle`     | Create macOS `.app` bundle (I.K.E.M.E.N-Go.app) |
 | `make clean`         | Remove the current platform's build dir (e.g. `build/windows_amd64/`) — binary, libs, downloaded sources, everything for that platform |
@@ -121,6 +123,105 @@ make APP_VERSION=v1.0.0 config=debug
 ```
 
 > 32-bit builds use `ARCH=386` and produce `Ikemen_GO.386.exe` in `build/windows_386/`.
+
+---
+
+## Mugen build
+
+`make mugen` produces a self-contained `Mugen_GO(.exe)` that acts as a
+**drop-in engine for existing M.U.G.E.N game folders**. It links **only SDL2** —
+FFmpeg (stage video backgrounds) and libxmp (module music) are excluded via the
+`mugen` Go build tag — and embeds the engine assets (`data/`, `external/`,
+`font/`) into the binary as `src/assets.zip` (packaged by the build).
+
+```bash
+make mugen                 # → build/windows_amd64/Mugen_GO.exe (Windows)
+```
+
+Copy `Mugen_GO.exe` into an existing M.U.G.E.N game folder (one containing
+`data/mugen.cfg`) and run it. On first run it:
+
+1. Extracts the embedded engine assets (`external/` appears in the game folder).
+2. Generates `save/config.ini` from the game's `data/mugen.cfg`
+   (motif, start stage, resolution).
+3. Patches `fight.def` with the motif's `localcoord` (backup: `fight.def.bak`).
+
+Stage video backgrounds and `.xm/.mod/.it/.s3m` module music are stubbed out in
+mugen builds; everything else (all renderers, netplay, Lua/ZSS scripting) is
+unchanged.
+
+---
+
+## Build tags
+
+The engine sources use Go build tags to select which files compile. There are
+two independent axes:
+
+- **Variant tags** — which *source variant* compiles: `desktop`, `mugen`,
+  `armdevice`, `android`.
+- **Linkage tag** — how SDL2 / the MinGW runtime is linked on Windows:
+  `static`.
+
+plus `debug` (memory instrumentation). Every `make` run prints the active tags
+(`Go build tags: ...`).
+
+### Variant tags
+
+| Tag | Set by | Selects | Default motif |
+|-----|--------|---------|---------------|
+| `desktop` | Makefile: `GO_TAGS += desktop` for every non-armdevice Windows/Linux/macOS build | `motif_desktop.go` and other desktop-normal files | `resources/defaultMotif.ini` |
+| `mugen` | `make mugen` (also passed by the Android build script) | `util_mugen.go` (embedded `assets.zip`, Mugen motif, `xmpDecode` stub), `video_novideo.go` | `resources/defaultMugenMotif.ini` |
+| `armdevice` | Makefile on Linux arm64: `GO_TAGS += armdevice` | `util_armdevice.go`; GLES renderers (`font_gles32.go`, `render_gles32.go`, tagged `android \|\| armdevice`) | `resources/defaultMotif.ini` |
+| `android` | Set automatically by Go for `GOOS=android`; also passed by the Android build script | `util_android.go`; GLES renderers; `log_android.go` | via `mugen` (below) |
+
+The variant tags are mutually exclusive in practice — `defaultMotif` is
+defined exactly once per build: `motif_desktop.go` (desktop), `util_mugen.go`
+(mugen), `util_armdevice.go` (armdevice). Android builds pass the `mugen` tag,
+so they get the Mugen motif from `util_mugen.go`; `util_android.go`
+deliberately does **not** define one.
+
+### Linkage: the `static` tag (Windows only)
+
+`static` is unrelated to variants — it selects how go-sdl2 links SDL2:
+
+- **`static`** (Windows desktop & mugen): `packages/go-sdl2/sdl/sdl_cgo_static.go`
+  — links the locally built static SDL2 archive with hardcoded include paths
+  and `-extldflags '-static'` (static MinGW runtime). Produces a
+  self-contained `.exe` needing only Windows system DLLs.
+- **no `static`** (Linux / macOS / armdevice):
+  `packages/go-sdl2/sdl/sdl_cgo.go` — SDL2 via `pkg-config sdl2` (system SDL2,
+  or a dynamic-from-source fallback on Linux); system libs stay dynamic.
+- **Android** uses neither: the build script passes its own
+  `CGO_LDFLAGS="-L$deps_lib -lSDL2 -lGLESv2 -lOpenSLES -llog …"` and builds a
+  JNI shared library (`-buildmode=c-shared`) for the APK.
+
+### Tags per build
+
+| Build | Go build tags | `defaultMotif` from |
+|-------|---------------|---------------------|
+| Windows desktop | `static desktop` (+ `debug`) | `motif_desktop.go` |
+| Linux / macOS desktop | `desktop` (+ `debug`) | `motif_desktop.go` |
+| Mugen | `mugen static` (Windows) / `mugen` (Linux/macOS) | `util_mugen.go` |
+| ARM device (Linux arm64) | `armdevice` (+ `debug`) | `util_armdevice.go` |
+| Android | `mugen lite android gles2` (+ `debug`) | `util_mugen.go` |
+
+`lite` and `gles2` in the Android tag list are legacy no-ops (no source files
+reference them). `debug` adds the memory-instrumentation sources
+(`common_debug.go`, `main_mem_test.go`, …).
+
+### Notes
+
+- Build through the **Makefile** (or pass the tags yourself): because
+  `motif_desktop.go` requires `desktop`, a bare `go build ./src` (or `go test`)
+  without tags cannot compile — `defaultMotif` would be undefined.
+- `make vet` vets the current configuration's tags; override with
+  `make vet TAGS="mugen static"` to vet the mugen build.
+- The mugen build strips `desktop` from the tag set (`MUGEN_GO_TAGS`), so the
+  desktop motif is never compiled into it.
+- Files shared by desktop and mugen builds (dialogs, fonts, renderers) keep
+  `!android && !armdevice` tags instead of `desktop`: the mugen build needs
+  them, and `desktop || mugen` would wrongly pull them into Android (which
+  passes `mugen`).
 
 ---
 

@@ -55,6 +55,12 @@ func closeLog(f *os.File) {
 	f.Close()
 }
 
+// mugenAssets extracts the embedded engine assets into an existing Mugen
+// game folder on first run. The default is a no-op in regular builds; the
+// mugen build replaces it via init() in util_mugen.go (build tags are
+// file-scoped, so a func-var carries the platform split).
+var mugenAssets = func() error { return nil }
+
 func main() {
 	realMain()
 }
@@ -128,6 +134,13 @@ func realMain() {
 	// Create directories for ALL platforms
 	os.MkdirAll(filepath.Join(sys.baseDir, "save/replays"), permission)
 	os.MkdirAll(filepath.Join(sys.baseDir, "save/logs"), permission)
+
+	// Mugen builds: extract embedded engine assets into an existing Mugen
+	// game folder on first run (no-op in regular builds).
+	if err := mugenAssets(); err != nil {
+		LogError("[INIT] Failed to extract embedded assets: %v", err)
+		os.Exit(-1)
+	}
 
 	processCommandLine()
 

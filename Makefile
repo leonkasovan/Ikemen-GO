@@ -388,6 +388,16 @@ else
   endif
 endif
 
+# `desktop` build tag — set by default for regular desktop builds
+# (Windows / Linux / macOS, excluding the armdevice variant). The mugen
+# build uses its own `mugen` tag instead and strips `desktop` (see
+# $(MUGEN_GO_TAGS)); android is tagged by GOOS + its own build script.
+ifneq ($(filter armdevice,$(GO_TAGS)),)
+  # armdevice variant — do not tag as desktop
+else
+  GO_TAGS += desktop
+endif
+
 # Verbose Go build — VERBOSE=1 adds -x -v to `go build` so you can watch
 # exactly what the Go tool does during a build:
 #   -x  print every command it runs (compile, link, cache hits)
@@ -456,8 +466,8 @@ endif
 # ============================================================================
 
 .PHONY: all release debug help \
-        deps-check check-go-env \
-        ffmpeg xmp sdl2 winres install install-remote fetch-log appbundle \
+        deps-check check-go-env vet \
+        ffmpeg xmp sdl2 mugen winres install install-remote fetch-log appbundle \
         screenpack \
         clean distclean FORCE
 
@@ -596,6 +606,26 @@ check-go-env:
 				exit 1; }; \
 			echo "    Go $$(go version | awk '{print $$3}') found";; \
 	esac
+
+# ============================================================================
+# Go Vet — static analysis of the engine sources
+# ============================================================================
+# Runs `go vet` with the same build tags as the current configuration
+# (GO_TAGS, e.g. `static desktop` on Windows; `armdevice` on Linux arm64).
+# The stdlib `arena` package requires GOEXPERIMENT=arenas. Override the
+# tags with TAGS=..., e.g. `make vet TAGS="mugen static"` for the mugen
+# build (no `desktop` tag — the mugen variant uses `mugen` instead).
+#
+# NOTE: vet needs the local cgo headers, so run it after the external
+# libraries are built (`make sdl2 ffmpeg xmp` or any normal build).
+vet: check-go-env
+	@echo "==> Running go vet on ./src (tags: $(GO_TAGS))..."
+	@# CGO_CFLAGS carries the local FFmpeg/XMP include dirs (resolved via
+	@# pkg-config against the exported PKG_CONFIG_LIBDIR/PKG_CONFIG_PATH) so
+	@# the cgo preambles in packages/reisen and sound_xm.go can find headers.
+	@GOEXPERIMENT=arenas CGO_CFLAGS="$$( $(PKG_CONFIG) --cflags $(_CGO_PKGS) 2>/dev/null || true )" \
+		go vet -tags "$(GO_TAGS)" ./src
+	@echo "==> go vet passed"
 
 # ============================================================================
 # SDL2 Static Build (CMake)
@@ -1018,6 +1048,72 @@ $(BINARY): $(BUILD_PREFIX)/lib/libSDL2_windows_$(GOARCH).a $(SRC_SYSO)
 endif
 
 # ============================================================================
+# Mugen Build — drop-in engine for existing M.U.G.E.N game folders.
+#   - Go build tag: mugen  (embedded assets + data/mugen.cfg config import)
+#   - No FFmpeg/XMP dependencies: only SDL2 is linked. Module music
+#     (.xm/.mod/.it/.s3m) and stage video backgrounds are stubbed out.
+#   - Engine assets (data/external/font) are packaged into src/assets.zip and
+#     embedded into the binary; on first run inside a Mugen game folder they
+#     are extracted automatically.
+# Usage: make mugen
+# ============================================================================
+MUGEN_BINNAME := Mugen_GO$(BINEXT)
+MUGEN_BINARY  := $(OUTDIR)/$(MUGEN_BINNAME)
+ASSETS_ZIP    := src/assets.zip
+# Mugen builds are their own variant: `mugen` replaces the `desktop` tag
+# (motif_desktop.go is desktop-only), so strip `desktop` from GO_TAGS.
+MUGEN_GO_TAGS := mugen $(filter-out desktop,$(GO_TAGS))
+
+mugen: check-go-env sdl2 $(ASSETS_ZIP) $(MUGEN_BINARY)
+	@echo "==> Mugen build successful"
+	@echo "    Binary: $(MUGEN_BINARY)"
+
+$(MUGEN_BINARY): $(GO_SOURCES) $(ASSETS_ZIP)
+	@go version >/dev/null 2>&1 || \
+		{ echo "ERROR: 'go version' failed. Run 'make check-go-env' to check/auto-install the Go toolchain." >&2; exit 1; }
+	@_GOEXPERIMENT=$$( GOEXPERIMENT=arenas go env GOEXPERIMENT 2>/dev/null | grep -q arenas && echo arenas || true ); \
+	echo "    GOEXPERIMENT=$${_GOEXPERIMENT:-<none>}"
+	@echo "==> Building $(MUGEN_BINNAME) ($(config), GOOS=$(GOOS) GOARCH=$(GOARCH)) [mugen]..."
+	@echo "    Go build tags: $(MUGEN_GO_TAGS)"
+	case "$(HOST_OS)" in \
+		windows) \
+			GOEXPERIMENT="$$_GOEXPERIMENT" \
+			CGO_CFLAGS="" \
+			CGO_LDFLAGS="-L$(BUILD_PREFIX)/lib" \
+			go build $(GO_VERBOSE) -trimpath -tags "$(MUGEN_GO_TAGS)" \
+				-ldflags "$(LDFLAGS_GO)" \
+				-o "$(MUGEN_BINARY)" ./src;; \
+		*) \
+			_CGO_CFLAGS=$$( PKG_CONFIG_LIBDIR= PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig:/usr/lib/pkgconfig:/usr/local/lib/pkgconfig$(if $(PKG_CONFIG_PATH),:$(PKG_CONFIG_PATH),)" $(PKG_CONFIG) --cflags sdl2 ) ; \
+			CGO_LDFLAGS="-L$(BUILD_PREFIX)/lib $$( PKG_CONFIG_LIBDIR= PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig:/usr/lib/pkgconfig:/usr/local/lib/pkgconfig$(if $(PKG_CONFIG_PATH),:$(PKG_CONFIG_PATH),)" $(PKG_CONFIG) --static --libs sdl2 )" ; \
+			PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig:/usr/lib/pkgconfig:/usr/local/lib/pkgconfig$(if $(PKG_CONFIG_PATH),:$(PKG_CONFIG_PATH),)" \
+			GOEXPERIMENT="$$_GOEXPERIMENT" \
+			CGO_CFLAGS="$$_CGO_CFLAGS" \
+			CGO_LDFLAGS="$$_CGO_LDFLAGS" \
+			go build $(GO_VERBOSE) -trimpath -tags "$(MUGEN_GO_TAGS)" \
+				-ldflags "$(LDFLAGS_GO)" \
+				-o "$(MUGEN_BINARY)" ./src;; \
+	esac
+	@rm -f $(SRC_SYSO) 2>/dev/null || true
+
+# On Windows the mugen binary also needs the local static SDL2 archive and the
+# resource .syso object (icon + manifest + version info).
+ifeq ($(HOST_OS),windows)
+$(MUGEN_BINARY): $(BUILD_PREFIX)/lib/libSDL2_windows_$(GOARCH).a $(SRC_SYSO)
+endif
+
+# Package engine assets (data/external/font) for embedding into the mugen
+# binary. Requires `zip`; falls back to `python -m zipfile` when unavailable.
+$(ASSETS_ZIP): data/* external/* font/*
+	@echo "==> Packaging engine assets into $(ASSETS_ZIP)..."
+	rm -f $@
+	if command -v zip >/dev/null 2>&1; then \
+		zip -r -q $@ data external font; \
+	else \
+		python -m zipfile -c $@ data external font; \
+	fi
+
+# ============================================================================
 # Install — assemble a runnable distribution
 # ============================================================================
 # Depends on `screenpack` which downloads/extracts the Elecbyte screenpack zip.
@@ -1172,6 +1268,8 @@ help:
 	@echo '                 dynamic-from-source fallback on Linux'
 	@echo '  screenpack     Clone/update Elecbyte screenpack'
 	@echo '  install        Assemble runnable build in deploy/ (screenpack + binary)'
+	@echo '  mugen          Drop-in engine for existing M.U.G.E.N game folders'
+	@echo '                 (SDL2 only, no FFmpeg/XMP; embedded assets)'
 	@echo '  install-remote  scp binary to a device (REMOTE_HOST/REMOTE_DIR, opt-in)'
 	@echo '  fetch-log       scp ikemen.log from a device (REMOTE_HOST/REMOTE_DIR, opt-in)'
 	@echo '  appbundle      Create macOS .app bundle (I.K.E.M.E.N-Go.app)'
@@ -1180,6 +1278,8 @@ help:
 	@echo '  deps-check     Verify required tools are installed'
 	@echo '  check-go-env   Check Go version; on Linux auto-install latest Go'
 	@echo '                 to /usr/local/go when missing or < 1.22'
+	@echo '  vet            Run go vet on ./src (same tags as the build;'
+	@echo '                 run after a build so cgo headers are available)'
 	@echo '  help           Show this help'
 	@echo ''
 	@echo 'Build tree: artifacts are separated per platform:'
@@ -1198,6 +1298,8 @@ help:
 	@echo '  APP_BUILDTIME=X    Set build timestamp'
 	@echo '  VERBOSE=1          Verbose go build (-x -v): show every command and'
 	@echo '                     which packages are recompiled vs. from cache'
+	@echo '  TAGS=<tags>        Override build tags for make vet, e.g.'
+	@echo '                     TAGS="mugen static" (default: current build tags)'
 	@echo '  GO_VERSION=<ver>   Go release used by the Linux auto-installer'
 	@echo '                     (default: latest from go.dev; fallback: go1.26.5)'
 	@echo '  GO_INSTALL_DIR=<d> Install dir for auto-installed Go (default: /usr/local/go)'

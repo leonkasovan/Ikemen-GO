@@ -1,9 +1,14 @@
 package main
 
 import (
+	"bufio"
 	_ "embed" // Support for go:embed resources
 	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
+	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -12,6 +17,44 @@ import (
 
 //go:embed resources/defaultConfig.ini
 var defaultConfig []byte
+
+//go:embed resources/defaultConfig_android.ini
+var defaultConfigAndroid []byte
+
+//go:embed resources/defaultConfig_armdevice.ini
+var defaultConfigArmDevice []byte
+
+// mugenBuild is true only in mugen-tagged builds (set in util_mugen.go).
+// It gates mugen-specific behavior (data/mugen.cfg import, fight.def patch)
+// at runtime, since build tags cannot be applied to individual functions.
+var mugenBuild = false
+
+// armDevice is true only in armdevice-tagged builds (set in util_armdevice.go).
+// Mirrors mugenBuild: build tags are file-scoped, so tagged files flip a
+// package-level flag that runtime code consults instead.
+var armDevice = false
+
+// platformConfigBytes returns platform-specific default config overrides.
+// Desktop (Windows, Linux x64, macOS) uses the base defaultConfig.ini as-is.
+//
+// Android and ARM device builds are detected at runtime instead of via build
+// tags: the `android` tag is equivalent to GOOS=android (Go sets it
+// automatically for Android builds), and the `armdevice` tag is surfaced
+// through the armDevice flag set in util_armdevice.go.
+func platformConfigBytes() []byte {
+	switch {
+	case runtime.GOOS == "android":
+		// Android overrides (e.g., OpenGL ES 3.2, fullscreen) are applied
+		// on top of the base defaultConfig.ini.
+		return defaultConfigAndroid
+	case armDevice:
+		// ARM device (Linux arm64, e.g., Anbernic R36S) overrides disable 3D
+		// models and MSAA for performance on Mali-class GPUs.
+		return defaultConfigArmDevice
+	default:
+		return nil
+	}
+}
 
 type AIrampProperties struct {
 	Start [2]int32 `ini:"start" sync:"host"`
@@ -332,6 +375,9 @@ func loadConfig(def string) (*Config, error) {
 	c.IniFile = iniFile
 	c.DefaultOnlyIni = defaultOnlyIni
 	c.normalize()
+	// Mugen builds: generate config from data/mugen.cfg and patch
+	// fight.def localcoord when save/config.ini does not exist yet.
+	importMugenCfg(&c, def)
 	c.sysSet()
 	c.Save(def)
 	return &c, nil
@@ -506,4 +552,156 @@ func (c *Config) SetValueUpdate(query string, value interface{}) error {
 // Save writes the current IniFile to disk, preserving comments and syntax.
 func (c *Config) Save(file string) error {
 	return SaveINI(c.IniFile, file)
+}
+
+// importMugenCfg generates save/config.ini from an existing Mugen game's
+// data/mugen.cfg when no config exists yet, and patches fight.def with a
+// localcoord line taken from the motif. Only active in mugen builds (the
+// mugenBuild flag is set in util_mugen.go).
+func importMugenCfg(c *Config, def string) {
+	if !mugenBuild || FileExist(def) != "" || FileExist("data/mugen.cfg") == "" {
+		return
+	}
+
+	var (
+		reMotif      = regexp.MustCompile(`(?i)Motif\s*=\s*(\S+)`)
+		reStartStage = regexp.MustCompile(`(?i)StartStage\s*=\s*(.+)$`)
+		reWidth      = regexp.MustCompile(`(?i)^(?:Game)?Width\s*=\s*(\d+)\s*(?:;.*)?$`)
+		reHeight     = regexp.MustCompile(`(?i)^(?:Game)?Height\s*=\s*(\d+)\s*(?:;.*)?$`)
+	)
+
+	LogMessage("[config] Importing data/mugen.cfg into save/config.ini ...")
+	file, err := os.Open("data/mugen.cfg")
+	if err != nil {
+		LogMessage("[config] Error loading data/mugen.cfg: %v", err)
+		return
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if len(line) < 1 || line[0] == ';' {
+			continue
+		}
+		if res := reMotif.FindStringSubmatch(line); res != nil {
+			path := res[1]
+			if FileExist(path) == "" {
+				c.Config.Motif = "data/system.def"
+			} else {
+				LogMessage("[config] Motif path: %v", path)
+				c.Config.Motif = path
+			}
+			c.SetValueUpdate("Config.Motif", c.Config.Motif)
+		} else if res := reStartStage.FindStringSubmatch(line); res != nil {
+			path := res[1]
+			if FileExist(path) == "" {
+				c.Debug.StartStage = ""
+			} else {
+				LogMessage("[config] Start stage: %v", path)
+				c.Debug.StartStage = path
+			}
+			c.SetValueUpdate("Debug.StartStage", c.Debug.StartStage)
+		} else if res := reWidth.FindStringSubmatch(line); res != nil {
+			val, _ := strconv.Atoi(res[1])
+			c.Video.GameWidth = int32(val)
+			c.SetValueUpdate("Video.GameWidth", c.Video.GameWidth)
+			LogMessage("[config] Video.GameWidth: %v", res[1])
+		} else if res := reHeight.FindStringSubmatch(line); res != nil {
+			val, _ := strconv.Atoi(res[1])
+			c.Video.GameHeight = int32(val)
+			c.SetValueUpdate("Video.GameHeight", c.Video.GameHeight)
+			LogMessage("[config] Video.GameHeight: %v", res[1])
+		}
+	}
+
+	// Locate fight.def through the motif's system.def and patch localcoord.
+	motifDir := filepath.Dir(c.Config.Motif)
+	fightdefPath := getFightDefPath(c.Config.Motif)
+	LogMessage("[config] fight.def path from system.def: %v", fightdefPath)
+	fightdefFullPath := FileExist(fightdefPath)
+	LogMessage("[config] fight.def resolved path: %v", fightdefFullPath)
+	if fightdefFullPath == "" {
+		fightdefFullPath = filepath.Join(motifDir, fightdefPath)
+		LogMessage("[config] [%v]+[%v] = %v", motifDir, fightdefPath, fightdefFullPath)
+		if FileExist(fightdefFullPath) == "" {
+			LogMessage("[config] fight.def not found at %v, cannot patch localcoord", fightdefFullPath)
+			fightdefFullPath = ""
+		}
+	}
+	patchFightDefLocalcoord(fightdefFullPath, c.Config.Motif)
+}
+
+func getFightDefPath(systemDefPath string) string {
+	if FileExist(systemDefPath) == "" {
+		LogMessage("[config] system.def not found at %v, cannot get fight.def path", systemDefPath)
+		return ""
+	}
+	content, err := os.ReadFile(systemDefPath)
+	if err != nil {
+		LogMessage("[config] Error reading %v: %v", systemDefPath, err)
+		return ""
+	}
+	scanner := bufio.NewScanner(strings.NewReader(string(content)))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		// fight = fight.def
+		if strings.HasPrefix(strings.ToLower(line), "fight") && strings.Contains(line, "=") {
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				commentIndex := strings.Index(parts[1], ";")
+				if commentIndex != -1 {
+					parts[1] = parts[1][:commentIndex]
+				}
+				return strings.TrimSpace(parts[1])
+			}
+		}
+	}
+	LogMessage("[config] fightdef not found in %v", systemDefPath)
+	return ""
+}
+
+// patchFightDefLocalcoord updates fight.def with the motif's localcoord,
+// backing up the original to fight.def.bak first.
+func patchFightDefLocalcoord(fightdefPath, motifPath string) {
+	content, err := os.ReadFile(motifPath)
+	if err != nil {
+		LogMessage("[config] Error patching %v based on %v's localcoord: %v", fightdefPath, motifPath, err)
+		return
+	}
+	var localcoord_str string
+	scanner := bufio.NewScanner(strings.NewReader(string(content)))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.Contains(strings.ToLower(line), "localcoord") {
+			localcoord_str = line
+			break
+		}
+	}
+	if localcoord_str == "" {
+		LogMessage("[config] localcoord not found in motif %v, skipping patch", motifPath)
+		return
+	}
+	LogMessage("[config] Patching %v with %v", fightdefPath, localcoord_str)
+	if FileExist(fightdefPath) == "" {
+		LogMessage("[config] fight.def not found at %v, skipping localcoord patch", fightdefPath)
+		return
+	}
+	content, err = os.ReadFile(fightdefPath)
+	if err != nil {
+		LogMessage("[config] Error reading %v: %v", fightdefPath, err)
+		return
+	}
+	if strings.Contains(strings.ToLower(string(content)), "localcoord") {
+		LogMessage("[config] %v already has localcoord, skipping patch", fightdefPath)
+		return
+	}
+	if err := os.Rename(fightdefPath, fightdefPath+".bak"); err != nil {
+		LogMessage("[config] Error creating backup for %v: %v", fightdefPath, err)
+		return
+	}
+	newContent := fmt.Sprintf("[Info]\n%v\n%s", localcoord_str, content)
+	if err := os.WriteFile(fightdefPath, []byte(newContent), 0644); err != nil {
+		LogMessage("[config] Error writing %v: %v", fightdefPath, err)
+	}
 }

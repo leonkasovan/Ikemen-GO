@@ -9,11 +9,21 @@ package main
 */
 import "C"
 import (
+	_ "embed"
 	"fmt"
 	"unsafe"
 
 	findfont "github.com/flopp/go-findfont"
 )
+
+//go:embed resources/defaultMotif.ini
+var defaultMotif []byte
+
+// init marks this build as the ARM device variant so config.go can select the
+// armdevice default config overrides at runtime (build tags are file-scoped).
+func init() {
+	armDevice = true
+}
 
 // Message box implementation using stderr
 func ShowInfoDialog(message, title string) {
