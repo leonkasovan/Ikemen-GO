@@ -1116,7 +1116,7 @@ build_libmain() {
   echo "  GOOS=android GOARCH=${GO_ANDROID_ARCH} CC=$cc"
   echo "  Output: $ANDROID_BINARY"
 
-  local go_tags="mugen lite android gles2"
+  local go_tags="mugen android"
   local go_ldflags="-s -w -X 'main.Version=nightly' -X 'runtime.godebugDefault=asyncpreemptoff=1,sigaltstack=0'"
   if [[ "$CONFIG" == "debug" ]]; then
     go_tags="$go_tags debug"

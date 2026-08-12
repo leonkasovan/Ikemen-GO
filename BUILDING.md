@@ -203,10 +203,9 @@ deliberately does **not** define one.
 | Linux / macOS desktop | `desktop` (+ `debug`) | `motif_desktop.go` |
 | Mugen | `mugen static` (Windows) / `mugen` (Linux/macOS) | `util_mugen.go` |
 | ARM device (Linux arm64) | `armdevice` (+ `debug`) | `util_armdevice.go` |
-| Android | `mugen lite android gles2` (+ `debug`) | `util_mugen.go` |
+| Android | `mugen android` (+ `debug`) | `util_mugen.go` |
 
-`lite` and `gles2` in the Android tag list are legacy no-ops (no source files
-reference them). `debug` adds the memory-instrumentation sources
+`debug` adds the memory-instrumentation sources
 (`common_debug.go`, `main_mem_test.go`, …).
 
 ### Notes

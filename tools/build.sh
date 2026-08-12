@@ -1014,7 +1014,7 @@ function build() {
 
 	# Android has slightly different steps.
 	if [[ "$GOOS" == "android" ]]; then
-		go build -buildmode=c-shared -trimpath -v -tags=android,gles2 \
+		go build -buildmode=c-shared -trimpath -v -tags=android \
 		-ldflags="-s -w -X 'main.Version=${APP_VERSION}' -X 'main.BuildTime=${APP_BUILDTIME}' -X 'runtime.godebugDefault=asyncpreemptoff=1,sigaltstack=0'" \
 		-o "$OUTDIR/$binName" ./src
 	else
