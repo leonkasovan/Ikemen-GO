@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"math"
 	"regexp"
 	"strconv"
@@ -148,6 +149,8 @@ type backGround struct {
 	fLength               float32
 	projection            Projection
 	xshear                float32
+	shader                string          // Custom shader name
+	shaderParams          [16]float32     // Custom shader parameters (p0-p15)
 }
 
 func newBackGround(sff *Sff) *backGround {
@@ -477,6 +480,26 @@ func readBackGround(is IniSection, link *backGround,
 	if !is.ReadBool("roundpos", &bg.roundpos) {
 		bg.roundpos = sProps.roundpos
 	}
+	// Read shader if applicable
+	if shaderName, ok := is["shader"]; ok && len(shaderName) > 0 {
+		// Remove quotes if present
+		if len(shaderName) >= 2 && shaderName[0] == '"' && shaderName[len(shaderName)-1] == '"' {
+			shaderName = shaderName[1 : len(shaderName)-1]
+		}
+		bg.shader = strings.ToLower(shaderName)
+
+		// Read shader parameters (shaderparam.p0 through shaderparam.p15)
+		for k, v := range is {
+			if strings.HasPrefix(strings.ToLower(k), "shaderparam.p") {
+				numStr := k[len("shaderparam.p"):]
+				if idx, err := strconv.Atoi(numStr); err == nil && idx >= 0 && idx <= 15 {
+					if val, err := strconv.ParseFloat(v, 32); err == nil {
+						bg.shaderParams[idx] = float32(val)
+					}
+				}
+			}
+		}
+	}
 	return bg, nil
 }
 
@@ -715,7 +738,7 @@ func (bg backGround) draw(pos [2]float32, drawscl, bgscl, stglscl float32,
 			bg.xscale[0]*bgscl*(scalestartX+xs)*xs3,
 			xbs*bgscl*(scalestartX+xs)*xs3,
 			ys*ys3, xras*x/(Abs(ys*ys3)*lscl[1]*float32(bg.anim.spr.Size[1])*bg.scalestart[1])*sclx_recip*bg.scalestart[1]-bg.xshear,
-			bg.rot, rcx, bg.palfx, 1, [2]float32{1, 1}, int32(bg.projection), bg.fLength, 0, false, CustomShaderRenderData{})
+			bg.rot, rcx, bg.palfx, 1, [2]float32{1, 1}, int32(bg.projection), bg.fLength, 0, false, CustomShaderRenderData{name: bg.shader, params: bg.shaderParams})
 	}
 }
 
@@ -942,6 +965,7 @@ type Stage struct {
 	reload          bool
 	stageprops      StageProps
 	model           *Model
+	customShaders   []string  // Track loaded custom shaders
 	topbound        float32
 	botbound        float32
 }
@@ -1304,6 +1328,49 @@ func loadStage(def string, maindef bool) (*Stage, error) {
 		sec.ReadBool("debugbg", &s.debugbg)
 		sec.readI32ForStage("bgclearcolor", &s.bgclearcolor[0], &s.bgclearcolor[1], &s.bgclearcolor[2])
 		sec.ReadBool("roundpos", &s.stageprops.roundpos)
+	}
+
+	// Shaders group
+	if sec, _ := getSection("shaders"); sec != nil {
+		for key, val := range sec {
+			shaderPath := val
+			shaderAlias := key
+
+			isVulkan := strings.HasPrefix(gfx.GetName(), "Vulkan")
+			isDX := strings.HasPrefix(gfx.GetName(), "Direct3D")
+			if isVulkan {
+				if !strings.HasSuffix(strings.ToLower(shaderPath), ".spv") {
+					shaderPath += ".spv"
+				}
+			} else if isDX {
+				if !strings.HasSuffix(strings.ToLower(shaderPath), ".cso") {
+					shaderPath += ".cso"
+				}
+			}
+
+			s.customShaders = append(s.customShaders, shaderAlias)
+
+			LoadFile(&shaderPath, []string{def, "", sys.motif.Def, "data/"}, "", func(filename string) error {
+				f, err := OpenFile(filename)
+				if err != nil {
+					LogMessage("Failed to open stage shader file '%s': %v", filename, err)
+					return err
+				}
+				defer f.Close()
+				shaderData, err := io.ReadAll(f)
+				if err != nil {
+					LogMessage("Failed to read stage shader file '%s': %v", filename, err)
+					return err
+				}
+
+				// Load on main thread
+				sys.mainThreadTask <- func() {
+					sys.shaderRefCount[shaderAlias] = 3
+					gfx.LoadCustomSpriteShader(shaderAlias, shaderData)
+				}
+				return nil
+			})
+		}
 	}
 
 	// Model group
