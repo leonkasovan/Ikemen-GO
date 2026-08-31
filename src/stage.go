@@ -481,20 +481,20 @@ func readBackGround(is IniSection, link *backGround,
 		bg.roundpos = sProps.roundpos
 	}
 	// Read shader if applicable
-	if shaderName, ok := is["shader"]; ok && len(shaderName) > 0 {
-		// Remove quotes if present
-		if len(shaderName) >= 2 && shaderName[0] == '"' && shaderName[len(shaderName)-1] == '"' {
-			shaderName = shaderName[1 : len(shaderName)-1]
-		}
-		bg.shader = strings.ToLower(shaderName)
-
-		// Read shader parameters (shaderparam.p0 through shaderparam.p15)
-		for k, v := range is {
-			if strings.HasPrefix(strings.ToLower(k), "shaderparam.p") {
-				numStr := k[len("shaderparam.p"):]
-				if idx, err := strconv.Atoi(numStr); err == nil && idx >= 0 && idx <= 15 {
-					if val, err := strconv.ParseFloat(v, 32); err == nil {
-						bg.shaderParams[idx] = float32(val)
+	if shaderName, ok := is["shader"]; ok {
+		shaderName = strings.TrimSpace(shaderName)
+		shaderName = strings.Trim(shaderName, "\"'")
+		if len(shaderName) > 0 {
+			bg.shader = strings.ToLower(shaderName)
+			// Read shader parameters (shaderparam.p0 through shaderparam.p15)
+			for k, v := range is {
+				lk := strings.ToLower(strings.TrimSpace(k))
+				if strings.HasPrefix(lk, "shaderparam.p") {
+					numStr := lk[len("shaderparam.p"):]
+					if idx, err := strconv.Atoi(strings.TrimSpace(numStr)); err == nil && idx >= 0 && idx <= 15 {
+						if val, err := strconv.ParseFloat(strings.TrimSpace(v), 32); err == nil {
+							bg.shaderParams[idx] = float32(val)
+						}
 					}
 				}
 			}
@@ -1000,8 +1000,6 @@ func newStage(def string) *Stage {
 	s.reflection.yscale = 1.0 // Default scale is 1. It's normally off because default intensity is 0
 	s.p[0].startx = -70
 	s.p[1].startx = 70
-	s.p[0].facing = 1
-	s.p[1].facing = -1
 	s.stageprops = newStageProps()
 	return s
 }
@@ -1175,12 +1173,11 @@ func loadStage(def string, maindef bool) (*Stage, error) {
 	if sec, _ := getSection("playerinfo"); sec != nil {
 		sec.ReadI32("partnerspacing", &s.partnerspacing)
 		for i := range s.p {
-			// Defaults
+				// Defaults
 			if i >= 2 {
 				s.p[i].startx = s.p[i-2].startx + s.partnerspacing*int32(2*(i%2)-1) // Previous partner + partnerspacing
 				s.p[i].starty = s.p[i%2].starty                                     // Same as players 1 or 2
 				s.p[i].startz = s.p[i%2].startz                                     // Same as players 1 or 2
-				s.p[i].facing = int32(1 - 2*(i%2))                                  // By team side
 			}
 			// pXstartx
 			sec.ReadI32(fmt.Sprintf("p%dstartx", i+1), &s.p[i].startx)
@@ -1341,11 +1338,12 @@ func loadStage(def string, maindef bool) (*Stage, error) {
 	// Shaders group
 	if sec, _ := getSection("shaders"); sec != nil {
 		for key, val := range sec {
-			shaderPath := val
-			shaderAlias := key
+			shaderPath := strings.TrimSpace(val)
+			shaderPath = strings.Trim(shaderPath, "\"'")
+			shaderAlias := strings.ToLower(strings.TrimSpace(key))
 
-			isVulkan := strings.HasPrefix(gfx.GetName(), "Vulkan")
-			isDX := strings.HasPrefix(gfx.GetName(), "Direct3D")
+			isVulkan := gfx != nil && strings.HasPrefix(gfx.GetName(), "Vulkan")
+			isDX := gfx != nil && strings.HasPrefix(gfx.GetName(), "Direct3D")
 			if isVulkan {
 				if !strings.HasSuffix(strings.ToLower(shaderPath), ".spv") {
 					shaderPath += ".spv"

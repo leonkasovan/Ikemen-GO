@@ -6813,6 +6813,11 @@ func (s *System) cleanCustomShaders() {
 			activeShaders[sName] = true
 		}
 	}
+	if s.stage != nil {
+		for _, sName := range s.stage.customShaders {
+			activeShaders[sName] = true
+		}
+	}
 
 	for sName, count := range s.shaderRefCount {
 		if activeShaders[sName] {
