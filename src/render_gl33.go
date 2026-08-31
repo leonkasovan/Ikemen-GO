@@ -1385,6 +1385,9 @@ func (r *Renderer_GL33) BeginFrame(clearColor bool) {
 
 func (r *Renderer_GL33) EndFrame() {
 	flushSpriteQueue()
+
+	// ponytail: reset shader after flush, per-sprite handles mid-frame
+	gfx.SetSpritePipeline("")
 	drawCallStats.logFrame(int(sys.frameCounter))
 
 	if len(r.fbo_pp) == 0 {
@@ -2586,6 +2589,7 @@ func (r *Renderer_GL33) LoadCustomSpriteShader(shaderName string, shaderData []b
 	shader.RegisterAttributes("position", "uv")
 	shader.RegisterUniforms("modelview", "projection", "x1x2x4x3",
 		"alpha", "tint", "mask", "neg", "gray", "add", "mult", "isFlat", "isRgba", "isTrapez", "hue",
+		"palUV",
 		"iTime", "iResolution", "aspectRatio", "sTime")
 	shader.RegisterTextures("pal", "tex", "tex1", "tex2", "bgl_RenderedTexture")
 
@@ -2690,4 +2694,7 @@ func flushSpriteQueueBatched(queue []SpriteDrawCall) {
 		}
 	}
 	drawCallStats.TotalBatches += len(queue)
+
+	// ponytail: reset after queue
+	gfx.SetSpritePipeline("")
 }

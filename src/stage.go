@@ -1000,6 +1000,8 @@ func newStage(def string) *Stage {
 	s.reflection.yscale = 1.0 // Default scale is 1. It's normally off because default intensity is 0
 	s.p[0].startx = -70
 	s.p[1].startx = 70
+	s.p[0].facing = 1
+	s.p[1].facing = -1
 	s.stageprops = newStageProps()
 	return s
 }
@@ -1193,6 +1195,12 @@ func loadStage(def string, maindef bool) (*Stage, error) {
 		sec.ReadF32("rightbound", &s.rightbound)
 		sec.ReadF32("topbound", &s.topbound)
 		sec.ReadF32("botbound", &s.botbound)
+	}
+	// Ensure facing is never 0 (ensures shader_example etc. without pXfacing still face each other)
+	for i := range s.p {
+		if s.p[i].facing == 0 {
+			s.p[i].facing = int32(1 - 2*(i%2))
+		}
 	}
 
 	// Camera group

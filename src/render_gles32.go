@@ -1493,6 +1493,9 @@ func (r *Renderer_GLES32) EndFrame() {
 	// Flush any deferred sprite draws accumulated after the last
 	// luaFlushDrawQueue (top-layer elements, fades, debug overlays).
 	flushSpriteQueue()
+
+	// ponytail: reset after flush
+	gfx.SetSpritePipeline("")
 	drawCallStats.logFrame(int(sys.frameCounter))
 
 	if len(r.fbo_pp) == 0 {
@@ -2740,6 +2743,7 @@ func (r *Renderer_GLES32) LoadCustomSpriteShader(shaderName string, shaderData [
 	shader.RegisterAttributes("position", "uv")
 	shader.RegisterUniforms("modelview", "projection", "x1x2x4x3",
 		"alpha", "tint", "mask", "neg", "gray", "add", "mult", "isFlat", "isRgba", "isTrapez", "hue",
+		"palUV",
 		"iTime", "iResolution", "aspectRatio", "sTime")
 	shader.RegisterTextures("pal", "tex", "tex1", "tex2", "bgl_RenderedTexture")
 

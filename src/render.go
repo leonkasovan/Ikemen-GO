@@ -1135,6 +1135,13 @@ func renderSpriteImmediate(rp RenderParams) {
 	renderWithBlending(renderPass, rp.blendMode, rp.blendAlpha, rp.paltex != nil, &spfx, rp.paltex == nil)
 
 	gfx.DisableScissor()
+
+	// Restore the default sprite shader after a custom shader draw.
+	// Without this, the custom program stays active and corrupts all
+	// subsequent sprite renders (characters, UI, etc.).
+	if rp.customShader.name != "" {
+		gfx.SetSpritePipeline("")
+	}
 }
 
 // blendPass is a fully resolved single blending pass: the blend state, the
