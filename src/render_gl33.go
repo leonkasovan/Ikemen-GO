@@ -1343,6 +1343,7 @@ func (r *Renderer_GL33) bindFramebuffer(target uint32, fbo uint32) {
 		if r.curDrawFbo == fbo && r.curReadFbo == fbo {
 			return
 		}
+		drawCallStats.FBOSwitches++
 		gl.BindFramebuffer(gl.FRAMEBUFFER, fbo)
 		r.curDrawFbo = fbo
 		r.curReadFbo = fbo
@@ -1350,12 +1351,14 @@ func (r *Renderer_GL33) bindFramebuffer(target uint32, fbo uint32) {
 		if r.curDrawFbo == fbo {
 			return
 		}
+		drawCallStats.FBOSwitches++
 		gl.BindFramebuffer(gl.DRAW_FRAMEBUFFER, fbo)
 		r.curDrawFbo = fbo
 	case gl.READ_FRAMEBUFFER:
 		if r.curReadFbo == fbo {
 			return
 		}
+		drawCallStats.FBOSwitches++
 		gl.BindFramebuffer(gl.READ_FRAMEBUFFER, fbo)
 		r.curReadFbo = fbo
 	}

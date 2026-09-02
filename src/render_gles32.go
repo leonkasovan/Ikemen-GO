@@ -279,12 +279,16 @@ func (r *Renderer_GLES32) generateTexture(width, height, depth int32, filter boo
 		serial: textureSerialNumber,
 	}
 
+	memTextureCreated("", width, height, depth, h, textureSerialNumber)
+
 	runtime.SetFinalizer(tex, func(t *Texture_GLES32) {
 		if t.handle == 0 {
 			return // already released via Release()
 		}
 		sys.mainThreadTask <- func() {
 			gl.DeleteTextures(1, &t.handle)
+			memTextureFreed(t.handle, t.serial)
+			memGPUBytesSub(t.width, t.height, t.depth)
 		}
 	})
 
@@ -303,6 +307,8 @@ func (t *Texture_GLES32) Release() {
 		// Regular texture (non-atlas): delete the GL handle.
 		sys.mainThreadTask <- func() {
 			gl.DeleteTextures(1, &t.handle)
+			memTextureFreed(t.handle, t.serial)
+			memGPUBytesSub(t.width, t.height, t.depth)
 		}
 	}
 	// Palette atlas slots share the atlas GL handle — only the finalizer
@@ -413,6 +419,8 @@ func (r *Renderer_GLES32) newPaletteTexture() Texture {
 		atlasSize: r.palAtlasSize,
 	}
 
+	memTextureCreated("palSlot", 256, 1, 32, r.palAtlas.handle, r.palAtlas.serial)
+
 	// When the texture is garbage collected (or explicitly released), return the
 	// slot to the free list and decrement the usage counter.
 	// The handle guard prevents double-return when Release() is called explicitly.
@@ -439,7 +447,7 @@ func (r *Renderer_GLES32) newModelTexture(width, height, depth int32, filter boo
 func (r *Renderer_GLES32) newDataTexture(width, height int32) Texture {
 	r.SetActiveTexture0() //gl.ActiveTexture(gl.TEXTURE0)
 
-	t := r.generateTexture(width, height, 32, false)
+	t := r.generateTexture(width, height, 128, false)
 
 	gl.BindTexture(gl.TEXTURE_2D, t.handle)
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
@@ -452,7 +460,7 @@ func (r *Renderer_GLES32) newDataTexture(width, height int32) Texture {
 func (r *Renderer_GLES32) newHDRTexture(width, height int32) Texture {
 	r.SetActiveTexture0() //gl.ActiveTexture(gl.TEXTURE0)
 
-	t := r.generateTexture(width, height, 24, false)
+	t := r.generateTexture(width, height, 128, false)
 
 	gl.BindTexture(gl.TEXTURE_2D, t.handle)
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
