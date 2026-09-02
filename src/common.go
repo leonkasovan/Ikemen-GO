@@ -1051,6 +1051,29 @@ func (is IniSection) readI32ForStage(name string, out ...*int32) bool {
 	return true
 }
 
+// This version only accepts the parameter if it has enough values
+func (is IniSection) readI32ForStageMinLength(name string, out ...*int32) bool {
+	str := is[name]
+	if len(str) == 0 {
+		return false
+	}
+	parts := strings.Split(is[name], ",")
+	// Also reject empty values
+	n := 0
+	for _, p := range parts {
+		if strings.TrimSpace(p) != "" {
+			n++
+		}
+	}
+	// Mugen is still lenient when it's being strict and won't reject parameters with excessive values
+	if n < len(out) {
+		LogMessage("WARNING: '%s' expected at least %d values but found only %d", name, len(out), n)
+		return false
+	}
+	// Use the normal path after validation
+	return is.readI32ForStage(name, out...)
+}
+
 func (is IniSection) readF32ForStage(name string, out ...*float32) bool {
 	str := is[name]
 	if len(str) == 0 {
@@ -1360,13 +1383,11 @@ func (al *AnimLayout) Draw(x, y float32, layerno int16, scale float32) {
 	al.lay.DrawAnim(&al.lay.window, x, y, scale, 1, 1, layerno, al.anim, al.palfx)
 }
 
-func ReadPalFX(pre string, is IniSection, pfx *PalFX) int32 {
+func ReadPalFX(pre string, is IniSection, pfx *PalFX) {
 	pfx.clear()
 	pfx.time = -1
-	tInit := int32(-1)
-	if is.ReadI32(pre+"time", &pfx.time) {
-		tInit = pfx.time
-	}
+
+	is.ReadI32(pre+"time", &pfx.time)
 	is.ReadI32(pre+"add", &pfx.add[0], &pfx.add[1], &pfx.add[2])
 	is.ReadI32(pre+"mul", &pfx.mul[0], &pfx.mul[1], &pfx.mul[2])
 	var s [4]int32
@@ -1424,7 +1445,6 @@ func ReadPalFX(pre string, is IniSection, pfx *PalFX) int32 {
 	if is.ReadF32(pre+"hue", &n) {
 		pfx.hue = n / 512
 	}
-	return tInit
 }
 
 type AnimTextSnd struct {
@@ -1783,4 +1803,15 @@ func SafeGo(f func()) {
 // Simple aspect ratio calculator that casts the inputs itself
 func CalculateAspect[T int | int32 | float32 | float64](w, h T) float32 {
 	return float32(w) / float32(h)
+}
+
+// Ensures a rectangle is represented as "left, top, right, bottom"
+func NormalizeRect[T int | int32 | int64 | float32 | float64](rect [4]T) [4]T {
+	if rect[0] > rect[2] {
+		rect[0], rect[2] = rect[2], rect[0]
+	}
+	if rect[1] > rect[3] {
+		rect[1], rect[3] = rect[3], rect[1]
+	}
+	return rect
 }

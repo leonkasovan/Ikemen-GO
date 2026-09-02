@@ -17,6 +17,10 @@ import (
 	"github.com/ikemen-engine/Ikemen-GO/packages/reisen"
 )
 
+func init() {
+	reisen.SetLogLevel(reisen.LogLevelWarning)
+}
+
 // pixelPool is a fixed-size pool of RGBA pixel buffers for a specific frame
 // resolution. Pooling eliminates the per-frame GoBytes allocation in reisen
 // (which was the single largest allocation source: ~1.4 GB/session).
@@ -164,6 +168,32 @@ func drainFrames(ch <-chan *image.RGBA) {
 	}
 }
 
+// FFmpeg's RGBA output is straight (unassociated) alpha, while image.RGBA and
+// Ikemen's RGBA sprite blend path expect premultiplied color channels. Convert
+// once before upload so translucent edges composite correctly on every renderer.
+func premultiplyVideoFrame(frame *image.RGBA) {
+	if frame == nil {
+		return
+	}
+	for y := frame.Rect.Min.Y; y < frame.Rect.Max.Y; y++ {
+		for x := frame.Rect.Min.X; x < frame.Rect.Max.X; x++ {
+			i := frame.PixOffset(x, y)
+			a := frame.Pix[i+3]
+			if a == 255 {
+				continue
+			}
+			if a == 0 {
+				frame.Pix[i], frame.Pix[i+1], frame.Pix[i+2] = 0, 0, 0
+				continue
+			}
+			alpha := uint16(a)
+			frame.Pix[i] = uint8((uint16(frame.Pix[i])*alpha + 127) / 255)
+			frame.Pix[i+1] = uint8((uint16(frame.Pix[i+1])*alpha + 127) / 255)
+			frame.Pix[i+2] = uint8((uint16(frame.Pix[i+2])*alpha + 127) / 255)
+		}
+	}
+}
+
 func (bgv *bgVideo) Open(filename string, volume int, sm BgVideoScaleMode, sf BgVideoScaleFilter, loop bool) error {
 	LogDebug("VIDEO OPEN: %s (loop=%v)", filename, loop)
 	// fmt.Println("Opening media file:", filename)
@@ -213,8 +243,7 @@ func (bgv *bgVideo) Open(filename string, volume int, sm BgVideoScaleMode, sf Bg
 
 		if fg := buildFFFilterGraph(srcW, srcH, winW, winH, sm, sf); fg != "" {
 			if err := v.ApplyVideoFilterGraph(fg); err != nil {
-				// Don't fail playback if filter graph can't be applied; fall back to sws_scale path.
-				LogMessage("Video: ApplyVideoFilterGraph failed (%v) for graph '%s', using sws_scale fallback", err, fg)
+				return fmt.Errorf("Video: ApplyVideoFilterGraph failed for graph %q: %w", fg, err)
 			}
 		}
 	}
@@ -448,18 +477,10 @@ func (bgv *bgVideo) processPacket() bool {
 			}
 			// Deliver only when visible; while hidden we still pace timers but drop frames.
 			if bgv.visible {
-				bgv.frameBuffer <- vf.Image()
-				bgv.lastFrame = vf.Image() // remember last for sticky reupload
-			} else {
-				// Frame decoded but not used — return its pixel buffer to the pool.
-				if bgv.pixPool != nil {
-					bgv.pixPool.put(vf.Image().Pix)
-				}
-			}
-		} else {
-			// No frame produced from this packet — return the pooled buffer immediately.
-			if buf != nil && bgv.pixPool != nil {
-				bgv.pixPool.put(buf)
+				frame := vf.Image()
+				premultiplyVideoFrame(frame)
+				bgv.frameBuffer <- frame
+				bgv.lastFrame = frame // remember last for sticky reupload
 			}
 		}
 
@@ -708,7 +729,9 @@ func buildFFFilterGraph(sw, sh, ww, wh int, sm BgVideoScaleMode, sf BgVideoScale
 		return fmt.Sprintf("scale=-2:%d:flags=%s:force_divisible_by=2", h, flag)
 	}
 	padCenter := func(w, h int) string {
-		return fmt.Sprintf("pad=%d:%d:(ow-iw)/2:(oh-ih)/2:color=black", w, h)
+		// Keep letterbox/pillarbox pixels transparent so a scaled alpha video
+		// remains an overlay instead of introducing opaque black bars.
+		return fmt.Sprintf("pad=%d:%d:(ow-iw)/2:(oh-ih)/2:color=black@0", w, h)
 	}
 	// Center-crop vertically to a maximum height; no-op if ih<=h.
 	cropCenterH := func(w, h int) string {

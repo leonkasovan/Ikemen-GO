@@ -486,7 +486,7 @@ function start.f_setStage(num, assigned)
 		local sel = start.p[2] and start.p[2].t_selected and start.p[2].t_selected[1]
 		local charData = sel and sel.ref and start.f_getCharData(sel.ref)
 		if charData and charData.stage and #charData.stage > 0 and not (gameMode('training') and gameOption('Config.TrainingStage')) then --stage assigned as character param
-			num = start.stageShuffleBag(charData.ref, charData.stage)
+			num = start.stageShuffleBag('char:' .. sel.ref, charData.stage)
 		elseif charData and main.stageOrder and main.t_orderStages[charData.order] then --stage assigned as stage order param
 			num = start.stageShuffleBag(charData.order, main.t_orderStages[charData.order])
 		elseif gameMode('training') and gameOption('Config.TrainingStage') ~= '' then --training stage
@@ -2587,6 +2587,19 @@ local function tickScreenDelay(side)
 	return false
 end
 
+-- Reset stage portrait animation data
+local function resetStagePortraitAnim(stageNo, subname)
+	local st = main.t_selStages[stageNo]
+	if not st then
+		return
+	end
+	local anim = st[subname]
+	if anim then
+		animReset(anim)
+		animUpdate(anim)
+	end
+end
+
 start.needUpdateDrawList = false
 function start.f_selectScreen()
 	if (not main.selectMenu[1] and not main.selectMenu[2]) or selScreenEnd then
@@ -2607,6 +2620,11 @@ function start.f_selectScreen()
 	local counter = 0 - motif.select_info.fadein.time
 	local timerReset = false
 	local stageTextData = motif.select_info.stage.active.TextSpriteData
+	local stageRef = main.t_selectableStages[stageListNo]
+
+	-- Reset stage portrait animation if it was already seen when entering the select screen
+	resetStagePortraitAnim(stageRef, 'anim_data')
+
 	-- generate team mode items table
 	for side = 1, 2 do
 		-- read display names for the current gameMode (or default)
@@ -2769,15 +2787,6 @@ function start.f_selectScreen()
 			if tickScreenDelay(side) then
 				screenDelayInterrupted = true
 			end
-			--exit select screen
-			for _, v in ipairs(start.p[side].t_selCmd) do
-				if not start.escFlag and (esc() or (getInput(v.cmd, motif.select_info.cancel.key) and not start.p[side].inPalMenu)) then
-					sndPlay(motif.Snd, motif.select_info.cancel.snd[1], motif.select_info.cancel.snd[2])
-					fadeOutInit(motif.select_info.fadeout.FadeData)
-					fadeOutStarted = true
-					start.escFlag = true
-				end
-			end
 			if start.p[side].inPalMenu then
 				local palActive = false
 				if motif.select_info.paletteselect > 0 then
@@ -2790,6 +2799,17 @@ function start.f_selectScreen()
 				end
 				if not palActive then
 					start.p[side].inPalMenu = false
+				end
+			end
+		end
+		--exit select screen
+		for side = 1, 2 do
+			for _, v in ipairs(start.p[side].t_selCmd) do
+				if not start.escFlag and (esc() or (not start.p[side].inPalMenu and getInput(v.cmd, motif.select_info.cancel.key))) then
+					sndPlay(motif.Snd, motif.select_info.cancel.snd[1], motif.select_info.cancel.snd[2])
+					fadeOutInit(motif.select_info.fadeout.FadeData)
+					fadeOutStarted = true
+					start.escFlag = true
 				end
 			end
 		end
@@ -2839,7 +2859,7 @@ function start.f_selectScreen()
 					main.f_animPosDraw(motif.select_info.stage.portrait.random.AnimData)
 				--draw stage portrait loaded from stage SFF
 				else
-					local stageRef = main.t_selectableStages[stageListNo]
+					stageRef = main.t_selectableStages[stageListNo]
 					local portrait = motif.select_info.stage.portrait
 					local anim = main.t_selStages[stageRef].anim_data
 					local loadingPortrait = false
@@ -3934,6 +3954,9 @@ function start.f_selectVersus(active, t_orderSelect, loadStartArg)
 	local readyToLeave = not bgLoading
 	local wantSkip = false
 	local wantDone = false
+	
+	-- Reset stage portrait animation if it was already seen when entering the VS screen
+	resetStagePortraitAnim(selStageNo, 'vs_anim_data')
 
 	-- Background loading: start async loader immediately.
 	if bgLoading then

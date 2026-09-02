@@ -2148,8 +2148,9 @@ func (a *Anim) Copy() *Anim {
 		// Copy arrays (if not slices, this is fine as-is)
 		dst.Offset = src.Offset
 		dst.Size = src.Size
+		dst.sffv1BasePal = src.sffv1BasePal
 
-		if dst.palidx == 0 {
+		if dst.palidx == 0 || dst.sffv1BasePal {
 			dst.Pal = nil
 		} else {
 			dst.Pal = src.Pal
@@ -2319,17 +2320,17 @@ func (a *Anim) Update(force bool) {
 	if a.anim == nil {
 		return
 	}
-	// Advance at most once per engine frame, unless forced.
-	if !force && a.lastUpdateFrame == sys.frameCounter {
+	// Advance at most once per logical UI frame, unless forced.
+	if !force && a.lastUpdateFrame == sys.uiFrameCounter {
 		return
 	}
-	a.lastUpdateFrame = sys.frameCounter
+	a.lastUpdateFrame = sys.uiFrameCounter
 	a.palfx.step()
-	// Advance the *shared* animation timeline at most once per engine frame,
+	// Advance the *shared* animation timeline at most once per logical UI frame,
 	// even if multiple Lua userdatas reference the same *Animation.
-	if force || a.anim.lastActionFrame != sys.frameCounter {
+	if force || a.anim.lastActionFrame != sys.uiFrameCounter {
 		a.anim.Action()
-		a.anim.lastActionFrame = sys.frameCounter
+		a.anim.lastActionFrame = sys.uiFrameCounter
 	}
 	a.updateVel()
 }
@@ -2425,5 +2426,8 @@ func (pa PreloadedAnims) addSprite(sff *Sff, grp, idx uint16) {
 func (pa PreloadedAnims) updateSff(sff *Sff) {
 	for _, v := range pa {
 		v.sff = sff
+		// Animations created from the temporary SFF keep their old palette pointer,
+		// so it must be updated together with the SFF.
+		v.palettedata = &sff.palList
 	}
 }

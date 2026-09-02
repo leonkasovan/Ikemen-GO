@@ -21,6 +21,8 @@ Do not open issues for general support questions as we want to keep GitHub issue
 If you find a bug, you can help us by [submitting an issue](#submit-issue) to our [GitHub Repository][github].
 Even better, you can [submit a Pull Request](#submit-pr) with a fix.
 
+A difference from M.U.G.E.N is not necessarily a bug. Some behavior may intentionally differ rather than reproduce M.U.G.E.N bugs or quirks.
+
 ## <a name="feature"></a> Missing a Feature?
 
 You can *request* a new feature by [starting a discussion](#discussions) about it in our GitHub Repository.
@@ -76,6 +78,8 @@ Maintainers may close topics that are out of scope, inactive, duplicated, not re
 ### <a name="submit-issue"></a> Submitting an Issue
 
 Before submitting an issue, please check the issue tracker to see if it has already been reported. Existing reports may also contain useful workarounds.
+
+Please report only **one bug per issue**. Issues containing multiple unrelated bugs may be closed by a maintainer or by a pull request that fixes only one of them.
 
 Test your content with the [nightly development release][nightly] and the [latest release][latest], as the problem may already be fixed. Note that only the most recent release is supported.
 

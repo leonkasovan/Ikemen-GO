@@ -32,7 +32,7 @@ type RollbackProperties struct {
 }
 
 // TODO: Merge with system.go
-func (rs *RollbackSystem) hijackRunMatch(s *System) bool {
+func (rs *RollbackSystem) hijackRunMatch() bool {
 	// Shared part up until this point already handled by sys.runMatch()
 
 	// Reset variables
@@ -45,7 +45,8 @@ func (rs *RollbackSystem) hijackRunMatch(s *System) bool {
 	var running bool
 
 	// Loop until end of match
-	for !s.endMatch {
+	// Not "sys.keepMatchRunning()" because rollback loop ends earlier than local loop
+	for !sys.endMatch {
 		rs.session.now = time.Now().UnixMilli()
 		err := rs.session.backend.Idle(
 			int(math.Max(0, float64(rs.session.next-rs.session.now-1))))
@@ -54,29 +55,31 @@ func (rs *RollbackSystem) hijackRunMatch(s *System) bool {
 		}
 
 		// Desync/disconnect callbacks may request a session abort outside the normal input path.
-		if s.esc {
+		if sys.esc {
 			break
 		}
 
 		// Sync speculative inputs and run a speculative frame
-		running = rs.runFrame(s)
+		running = rs.runFrame()
 
-		if s.fightLoopEnd && !s.postMatchFlg {
+		if sys.fightLoopEnd && !sys.postMatchFlg {
 			break
 		}
 
 		rs.session.next = rs.session.now + 1000/60
 
-		if s.esc || !running {
+		if sys.esc || !running {
 			break
 		}
 
-		s.renderFrame()
+		sys.tickSound()
+
+		sys.renderFrame()
 
 		//rs.session.loopTimer.usToWaitThisLoop()
-		running = s.update()
+		running = sys.update()
 
-		if s.esc || !running {
+		if sys.esc || !running {
 			break
 		}
 	}
@@ -153,11 +156,11 @@ func (rs *RollbackSystem) postMatchSetup() {
 
 // Called once per frame by the main game loop
 // Responsible for collecting local inputs and driving the GGPO backend forward
-func (rs *RollbackSystem) runFrame(s *System) bool {
+func (rs *RollbackSystem) runFrame() bool {
 	var buffer []byte
 	var ggpoerr error
 
-	if s.esc {
+	if sys.esc {
 		return false
 	}
 
@@ -195,7 +198,7 @@ func (rs *RollbackSystem) runFrame(s *System) bool {
 			}
 
 			// Commit this frame to GGPO even if this frame exits gameplay.
-			keepRunning := rs.simulateFrame(s)
+			keepRunning := rs.simulateFrame()
 
 			defer func() {
 				if re := recover(); re != nil {
@@ -211,7 +214,7 @@ func (rs *RollbackSystem) runFrame(s *System) bool {
 			if err != nil {
 				panic(err)
 			}
-			if s.esc || !keepRunning {
+			if sys.esc || !keepRunning {
 				return false
 			}
 		}
@@ -222,8 +225,8 @@ func (rs *RollbackSystem) runFrame(s *System) bool {
 
 // Contains the logic for a single frame of the game
 // Called by both runFrame for speculative execution, and AdvanceFrame for confirmed execution
-func (rs *RollbackSystem) simulateFrame(s *System) bool {
-	s.frameStepFlag = false
+func (rs *RollbackSystem) simulateFrame() bool {
+	sys.frameStepFlag = false
 
 	// If next round
 	if !sys.runNextRound() {
@@ -231,40 +234,43 @@ func (rs *RollbackSystem) simulateFrame(s *System) bool {
 	}
 
 	// Update game state
-	s.action()
+	sys.action()
 
-	// if rs.handleFlags(s) {
+	// Update motif state
+	sys.uiAction()
+
+	// if rs.handleFlags() {
 	//	return true
 	// }
 
-	if !rs.updateEvents(s) {
+	if !rs.updateEvents() {
 		return false
 	}
 
 	// Break if finished
-	if s.fightLoopEnd && !s.postMatchFlg {
+	if sys.fightLoopEnd && !sys.postMatchFlg {
 		return false
 	}
 
 	// Update system; break if update returns false (game ended)
-	//if !s.update() {
+	//if !sys.update() {
 	//	return false
 	//}
 
 	// If end match selected from menu/end of attract mode match/etc
-	if s.endMatch {
-		s.esc = true
+	if sys.endMatch {
+		sys.esc = true
 		return false
-	} else if s.esc {
-		s.endMatch = s.netConnection != nil
+	} else if sys.esc {
+		sys.endMatch = sys.netConnection != nil
 		return false
 	}
 	return true
 }
 
-func (rs *RollbackSystem) updateEvents(s *System) bool {
-	if !s.addFrameTime(s.turbo) {
-		if !s.eventUpdate() {
+func (rs *RollbackSystem) updateEvents() bool {
+	if !sys.addFrameTime(sys.turbo) {
+		if !sys.eventUpdate() {
 			return false
 		}
 		return false
@@ -408,6 +414,47 @@ func (g *RollbackLogger) logState(action string, stateIdx int, state *GameState)
 
 	fmt.Fprintf(&g.currentLog, "Checksum: %d\n", state.Checksum()) // Calls String() again. Minor issue
 	fmt.Fprintf(&g.currentLog, "%s\n", state.String())
+}
+
+func (g *RollbackLogger) logRoundSkipCheck(fadeoutStart int32, anyButton, roundnotskip, skipEligible, matchEndDialogue bool) {
+	if sys.rollback.session == nil || !sys.rollback.session.config.LogsEnabled {
+		return
+	}
+	var inputs [2]InputBits
+	copy(inputs[:], sys.rollback.ggpoInputs)
+	fadeoutActive := false
+	fadeoutRemain := int32(0)
+	if sys.fightScreen.round != nil && sys.fightScreen.round.fadeOut != nil {
+		fadeoutActive = sys.fightScreen.round.fadeOut.isActive()
+		fadeoutRemain = sys.fightScreen.round.fadeOut.timeRemaining
+	}
+	fmt.Fprintf(&g.currentLog,
+		"RoundSkipCheck MatchTime:%d InRollback:%t RoundState:%d Inputs:[%d/0x%04x %d/0x%04x] "+
+			"Intro:%d WinPoseTime:%d WinWaitTime:%d WinSkipped:%t AnyButton:%t "+
+			"RoundNotSkip:%t RoundNotOver:%t MatchEndDialogue:%t FadeoutStart:%d "+
+			"FadeOutActive:%t FadeOutRemaining:%d SkipEligible:%t\n",
+		sys.matchTime, sys.inRollback(), sys.roundState(),
+		int16(inputs[0]), uint16(inputs[0]), int16(inputs[1]), uint16(inputs[1]),
+		sys.intro, sys.winposetime, sys.winwaittime, sys.winskipped, anyButton,
+		roundnotskip, sys.gsf(GSF_roundnotover), matchEndDialogue, fadeoutStart,
+		fadeoutActive, fadeoutRemain, skipEligible)
+}
+
+func (g *RollbackLogger) logRoundAdvanceCheck(roundOver, tickFrame, motifEndActive, fightLoopEnd, holdPostMatch, canAdvance bool) {
+	if sys.rollback.session == nil || !sys.rollback.session.config.LogsEnabled {
+		return
+	}
+	fmt.Fprintf(&g.currentLog,
+		"RoundAdvanceCheck MatchTime:%d InRollback:%t RoundState:%d Intro:%d "+
+			"RoundOver:%t TickFrame:%t MotifEndActive:%t FightLoopEnd:%t "+
+			"HoldPostMatch:%t CanAdvance:%t "+
+			"TickCount:%d OldTickCount:%d TickCountF:%v NextAddTime:%v "+
+			"FrameStep:%t Paused:%t RoundFreeze:%t DialogueActive:%t\n",
+		sys.matchTime, sys.inRollback(), sys.roundState(), sys.intro,
+		roundOver, tickFrame, motifEndActive, fightLoopEnd, holdPostMatch, canAdvance,
+		sys.tickCount, sys.oldTickCount, sys.tickCountF, sys.nextAddTime,
+		sys.frameStepFlag, sys.paused, sys.gsf(GSF_roundfreeze),
+		sys.motif.di.active)
 }
 
 func (g *RollbackLogger) Write(p []byte) (n int, err error) {
@@ -710,7 +757,7 @@ func (r *RollbackSession) AdvanceFrame(flags int) {
 			r.netTime++
 		}
 		// As in runFrame(): commit rollback re-simulated frames to GGPO even if this frame exits gameplay.
-		_ = sys.rollback.simulateFrame(&sys)
+		_ = sys.rollback.simulateFrame()
 		defer func() {
 			if re := recover(); re != nil {
 				if r.config.DesyncTest {

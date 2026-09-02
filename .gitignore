@@ -96,6 +96,26 @@ save/*
 .vscode/*
 .vs/*
 .idea/*
+
+# Android build outputs (generated)
+bin/*.apk
+bin/libmain.so
+bin/libmain.h
+lib/*.so
+lib/*.so.*
+build/android-apk/
+
+# Binaries
+build/android-deps/
+build/libxmp-src/
+build/libvpx-src/
+build/sdl2-src/
+build/ffmpeg-src/
+build/ffmpeg/
+build/delaylib/
+build/winres/
+
+# macOS bundle by local make
 .mimocode/*
 
 # ============================

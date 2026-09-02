@@ -96,6 +96,7 @@ type SystemStateVars struct {
 	lastTick                float32
 	nextAddTime             float32
 	oldNextAddTime          float32
+	uiFrameCounter          int32
 	xmin, xmax              float32
 	zmin, zmax              float32
 	winskipped              bool
@@ -290,6 +291,7 @@ type System struct {
 	whitePalTex         Texture
 	usePalette          bool
 	gameRunning         bool
+	escPending          bool
 
 	msaa            int32
 	externalShaders [][][]byte
@@ -917,6 +919,12 @@ func (s *System) await(fps int) bool {
 		waitDuration = time.Second / time.Duration(fps)
 	}
 
+	// Rebase when the old deadline is more than one frame ahead.
+	if diff >= waitDuration+2*time.Millisecond {
+		s.redrawWait.nextTime = now
+		diff = 0
+	}
+
 	// Increment the deadline
 	s.redrawWait.nextTime = s.redrawWait.nextTime.Add(waitDuration)
 
@@ -1058,7 +1066,8 @@ func (s *System) tickSound() {
 	}
 
 	// Always pause if noMusic flag set, pause master volume is 0, or freqmul is 0.
-	s.bgm.SetPaused(s.nomusic || (s.paused && s.cfg.Sound.PauseMasterVolume == 0) || (s.bgm.freqmul == 0))
+	bgmPause := s.nomusic || (s.paused && s.cfg.Sound.PauseMasterVolume == 0) || s.bgm.freqmul == 0 || s.motifPauseMusic()
+	s.bgm.SetPaused(bgmPause)
 
 	if s.paused {
 		// Apply BGM pause volume once per pause, even when the original BGM volume is 0.
@@ -1107,6 +1116,59 @@ func (s *System) loadStart() {
 	LogMessage("[PHASE] Pre-match load begins — characters and stage")
 	s.loaderReset()
 	s.loader.runTread()
+}
+
+// Release char FFX belonging to reloading slots so that they can be reloaded without hitting cache
+func (s *System) releaseReloadingCharFx() {
+	s.loadMutex.Lock()
+	defer s.loadMutex.Unlock()
+
+	// Fast path
+	// Nothing to release if no char FFX is loaded at all
+	hasCharFfx := false
+	for _, ffx := range s.ffx {
+		if ffx != nil && ffx.isCharFX {
+			hasCharFfx = true
+			break
+		}
+	}
+	if !hasCharFfx {
+		return
+	}
+
+	// Check each reloading slot
+	// MatchRestart sctrl can reload only specific chars
+	// We don't want to release FFX that will still be needed
+	for i, reload := range s.reloadCharSlot {
+		if !reload {
+			continue
+		}
+		for _, fxPath := range s.cgi[i].fxPath {
+			stillNeeded := false
+			for j := range s.cgi {
+				if s.reloadCharSlot[j] {
+					continue // Reloading slots don't count as still needing it
+				}
+				for _, otherPath := range s.cgi[j].fxPath {
+					if otherPath == fxPath {
+						stillNeeded = true
+						break
+					}
+				}
+				if stillNeeded {
+					break
+				}
+			}
+			if stillNeeded {
+				continue
+			}
+			for prefix, ffx := range s.ffx {
+				if ffx != nil && ffx.isCharFX && ffx.fileName == fxPath {
+					delete(s.ffx, prefix)
+				}
+			}
+		}
+	}
 }
 
 // Drop everything that might have been partially produced by the pre-match async loader.
@@ -2452,7 +2514,7 @@ func (s *System) resetRound() {
 	s.lastHitter = [2]int{-1, -1}
 	s.slowtime = s.fightScreen.round.slow_time
 	s.winposetime = s.fightScreen.round.over_wintime
-	s.winwaittime = s.fightScreen.round.over_waittime + s.fightScreen.round.over_forcewintime
+	s.winwaittime = s.fightScreen.round.over_forcewintime
 	s.winskipped = false
 	s.intro = s.fightScreen.round.start_waittime + s.fightScreen.round.ctrl_time + 1
 	s.curRoundTime = s.maxRoundTime
@@ -2540,6 +2602,30 @@ func (s *System) debugPaused() bool {
 	return s.paused && !s.frameStepFlag && s.oldTickCount < s.tickCount
 }
 
+func (s *System) motifPauseGame() bool {
+	// Menu is open
+	if s.motif.me.active {
+		return true
+	}
+	// Challenger screen triggered
+	// TODO: Maybe this should always pause instead of having a "time" parameter
+	if s.motif.ch.active && s.motif.ch.counter >= s.motif.ChallengerInfo.Pause.Time {
+		return true
+	}
+	return false
+}
+
+func (s *System) matchPaused() bool {
+	return s.debugPaused() || s.motifPauseGame()
+}
+
+func (s *System) motifPauseMusic() bool {
+	if s.motif.ch.active && s.motif.ch.counter >= s.motif.ChallengerInfo.Pause.Time {
+		return true
+	}
+	return false
+}
+
 // "Tick frames" are the frames where most of the game logic happens
 func (s *System) tickFrame() bool {
 	return (!s.paused || s.frameStepFlag) && s.oldTickCount < s.tickCount
@@ -2564,6 +2650,10 @@ func (s *System) tickInterpolation() float32 {
 		return Clamp(progress, 0, 1)
 	}
 	return 1
+}
+
+func (s *System) uiTick() bool {
+	return s.tickFrame() || s.debugPaused() || s.motif.me.active || s.motif.ch.active
 }
 
 func (s *System) addFrameTime(t float32) bool {
@@ -2712,7 +2802,14 @@ func (s *System) screenright() float32 {
 	return float32(s.stage.screenright) * s.stage.localscl
 }
 
+// Core game logic. Chars, stage, projectiles, etc
+// The part that can rewind and fast forward during rollbacks
 func (s *System) action() {
+	if s.matchPaused() {
+		return
+	}
+
+	// TODO: This and all "cueDraw" could also be separated from action()
 	s.clearSpriteData()
 
 	var x, y, scl float32 = s.cam.Pos[0], s.cam.Pos[1], s.cam.Scale / s.cam.BaseScale()
@@ -2760,6 +2857,10 @@ func (s *System) action() {
 		}
 
 		// Start pause timers
+		// In Mugen, this seems to happen in the same frame the pause is called, after all chars run
+		// Explod pausing behavior backs it up, since they pause immediately in the same frame
+		// But the screen darkening only happens in the next frame and thus lasts 1 frame shorter than expected
+		// Ikemen's way is a bit more consistent, but causes https://github.com/ikemen-engine/Ikemen-GO/issues/3889
 		if s.supertimebuffer < 0 {
 			s.supertimebuffer = ^s.supertimebuffer
 			s.supertime = s.supertimebuffer
@@ -2801,7 +2902,9 @@ func (s *System) action() {
 	// Lifebar and combo must update after character states but before hit detection for accurate detection
 	// So that it allows a combo to still end if a character is hit in the same frame where it exits movetype H
 	fsT0 := perfFSBegin()
-	s.fightScreen.step()
+	if s.tickFrame() {
+		s.fightScreen.step()
+	}
 	perfFSEnd(fsT0)
 
 	if s.tickNextFrame() {
@@ -2819,7 +2922,7 @@ func (s *System) action() {
 		s.runIntroSkip()
 	}
 
-	if !s.cam.ZoomEnable {
+	if !s.cam.zoomEnabled() {
 		// Lower the precision to prevent errors in Pos X.
 		x = float32(math.Ceil(float64(x)*4-0.5) / 4)
 	}
@@ -2852,25 +2955,25 @@ func (s *System) action() {
 	s.explodCueDraw()
 
 	// Adjust game speed
-	if s.tickNextFrame() {
+	if s.tickNextFrame() && !s.motif.me.active {
 		spd := float32(s.gameLogicSpeed()) / float32(s.gameRenderSpeed())
 
 		// KO slowdown
 		if st := s.getSlowtime(); st > 0 {
 			if !s.gsf(GSF_nokoslow) {
-				base := s.fightScreen.round.slow_speed
+				slowSpeed := s.fightScreen.round.slow_speed
 				fade := s.fightScreen.round.slow_fadetime
-				spd *= base
 				if st < fade {
 					ratio := float32(fade-st) / float32(fade)
-					spd = base + (1-base)*ratio
+					slowSpeed += (1 - slowSpeed) * ratio
 				}
+				spd *= slowSpeed
 			}
 			s.slowtime--
 		}
 
-		// Outside match or while frame stepping
-		if s.postMatchFlg || s.frameStepFlag {
+		// While frame stepping
+		if s.frameStepFlag {
 			spd = 1
 		}
 
@@ -2905,7 +3008,21 @@ func (s *System) action() {
 		}
 	}
 
-	// Update motif
+	return
+}
+
+func (s *System) uiAction() {
+	if !s.uiTick() {
+		return
+	}
+
+	if s.escPending {
+		s.esc = true
+		s.escPending = false
+	}
+	s.uiFrameCounter++
+
+	// Step motif
 	// Needs to happen at the very end or pause toggles will get out of sync
 	// https://github.com/ikemen-engine/Ikemen-GO/issues/3080
 	s.motif.step()
@@ -2914,7 +3031,7 @@ func (s *System) action() {
 	s.motif.act()
 
 	// Common Lua calls
-	// Needs to happens after motif update or motif inputs will lag 1 frame
+	// Needs to happen after motif update or motif inputs will lag 1 frame
 	for _, key := range SortedKeys(sys.cfg.Common.Lua) {
 		for _, v := range sys.cfg.Common.Lua[key] {
 			if err := sys.luaLState.DoString(v); err != nil {
@@ -2922,9 +3039,6 @@ func (s *System) action() {
 			}
 		}
 	}
-
-	s.tickSound()
-	return
 }
 
 // Update all projectiles for all players
@@ -2965,6 +3079,13 @@ func (s *System) projectilePrune(pn int) {
 
 // Update all explods for all players
 func (s *System) explodUpdate() {
+	// Checking for pause here fixes explods travelling too far while game is paused
+	// https://github.com/ikemen-engine/Ikemen-GO/issues/1729
+	// Update: this fix is no longer necessary after the sys.action()/sys.uiAction() refactor
+	//if s.paused && !s.frameStepFlag {
+	//	return
+	//}
+
 	// Update each explod in storage order
 	for i := range s.explods {
 		for _, e := range s.explods[i] {
@@ -3189,15 +3310,6 @@ func (s *System) stepRoundState() {
 		return
 	}
 
-	// Fading
-	if !(s.fightScreen.round.fadeOut.isActive() || s.fightScreen.round.fadeIn.isActive()) {
-		if s.motif.fadeOut.isActive() {
-			s.motif.fadeOut.step()
-		} else if s.motif.fadeIn.isActive() {
-			s.motif.fadeIn.step()
-		}
-	}
-
 	// Intros
 	if s.intro > s.fightScreen.round.ctrl_time {
 		s.intro--
@@ -3270,8 +3382,17 @@ func (s *System) stepRoundState() {
 		}
 
 		// Check if player skipped win pose time
-		if !s.winskipped && s.winposetime < 0 && s.anyButton() &&
-			!s.gsf(GSF_roundnotskip) && !matchEndDialoguePending {
+		skipCandidate := !s.winskipped && s.winposetime < 0
+		anyButton := false
+		if skipCandidate {
+			anyButton = s.anyButton()
+		}
+		roundnotskip := s.gsf(GSF_roundnotskip)
+		skipEligible := skipCandidate && anyButton && !roundnotskip && !matchEndDialoguePending
+		if s.rollback.session != nil && s.rollback.session.config.LogsEnabled {
+			s.rollback.session.log.logRoundSkipCheck(fadeoutStart, anyButton, roundnotskip, skipEligible, matchEndDialoguePending)
+		}
+		if skipEligible {
 			s.intro = Min(s.intro, fadeoutStart)
 			s.winskipped = true
 		}
@@ -3308,9 +3429,9 @@ func (s *System) stepRoundState() {
 						if p[0].scf(SCF_over_alive) || p[0].scf(SCF_over_ko) {
 							continue
 						}
-						// Mugen seems to skip this anim 5 check on time overs
-						// It also seems a bit pointless here to begin with because the char has already turned by the time anim 5 starts
-						if p[0].scf(SCF_ctrl) && p[0].ss.moveType == MT_I && p[0].ss.stateType == ST_S && p[0].animNo != 5 {
+						// We used to wait for players that were in animation 5 (turning) here, but that doesn't seem to be the case in Mugen
+						// https://github.com/ikemen-engine/Ikemen-GO/issues/2919
+						if p[0].scf(SCF_ctrl) && p[0].ss.moveType == MT_I && p[0].ss.stateType == ST_S {
 							continue
 						}
 						// Freeze timer if any player is not ready to proceed yet
@@ -3872,6 +3993,18 @@ func (s *System) drawDebugText(logicState drawAspectState) {
 	//}
 }
 
+func (s *System) keepMatchRunning() bool {
+	// Match still in progress
+	if !s.endMatch {
+		return true
+	}
+	// Match ended, but fightscreen fade still needs time to complete
+	if s.fightScreen.round.fadeOut.isActive() {
+		return true
+	}
+	return false
+}
+
 // Starts and runs gameplay
 // Called to start each match, on hard reset with shift+F4,
 // and at the start of any round where a new character tags in for turns mode
@@ -3972,11 +4105,11 @@ func (s *System) runMatch() (reload bool) {
 	// Now switch to rollback if applicable
 	// TODO: More merging so we don't hijack this function at all
 	if s.rollback.session != nil || s.cfg.Netplay.Rollback.DesyncTestFrames > 0 {
-		return s.rollback.hijackRunMatch(s)
+		return s.rollback.hijackRunMatch()
 	}
 
 	// Loop until end of match
-	for !s.endMatch || s.fightScreen.round.fadeOut.isActive() {
+	for s.keepMatchRunning() {
 		s.frameStepFlag = false
 
 		for _, v := range s.shortcutScripts {
@@ -4006,6 +4139,23 @@ func (s *System) runMatch() (reload bool) {
 		actionT0 := perfActionBegin()
 		s.action()
 		perfActionEnd(actionT0)
+
+		// Update motif
+		s.uiAction()
+
+		// Patch: Pause stage videos while game is paused
+		// This is necessary for the time being because videos are paused in the stage's action() and pauses now just skip that entirely
+		// TODO: Do this right. Maybe have videos use a "keep playing" signal instead of manually pausing
+		if s.matchPaused() && s.stage != nil {
+			for _, b := range s.stage.bg {
+				if b != nil && b._type == BG_Video && b.video != nil {
+					b.video.SetPlaying(false)
+				}
+			}
+		}
+
+		// Step sounds after both the core game and motif have updated
+		s.tickSound()
 
 		debugInput()
 
@@ -4083,7 +4233,7 @@ func (s *System) runMatch() (reload bool) {
 			break
 		}
 
-		if s.endMatch && !s.fightScreen.round.fadeOut.isActive() {
+		if !s.keepMatchRunning() {
 			break
 		}
 
@@ -4246,8 +4396,16 @@ func (s *System) SetupCharRoundStart() {
 }
 
 func (s *System) runNextRound() bool {
-	if s.roundOver() && !s.fightLoopEnd {
-		if s.holdPostMatchForDialogue() {
+	roundOver := s.roundOver()
+	tickFrame := s.tickFrame()
+	motifEndActive := s.motif.me.active
+	canAdvance := roundOver && !s.fightLoopEnd && (tickFrame || motifEndActive)
+	holdPostMatch := canAdvance && s.holdPostMatchForDialogue()
+	if s.rollback.session != nil && s.rollback.session.config.LogsEnabled && s.intro < 0 {
+		s.rollback.session.log.logRoundAdvanceCheck(roundOver, tickFrame, motifEndActive, s.fightLoopEnd, holdPostMatch, canAdvance)
+	}
+	if canAdvance {
+		if holdPostMatch {
 			return true
 		}
 		s.clearAllSound()
@@ -4321,11 +4479,10 @@ func (s *System) gameLogicSpeed() int32 {
 
 func (s *System) gameRenderSpeed() int {
 	var spd int32
-	if !s.gameRunning || s.rollback.session != nil {
-		// Currently, rendering the motif above 60fps breaks many things, so we'll patch it here
-		// https://github.com/ikemen-engine/Ikemen-GO/issues/2131
-		// Rollback is likewise locked to 60fps anyway, so we'll make it consistent here
-		// TODO: Fix both properly. Motif could interpolate. Rollback should render at Framerate but sync at Gamespeed
+	if !s.gameRunning || s.motif.me.active || s.rollback.session != nil || s.replayFile != nil {
+		// Standalone Lua screens and the Lua-driven pause menu execute one
+		// complete update-and-draw frame per call. Rollback is also fixed at 60 Hz.
+		// TODO: Rollback should render at Framerate but sync at Gamespeed
 		spd = 60
 	} else {
 		spd = int32(s.cfg.Video.Framerate)
@@ -6366,22 +6523,17 @@ func (l *Loader) load() {
 		}
 	}
 
-	/*
-		// This should now be handled by loadSff()
-		sys.loadMutex.Lock()
-		for prefix, ffx := range sys.ffx {
-			if !ffx.isCharFX {
-				continue
-			}
-			if ffx.refCount <= 0 {
-				if ffx.sff != nil {
-					removeSFFCache(ffx.sff.filename)
-				}
-				delete(sys.ffx, prefix)
-			}
+	// Release char FFX that are no longer needed
+	sys.loadMutex.Lock()
+	for prefix, ffx := range sys.ffx {
+		if ffx == nil || !ffx.isCharFX {
+			continue
 		}
-		sys.loadMutex.Unlock()
-	*/
+		if ffx.refCount <= 0 {
+			delete(sys.ffx, prefix)
+		}
+	}
+	sys.loadMutex.Unlock()
 
 	playerSlotsEnd := len(sys.chars) - MaxAttachedChar
 	charDone, stageDone := make([]bool, len(sys.chars)), stagedTurns
@@ -6507,16 +6659,30 @@ func (l *Loader) load() {
 }
 
 func (l *Loader) reset() {
-	if l.state != LS_NotYet {
+	// Already idle
+	if l.state == LS_NotYet {
+		return
+	}
+
+	if l.state == LS_Loading {
 		// Ensure the loader goroutine gets a cooperative cancel signal.
 		l.requestCancel()
 		l.state = LS_Cancel
 		<-l.loadExit
-		l.state = LS_NotYet
+	} else {
+		// Loader already stopped
+		// Don't wait on loadExit because that can hang if nothing is left to receive
+		select {
+		case <-l.loadExit:
+		default:
+		}
 	}
+	l.state = LS_NotYet
 	l.err = nil
 	l.cancelCh = nil
 	l.cancelOnce = sync.Once{}
+
+	// Drop palette selections from a cancelled load
 	for i := range sys.cgi {
 		keepPreloadedTurnsPal := sys.cfg.Config.TurnsLoading && sys.roundNo > 1 && sys.tmode[i&1] == TM_Turns
 		if sys.roundsExisted[i&1] == 0 && !keepPreloadedTurnsPal {

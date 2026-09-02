@@ -1601,6 +1601,15 @@ func systemScriptInit(l *lua.LState) {
 		palIdx := a.anim.palettedata.SelectablePalIndex(palNum)
 		if len(a.anim.palettedata.paletteMap) > 0 {
 			a.anim.palettedata.paletteMap[0] = palIdx
+			// SFFv1 may have duplicate base palettes mapped to palette 1.
+			if a.anim.sff.header.Version[0] == 1 && len(a.anim.palettedata.paletteMap) > 1 {
+				for _, spr := range a.anim.sff.sprites {
+					if spr != nil && spr.sffv1BasePal {
+						a.anim.palettedata.paletteMap[1] = palIdx
+						break
+					}
+				}
+			}
 		}
 		l.Push(newUserData(l, a))
 		return 1
@@ -2159,7 +2168,8 @@ func systemScriptInit(l *lua.LState) {
 		if !nilArg(l, 5) {
 			scl = float32(numArg(l, 5))
 		}
-		// BGDef.Draw mutates BGDef state (time/BGCtrl/anim). Copying BGDef makes those updates happen on the copy only. Keep a pointer to the live BGDef.
+		bg.step()
+		// Keep a pointer to the live BGDef for deferred drawing.
 		bgLocal := bg
 		layerLocal := layer
 		xLocal, yLocal, sclLocal := x, y, scl
@@ -2533,9 +2543,6 @@ func systemScriptInit(l *lua.LState) {
 		  `false` otherwise.
 		function enterReplay(path) end*/
 		sys.sessionWarning = ""
-		if sys.cfg.Video.VSync >= 0 {
-			sys.window.SetSwapInterval(1) // broken frame skipping when set to 0
-		}
 		sys.chars = [len(sys.chars)][]*Char{}
 		sys.replayFile = OpenReplayFile(strArg(l, 1))
 		if sys.replayFile != nil {
@@ -2591,9 +2598,6 @@ func systemScriptInit(l *lua.LState) {
 		function exitReplay() end*/
 		if err := sys.endSyncSessionOverride(); err != nil {
 			l.RaiseError(err.Error())
-		}
-		if sys.cfg.Video.VSync >= 0 {
-			sys.window.SetSwapInterval(sys.cfg.Video.VSync)
 		}
 		if sys.replayFile != nil {
 			sys.replayFile.Close()
@@ -2998,6 +3002,7 @@ func systemScriptInit(l *lua.LState) {
 		sys.keyInput = KeyUnknown
 		sys.luaDiscardDrawQueue()
 		sys.gameRunning = true
+		sys.escPending = false
 		sys.motif.fadeIn.reset()
 		sys.motif.fadeOut.reset()
 		sys.endMatch = false
@@ -3143,14 +3148,21 @@ func systemScriptInit(l *lua.LState) {
 				// Match loop
 				if sys.runMatch() {
 					// Match is restarting
+					for _, reload := range sys.reloadCharSlot {
+						if reload {
+							sys.releaseReloadingCharFx()
+							break
+						}
+					}
 					for i, reload := range sys.reloadCharSlot {
 						if !reload {
 							continue
 						}
-						if sys.cgi[i].sff != nil && !sys.cfg.Debug.KeepSpritesOnReload {
-							// removeSFFCache(sys.cgi[i].sff.filename)
+						// Drop sprites and sounds so that the cache systems won't reuse them
+						if !sys.cfg.Debug.KeepSpritesOnReload {
 							sys.cgi[i].sff = nil
 						}
+						sys.cgi[i].snd = nil
 						sys.cgi[i].customShaders = nil
 						if sys.reloadPreserveVars[i] {
 							sys.saveCharVars(i)
@@ -3241,6 +3253,7 @@ func systemScriptInit(l *lua.LState) {
 			// If not restarting match
 			if winp != -2 {
 				sys.esc = false
+				sys.escPending = false
 				sys.keyInput = KeyUnknown
 				if sys.gameMode == "challenger" {
 					sys.statsLog.discardCurrentMatch()
@@ -3277,6 +3290,7 @@ func systemScriptInit(l *lua.LState) {
 				sys.consoleText = []string{}
 				sys.stageLoopNo = 0
 				sys.paused = false
+				sys.uiFrameCounter++
 				sys.gameRunning = false
 				sys.clearSpriteData()
 				sys.motif.fadeIn.reset()
@@ -4343,6 +4357,7 @@ func systemScriptInit(l *lua.LState) {
 		@tparam[opt=1.0] float32 scale Uniform scale applied to debug text (both X and Y).
 		function loadDebugFont(filename, scale) end*/
 		ts := NewTextSprite()
+		ts.palfx.ignoreAllPalFX = true
 		f, err := loadFnt(strArg(l, 1), -1)
 		if err != nil {
 			l.RaiseError("\nCan't load %v: %v\n", strArg(l, 1), err.Error())
@@ -5138,18 +5153,20 @@ func systemScriptInit(l *lua.LState) {
 		@tparam string filename glTF model file path.
 		@treturn Model model Model userdata.
 		function modelNew(filename) end*/
-		if !nilArg(l, 1) {
-			mdl, err := loadglTFModel(strArg(l, 1))
-			if err != nil {
-				l.RaiseError("\nCan't load %v: %v\n", strArg(l, 1), err.Error())
-			}
-			sys.mainThreadTask <- func() {
-				gfx.SetModelVertexData(1, mdl.vertexBuffer)
-				gfx.SetModelIndexData(1, mdl.elementBuffer...)
-			}
-			sys.runMainThreadTask()
-			l.Push(newUserData(l, mdl))
+		if nilArg(l, 1) {
+			l.Push(lua.LNil)
+			return 1
 		}
+		mdl, err := loadglTFModel(strArg(l, 1))
+		if err != nil {
+			l.RaiseError("\nCan't load %v: %v\n", strArg(l, 1), err.Error())
+		}
+		sys.mainThreadTask <- func() {
+			gfx.SetModelVertexData(1, mdl.vertexBuffer)
+			gfx.SetModelIndexData(1, mdl.elementBuffer...)
+		}
+		sys.runMainThreadTask()
+		l.Push(newUserData(l, mdl))
 		return 1
 	})
 	luaRegister(l, "modifyGameOption", func(l *lua.LState) int {
@@ -5896,6 +5913,7 @@ func systemScriptInit(l *lua.LState) {
 			sys.motif.fadeIn.step()
 		}
 		sys.stepCommandLists()
+		sys.uiFrameCounter++
 		if !sys.update() {
 			l.RaiseError("<game end>")
 		}
@@ -6903,10 +6921,6 @@ func systemScriptInit(l *lua.LState) {
 		sys.fightScreen.winCounts[tn-1].wins = int32(numArg(l, 2))
 		return 0
 	})
-	//luaRegister(l, "sffCacheDelete", func(l *lua.LState) int {
-	//	removeSFFCache(strArg(l, 1))
-	//	return 0
-	//})
 	luaRegister(l, "sffNew", func(l *lua.LState) int {
 		/*Load an SFF file or create an empty SFF.
 		@function sffNew
@@ -9987,6 +10001,8 @@ func triggerFunctions(l *lua.LState) {
 	luaRegister(l, "p2StateNo", func(*lua.LState) int {
 		if p2 := sys.debugWC.p2(); p2 != nil {
 			l.Push(lua.LNumber(p2.ss.no))
+		} else {
+			l.Push(lua.LNumber(-1))
 		}
 		return 1
 	})

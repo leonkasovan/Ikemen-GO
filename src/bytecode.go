@@ -3800,17 +3800,23 @@ func (be BytecodeExp) run_ex2(c *Char, i *int, oc *Char) {
 	case OC_ex2_explodvar_vel_y:
 		correctScale = true
 		fallthrough
+	case OC_ex2_explodvar_vel_z:
+		correctScale = true
+		fallthrough
 	case OC_ex2_explodvar_accel_x:
 		correctScale = true
 		fallthrough
 	case OC_ex2_explodvar_accel_y:
 		correctScale = true
 		fallthrough
-	case OC_ex2_explodvar_friction_x:
+	case OC_ex2_explodvar_accel_z:
 		correctScale = true
 		fallthrough
+	case OC_ex2_explodvar_friction_x:
+		fallthrough
 	case OC_ex2_explodvar_friction_y:
-		correctScale = true
+		fallthrough
+	case OC_ex2_explodvar_friction_z:
 		fallthrough
 	case OC_ex2_explodvar_anim:
 		fallthrough
@@ -6401,7 +6407,15 @@ func (sc explod) Run(c *Char, _ []int32) bool {
 		case explod_projection:
 			e.projection = Projection(exp[0].evalI(c))
 		case explod_window:
-			e.window = [4]float32{exp[0].evalF(c) * redirscale, exp[1].evalF(c) * redirscale, exp[2].evalF(c) * redirscale, exp[3].evalF(c) * redirscale}
+			// In Mugen, BG windows require at least 4 values to work. So we'll do the same in sctrl's
+			if len(exp) >= 4 {
+				e.window[0] = exp[0].evalF(c) * redirscale
+				e.window[1] = exp[1].evalF(c) * redirscale
+				e.window[2] = exp[2].evalF(c) * redirscale
+				e.window[3] = exp[3].evalF(c) * redirscale
+			} else {
+				sys.appendToConsole(crun.warn() + "invalid explod window")
+			}
 		case explod_shader:
 			shader := exp[0].evalS()
 			if shader == "" || sys.isValidCustomShader(shader) {
@@ -7029,9 +7043,16 @@ func (sc modifyExplod) Run(c *Char, _ []int32) bool {
 					e.fLength = exp[0].evalF(c)
 				})
 			case explod_window:
-				eachExpl(func(e *Explod) {
-					e.window = [4]float32{exp[0].evalF(c) * redirscale, exp[1].evalF(c) * redirscale, exp[2].evalF(c) * redirscale, exp[3].evalF(c) * redirscale}
-				})
+				if len(exp) >= 4 {
+					eachExpl(func(e *Explod) {
+						e.window[0] = exp[0].evalF(c) * redirscale
+						e.window[1] = exp[1].evalF(c) * redirscale
+						e.window[2] = exp[2].evalF(c) * redirscale
+						e.window[3] = exp[3].evalF(c) * redirscale
+					})
+				} else {
+					sys.appendToConsole(crun.warn() + "invalid explod window")
+				}
 			case explod_ignorehitpause:
 				ihp := exp[0].evalB(c)
 				eachExpl(func(e *Explod) {
@@ -7571,7 +7592,7 @@ func (sc hitDef) runSub(c *Char, hd *HitDef, paramID byte, exp []BytecodeExp) {
 		if n < 0 || n > 2 {
 			// TODO: We should do this in more parameters
 			// This could also be more specific and use crun, but right now adding that to runSub is more trouble than it's worth
-			sys.appendToConsole(c.warn() + fmt.Sprintf("invalid teamside: %d", n))
+			sys.appendToConsole(c.warn() + fmt.Sprintf("invalid HitDef teamside: %d", n))
 		} else {
 			hd.teamside = int(n - 1)
 		}
@@ -11960,7 +11981,7 @@ func (sc changeMovelist) Run(c *Char, _ []int32) bool {
 		return true
 	})
 	if _, ok := crun.gi().movelists[int(v)]; !ok {
-		sys.appendToConsole(c.warn() + fmt.Sprintf("changed to invalid movelist: %d", v))
+		sys.appendToConsole(crun.warn() + fmt.Sprintf("changed to invalid movelist: %d", v))
 		return false
 	}
 	crun.movelist = v
@@ -12640,13 +12661,12 @@ func (sc saveFile) Run(c *Char, _ []int32) bool {
 	switch savedata {
 	case 0: // Map
 		if len(exactKeys) > 0 || len(includeSubstrings) > 0 {
-			// Apply filters
+			// Apply filters in a new map
 			m := make(map[string]float32)
 			// Try exact match
+			// In this case, save the key even if it's not yet initialized
 			for _, key := range exactKeys {
-				if val, ok := crun.mapArray[key]; ok {
-					m[key] = val
-				}
+				m[key] = crun.mapArray[key] // Sets to 0 if key is missing
 			}
 			// Try "include"
 			for _, substr := range includeSubstrings {
@@ -12655,6 +12675,10 @@ func (sc saveFile) Run(c *Char, _ []int32) bool {
 						m[existingKey] = val
 					}
 				}
+			}
+			// Warn if nothing saved
+			if len(m) == 0 {
+				sys.appendToConsole(crun.warn() + "SaveFile: no maps matched filters")
 			}
 			enc.Encode(m)
 		} else {
@@ -12738,28 +12762,33 @@ func (sc loadFile) Run(c *Char, _ []int32) bool {
 			return false
 		}
 		if len(exactKeys) > 0 || len(includeSubstrings) > 0 {
-			// Apply filters
-			for key, val := range loaded {
-				matched := false
+			// Helper to apply filters
+			matchesFilter := func(key string) bool {
 				// Try exact match
 				for _, ek := range exactKeys {
 					if key == ek {
-						matched = true
-						break
+						return true
 					}
 				}
 				// Try "include"
-				if !matched {
-					for _, substr := range includeSubstrings {
-						if strings.Contains(key, substr) {
-							matched = true
-							break
-						}
+				for _, substr := range includeSubstrings {
+					if strings.Contains(key, substr) {
+						return true
 					}
 				}
-				if matched {
+				return false
+			}
+			// Load filtered maps
+			loadedCount := 0
+			for key, val := range loaded {
+				if matchesFilter(key) {
 					crun.mapArray[key] = val
+					loadedCount++
 				}
+			}
+			// Warn if nothing loaded
+			if loadedCount == 0 {
+				sys.appendToConsole(crun.warn() + "LoadFile: no maps matched filters")
 			}
 		} else {
 			// Load all maps
@@ -14361,15 +14390,13 @@ func (sc modifyStageVar) Run(c *Char, _ []int32) bool {
 				s.sdw.offset[1] = exp[1].evalF(c) * scaleratio
 			}
 		case modifyStageVar_shadow_window:
-			s.sdw.window[0] = exp[0].evalF(c) * scaleratio
-			if len(exp) > 1 {
+			if len(exp) >= 4 {
+				s.sdw.window[0] = exp[0].evalF(c) * scaleratio
 				s.sdw.window[1] = exp[1].evalF(c) * scaleratio
-			}
-			if len(exp) > 2 {
 				s.sdw.window[2] = exp[2].evalF(c) * scaleratio
-			}
-			if len(exp) > 3 {
 				s.sdw.window[3] = exp[3].evalF(c) * scaleratio
+			} else {
+				sys.appendToConsole(c.warn() + "invalid shadow.window")
 			}
 		// Reflection group
 		case modifyStageVar_reflection_intensity:
@@ -14411,15 +14438,13 @@ func (sc modifyStageVar) Run(c *Char, _ []int32) bool {
 				s.reflection.offset[1] = exp[1].evalF(c) * scaleratio
 			}
 		case modifyStageVar_reflection_window:
-			s.reflection.window[0] = exp[0].evalF(c) * scaleratio
-			if len(exp) > 1 {
+			if len(exp) >= 4 {
+				s.reflection.window[0] = exp[0].evalF(c) * scaleratio
 				s.reflection.window[1] = exp[1].evalF(c) * scaleratio
-			}
-			if len(exp) > 2 {
 				s.reflection.window[2] = exp[2].evalF(c) * scaleratio
-			}
-			if len(exp) > 3 {
 				s.reflection.window[3] = exp[3].evalF(c) * scaleratio
+			} else {
+				sys.appendToConsole(c.warn() + "invalid reflection.window")
 			}
 		}
 		return true
@@ -14943,7 +14968,14 @@ func (sc transformSprite) Run(c *Char, _ []int32) bool {
 	StateControllerBase(sc).run(c, func(paramID byte, exp []BytecodeExp) bool {
 		switch paramID {
 		case transformSprite_window:
-			crun.window = [4]float32{exp[0].evalF(c) * redirscale, exp[1].evalF(c) * redirscale, exp[2].evalF(c) * redirscale, exp[3].evalF(c) * redirscale}
+			if len(exp) >= 4 {
+				crun.window[0] = exp[0].evalF(c) * redirscale
+				crun.window[1] = exp[1].evalF(c) * redirscale
+				crun.window[2] = exp[2].evalF(c) * redirscale
+				crun.window[3] = exp[3].evalF(c) * redirscale
+			} else {
+				sys.appendToConsole(crun.warn() + "invalid TransformSprite window")
+			}
 		case transformSprite_xshear:
 			crun.xshear = exp[0].evalF(c)
 		case transformSprite_focallength:
@@ -15199,7 +15231,14 @@ func (sc modifyShadow) Run(c *Char, _ []int32) bool {
 				crun.shadowOffset[1] = exp[1].evalF(c) * redirscale
 			}
 		case modifyShadow_window:
-			crun.shadowWindow = [4]float32{exp[0].evalF(c), exp[1].evalF(c), exp[2].evalF(c), exp[3].evalF(c)}
+			if len(exp) >= 4 {
+				crun.shadowWindow[0] = exp[0].evalF(c) * redirscale
+				crun.shadowWindow[1] = exp[1].evalF(c) * redirscale
+				crun.shadowWindow[2] = exp[2].evalF(c) * redirscale
+				crun.shadowWindow[3] = exp[3].evalF(c) * redirscale
+			} else {
+				sys.appendToConsole(crun.warn() + "invalid ModifyShadow window")
+			}
 		case modifyShadow_xscale:
 			crun.shadowXscale = exp[0].evalF(c)
 		case modifyShadow_xshear:
@@ -15292,7 +15331,14 @@ func (sc modifyReflection) Run(c *Char, _ []int32) bool {
 				crun.reflectOffset[1] = exp[1].evalF(c) * redirscale
 			}
 		case modifyReflection_window:
-			crun.reflectWindow = [4]float32{exp[0].evalF(c), exp[1].evalF(c), exp[2].evalF(c), exp[3].evalF(c)}
+			if len(exp) >= 4 {
+				crun.reflectWindow[0] = exp[0].evalF(c) * redirscale
+				crun.reflectWindow[1] = exp[1].evalF(c) * redirscale
+				crun.reflectWindow[2] = exp[2].evalF(c) * redirscale
+				crun.reflectWindow[3] = exp[3].evalF(c) * redirscale
+			} else {
+				sys.appendToConsole(crun.warn() + "invalid ModifyReflection window")
+			}
 		case modifyReflection_xscale:
 			crun.reflectXscale = exp[0].evalF(c)
 		case modifyReflection_xshear:
