@@ -17,10 +17,6 @@ import (
 	"github.com/ikemen-engine/Ikemen-GO/packages/reisen"
 )
 
-func init() {
-	reisen.SetLogLevel(reisen.LogLevelWarning)
-}
-
 // pixelPool is a fixed-size pool of RGBA pixel buffers for a specific frame
 // resolution. Pooling eliminates the per-frame GoBytes allocation in reisen
 // (which was the single largest allocation source: ~1.4 GB/session).

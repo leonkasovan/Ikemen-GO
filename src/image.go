@@ -1925,61 +1925,6 @@ func loadSff(filename string, char bool, isMainThread bool, isActPal bool) (*Sff
 		}
 	}
 
-	memLog("SFF loaded: %s — sprites=%d palettes=%d", filename, len(s.sprites), len(s.palList.palettes))
-
-	// For sprites with large pixel data (>128 KB), eagerly create GPU textures
-	// to free CPU heap memory. Large sprites (character sprites, backgrounds)
-	// are almost always rendered, so the GPU memory tradeoff is worthwhile.
-	// Small sprites (font glyphs, UI elements, etc.) remain lazy so they don't
-	// waste GPU memory if never displayed.
-	//
-	// Uploads are staggered to avoid blocking the main thread for hundreds of
-	// milliseconds: the main-thread path yields periodically to drain the task
-	// queue and poll window events; the loader path enqueues individual sprite
-	// tasks so the frame loop processes one per call to runMainThreadTask().
-	const largeSpriteThreshold int64 = 128 * 1024
-	const batchSize = 10
-	ensureStart := time.Now()
-	largeCount := 0
-
-	// Collect large sprites first (shared between paths).
-	var largeSprites []*Sprite
-	for _, spr := range s.sprites {
-		if spr.pendingDepth != 0 && len(spr.pendingData) > 0 {
-			bpp := int64(spr.pendingDepth) / 8
-			if bpp < 1 {
-				bpp = 1
-			}
-			if int64(spr.pendingW)*int64(spr.pendingH)*bpp > largeSpriteThreshold {
-				largeSprites = append(largeSprites, spr)
-			}
-		}
-	}
-	largeCount = len(largeSprites)
-
-	if isMainThread {
-		// Upload in batches, yielding between batches so the window stays
-		// responsive and the main-thread task queue doesn't starve.
-		for i, spr := range largeSprites {
-			spr.ensureTex()
-			if (i+1)%batchSize == 0 {
-				sys.runMainThreadTask()
-				if loadingCanceled() {
-					return nil, ErrLoadingCanceled
-				}
-			}
-		}
-		memLog("SFF eager ensureTex: %d large sprites uploaded in %v", largeCount, time.Since(ensureStart))
-	} else {
-		// Enqueue individual sprite uploads so the main thread can process
-		// one per frame (via runMainThreadTask) rather than one giant batch.
-		memLog("SFF eager ensureTex: %d large sprites queued for main thread in %v", largeCount, time.Since(ensureStart))
-		for _, spr := range largeSprites {
-			s := spr // capture
-			sys.mainThreadTask <- func() { s.ensureTex() }
-		}
-	}
-
 	return s, nil
 }
 

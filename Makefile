@@ -1,11 +1,11 @@
 # ============================================================================
 # Ikemen-GO — Cross-Platform Makefile (Windows / Linux / macOS)
 #
-# FFmpeg and libxmp are built from source and linked statically. SDL2 is built
-# from source on Windows (static); on Linux/macOS the system SDL2 is used via
-# pkg-config, with a dynamic-from-source fallback on Linux. On Windows the
-# MinGW runtime is also linked statically; on Linux/macOS system libraries
-# (glibc, X11, etc.) are linked dynamically.
+# FFmpeg, libvpx (VP8/VP9 for WebM alpha) and libxmp are built from source and
+# linked statically. SDL2 is built from source on Windows (static); on
+# Linux/macOS the system SDL2 is used via pkg-config, with a dynamic-from-source
+# fallback on Linux. On Windows the MinGW runtime is also linked statically; on
+# Linux/macOS system libraries (glibc, X11, etc.) are linked dynamically.
 #
 # Usage:
 #   make                    # Native build (release)
@@ -63,6 +63,7 @@ SHELL       := /bin/bash
 # Library source URLs (downloaded as zip archives from GitHub)
 SDL2_URL    := https://github.com/libsdl-org/SDL/archive/refs/tags/release-2.32.10.zip
 FFMPEG_URL  := https://github.com/FFmpeg/FFmpeg/archive/refs/tags/n7.1.zip
+LIBVPX_URL  := https://github.com/webmproject/libvpx/archive/refs/tags/v1.15.2.zip
 XMP_URL     := https://github.com/libxmp/libxmp/archive/refs/tags/libxmp-4.7.1.zip
 SCREENPACK_URL := https://github.com/ikemen-engine/Ikemen-GO-Screenpack/archive/refs/heads/master.zip
 
@@ -246,13 +247,16 @@ WINRES_DIR    := $(BUILDDIR)/winres
 # External library source directories
 SDL2_SRCDIR   := $(BUILDDIR)/SDL-release-2.32.10
 FFMPEG_SRCDIR := $(BUILDDIR)/FFmpeg-n7.1
+LIBVPX_SRCDIR := $(BUILDDIR)/libvpx-v1.15.2
 XMP_SRCDIR    := $(BUILDDIR)/libxmp-libxmp-4.7.1
 
 # External library build directories (separate from source, used by CMake builds)
 SDL2_BUILDDIR    := $(BUILDDIR)/build-sdl2
+LIBVPX_BUILDDIR  := $(BUILDDIR)/build-libvpx
 XMP_BUILDDIR     := $(BUILDDIR)/build-xmp
 
-# FFmpeg static library targets
+# Static library targets
+LIBVPX_LIB  := $(BUILD_PREFIX)/lib/libvpx.a
 FFMPEG_LIBS := $(addprefix $(BUILD_PREFIX)/lib/, \
   libavformat.a libavcodec.a libavutil.a \
   libswscale.a libswresample.a libavfilter.a)
@@ -467,7 +471,7 @@ endif
 
 .PHONY: all release debug help \
         deps-check check-go-env vet \
-        ffmpeg xmp sdl2 mugen winres install install-remote fetch-log appbundle \
+        ffmpeg libvpx xmp sdl2 mugen winres install install-remote fetch-log appbundle \
         screenpack \
         clean distclean FORCE
 
@@ -481,7 +485,7 @@ all: release
 # Release Build
 # ============================================================================
 
-release: check-go-env deps-check xmp ffmpeg sdl2 $(BINARY)
+release: check-go-env deps-check xmp libvpx ffmpeg sdl2 $(BINARY)
 	@echo "==> Build successful"
 	@echo "    Binary: $(BINARY)"
 
@@ -787,6 +791,77 @@ sdl2:
 	esac
 
 # ============================================================================
+# libvpx Static Library Build (VP8/VP9 decoder for WebM alpha)
+# URL defined above as $(LIBVPX_URL)
+# Decoder-only static build — no encoders/tools/docs, ~1.5 MB, linked into
+# libavcodec for WebM alpha (second VP8/VP9 payload). Mirrors
+# tools/build.sh:build_libvpx (v1.15.2) like libxmp's static CMake build.
+# ============================================================================
+
+ifeq ($(GOOS)_$(GOARCH),windows_amd64)
+  LIBVPX_TARGET := x86_64-win64-gcc
+else ifeq ($(GOOS)_$(GOARCH),windows_386)
+  LIBVPX_TARGET := x86-win32-gcc
+else ifeq ($(GOOS)_$(GOARCH),darwin_amd64)
+  LIBVPX_TARGET := x86_64-darwin20-gcc
+else ifeq ($(GOOS)_$(GOARCH),darwin_arm64)
+  LIBVPX_TARGET := arm64-darwin20-gcc
+else ifeq ($(GOOS)_$(GOARCH),linux_amd64)
+  LIBVPX_TARGET := x86_64-linux-gcc
+else ifeq ($(GOOS)_$(GOARCH),linux_arm64)
+  LIBVPX_TARGET := arm64-linux-gcc
+else
+  LIBVPX_TARGET := generic-gnu
+endif
+ifeq ($(LIBVPX_TARGET),generic-gnu)
+  LIBVPX_TARGET_OPT :=
+else
+  LIBVPX_TARGET_OPT := --target="$(LIBVPX_TARGET)"
+endif
+
+libvpx: $(LIBVPX_LIB)
+	@echo "    libvpx $$(PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig" $(PKG_CONFIG) --modversion vpx 2>/dev/null || echo v1.15.2) found"
+
+$(LIBVPX_LIB):
+	@echo "==> Building static libvpx for $(HOST_OS) ($(GOOS)_$(GOARCH) -> $(LIBVPX_TARGET))..."
+	mkdir -p $(BUILDDIR)
+	if [ ! -d "$(LIBVPX_SRCDIR)" ]; then \
+		echo "==> Downloading $(LIBVPX_URL)..."; \
+		if [ ! -f "$(BUILDDIR)/libvpx.zip" ]; then \
+			wget -q "$(LIBVPX_URL)" -O "$(BUILDDIR)/libvpx.zip"; \
+		else \
+			echo "==> Using existing zip: $(BUILDDIR)/libvpx.zip"; \
+		fi; \
+		tmp="$(BUILDDIR)/libvpx.zip-extract"; \
+		rm -rf "$$tmp"; \
+		mkdir -p "$$tmp"; \
+		unzip -q "$(BUILDDIR)/libvpx.zip" -d "$$tmp"; \
+		subdir="$$(find "$$tmp" -mindepth 1 -maxdepth 1 -type d | head -1)"; \
+		rm -rf "$(LIBVPX_SRCDIR)"; \
+		mkdir -p "$(LIBVPX_SRCDIR)"; \
+		cp -a "$$subdir"/. "$(LIBVPX_SRCDIR)"/; \
+		rm -rf "$$tmp" "$(BUILDDIR)/libvpx.zip"; \
+	fi
+	mkdir -p $(LIBVPX_BUILDDIR)
+	cd $(LIBVPX_SRCDIR) && \
+		CC="$(CC)" CXX="$(CXX)" ./configure \
+			--prefix="$(BUILD_PREFIX)" \
+			$(LIBVPX_TARGET_OPT) \
+			--enable-pic \
+			--enable-static --disable-shared \
+			--disable-examples --disable-tools --disable-docs --disable-unit-tests \
+			--disable-install-bins --disable-install-docs \
+			--disable-vp8-encoder --disable-vp9-encoder \
+			--enable-vp8-decoder --enable-vp9-decoder \
+			--disable-webm-io && \
+		make -j2 && \
+		make install
+	@test -f "$(BUILD_PREFIX)/lib/libvpx.a" && \
+		test -f "$(BUILD_PREFIX)/lib/pkgconfig/vpx.pc" || \
+		{ echo "ERROR: libvpx install failed — $(BUILD_PREFIX)/lib/libvpx.a or vpx.pc missing" >&2; exit 1; }
+	@echo "==> libvpx static library installed to: $(BUILD_PREFIX)"
+
+# ============================================================================
 # FFmpeg Static Build (autotools)
 # URL defined above as $(FFMPEG_URL)
 # ============================================================================
@@ -805,9 +880,9 @@ X86ASM := $(shell command -v nasm 2>/dev/null || command -v yasm 2>/dev/null)
 NO_X86ASM := $(if $(or $(filter arm64,$(HOST_ARCH)),$(X86ASM)),,--disable-x86asm)
 
 ffmpeg: $(FFMPEG_LIBS)
-	@echo "    FFmpeg $$(PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig" $(PKG_CONFIG) --modversion libavformat) found"
+	@echo "    FFmpeg $$(PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig" $(PKG_CONFIG) --modversion libavformat) found (libvpx $$(PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig" $(PKG_CONFIG) --modversion vpx 2>/dev/null || echo none))"
 
-$(FFMPEG_LIBS):
+$(FFMPEG_LIBS) &: $(LIBVPX_LIB)
 	@echo "==> Building static FFmpeg for $(HOST_OS) (x86 asm: $(if $(X86ASM),$(X86ASM),disabled))..."
 	mkdir -p $(BUILDDIR)
 	if [ ! -d "$(FFMPEG_SRCDIR)" ]; then
@@ -827,6 +902,16 @@ $(FFMPEG_LIBS):
 		cp -a "$$subdir"/. "$(FFMPEG_SRCDIR)"/
 		rm -rf "$$tmp" "$(BUILDDIR)/FFmpeg.zip"
 	fi
+	@# Wrap nasm to silence deprecated $ hex warning (FFmpeg n7.1 yuv2yuvX.asm:128)
+	@# nasm 2.16+ warns on `$0x` style; FFmpeg uses it via x86inc.asm macros. Wrapper adds -w.
+	if [ -n "$(X86ASM)" ] && echo "$(X86ASM)" | grep -q nasm; then \
+		mkdir -p "$(BUILD_PREFIX)/bin"; \
+		printf '#!/bin/sh\nexec nasm -w-number-deprecated-hex "$$@"\n' > "$(BUILD_PREFIX)/bin/nasm-wrapper"; \
+		chmod +x "$(BUILD_PREFIX)/bin/nasm-wrapper"; \
+		X86ASM_WRAPPER="$(BUILD_PREFIX)/bin/nasm-wrapper"; \
+	else \
+		X86ASM_WRAPPER="$(X86ASM)"; \
+	fi; \
 	@# FFmpeg's configure is a plain POSIX sh script. Run it under `sh` so it
 	@# works everywhere: MSYS2/Linux/macOS sh is bash/dash (FFmpeg supports
 	@# both), and w64devkit's busybox ash handles it fine too — while `bash`
@@ -840,13 +925,14 @@ $(FFMPEG_LIBS):
 			--disable-debug --disable-doc --disable-programs --disable-everything \
 			--disable-autodetect --disable-avdevice --disable-pthreads \
 			$(if $(NO_X86ASM),--disable-x86asm,) \
-			$(if $(X86ASM),--x86asmexe="$(X86ASM)",) \
+			$(if $(X86ASM),--x86asmexe="$$X86ASM_WRAPPER",) \
 			--enable-avformat --enable-avcodec --enable-avutil \
 			--enable-swresample --enable-swscale \
 			--enable-avfilter --enable-filter=buffer,buffersink,format,scale,pad,crop \
 			--enable-protocol=file \
 			--enable-demuxer=matroska,webm \
-			--enable-decoder=vp8,vp9,opus,vorbis \
+			--enable-libvpx \
+			--enable-decoder=libvpx_vp8,libvpx_vp9,opus,vorbis \
 			--enable-parser=vp8,vp9,opus,vorbis \
 			--cc="$(CC)" \
 			--pkg-config="$$(which pkg-config)" && \
@@ -1261,7 +1347,8 @@ help:
 	@echo 'Targets:'
 	@echo '  all / release  Build release binary'
 	@echo '  debug          Debug build (console + memory instrumentation)'
-	@echo '  ffmpeg         Build static FFmpeg libraries'
+	@echo '  ffmpeg         Build static FFmpeg libraries (with libvpx for WebM alpha)'
+	@echo '  libvpx         Build static libvpx decoder (VP8/VP9 for WebM alpha)'
 	@echo '  xmp            Build static XMP library'
 	@echo '  sdl2           Verify/build SDL2: static from source on Windows;'
 	@echo '                 system lib via pkg-config on Linux/macOS, with a'
@@ -1313,7 +1400,7 @@ help:
 	@echo 'Platform notes:'
 	@echo '  SDL2: Static from source (Windows); system lib via pkg-config'
 	@echo '        (Linux/macOS); dynamic from source fallback on Linux.'
-	@echo '  FFmpeg/XMP: Built from source on all platforms.'
+	@echo '  FFmpeg/libvpx/XMP: Built from source on all platforms (libvpx decoder-only for WebM alpha).'
 	@echo '  Windows: Fully static binary (no external DLLs at runtime).'
 	@echo '  Linux:   SDL2/FFmpeg/XMP compiled in; system libs dynamic.'
 	@echo '           Go < 1.22 auto-installs the latest Go to /usr/local/go'
