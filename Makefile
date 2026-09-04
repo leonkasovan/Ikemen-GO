@@ -772,14 +772,14 @@ sdl2:
 	@case "$(HOST_OS)" in \
 		windows) \
 			$(MAKE) -s $(BUILD_PREFIX)/lib/libSDL2.a; \
-			echo "    Local SDL2 $$(PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig" $(PKG_CONFIG) --modversion sdl2) found";; \
+			echo "    Local SDL2 $$($(PKG_CONFIG) --with-path="$(BUILD_PREFIX)/lib/pkgconfig" --modversion sdl2 2>/dev/null || echo unknown) found";; \
 		linux) \
 			if pkg-config --exists sdl2; then \
 				echo "    SDL2 $$($(PKG_CONFIG) --modversion sdl2) found (system or local)"; \
 			else \
 				echo "==> System SDL2 not found — building dynamic SDL2 from source..."; \
 				$(MAKE) -s $(BUILD_PREFIX)/lib/libSDL2.so; \
-				echo "    Local SDL2 $$(PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig" $(PKG_CONFIG) --modversion sdl2) found"; \
+				echo "    Local SDL2 $$($(PKG_CONFIG) --with-path="$(BUILD_PREFIX)/lib/pkgconfig" --modversion sdl2 2>/dev/null || echo unknown) found"; \
 			fi;; \
 		*) \
 			pkg-config --exists sdl2 || { \
@@ -820,7 +820,7 @@ else
 endif
 
 libvpx: $(LIBVPX_LIB)
-	@echo "    libvpx $$(PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig" $(PKG_CONFIG) --modversion vpx 2>/dev/null || echo v1.15.2) found"
+	@echo "    libvpx $$($(PKG_CONFIG) --with-path="$(BUILD_PREFIX)/lib/pkgconfig" --modversion vpx 2>/dev/null || echo v1.15.2) found"
 
 $(LIBVPX_LIB):
 	@echo "==> Building static libvpx for $(HOST_OS) ($(GOOS)_$(GOARCH) -> $(LIBVPX_TARGET))..."
@@ -880,7 +880,7 @@ X86ASM := $(shell command -v nasm 2>/dev/null || command -v yasm 2>/dev/null)
 NO_X86ASM := $(if $(or $(filter arm64,$(HOST_ARCH)),$(X86ASM)),,--disable-x86asm)
 
 ffmpeg: $(FFMPEG_LIBS)
-	@echo "    FFmpeg $$(PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig" $(PKG_CONFIG) --modversion libavformat) found (libvpx $$(PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig" $(PKG_CONFIG) --modversion vpx 2>/dev/null || echo none))"
+	@echo "    FFmpeg $$($(PKG_CONFIG) --with-path="$(BUILD_PREFIX)/lib/pkgconfig" --modversion libavformat 2>/dev/null || echo unknown) found (libvpx $$($(PKG_CONFIG) --with-path="$(BUILD_PREFIX)/lib/pkgconfig" --modversion vpx 2>/dev/null || echo none))"
 
 $(FFMPEG_LIBS) &: $(LIBVPX_LIB)
 	@echo "==> Building static FFmpeg for $(HOST_OS) (x86 asm: $(if $(X86ASM),$(X86ASM),disabled))..."
@@ -912,6 +912,15 @@ $(FFMPEG_LIBS) &: $(LIBVPX_LIB)
 	else \
 		X86ASM_WRAPPER="$(X86ASM)"; \
 	fi
+	@# Wrap pkg-config so FFmpeg's configure can find the locally built .pc
+	@# files: MSYS2's pkgconf ignores the PKG_CONFIG_LIBDIR/PKG_CONFIG_PATH
+	@# env vars make exports, but every pkg-config honors --with-path (same
+	@# trick as the version echoes above). Regenerated on each run so the
+	@# embedded prefix can never go stale.
+	mkdir -p "$(BUILD_PREFIX)/bin"; \
+	_PKGC="$$(command -v pkg-config || echo pkg-config)"; \
+	printf '#!/bin/sh\nexec "%s" --with-path="%s" "$$@"\n' "$$_PKGC" "$(BUILD_PREFIX)/lib/pkgconfig" > "$(BUILD_PREFIX)/bin/pkg-config-local"; \
+	chmod +x "$(BUILD_PREFIX)/bin/pkg-config-local"
 	@# FFmpeg's configure is a plain POSIX sh script. Run it under `sh` so it
 	@# works everywhere: MSYS2/Linux/macOS sh is bash/dash (FFmpeg supports
 	@# both), and w64devkit's busybox ash handles it fine too — while `bash`
@@ -935,7 +944,7 @@ $(FFMPEG_LIBS) &: $(LIBVPX_LIB)
 			--enable-decoder=libvpx_vp8,libvpx_vp9,opus,vorbis \
 			--enable-parser=vp8,vp9,opus,vorbis \
 			--cc="$(CC)" \
-			--pkg-config="$$(which pkg-config)" && \
+			--pkg-config="$(BUILD_PREFIX)/bin/pkg-config-local" && \
 		make -j2 && \
 		make install
 	@# Verify local FFmpeg libraries were installed — fail immediately if not,
@@ -957,7 +966,7 @@ XMP_LIB    := $(BUILD_PREFIX)/lib/libxmp.a
 xmp: $(XMP_LIB)
 	@# Remove any shared import lib (Windows-specific, no-op elsewhere).
 	@rm -f "$(BUILD_PREFIX)/lib/libxmp.dll.a"
-	@echo "    XMP $$(PKG_CONFIG_PATH="$(BUILD_PREFIX)/lib/pkgconfig" $(PKG_CONFIG) --modversion libxmp) found"
+	@echo "    XMP $$($(PKG_CONFIG) --with-path="$(BUILD_PREFIX)/lib/pkgconfig" --modversion libxmp 2>/dev/null || echo unknown) found"
 
 $(XMP_LIB):
 	@echo "==> Building static libxmp for $(HOST_OS)..."
