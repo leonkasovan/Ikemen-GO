@@ -911,7 +911,7 @@ $(FFMPEG_LIBS) &: $(LIBVPX_LIB)
 		X86ASM_WRAPPER="$(BUILD_PREFIX)/bin/nasm-wrapper"; \
 	else \
 		X86ASM_WRAPPER="$(X86ASM)"; \
-	fi; \
+	fi
 	@# FFmpeg's configure is a plain POSIX sh script. Run it under `sh` so it
 	@# works everywhere: MSYS2/Linux/macOS sh is bash/dash (FFmpeg supports
 	@# both), and w64devkit's busybox ash handles it fine too — while `bash`
