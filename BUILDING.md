@@ -1,9 +1,9 @@
 # Building Ikemen GO
 
 Ikemen GO links against **SDL2** (windowing, input, and game controller support via go-sdl2),
-**FFmpeg** (background video: VP9/Opus/Vorbis in WebM/Matroska), and **libxmp** (module music:
-MOD/XM/S3M/IT, etc.). All three are **built from source** by the Makefile and linked
-statically into the binary.
+**FFmpeg** (background video: VP9/Opus/Vorbis in WebM/Matroska), **libvpx** (VP8/VP9 decoder
+for WebM alpha, linked into FFmpeg), and **libxmp** (module music: MOD/XM/S3M/IT, etc.).
+All of them are **built from source** by the Makefile and linked statically into the binary.
 
 On **Windows**, the MinGW runtime is also linked statically — the `.exe` needs only
 Windows system DLLs at runtime.
@@ -21,7 +21,7 @@ make install            # assemble runnable distribution in deploy/
 make install-remote     # scp the binary to a device (opt-in, see below)
 ```
 
-> The first build downloads and compiles SDL2, FFmpeg, and libxmp from source.
+> The first build downloads and compiles SDL2, FFmpeg, libvpx, and libxmp from source.
 > Subsequent builds skip download if sources exist and skip compilation if the
 > static libraries are already cached.
 
@@ -36,7 +36,7 @@ build/linux_arm64/      Linux aarch64/arm64
 build/darwin_arm64/     macOS Apple Silicon (darwin_amd64 for Intel)
 ```
 
-Each platform keeps its own SDL2/FFmpeg/XMP libraries, Windows resources, and
+Each platform keeps its own SDL2/FFmpeg/libvpx/XMP libraries, Windows resources, and
 binary, so you can build for several targets on one machine without one
 platform's artifacts clobbering another's.
 
@@ -59,7 +59,7 @@ pacman -S --noconfirm git make mingw-w64-x86_64-pkg-config \
 pacman -S --noconfirm wget unzip
 ```
 
-> System libraries (SDL2, libxmp) are **not** needed — all three are built from source.
+> System libraries (SDL2, libxmp, libvpx) are **not** needed — all four are built from source.
 > `mingw-w64-x86_64-yasm` is optional (nasm covers the assembler needs).
 >
 > On MSYS2 the Makefile auto-fixes "trimmed" Go by setting `GOROOT=/mingw64/lib/go`.
@@ -71,6 +71,7 @@ pacman -S --noconfirm wget unzip
 |----------|-------------|------------|
 | SDL2     | CMake       | https://github.com/libsdl-org/SDL (release-2.32.10) |
 | FFmpeg   | autotools   | https://github.com/FFmpeg/FFmpeg (n7.1, minimal config) |
+| libvpx   | autotools   | https://github.com/webmproject/libvpx (v1.15.2, decoder-only: VP8/VP9) |
 | libxmp   | CMake       | https://github.com/libxmp/libxmp (libxmp-4.7.1) |
 
 ### Build targets
@@ -80,6 +81,7 @@ pacman -S --noconfirm wget unzip
 | `make` / `make release` | Release build → binary (GUI subsystem on Windows) |
 | `make config=debug`  | Debug build (console + memory instrumentation) |
 | `make ffmpeg`        | Build FFmpeg libraries only |
+| `make libvpx`        | Build libvpx only (static VP8/VP9 decoder for WebM alpha) |
 | `make xmp`           | Build libxmp only |
 | `make sdl2`          | Build SDL2 only |
 | `make screenpack`    | Clone/update Elecbyte screenpack into `deploy/` |
@@ -286,7 +288,7 @@ make -j8
 make install
 ```
 
-> FFmpeg and libxmp are always built from source. SDL2: system lib via
+> FFmpeg, libvpx, and libxmp are always built from source. SDL2: system lib via
 > pkg-config is preferred; the Makefile falls back to building a dynamic
 > `libSDL2.so` from source when no system SDL2 is installed.
 >
@@ -334,7 +336,7 @@ MESA_GL_VERSION_OVERRIDE=2.1 ./build/linux_amd64/Ikemen_GO.amd64
 
 > The Makefile builds natively for the **host** platform. To produce a
 > different target (e.g. `build/linux_arm64` from an x86-64 machine) you need
-> cross toolchains (cross gcc, arm64 SDL2/FFmpeg/XMP builds, etc.) — the
+> cross toolchains (cross gcc, arm64 SDL2/FFmpeg/libvpx/XMP builds, etc.) — the
 > Makefile alone does not cross-compile.
 
 ---
@@ -348,8 +350,8 @@ brew install git make cmake pkg-config go nasm wget sdl2 molten-vk
 ```
 
 > MoltenVK is required for the Vulkan renderer on macOS.
-> SDL2 is used via pkg-config (`brew install sdl2`); FFmpeg and libxmp are
-> always built from source.
+> SDL2 is used via pkg-config (`brew install sdl2`); FFmpeg, libvpx, and libxmp
+> are always built from source.
 
 ### Build
 
@@ -693,13 +695,14 @@ Then use `top` to see what grew (positive = more allocations in current).
 ## Notes & licensing
 
 - The minimal FFmpeg we build matches CI: static libs only; `file` protocol;
-  Matroska/WebM demuxers; VP9/Opus/Vorbis decoders and parsers; no FFmpeg CLI tools.
+  Matroska/WebM demuxers; VP8/VP9 decoded via libvpx plus Opus/Vorbis decoders and
+  parsers; no FFmpeg CLI tools.
 - FFmpeg is used under **LGPL v2.1**; releases attach the corresponding source snapshot.
-- On Windows, the Makefile builds SDL2, FFmpeg, and libxmp from source and links them
-  fully statically (including the MinGW runtime). The resulting `.exe` needs only
-  Windows system DLLs at runtime.
-- On Linux/macOS, SDL2, FFmpeg, and libxmp are compiled into the binary while system
-  libraries (glibc, X11, frameworks) remain dynamically linked.
+- On Windows, the Makefile builds SDL2, FFmpeg, libvpx, and libxmp from source and
+  links them fully statically (including the MinGW runtime). The resulting `.exe`
+  needs only Windows system DLLs at runtime.
+- On Linux/macOS, SDL2, FFmpeg, libvpx, and libxmp are compiled into the binary while
+  system libraries (glibc, X11, frameworks) remain dynamically linked.
 - Ikemen GO sources are MIT; bundled screenpack assets have their own licenses.
 
 ---
@@ -711,6 +714,7 @@ Then use `top` to see what grew (positive = more allocations in current).
   or `cmake` via apt/brew (Linux/macOS).
 - **SDL2 link errors**: run `make sdl2` separately to verify the SDL2 build completes.
 - **FFmpeg link errors**: run `make ffmpeg` separately to verify the FFmpeg build.
+- **libvpx not found / link errors**: run `make libvpx` separately to verify the libvpx (VP8/VP9) build.
 - **libxmp not found**: run `make xmp` separately to verify the XMP build.
 - **Linux GL compatibility**: try `MESA_GL_VERSION_OVERRIDE=2.1` for a fallback.
 - **Linux (desktop amd64) `gtk+-3.0` / `gl` not found in pkg-config** (cgo deps

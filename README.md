@@ -30,11 +30,13 @@ This repository is a fork of [ikemen-engine/Ikemen-GO](https://github.com/ikemen
 - `HeapMemoryLimit` config with `FreeOSMemory` after loading to keep memory usage in check.
 - Pooled vertex, audio, batch, and video pixel buffers to reduce allocation churn.
 - Lua table caching for config, motif, and select parameters.
-- `pprof` heap debugging support and optional `PerfLog` FPS logging in release builds.
-- Draw call and sprite batch logging options for profiling.
+- `pprof` heap debugging support and optional `PerfLog` frame-timing/FPS logging (debug builds only).
+- Draw call, sprite batch, and framebuffer-switch statistics for profiling.
+- GPU texture memory accounting in debug builds — alive texture count and current/peak GPU bytes reported in the `[Mem]` log.
 
 ### Build & platform support
-- Fully static Windows build — SDL2 and FFmpeg compiled from source, no MinGW/SDL2 DLL dependencies.
+- Fully static Windows build — SDL2, FFmpeg, and libvpx compiled from source, no MinGW/SDL2 DLL dependencies.
+- libvpx built from source (VP8/VP9, decoder-only) and linked into FFmpeg so WebM videos with a VP8/VP9 alpha stream play correctly.
 - Per-platform build directories, Windows toolchain auto-detection, and architecture-suffixed binary names (`Ikemen_GO.amd64.exe`, `*_debug` for debug builds).
 - `make install-remote` to copy the built binary to a device over SSH and `make fetch-log` to pull logs back.
 - Android APK build scripts (via Docker or natively), Android 13 support, and `armeabi-v7a` ABI builds.
@@ -57,13 +59,13 @@ These instructions are for those interested in developing the Ikemen GO engine i
 For setup and platform-specific steps, see [BUILDING.md](./BUILDING.md).
 It covers Windows, Linux (including ARM64), macOS (Apple Silicon and Intel), and Android (APK via Docker).
 
-On **Windows** (MSYS2 MINGW64), a single `make` command builds SDL2, FFmpeg, and libxmp
+On **Windows** (MSYS2 MINGW64), a single `make` command builds SDL2, FFmpeg, libvpx, and libxmp
 from source and produces a fully statically-linked `Ikemen_GO.amd64.exe` with no external
 DLL dependencies (except Windows system DLLs).
 
 On **Linux** and **macOS**, the same Makefile detects your platform and builds a native
 binary — `Ikemen_GO.amd64` / `Ikemen_GO.arm64` on Linux, `Ikemen_GO` on macOS — with
-SDL2, FFmpeg, and libxmp compiled in statically and system libraries linked dynamically.
+SDL2, FFmpeg, libvpx, and libxmp compiled in statically and system libraries linked dynamically.
 
 Use `make config=debug` for a debug build with memory instrumentation, `make install`
 to assemble a runnable installation with screenpack assets, or `make install-remote`

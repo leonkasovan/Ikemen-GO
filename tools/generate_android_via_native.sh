@@ -21,13 +21,14 @@
 #   4.  Android NDK r27d          (cross-compiler for selected ABI)
 #   5.  SDL2 cross-compiled      for Android (into build/android-deps-<ABI>/)
 #   6.  libxmp cross-compiled    for Android
-#   7.  FFmpeg cross-compiled    for Android (minimal: VP9/Opus/Vorbis)
-#   8.  Android SDK cmdline-tools + platform + build-tools
-#   9.  Environment variables     (ANDROID_NDK_HOME, JAVA_HOME, etc.)
-#   10. libmain.so               (Go c-shared build via NDK clang)
-#   11. ikemen-droid source      (downloaded from IKEMEN_DROID_URL → IKEMEN_DROID_DIR)
-#   12. Screenpack assets        (downloaded from leonkasovan/Ikemen-GO-Screenpack → deploy/)
-#   13. APK build + sign         (ikemen-droid Gradle project → build/ikemen-go-<ABI>.apk)
+#   7.  libvpx cross-compiled    for Android (VP8/VP9 decoder for WebM alpha, arm64-v8a)
+#   8.  FFmpeg cross-compiled    for Android (minimal: libvpx VP8/VP9 + Opus/Vorbis)
+#   9.  Android SDK cmdline-tools + platform + build-tools
+#   10. Environment variables     (ANDROID_NDK_HOME, JAVA_HOME, etc.)
+#   11. libmain.so               (Go c-shared build via NDK clang)
+#   12. ikemen-droid source      (downloaded from IKEMEN_DROID_URL → IKEMEN_DROID_DIR)
+#   13. Screenpack assets        (downloaded from leonkasovan/Ikemen-GO-Screenpack → deploy/)
+#   14. APK build + sign         (ikemen-droid Gradle project → build/ikemen-go-<ABI>.apk)
 #
 # Override the target ABI:
 #   ANDROID_ABI=arm64-v8a    ./tools/generate_android_via_native.sh --yes      # 64-bit ARM (default)
@@ -37,7 +38,7 @@
 #   - ikemen-droid source is downloaded automatically from IKEMEN_DROID_URL
 #     (override with IKEMEN_DROID_DIR to use an existing local checkout)
 #   - Screenpack assets are downloaded automatically (override with existing deploy/ dir)
-#   - The script builds libmain.so automatically (step 10)
+#   - The script builds libmain.so automatically (step 12)
 #
 # After running:
 #   build/ikemen-go-${ANDROID_ABI}.apk   # ready to install on Android device
@@ -86,6 +87,9 @@ XMP_URL="${XMP_URL:-https://github.com/libxmp/libxmp/archive/refs/tags/${XMP_VER
 # FFmpeg cross-compilation for Android arm64-v8a
 FFMPEG_VERSION="${FFMPEG_VERSION:-n7.1}"
 FFMPEG_URL="${FFMPEG_URL:-https://github.com/FFmpeg/FFmpeg/archive/refs/tags/${FFMPEG_VERSION}.zip}"
+# libvpx cross-compilation for Android (VP8/VP9 decoder for WebM alpha)
+LIBVPX_VERSION="${LIBVPX_VERSION:-v1.15.2}"
+LIBVPX_URL="${LIBVPX_URL:-https://github.com/webmproject/libvpx/archive/refs/tags/${LIBVPX_VERSION}.zip}"
 # ikemen-droid APK build
 IKEMEN_DROID_DIR="${IKEMEN_DROID_DIR:-$(pwd)/build/android-apk/ikemen-droid}"
 CONFIG="${CONFIG:-release}"
@@ -643,12 +647,118 @@ install_libxmp_android() {
 }
 
 # ────────────────────────────────────────────────────────────────────────────
-# Step 7 — Cross-compile FFmpeg for Android arm64-v8a
+# Step 7 — Cross-compile libvpx for Android (VP8/VP9 decoder for WebM alpha)
+# ────────────────────────────────────────────────────────────────────────────
+
+install_libvpx_android() {
+  echo ""
+  echo "═══ Step 7/12 — Cross-compiling libvpx for Android ${ANDROID_ABI} ═══"
+
+  # Only arm64-v8a is supported: tools/build.sh (CI) maps android/arm64 to
+  # libvpx's arm64-android-gcc target. The armv7-android-gcc target would need
+  # an ARM assembler for its neon_asm sources, so armeabi-v7a keeps FFmpeg's
+  # native vp8/vp9 decoders (no WebM alpha on that ABI).
+  if [[ "$ANDROID_ABI" != "arm64-v8a" ]]; then
+    echo "  ⚠️  Skipping libvpx for ${ANDROID_ABI} (arm64-v8a only) — FFmpeg will use native vp8/vp9 decoders."
+    return
+  fi
+
+  local vpx_pc="$ANDROID_DEPS_PATH/lib/pkgconfig/vpx.pc"
+  local vpx_src="$(pwd)/build/libvpx-${LIBVPX_VERSION}"
+  local vpx_build="$(pwd)/build/libvpx-${LIBVPX_VERSION}-android-${ANDROID_ABI}"
+
+  # Check if already built
+  if [[ -f "$vpx_pc" ]]; then
+    echo "  ✅  libvpx already cross-compiled for Android (${ANDROID_ABI}):"
+    echo "      pkgconfig: $vpx_pc"
+    return
+  fi
+
+  # Verify NDK is installed
+  local toolchain="$NDK_INSTALL_DIR/toolchains/llvm/prebuilt/windows-x86_64"
+  if [[ ! -d "$toolchain" ]]; then
+    echo "❌  NDK toolchain not found at: $toolchain"
+    exit 1
+  fi
+
+  if ! confirm "Cross-compile libvpx ${LIBVPX_VERSION} for Android ${ANDROID_ABI}? (Quick build)"; then
+    echo "  Skipped — FFmpeg will fall back to native vp8/vp9 decoders (no WebM alpha)."
+    return
+  fi
+
+  # --- Download source ---
+  if [[ ! -d "$vpx_src" ]]; then
+    local tmp_zip="/tmp/libvpx-${LIBVPX_VERSION}.zip"
+    echo "==> Downloading libvpx ${LIBVPX_VERSION} source..."
+    wget -q --show-progress "$LIBVPX_URL" -O "$tmp_zip"
+
+    echo "==> Extracting..."
+    mkdir -p "$(dirname "$vpx_src")"
+    unzip -q "$tmp_zip" -d "/tmp/libvpx-extract"
+    local subdir
+    subdir="$(find "/tmp/libvpx-extract" -mindepth 1 -maxdepth 1 -type d | head -1)"
+    mv "$subdir" "$vpx_src"
+    rm -rf "/tmp/libvpx-extract" "$tmp_zip"
+  else
+    echo "    libvpx source already present: $vpx_src"
+  fi
+
+  mkdir -p "$vpx_build"
+  local jobs
+  jobs="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
+
+  # libvpx treats android targets as a standalone NDK build; it uses the
+  # CC/CXX/AR/LD/STRIP env vars (same as tools/build.sh:build_libvpx).
+  local cc_compiler="$toolchain/bin/${NDK_TARGET_TRIPLE}${ANDROID_API}-clang"
+  local cxx_compiler="$toolchain/bin/${NDK_TARGET_TRIPLE}${ANDROID_API}-clang++"
+
+  echo "==> Configuring libvpx for ${ANDROID_ABI} / ${SDK_PLATFORM} (target: arm64-android-gcc)..."
+  (cd "$vpx_build" && \
+    CC="$cc_compiler" CXX="$cxx_compiler" \
+    AR="$toolchain/bin/llvm-ar" LD="$cc_compiler" STRIP="$toolchain/bin/llvm-strip" \
+    ../configure \
+      --prefix="$ANDROID_DEPS_PATH" \
+      --target=arm64-android-gcc \
+      --enable-pic \
+      --enable-static --disable-shared \
+      --disable-examples --disable-tools --disable-docs --disable-unit-tests \
+      --disable-install-bins --disable-install-docs \
+      --disable-vp8-encoder --disable-vp9-encoder \
+      --enable-vp8-decoder --enable-vp9-decoder \
+      --disable-webm-io) || {
+      echo "❌  libvpx configure failed. Check the error above."
+      exit 1
+    }
+
+  echo "==> Building libvpx for Android (${jobs} parallel jobs)..."
+  (cd "$vpx_build" && make -j"$jobs") || {
+    echo "❌  libvpx Android build failed."
+    exit 1
+  }
+
+  echo "==> Installing libvpx to $ANDROID_DEPS_PATH..."
+  (cd "$vpx_build" && make install) || {
+    echo "❌  libvpx Android install failed."
+    exit 1
+  }
+
+  if [[ -f "$vpx_pc" ]]; then
+    echo "✅  libvpx cross-compiled for Android (${ANDROID_ABI}):"
+    echo "      pkgconfig: $vpx_pc"
+    ls -lh "$ANDROID_DEPS_PATH/lib/libvpx.a" 2>/dev/null | awk '{print "      Size: " $5}'
+  else
+    echo "❌  vpx.pc not found after install at: $vpx_pc"
+    exit 1
+  fi
+}
+
+# ────────────────────────────────────────────────────────────────────────────
+# Step 8 — Cross-compile FFmpeg for Android (libvpx VP8/VP9 + Opus/Vorbis)
 # ────────────────────────────────────────────────────────────────────────────
 
 install_ffmpeg_android() {
   echo ""
-  echo "═══ Step 7/12 — Cross-compiling FFmpeg for Android ${ANDROID_ABI} ═══"
+  echo "═══ Step 8/12 — Cross-compiling FFmpeg for Android ${ANDROID_ABI} ═══"
 
   local ffmpeg_pc="$ANDROID_DEPS_PATH/lib/pkgconfig/libavformat.pc"
   local ffmpeg_src="$(pwd)/build/FFmpeg-${FFMPEG_VERSION}"
@@ -708,6 +818,22 @@ install_ffmpeg_android() {
   local jobs
   jobs="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
 
+  # Let FFmpeg's configure find our cross-compiled libvpx (and nothing else).
+  # Mirrors tools/build.sh's Android environment (PKG_CONFIG_LIBDIR + SYSROOT).
+  export PKG_CONFIG_LIBDIR="$ANDROID_DEPS_PATH/lib/pkgconfig"
+  export PKG_CONFIG_SYSROOT_DIR="$ANDROID_DEPS_PATH"
+  export PKG_CONFIG_PATH=""
+
+  # Use libvpx for VP8/VP9 when it was built (step 7) — required for WebM alpha
+  # (a second VP8/VP9 payload). Only arm64-v8a builds libvpx; armeabi-v7a
+  # falls back to FFmpeg's native vp8/vp9 decoders.
+  local libvpx_opts=()
+  local libvpx_decoders="vp8,vp9"
+  if [[ -f "$ANDROID_DEPS_PATH/lib/pkgconfig/vpx.pc" ]]; then
+    libvpx_opts=(--enable-libvpx)
+    libvpx_decoders="libvpx_vp8,libvpx_vp9"
+  fi
+
   echo "==> Configuring FFmpeg for ${FFMPEG_ARCH} / ${SDK_PLATFORM} / ${ANDROID_ABI} (in-tree)..."
   # FFmpeg uses autotools; configure + build in-tree (inside source dir)
   (cd "$ffmpeg_src" && ./configure \
@@ -730,7 +856,8 @@ install_ffmpeg_android() {
     --enable-avfilter --enable-filter=buffer,buffersink,format,scale,pad,crop \
     --enable-protocol=file \
     --enable-demuxer=matroska,webm \
-    --enable-decoder=vp8,vp9,opus,vorbis \
+    "${libvpx_opts[@]}" \
+    --enable-decoder=${libvpx_decoders},opus,vorbis \
     --enable-parser=vp8,vp9,opus,vorbis \
     --enable-jni --enable-mediacodec \
     --pkg-config="$(which pkg-config)") || {
@@ -783,12 +910,12 @@ create_dummy_gl_pc() {
 }
 
 # ────────────────────────────────────────────────────────────────────────────
-# Step 8 — Install Android SDK cmdline-tools + platform-30 + build-tools
+# Step 9 — Install Android SDK cmdline-tools + platform-30 + build-tools
 # ────────────────────────────────────────────────────────────────────────────
 
 install_sdk() {
   echo ""
-  echo "═══ Step 8/12 — Installing Android SDK (${SDK_PLATFORM} + build-tools ${SDK_BUILD_TOOLS}) ═══"
+  echo "═══ Step 9/12 — Installing Android SDK (${SDK_PLATFORM} + build-tools ${SDK_BUILD_TOOLS}) ═══"
 
   if [[ -d "$SDK_INSTALL_DIR/platforms/$SDK_PLATFORM" ]] && \
      [[ -d "$SDK_INSTALL_DIR/build-tools/$SDK_BUILD_TOOLS" ]]; then
@@ -878,12 +1005,12 @@ install_sdk() {
 }
 
 # ────────────────────────────────────────────────────────────────────────────
-# Step 5 — Set up environment variables
+# Step 10 — Set up environment variables
 # ────────────────────────────────────────────────────────────────────────────
 
 setup_env() {
   echo ""
-  echo "═══ Step 9/12 — Setting up environment variables ═══"
+  echo "═══ Step 10/12 — Setting up environment variables ═══"
 
   local bashrc="$HOME/.bashrc"
   local marker="# >>> Ikemen-GO Android 11 toolchain >>>"
@@ -939,7 +1066,7 @@ setup_env() {
 }
 
 # ────────────────────────────────────────────────────────────────────────────
-# Step 10 — Installation summary & verification
+# Step 11 — Installation summary & verification
 # ────────────────────────────────────────────────────────────────────────────
 
 verify_installation() {
@@ -1008,7 +1135,7 @@ verify_installation() {
     echo "      Size: ${sdl2_size:-unknown}, Path: $ANDROID_DEPS_PATH"
   else
     echo "  ❌  SDL2 Android deps not found at: $ANDROID_DEPS_PATH"
-    echo "      Build them with this script (steps 5-7) or re-run."
+    echo "      Build them with this script (steps 5-8) or re-run."
     all_ok=false
   fi
 
@@ -1021,6 +1148,19 @@ verify_installation() {
   else
     echo "  ❌  libxmp not found at: $ANDROID_DEPS_PATH"
     all_ok=false
+  fi
+
+  echo ""
+  echo "── libvpx Android deps ──"
+  local vpx_pc="$ANDROID_DEPS_PATH/lib/pkgconfig/vpx.pc"
+  if [[ -f "$vpx_pc" ]]; then
+    echo "  ✅  libvpx cross-compiled for ${ANDROID_ABI} (VP8/VP9 for WebM alpha)"
+    echo "      pkgconfig: $vpx_pc"
+  elif [[ "$ANDROID_ABI" == "arm64-v8a" ]]; then
+    echo "  ❌  libvpx not found at: $ANDROID_DEPS_PATH"
+    all_ok=false
+  else
+    echo "  ⚠️  libvpx not built for ${ANDROID_ABI} (arm64-v8a only) — FFmpeg uses native vp8/vp9 decoders"
   fi
 
   echo ""
@@ -1072,12 +1212,12 @@ verify_installation() {
 }
 
 # ────────────────────────────────────────────────────────────────────────────
-# Step 10 — Build libmain.so (Android arm64 shared library via NDK + Go)
+# Step 12 — Build libmain.so (Android arm64 shared library via NDK + Go)
 # ────────────────────────────────────────────────────────────────────────────
 
 build_libmain() {
   echo ""
-  echo "═══ Step 11/12 — Building libmain.so (${ANDROID_ABI}) ═══"
+  echo "═══ Step 12/12 — Building libmain.so (${ANDROID_ABI}) ═══"
 
   # --- Validate NDK ---
   local toolchain="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/windows-x86_64"
@@ -1090,7 +1230,7 @@ build_libmain() {
   # --- Validate android-deps (SDL2) ---
   if [[ ! -d "$ANDROID_DEPS_PATH/lib" ]]; then
     echo "❌  SDL2 android deps not found: $ANDROID_DEPS_PATH"
-    echo "   Run steps 5-7 first to cross-compile SDL2/libxmp/FFmpeg."
+    echo "   Run steps 5-8 first to cross-compile SDL2/libxmp/libvpx/FFmpeg."
     exit 1
   fi
 
@@ -1142,12 +1282,12 @@ build_libmain() {
 }
 
 # ────────────────────────────────────────────────────────────────────────────
-# Step 12 — Download ikemen-droid source (for APK build)
+# Step 13 — Download ikemen-droid source (for APK build)
 # ────────────────────────────────────────────────────────────────────────────
 
 download_ikemen_droid_source() {
   echo ""
-  echo "═══ Step 12/12 — Downloading ikemen-droid source ═══"
+  echo "═══ Step 13/12 — Downloading ikemen-droid source ═══"
 
   # If source already exists, skip
   if [[ -d "$IKEMEN_DROID_DIR" ]]; then
@@ -1177,12 +1317,12 @@ download_ikemen_droid_source() {
 }
 
 # ────────────────────────────────────────────────────────────────────────────
-# Step 13 — Download screenpack assets (for APK runtime)
+# Step 14 — Download screenpack assets (for APK runtime)
 # ────────────────────────────────────────────────────────────────────────────
 
 download_screenpack() {
   echo ""
-  echo "═══ Step 13/12 — Downloading screenpack assets ═══"
+  echo "═══ Step 14/12 — Downloading screenpack assets ═══"
 
   local screenpack_url="https://github.com/leonkasovan/Ikemen-GO-Screenpack/archive/refs/heads/master.zip"
   local screenpack_dir="$(pwd)/deploy"
@@ -1274,12 +1414,12 @@ ensure_android_keystore() {
 }
 
 # ────────────────────────────────────────────────────────────────────────────
-# Step 14 — Build APK from local ikemen-droid source
+# Step 15 — Build APK from local ikemen-droid source
 # ────────────────────────────────────────────────────────────────────────────
 
 build_apk() {
   echo ""
-  echo "═══ Step 14/12 — Building Android APK ═══"
+  echo "═══ Step 15/12 — Building Android APK ═══"
 
   # --- Ensure ikemen-droid source is available (download if missing) ---
   if [[ ! -d "$IKEMEN_DROID_DIR" ]]; then
@@ -1297,13 +1437,13 @@ build_apk() {
   local libmain="$ANDROID_BINARY"
   if [[ ! -f "$libmain" ]]; then
     echo "❌  libmain.so not found: $libmain"
-    echo "   Run step 10 (build_libmain) first."
+    echo "   Run step 12 (build_libmain) first."
     exit 1
   fi
 
   if [[ ! -d "$ANDROID_DEPS_PATH/lib" ]]; then
     echo "❌  Android SDL2 deps not found: $ANDROID_DEPS_PATH"
-    echo "   Run the setup script steps 5-7 first."
+    echo "   Run the setup script steps 5-8 first."
     exit 1
   fi
 
@@ -1535,6 +1675,7 @@ install_jdk17
 install_ndk
 install_sdl2_android
 install_libxmp_android
+install_libvpx_android
 install_ffmpeg_android
 install_sdk
 setup_env

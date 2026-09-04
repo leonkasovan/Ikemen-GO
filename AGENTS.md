@@ -35,8 +35,8 @@ make config=debug       # Debug build
 
 ## Build overview
 
-All external libraries (SDL2, FFmpeg, XMP) are **built from source** by the
-Makefile and linked statically into the binary.
+All external libraries (SDL2, FFmpeg, libvpx, XMP) are **built from source** by
+the Makefile and linked statically into the binary.
 
 - **Windows**: `-tags static` activates vendored static SDL2 (`sdl_cgo_static.go`).
   `-static -extldflags '-static'` fully links the MinGW runtime (no DLLs).
@@ -51,6 +51,7 @@ Makefile and linked statically into the binary.
 | `make` / `make release` | Release build |
 | `make config=debug` | Debug build (console + memory instrumentation) |
 | `make ffmpeg` | Build FFmpeg libraries |
+| `make libvpx` | Build libvpx (VP8/VP9 decoder for WebM alpha) |
 | `make xmp` | Build libxmp |
 | `make sdl2` | Build SDL2 |
 | `make screenpack` | Clone/update screenpack |
