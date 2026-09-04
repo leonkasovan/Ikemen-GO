@@ -7087,6 +7087,13 @@ func (sc modifyExplod) Run(c *Char, _ []int32) bool {
 			case explod_shader:
 				s := exp[0].evalS()
 				eachExpl(func(e *Explod) {
+					// If the explod had no shader yet, default to infinite
+					// duration (Explod's shadertime defaults to -1). Without
+					// this, time stays 0 and the shader is cleared on the next
+					// tick, so it would never be visible.
+					if e.customShader.time == 0 {
+						e.customShader.time = -1
+					}
 					e.customShader.name = s
 				})
 			case explod_shaderparam:
@@ -8739,6 +8746,12 @@ func (sc modifyProjectile) Run(c *Char, _ []int32) bool {
 			case projectile_shader:
 				v1 := exp[0].evalS()
 				eachProj(func(p *Projectile) {
+					// Same as ModifyExplod: default to infinite duration when the
+					// projectile had no shader yet, otherwise the shader is
+					// cleared on the next tick.
+					if p.customShader.time == 0 {
+						p.customShader.time = -1
+					}
 					p.customShader.name = v1
 				})
 			case projectile_shaderparam:
@@ -12871,7 +12884,10 @@ func (sc shaderSet) Run(c *Char, _ []int32) bool {
 	if crun == nil {
 		return false
 	}
-	st := int32(1)
+	// Default to infinite duration, matching the shadertime=-1 default of
+	// Explod/Projectile. A duration of 1 tick (the old default) made the
+	// shader vanish before the next frame, so it was never visible.
+	st := int32(-1)
 	StateControllerBase(sc).run(c, func(paramID byte, exp []BytecodeExp) bool {
 		switch paramID {
 		case shaderSet_time:
