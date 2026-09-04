@@ -819,10 +819,11 @@ install_ffmpeg_android() {
   jobs="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
 
   # Let FFmpeg's configure find our cross-compiled libvpx (and nothing else).
-  # Mirrors tools/build.sh's Android environment (PKG_CONFIG_LIBDIR + SYSROOT).
-  export PKG_CONFIG_LIBDIR="$ANDROID_DEPS_PATH/lib/pkgconfig"
-  export PKG_CONFIG_SYSROOT_DIR="$ANDROID_DEPS_PATH"
-  export PKG_CONFIG_PATH=""
+  # MSYS2's pkgconf ignores the PKG_CONFIG_LIBDIR/PKG_CONFIG_PATH env vars
+  # (same quirk that hit the Makefile), so hand configure a pkg-config-local
+  # wrapper that always prepends --with-path. Regenerated here so the embedded
+  # prefix can never go stale.
+  create_pkg_config_local
 
   # Use libvpx for VP8/VP9 when it was built (step 7) — required for WebM alpha
   # (a second VP8/VP9 payload). Only arm64-v8a builds libvpx; armeabi-v7a
@@ -860,7 +861,7 @@ install_ffmpeg_android() {
     --enable-decoder=${libvpx_decoders},opus,vorbis \
     --enable-parser=vp8,vp9,opus,vorbis \
     --enable-jni --enable-mediacodec \
-    --pkg-config="$(which pkg-config)") || {
+    --pkg-config="$ANDROID_DEPS_PATH/bin/pkg-config-local") || {
       echo "❌  FFmpeg configure failed. Check the error above."
       exit 1
     }
@@ -888,6 +889,30 @@ install_ffmpeg_android() {
     echo "❌  FFmpeg pkg-config files not found at: $(dirname "$ffmpeg_pc")"
     exit 1
   fi
+}
+
+# ────────────────────────────────────────────────────────────────────────────
+# Helper — create pkg-config-local wrapper (always passes --with-path to the
+# local .pc dir; mirrors the Makefile's pkg-config-local idiom)
+# ────────────────────────────────────────────────────────────────────────────
+
+create_pkg_config_local() {
+  local wrapper_dir="$ANDROID_DEPS_PATH/bin"
+  local wrapper="$wrapper_dir/pkg-config-local"
+  local pc_dir="$ANDROID_DEPS_PATH/lib/pkgconfig"
+  mkdir -p "$wrapper_dir"
+  # The MSYS2 pkg-config is a native Windows binary: it honors Windows-style
+  # paths in --with-path (and /c/... via MSYS arg translation), but NOT every
+  # MSYS path (e.g. /tmp/... or custom mounts). Embed the cygpath -m form so
+  # the wrapper works no matter how ANDROID_DEPS_PATH was spelled.
+  if command -v cygpath &>/dev/null; then
+    pc_dir="$(cygpath -m "$pc_dir")"
+  fi
+  local pkgc
+  pkgc="$(command -v pkg-config || echo pkg-config)"
+  printf '#!/bin/sh\nexec "%s" --with-path="%s" "$@"\n' "$pkgc" "$pc_dir" > "$wrapper"
+  chmod +x "$wrapper"
+  echo "    pkg-config wrapper: $wrapper (--with-path=$pc_dir)"
 }
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -1252,6 +1277,13 @@ build_libmain() {
   fi
 
   # --- Build ---
+  # Point cgo at the same --with-path pkg-config wrapper used by FFmpeg's
+  # configure. Today the Android cgo build links everything through the
+  # explicit -L/-l flags below (reisen/go-sdl2 use direct -l, no pkg-config
+  # directives for android), so this is a no-op — but it keeps any future
+  # pkg-config lookup consistent with the Makefile approach.
+  create_pkg_config_local
+
   mkdir -p "$(dirname "$ANDROID_BINARY")"
   echo "  GOOS=android GOARCH=${GO_ANDROID_ARCH} CC=$cc"
   echo "  Output: $ANDROID_BINARY"
@@ -1265,9 +1297,7 @@ build_libmain() {
 
   CGO_ENABLED=1 GOOS=android GOARCH=${GO_ANDROID_ARCH} GOEXPERIMENT=arenas \
   CC="$cc" CXX="$cxx" \
-  PKG_CONFIG_LIBDIR="$ANDROID_DEPS_PATH/lib/pkgconfig" \
-  PKG_CONFIG_SYSROOT_DIR="$ANDROID_DEPS_PATH" \
-  PKG_CONFIG_PATH= \
+  PKG_CONFIG="$ANDROID_DEPS_PATH/bin/pkg-config-local" \
   CGO_CFLAGS="-I$deps_include -I$deps_include/SDL2 ${CGO_EXTRA_CFLAGS}" \
   CGO_LDFLAGS="-L$deps_lib -lSDL2 -lGLESv2 -lOpenSLES -llog -Wl,-z,max-page-size=16384 ${CGO_EXTRA_LDFLAGS}" \
   go build -buildmode=c-shared -trimpath -v -tags "$go_tags" \
