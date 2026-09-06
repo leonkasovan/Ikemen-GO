@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -301,6 +300,4 @@ func registerHTTPLib(l *lua.LState) {
 	}))
 
 	l.SetGlobal("http", mod)
-
-	fmt.Println("http library registered")
 }
