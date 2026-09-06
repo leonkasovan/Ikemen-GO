@@ -958,19 +958,7 @@ func (s *System) renderFrame() {
 	}
 	defer s.restoreAspectState(logicState)
 
-	if !s.frameSkip {
-		x, y, scl := s.cam.Pos[0], s.cam.Pos[1], s.cam.Scale/s.cam.BaseScale()
-		dx, dy, dscl := s.zoom.apply(x, y, scl)
-		s.draw(dx, dy, dscl)
-	}
-
-	// Lua
-	if !s.frameSkip {
-		s.luaFlushDrawQueue()
-		// Fullscreen fades are the final scene pass, after all deferred Lua UI.
-		s.fightScreen.drawFade()
-		s.motif.drawFade()
-	} else {
+	if s.frameSkip {
 		// Keep pause-menu logic responsive even when this render frame is skipped.
 		// Any queued draw ops are discarded below because this frame is not being rendered.
 		if s.motif.me.active {
@@ -978,15 +966,24 @@ func (s *System) renderFrame() {
 		}
 		// On skipped frames, discard queued draws to avoid buildup.
 		s.luaDiscardDrawQueue()
+		return
 	}
+
+	x, y, scl := s.cam.Pos[0], s.cam.Pos[1], s.cam.Scale/s.cam.BaseScale()
+	dx, dy, dscl := s.zoom.apply(x, y, scl)
+	s.draw(dx, dy, dscl)
+
+	// Lua
+	s.luaFlushDrawQueue()
+	// Fullscreen fades are the final scene pass, after all deferred Lua UI.
+	s.fightScreen.drawFade()
+	s.motif.drawFade()
 
 	// Render top elements
-	if !s.frameSkip {
-		s.drawTop()
-	}
+	s.drawTop()
 
 	// Render debug elements
-	if !s.frameSkip && s.debugDisplay {
+	if s.debugDisplay {
 		// Re-mask fight-only frames before drawing full-resolution debug panels.
 		if s.middleOfMatch() && !s.motifOverlayActive() {
 			s.motif.drawAspectBars()
@@ -1653,6 +1650,14 @@ func (s *System) uiEnsureCommandLists(total int) error {
 
 func (s *System) netplay() bool {
 	return s.rollback.session != nil || s.netConnection != nil || s.replayFile != nil
+}
+
+func (s *System) usesRollbackMatch() bool {
+	if s.replayFile != nil {
+		return false
+	}
+	return s.rollback.session != nil ||
+		(s.netConnection == nil && s.cfg.Netplay.Rollback.DesyncTestFrames > 0)
 }
 
 func (s *System) escExit() bool {
@@ -2794,6 +2799,26 @@ func (s *System) clearSpriteData() {
 	}
 }
 
+// Centralized call of every cueDraw()
+func (s *System) cueDraw() {
+	// No need to cue when we won't render
+	if s.frameSkip {
+		return
+	}
+
+	// Start fresh each frame
+	s.clearSpriteData()
+
+	for i := range s.projs {
+		for _, p := range s.projs[i] {
+			p.cueDraw()
+		}
+	}
+
+	s.charList.cueDraw()
+	s.explodCueDraw()
+}
+
 func (s *System) screenleft() float32 {
 	return float32(s.stage.screenleft) * s.stage.localscl
 }
@@ -2808,9 +2833,6 @@ func (s *System) action() {
 	if s.matchPaused() {
 		return
 	}
-
-	// TODO: This and all "cueDraw" could also be separated from action()
-	s.clearSpriteData()
 
 	var x, y, scl float32 = s.cam.Pos[0], s.cam.Pos[1], s.cam.Scale / s.cam.BaseScale()
 	s.cam.ResetTracking()
@@ -2886,7 +2908,7 @@ func (s *System) action() {
 
 		// The following must be placed after char action or they will lag behind 1 frame
 		s.allPalFX.step()
-		s.bgPalFX.step()
+		s.bgPalFX.step() // In Mugen, it steps even while the stage is paused
 		s.envShake.update()
 		s.zoom.update()
 		s.nomusic = s.gsf(GSF_nomusic) && !sys.postMatchFlg
@@ -2941,18 +2963,9 @@ func (s *System) action() {
 	}
 	s.charList.xScreenBound()
 
-	for i := range s.projs {
-		for _, p := range s.projs[i] {
-			p.cueDraw()
-		}
-	}
-
-	s.charList.cueDraw()
-
 	// Note: Explod update must happen after hit detection. Because hit sparks are also explods
 	s.explodUpdate()
 	s.charTextsUpdate()
-	s.explodCueDraw()
 
 	// Adjust game speed
 	if s.tickNextFrame() && !s.motif.me.active {
@@ -4093,7 +4106,7 @@ func (s *System) runMatch() (reload bool) {
 
 	if s.cfg.Config.TurnsLoading {
 		s.startNextTurnsPreload()
-		if (s.rollback.session != nil || s.cfg.Netplay.Rollback.DesyncTestFrames > 0) && !s.finishTurnsPreloadForRollback() {
+		if s.usesRollbackMatch() && !s.finishTurnsPreloadForRollback() {
 			return false
 		}
 	}
@@ -4104,7 +4117,7 @@ func (s *System) runMatch() (reload bool) {
 
 	// Now switch to rollback if applicable
 	// TODO: More merging so we don't hijack this function at all
-	if s.rollback.session != nil || s.cfg.Netplay.Rollback.DesyncTestFrames > 0 {
+	if s.usesRollbackMatch() {
 		return s.rollback.hijackRunMatch()
 	}
 
@@ -4237,7 +4250,8 @@ func (s *System) runMatch() (reload bool) {
 			break
 		}
 
-		// Render frame
+		// Cue sprites, then render
+		s.cueDraw()
 		if !s.frameSkip {
 			renderT0 := perfRenderBegin()
 			s.renderFrame()

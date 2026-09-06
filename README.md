@@ -57,7 +57,7 @@ These instructions are for those interested in developing the Ikemen GO engine i
 
 ### Building
 For setup and platform-specific steps, see [BUILDING.md](./BUILDING.md).
-It covers Windows, Linux (including ARM64), macOS (Apple Silicon and Intel), and Android (APK via Docker).
+It covers Windows, Linux, macOS, and Android.
 
 On **Windows** (MSYS2 MINGW64), a single `make` command builds SDL2, FFmpeg, libvpx, and libxmp
 from source and produces a fully statically-linked `Ikemen_GO.amd64.exe` with no external
