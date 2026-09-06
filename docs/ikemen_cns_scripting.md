@@ -309,6 +309,19 @@ type = CtrlSet
 value = 1
 ```
 
+#### ChangeAnim / ChangeAnim2
+Change the animation (ChangeAnim2 also updates the sprite data).
+
+```ini
+type = ChangeAnim
+value = 200          ; Animation number
+elem = 1             ; Start element (optional)
+elemtime = 0         ; Start element time (optional)
+animplayerno = 0     ; Read anim from player (optional, Ikemen)
+spriteplayerno = 0   ; Read sprites from player (optional, Ikemen)
+readplayerid = 0     ; Read from player ID (optional, Ikemen)
+```
+
 ---
 
 ### Life, Power & Resources
@@ -396,16 +409,14 @@ range = 0, 100       ; Min, Max
 ```
 
 #### VarRangeSet
-Set a range of variables at once.
+Set a range of variables at once. Either `value` (int) or `fvalue` (float) is required.
 
 ```ini
 type = VarRangeSet
-value = 0            ; Value to set
+value = 0            ; Value to set (int; omit when using fvalue)
 first = 0            ; First variable index
 last = 59            ; Last variable index
-fvalue = 0.0         ; Float value
-firstfloat = 0
-lastfloat = 39
+fvalue = 0.0         ; Float value alternative
 ```
 
 #### MapSet / MapAdd / MapReset (Ikemen)
@@ -489,18 +500,12 @@ chainid = -1
 nochainid = -1
 
 ; Power (Ikemen extensions)
-hitpower = 0
-guardpower = 0
+dizzypoints = 0
+guardpoints = 0
+redlife = 0, 0                 ; Hit red life, guard red life
 
 ; Score (Ikemen)
-score = 0
-score.guard = 0
-
-; Guard-related (Ikemen)
-guardcount = 1
-guardko = 0
-guarddist = 0
-guardbreak = 0
+score = 0, 0                   ; Hit score, guard score
 ```
 
 **Attribute string format:** `<statetype>, <attack_type>`
@@ -637,7 +642,7 @@ projstagebound = 40
 projheightbound = -240, 1
 offset = 20, -60
 postype = p1                  ; p1, p2, front, back, left, right, none
-projlayer = 0
+projlayerno = 0                ; Ikemen: render layer
 ```
 
 #### ModifyProjectile (Ikemen)
@@ -652,7 +657,7 @@ Create a helper character.
 
 ```ini
 type = Helper
-helpertype = normal           ; normal or player
+helpertype = normal           ; normal, player, or projectile (Ikemen: any `proj*` prefix counts; ZSS requires exactly `projectile`)
 name = "MyHelper"
 id = 1000
 pos = 0, 0
@@ -1108,6 +1113,22 @@ Does nothing. Can be used as a placeholder.
 type = Null
 ```
 
+#### DisplayToClipboard / AppendToClipboard
+Show text (with interpolated expressions) on the debug clipboard. AppendToClipboard adds to existing text.
+
+```ini
+type = DisplayToClipboard
+text = "Life: %i"    ; Format string (required, must be quoted)
+params = life        ; Up to 100 comma-separated expressions for format verbs
+```
+
+#### ClearClipboard
+Clear the debug clipboard.
+
+```ini
+type = ClearClipboard
+```
+
 ---
 
 ### Ikemen-Specific Controllers
@@ -1165,7 +1186,9 @@ Load/save character state snapshots.
 Restart the current match.
 
 #### ModifyBGCtrl / ModifyBGCtrl3d (Ikemen)
-Modify background control elements.
+Modify background control elements. For 3D model nodes/animations (stage
+`[BGCTRL3D]` entries, targeted by the glTF node/animation `id` extra) see
+[`docs/ikemen_3d_models.md`](ikemen_3d_models.md).
 
 #### ModifyBgm (Ikemen)
 Modify background music.
@@ -1187,6 +1210,37 @@ Modify shadow/reflection rendering properties.
 
 #### ModifyText (Ikemen)
 Modify on-screen text objects.
+
+#### RemoveText (Ikemen)
+Remove on-screen text objects.
+
+```ini
+type = RemoveText
+id = -1              ; Text ID, -1 = all
+index = -1           ; Specific index
+```
+
+#### ChangeMovelist (Ikemen)
+Switch the active movelist (selects `movelistN` from the character `.def`).
+
+```ini
+type = ChangeMovelist
+value = 0            ; Movelist index
+```
+
+#### ShaderSet (Ikemen)
+Apply a custom shader with parameters.
+
+```ini
+type = ShaderSet
+time = -1            ; Duration (-1 = infinite)
+shader = "myfx"      ; Shader name (must be quoted)
+shaderparam.p0 = 1.0 ; Custom float params p0-p15
+```
+
+Full parameter set (`shaderparam.p0`–`p15`, `shadertex1.*`/`shadertex2.*`,
+`redirectid`, lifetime semantics) and the fragment-shader authoring guide:
+[`docs/ikemen_custom_shader.md`](ikemen_custom_shader.md).
 
 #### PlayBgm (Ikemen)
 Play background music.
@@ -1271,6 +1325,7 @@ Redirects allow querying another character's properties:
 | Trigger | Return | Description |
 |---------|--------|-------------|
 | `anim` | int | Current animation number |
+| `animelem = N, ...` | bool | Legacy trigger: element N active with optional second comparison |
 | `animelemno(N)` | int | Animation element number at time N |
 | `animelemtime(N)` | int | Time since animation element N started |
 | `animexist(N)` | bool | Does animation N exist |
@@ -1278,9 +1333,12 @@ Redirects allow querying another character's properties:
 | `ctrl` | bool | Does player have control |
 | `facing` | int | Facing direction (1 = right, -1 = left) |
 | `stateno` | int | Current state number |
+| `p2stateno` | int | Opponent's state number |
 | `prevstateno` | int | Previous state number |
 | `statetype` | compare | State type (`= S`, `= C`, `= A`, `= L`) |
+| `p2statetype` | compare | Opponent's state type |
 | `movetype` | compare | Move type (`= I`, `= A`, `= H`) |
+| `p2movetype` | compare | Opponent's move type |
 | `physics` | compare | Physics type (`= S`, `= C`, `= A`, `= N`) (Ikemen) |
 | `time` | int | Ticks in current state |
 | `alive` | bool | Is character alive |
@@ -1378,6 +1436,7 @@ Access via `gethitvar(<property>)`:
 | `ctrltime` | int | Time until control recovery |
 | `xoff` / `yoff` / `zoff` | float | Position offsets |
 | `xvel` / `yvel` / `zvel` | float | Velocities |
+| `xveladd` / `yveladd` | float | Added velocities (Ikemen; no `zveladd`) |
 | `xaccel` / `yaccel` / `zaccel` | float | Acceleration |
 | `chainid` | int | Chain ID |
 | `guarded` | bool | Was the hit guarded |
@@ -1454,6 +1513,7 @@ Access via `gethitvar(<property>)`:
 | Trigger | Return | Description |
 |---------|--------|-------------|
 | `name` | compare | Character name (string comparison) |
+| `helpername` | compare | Helper name (string comparison, Ikemen) |
 | `p1name` ... `p8name` | compare | Player names (p5-p8 Ikemen) |
 | `authorname` | compare | Character author |
 | `displayname` | compare | Display name (Ikemen) |
@@ -1467,6 +1527,7 @@ Access via `gethitvar(<property>)`:
 | `numpartner` | int | Number of partners |
 | `numtarget(ID)` | int | Number of targets |
 | `numexplod(ID)` | int | Number of explods |
+| `numtext([ID])` | int | Number of text entities (Ikemen) |
 | `numproj` | int | Number of active projectiles |
 | `numprojid(ID)` | int | Number of projectiles with specific ID |
 | `parentexist` | bool | Does parent exist |
@@ -1479,7 +1540,6 @@ Access via `gethitvar(<property>)`:
 | `teamleader` | int | Team leader index (Ikemen) |
 | `teamsize` | int | Team size (Ikemen) |
 | `memberno` | int | Member number in team (Ikemen) |
-| `ratiolevel` | int | Ratio level (Ikemen) |
 | `index` | int | Entity index (Ikemen) |
 
 ### Game & Timing Triggers
@@ -1493,6 +1553,12 @@ Access via `gethitvar(<property>)`:
 | `screenheight` | int | Screen pixel height |
 | `camerazoom` | float | Camera zoom level |
 | `tickspersecond` | int | Ticks per second |
+| `timemod` | compare | State time modulo: `timemod = N, <op> V` (N > 0) |
+| `stageconst(name)` | varies | Stage constant by name (Ikemen) |
+| `runorder` | int | Run order (Ikemen) |
+| `lastplayerid` | int | Most recently assigned player ID (Ikemen) |
+| `localcoord x` / `localcoord y` | int | Local coordinate dimensions (Ikemen) |
+| `numstagebg([ID])` | int | Number of stage BG elements (Ikemen) |
 | `ailevel` | int | AI level (0-8) |
 | `ailevelf` | float | AI level as float (Ikemen) |
 | `random` | int | Random number 0-999 |
@@ -1632,6 +1698,7 @@ Access via `animelemvar(<property>)`: `image`, `time`, `group`, `xoffset`, `yoff
 | `xshear` | float | X shear value |
 | `sprpriority` | int | Sprite priority |
 | `layerno` | int | Layer number |
+| `shader` | compare | Active custom shader name, e.g. `shader = "myfx"` (Ikemen). See [`docs/ikemen_custom_shader.md`](ikemen_custom_shader.md). |
 
 #### Combat
 

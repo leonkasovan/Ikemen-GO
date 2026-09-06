@@ -45,7 +45,7 @@ st1 = chars/mychar/extra.zss
 cmd = chars/mychar/mychar.cmd     ; Commands are still in .cmd format
 ```
 
-If a filename in the `.def` doesn't have an extension, Ikemen first tries loading it as-is, then attempts appending `.zss`.
+If the filename cannot be loaded as-is and doesn't already end in `.zss`, Ikemen retries with `.zss` appended to the full name (e.g. `common1.cns` → `common1.cns.zss`, `compiler.go: stateCompile`).
 
 ### File Loading Priority
 
@@ -54,7 +54,14 @@ If a filename in the `.def` doesn't have an extension, Ikemen first tries loadin
 3. Character stcommon (`stcommon`)
 4. Global common states
 
-States loaded later do **not** replace states from earlier files. Negative states can be overridden by characters declaring `ikemenversion`.
+States loaded later do **not** replace states from earlier files — the first definition of a
+non-negative state wins. Negative states (`-1`, `-2`, `-3`) are the exception: they
+accumulate across files instead of replacing each other. (Unlike CNS, ZSS ignores the
+`ikemenversion` negative-override flag.)
+
+A `StateDef` number duplicated within the same file is a compile error in ZSS
+(`compiler.go: stateCompileZSS`), whereas CNS only warns and skips. Same-file duplicate
+`[Function]` names are likewise an error; across files the first definition wins.
 
 ---
 
@@ -190,7 +197,7 @@ if AnimElem = 3 {
 
 **Movement:** `ChangeState`, `SelfState`, `VelSet`, `VelAdd`, `VelMul`, `PosSet`, `PosAdd`, `PosFreeze`, `Gravity`, `Turn`
 
-**State:** `StateTypeSet`, `CtrlSet`
+**State:** `StateTypeSet`, `CtrlSet`, `ChangeAnim`, `ChangeAnim2`
 
 **Combat:** `HitDef`, `ReversalDef`, `Projectile`, `HitBy`, `NotHitBy`, `HitOverride`, `HitVelSet`, `HitFallSet`, `HitFallVel`, `HitFallDamage`, `HitAdd`, `MoveHitReset`, `AttackDist`, `AttackMulSet`, `DefenceMulSet`
 
@@ -202,7 +209,7 @@ if AnimElem = 3 {
 
 **Targets:** `TargetState`, `TargetBind`, `BindToTarget`, `TargetLifeAdd`, `TargetPowerAdd`, `TargetVelSet`, `TargetVelAdd`, `TargetFacing`, `TargetDrop`, `TargetAdd`, `TargetDizzyPointsAdd`, `TargetGuardPointsAdd`, `TargetRedLifeAdd`, `TargetScoreAdd`
 
-**Visual:** `Explod`, `ModifyExplod`, `RemoveExplod`, `ExplodBindTime`, `AfterImage`, `AfterImageTime`, `PalFX`, `AllPalFX`, `BgPalFX`, `EnvColor`, `Trans`, `AngleSet`, `AngleAdd`, `AngleMul`, `AngleDraw`, `SprPriority`, `RemapPal`, `RemapSprite`, `Width`, `Offset`, `ScreenBound`
+**Visual:** `Explod`, `ModifyExplod`, `RemoveExplod`, `ExplodBindTime`, `AfterImage`, `AfterImageTime`, `PalFX`, `AllPalFX`, `BgPalFX`, `EnvColor`, `Trans`, `AngleSet`, `AngleAdd`, `AngleMul`, `AngleDraw`, `SprPriority`, `RemapPal`, `RemapSprite`, `Width`, `Offset`, `ScreenBound`, `RemoveText`, `ShaderSet`
 
 **Sound:** `PlaySnd`, `StopSnd`, `SndPan`, `ModifySnd`, `PlayBgm`, `ModifyBgm`
 
@@ -216,7 +223,7 @@ if AnimElem = 3 {
 
 **Modify (Ikemen):** `ModifyHitDef`, `ModifyReversalDef`, `ModifyProjectile`, `ModifyPlayer`, `ModifyStageVar`, `ModifyStageBG`, `ModifyBGCtrl`, `ModifyBGCtrl3d`, `ModifyShadow`, `ModifyReflection`, `ModifyText`, `GetHitVarSet`
 
-**Misc:** `Null`, `VictoryQuote`, `MakeDust`, `GameMakeAnim`, `ForceFeedback`, `DisplayToClipboard`, `AppendToClipboard`, `ClearClipboard`, `PrintToConsole`, `Text`, `Dialogue`, `Storyboard`, `MatchRestart`, `TagIn`, `TagOut`, `ShiftInput`, `LoadFile`, `SaveFile`, `LoadState`, `SaveState`, `LifebarAction`, `RoundTimeAdd`, `RoundTimeSet`, `DizzySet`, `GuardBreakSet`, `GroundLevelOffset`, `Height`, `Depth`, `OverrideClsn`, `TransformClsn`, `TransformSprite`
+**Misc:** `Null`, `VictoryQuote`, `MakeDust`, `GameMakeAnim`, `ForceFeedback`, `DisplayToClipboard`, `AppendToClipboard`, `ClearClipboard`, `PrintToConsole`, `Text`, `Dialogue`, `Storyboard`, `MatchRestart`, `TagIn`, `TagOut`, `ShiftInput`, `LoadFile`, `SaveFile`, `LoadState`, `SaveState`, `LifebarAction`, `RoundTimeAdd`, `RoundTimeSet`, `DizzySet`, `GuardBreakSet`, `GroundLevelOffset`, `Height`, `Depth`, `OverrideClsn`, `TransformClsn`, `TransformSprite`, `ChangeMovelist`
 
 ---
 
@@ -601,10 +608,34 @@ abs(vel x)                 ; Absolute value
 floor(pos y)               ; Floor
 ceil(fvar(0))              ; Ceiling
 sin(angle)                 ; Sine
+cos(angle)                 ; Cosine
+tan(angle)                 ; Tangent
+acos(1)                    ; Arc cosine
+asin(0)                    ; Arc sine
+atan(1)                    ; Arc tangent
+atan2(vel y, vel x)        ; Arc tangent of y/x
+exp(1)                     ; e^x
+ln(e)                      ; Natural logarithm
+log(10, 100)               ; Logarithm base 10 of 100
+float(var(0))              ; Force float conversion
 max(life, 0)               ; Maximum
+min(life, lifemax)         ; Minimum
+rad(180)                   ; Degrees to radians
+deg(pi)                    ; Radians to degrees
+round(fvar(0))             ; Round to nearest integer
+random                     ; Random 0-999 (use randomrange(a, b) for a range)
 clamp(var(0), 0, 100)      ; Clamp
 lerp(0, 100, 0.5)          ; Interpolation
 randomrange(0, 10)          ; Random in range
+
+; Names / misc (Ikemen extensions unless noted)
+p1name                     ; Player 1 name (also p2name..p8name)
+ailevelf                   ; AI level as float
+analog(leftx)              ; Analog axis (leftx, lefty, rightx, righty, lefttrigger, righttrigger)
+groundangle                ; Ground angle
+helpername                 ; Helper name
+selfcommand                ; Own command input state
+spriteplayerno             ; Sprite player number
 
 ; Conditional
 ifelse(alive, 1, 0)        ; Inline conditional

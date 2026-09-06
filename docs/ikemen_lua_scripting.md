@@ -32,6 +32,8 @@ All functions listed here are available as globals unless otherwise noted.
 
 The `http` global table provides HTTP client functionality backed by Go's `net/http`.
 A persistent cookie jar is shared across all requests. Uses no external dependencies.
+On request failure returns `"", 0, {}` and logs via `LogMessage`.
+Response bodies are capped at 64 MB. `timeout` is seconds (`0` = 30 s default).
 
 ### Options Table
 
@@ -114,11 +116,12 @@ local enc = http.url_encode("hello world")  -- "hello+world"
 
 #### `http.url_decode(str)` → `string`
 
-Decode a percent-encoded URL string.
+Decode a percent-encoded URL string. Returns the input unchanged on decode error.
 
 #### `http.parse_url(url)` → `table`
 
 Parse a URL into its components. Returns a table with fields: `scheme`, `host`, `port`, `path`, `query`.
+`port` is `""` when absent. Returns `nil` on parse error.
 
 ```lua
 local parts = http.parse_url("https://example.com:8080/api?key=val")
@@ -300,7 +303,9 @@ Animation objects (`Anim`) represent drawable sprite animations. Create them wit
 | `getCharName` | `charRef: int` | `string` | Get a character's display name. |
 | `getCharInfo` | `charRef: int` | `table` | Get detailed character slot info. |
 | `getCharAttachedInfo` | `def: string` | `table\|nil` | Read info from a character `.def` file. |
-| `getCharMovelist` | `charRef: int` | `string` | Get the movelist file path. |
+| `getMovelist` | — | `string` | Get current (redirectable) character's movelist text. |
+| `getCharPreloadStatus` | `charRef: int` | `string` | Background preload state: `"idle"`, `"queued"`, `"loading"`, `"ready"`. |
+| `getStagePreloadStatus` | `stageRef: int` | `string` | Background preload state: `"idle"`, `"queued"`, `"loading"`, `"ready"`. |
 | `getCharRandomPalette` | `charRef: int` | `int32` | Get a random valid palette number. |
 | `getCharSelectParams` | `charRef: int` | `table` | Get parsed select parameters. |
 | `getStageInfo` | `stageRef: int` | `table\|nil` | Get stage slot info. |
@@ -310,7 +315,13 @@ Animation objects (`Anim`) represent drawable sprite animations. Create them wit
 | `validatePal` | `palReq: int, charRef: int` | `int` | Validate and return a valid palette number. |
 | `preloadListChar` | `id: int32\|uint16, number?: uint16` | — | Mark a character sprite/anim for preloading. |
 | `preloadListStage` | `id: int32\|uint16, number?: uint16` | — | Mark a stage sprite/anim for preloading. |
+| `queueCharPreload` | `charRef: int, priority?: int` | — | Queue char portrait/palette preload (`1`=low, `2`=high, default `1`). |
+| `queueStagePreload` | `stageRef: int, priority?: int` | — | Queue stage portrait preload (`1`=low, `2`=high, default `1`). |
+| `preloading` | — | `boolean` | Check if assets are still being preloaded. |
 | `loading` | — | `boolean` | Check if resources are currently loading. |
+| `loadCancel` | — | — | Cancel in-progress background load and reset netplay handshake. |
+| `resetGameParams` | — | — | Reset per-match game params to motif defaults (before `loadStart`). |
+| `netLoadingReady` | — | `boolean` | Netplay load handshake ready (`true` when not in netplay). |
 
 ---
 
@@ -420,10 +431,10 @@ Animation objects (`Anim`) represent drawable sprite animations. Create them wit
 | Function | Parameters | Returns | Description |
 |----------|-----------|---------|-------------|
 | `clearColor` | `r, g, b: int32, alpha?: int32` | — | Fill the screen with a solid color. |
-| `fadeColor` | `mode: string, startFrame: int32, length: float64, r?: int32, g?: int32, b?: int32` | `boolean` | Draw a timed screen fade overlay. |
-| `fadeInActive` | — | `boolean` | Check if global fade-in is active. |
+| `fadeNew` | `params?: table` | `Fade` | Create a Fade (`time`, `color` RGB, `anim`, `sound`) for `fadeInInit`/`fadeOutInit`. |
+| `fadeActive` | — | `boolean` | Check if any global motif fade is running. |
+| `fadeSkip` | — | — | Immediately stop any running global motif fade. |
 | `fadeInInit` | `fade: Fade` | — | Initialize a Fade object from motif fade-in settings. |
-| `fadeOutActive` | — | `boolean` | Check if global fade-out is active. |
 | `fadeOutInit` | `fade: Fade` | — | Initialize a Fade object from motif fade-out settings. |
 | `screenshot` | — | — | Take a screenshot on the next frame. |
 | `toggleFullscreen` | `state?: boolean` | — | Toggle or set fullscreen mode. |
@@ -433,6 +444,7 @@ Animation objects (`Anim`) represent drawable sprite animations. Create them wit
 | `toggleClsnDisplay` | `state?: boolean` | — | Toggle collision box display. |
 | `toggleDebugDisplay` | `mode?: any, reverse?: boolean` | — | Toggle debug overlay. |
 | `togglePause` | `state?: boolean` | — | Toggle or set game pause. |
+| `togglePlayer` | `playerNo: int32` | — | Enable or disable all instances of a player (1-based). |
 | `toggleMaxPowerMode` | `state?: boolean` | — | Toggle max-power cheat mode. |
 | `toggleNoSound` | `state?: boolean` | — | Toggle global mute. |
 | `frameStep` | — | — | Enable single-frame stepping. |
@@ -446,13 +458,16 @@ Animation objects (`Anim`) represent drawable sprite animations. Create them wit
 |----------|-----------|---------|-------------|
 | `loadMotif` | `defPath?: string` | `table` | Load a motif and return its config table. |
 | `modifyMotif` | `query: string, value: any` | — | Modify a motif value by query path. |
+| `motifIsInherited` | `key: string` | `boolean` | Check if a motif value was inherited from another param. |
 | `setMotifElements` | `elements: table` | — | Enable/disable major motif elements. |
 | `loadGameOption` | `filename?: string` | `table` | Load game options from a config file. |
 | `modifyGameOption` | `query: string, value: any` | — | Modify a game option by query path. |
 | `saveGameOption` | `path?: string` | — | Save current game options to file. |
 | `getGameParams` | — | `table` | Get the current game parameter table. |
-| `loadIni` | `filename: string` | `table` | Load an INI file into a Lua table. |
+| `loadIni` | `filename: string, normalizeSections?: boolean, keepMeta?: boolean` | `table` | Load INI; dotted keys nest; `keepMeta` adds `__order`/`__value`. |
+| `saveIni` | `iniTable: table, filename: string` | — | Save sections table; nested tables flatten to dotted keys, arrays to CSV. |
 | `loadStoryboard` | `defPath: string` | `table\|nil` | Load a storyboard and set as current. |
+| `storyboardCanceled` | — | `boolean` | Check if the last storyboard was canceled (Esc/cancel). |
 | `modifyStoryboard` | `query: string, value: any` | — | Modify the current storyboard. |
 | `runStoryboard` | — | `boolean` | Run the current storyboard for one frame. |
 | `getStoryboardScene` | — | `int\|nil` | Get the current storyboard scene index. |
@@ -460,8 +475,7 @@ Animation objects (`Anim`) represent drawable sprite animations. Create them wit
 | `getGameStatsJson` | — | `string` | Get game statistics as JSON. |
 | `setGameStatsJson` | `json: string` | — | Restore game statistics from a JSON snapshot. |
 | `resetGameStats` | — | — | Clear accumulated game statistics. |
-| `setScore` | `teamSide: int, score: float32` | — | Set a team's score (alias: `resetScore`). |
-| `resetScore` | `teamSide: int` | — | Reset a team's score to zero. |
+| `resetScore` | `teamSide: int` | — | Reset a team's score to zero (`1` or `2`). |
 
 ---
 
@@ -470,6 +484,7 @@ Animation objects (`Anim`) represent drawable sprite animations. Create them wit
 | Function | Parameters | Returns | Description |
 |----------|-----------|---------|-------------|
 | `fileExists` | `path: string` | `boolean` | Check if a file exists. |
+| `loadFile` | `filename: string` | `function\|nil, string?` | Compile Lua file (incl. inside `.zip`); `nil`+error on failure. |
 | `loadText` | `path: string` | `string\|nil` | Load a text file and return its contents. |
 | `getDirectoryFiles` | `rootPath: string` | `table` | Recursively list all files under a directory. |
 | `searchFile` | `filename: string, dirs: table` | `string` | Search for a file in a list of directories. |
@@ -576,7 +591,7 @@ Most require a character context (set with a [redirection](#17-trigger-redirecti
 | `gameHeight()` | — | `number` | Game coordinate height. |
 | `gameTime()` | — | `number` | Global game tick count. |
 | `gameWidth()` | — | `number` | Game coordinate width. |
-| `gethitVar(vname)` | `vname: string` | `any` | Get-hit variable (attr, damage, fall.*, hitcount, isbound, type, yvel, zvel, etc.). |
+| `getHitVar(vname)` | `vname: string` | `any` | Get-hit variable (attr, damage, fall.*, hitcount, isbound, type, yvel, zvel, etc.). |
 | `helperVar(vname)` | `vname: string` | `any` | Helper variable (clsnproxy, helpertype, id, keyctrl, etc.). |
 | `hitByAttr(attr)` | `attr: string` | `boolean` | Check if hit by the given attribute string (e.g. `"S, NA"`). |
 | `hitCount()` | — | `number` | Number of hits landed. |
@@ -677,5 +692,127 @@ Most require a character context (set with a [redirection](#17-trigger-redirecti
 | `winKO()` | — | `boolean` | Won by KO. |
 | `winPerfect()` | — | `boolean` | Won perfect. |
 | `winTime()` | — | `boolean` | Won by time. |
+| `winClutch()` | — | `boolean` | Won clutch (comeback). |
+| `winHyper()` | — | `boolean` | Won with a hyper move. |
+| `winSpecial()` | — | `boolean` | Won with a special move. |
+| `aiLevel()` | — | `number` | AI level (0 when AI disabled). |
+| `airJumpCount()` | — | `number` | Air jumps used. |
+| `alive()` | — | `boolean` | Character is alive. |
+| `alpha(which)` | `which: string` (`"source"`/`"dest"`) | `number` | Alpha blend factor. |
+| `angle()` | — | `number` | Z rotation (0 unless angledraw). |
+| `xAngle()` | — | `number` | X-axis rotation (0 unless angledraw). |
+| `yAngle()` | — | `number` | Y-axis rotation (0 unless angledraw). |
+| `animElemVar(vname)` | `vname: string` | `any` | Current anim frame field (`group`, `image`, `time`, `xoffset`, `alphasource`, `hflip`, …). |
+| `animLength()` | — | `number` | Current animation totaltime. |
+| `animPlayerNo()` | — | `number` | Animation player number. |
+| `attack()` | — | `number` | Base attack × multiplier. |
+| `attackMul()` | — | `number` | Attack multiplier. |
+| `authorName()` | — | `string` | Character author name. |
+| `bgmVar(arg)` | `arg: string` | `any` | BGM variable. |
+| `botBoundBodyDist()` | — | `number` | Distance from body to bottom bound. |
+| `botBoundDist()` | — | `number` | Distance to bottom bound. |
+| `topBoundBodyDist()` | — | `number` | Distance from body to top bound. |
+| `topBoundDist()` | — | `number` | Distance to top bound. |
+| `topEdge()` | — | `number` | Top edge position. |
+| `cameraPosX()` | — | `number` | Camera X position. |
+| `cameraPosY()` | — | `number` | Camera Y position. |
+| `cameraZoom()` | — | `number` | Camera zoom scale. |
+| `clamp(v1, v2, v3)` | `float` | `number` | Clamp `v1` to [`v2`, `v3`]. |
+| `comboCount()` | — | `number` | Current combo hit count. |
+| `command(name)` | `name: string` | `boolean` | Named command input active. |
+| `consecutiveWins()` | — | `number` | Consecutive wins (own team). |
+| `const(name)` | `name: string` | `number` | Character constant by name. |
+| `const240p(v)` | `v: number` | `number` | Constant scaled for 320px-wide coords. |
+| `const480p(v)` | `v: number` | `number` | Constant scaled for 640px-wide coords. |
+| `const720p(v)` | `v: number` | `number` | Constant scaled for 1280px-wide coords. |
+| `const1080p(v)` | `v: number` | `number` | Constant scaled for 1920px-wide coords. |
+| `debugMode(arg)` | `arg: string` | `any` | Debug flag (`accel`, `clsndisplay`, `debugdisplay`, `lifebarhide`, `roundreset`, `wireframedisplay`). |
+| `decisiveRound()` | — | `boolean` | Current round is decisive. |
+| `defence()` | — | `number` | Final defence × 100. |
+| `defenceMul()` | — | `number` | Defence multiplier × 100. |
+| `displayName()` | — | `string` | Character display name. |
+| `dizzy()` | — | `boolean` | Character is dizzy. |
+| `dizzyPoints()` | — | `number` | Current dizzy points. |
+| `dizzyPointsMax()` | — | `number` | Maximum dizzy points. |
+| `drawPal(arg)` | `arg: string` (`"group"`/`"index"`) | `number` | Active draw palette. |
+| `envShakeVar(arg)` | `arg: string` | `number` | Environment shake variable. |
+| `explodVar(id, idx, vname)` | `id, idx: int32, vname: string` | `any` | Explod variable. |
+| `fightScreenState(arg)` | `arg: string` | `boolean` | Fight screen phase (`fightdisplay`, `kodisplay`, `rounddisplay`, `windisplay`). |
+| `fightScreenVar(arg)` | `arg: string` | `any` | Fight screen variable. |
+| `fightTime()` | — | `number` | Match elapsed time. |
+| `firstAttack()` | — | `boolean` | Character scored first attack. |
+| `frontEdge()` | — | `number` | Front edge position. |
+| `frontEdgeBodyDist()` | — | `number` | Distance from body to front edge. |
+| `frontEdgeDist()` | — | `number` | Distance to front edge. |
+| `stageBackEdgeDist()` | — | `number` | Distance to stage back edge. |
+| `stageFrontEdgeDist()` | — | `number` | Distance to stage front edge. |
+| `gameMode([mode])` | `mode?: string` | `boolean\|string` | Compare mode, or return current mode. |
+| `gameOption(query)` | `query: string` | `any` | Engine config value by path. |
+| `gameVar(arg)` | `arg: string` | `any` | Game variable. |
+| `groundLevel()` | — | `number` | Stage ground level. |
+| `guardBreak()` | — | `boolean` | In guard-break state. |
+| `guardCount()` | — | `number` | Moves guarded count. |
+| `guardPoints()` | — | `number` | Current guard points. |
+| `guardPointsMax()` | — | `number` | Maximum guard points. |
+| `helperIndexExist(idx)` | `idx: int` | `boolean` | Helper index exists. |
+| `hitOverridden()` | — | `boolean` | Current hit was overridden. |
+| `hitShakeOver()` | — | `boolean` | Hit shake time is over. |
+| `index()` | — | `number` | Player index trigger. |
+| `introState()` | — | `number` | Intro state. |
+| `outroState()` | — | `number` | Outro state. |
+| `isHost()` | — | `boolean` | Character is the netplay host side. |
+| `lastPlayerId()` | — | `number` | Most recently assigned player ID. |
+| `localCoordX()` | — | `number` | Local coordinate width. |
+| `localCoordY()` | — | `number` | Local coordinate height. |
+| `motifState(arg)` | `arg: string` | `boolean` | Motif screen active (`menu`, `demo`, `victoryscreen`, `hiscore`, …). |
+| `moveCountered()` | — | `number` | Move countered counter. |
+| `moveReversed()` | — | `number` | Move reversed counter. |
+| `mugenVersion(part)` | `part: string` (`"major"`/`"minor"`) | `number` | Character MUGEN version part. |
+| `numEnemy()` | — | `number` | Number of enemies. |
+| `numExplod([id])` | `id?: int32` | `number` | Number of explods (optionally by ID). |
+| `numPartner()` | — | `number` | Number of partners. |
+| `numPlayer()` | — | `number` | Number of players. |
+| `numProjId(id)` | `id: int32` | `number` | Number of projectiles with ID. |
+| `numStageBg([id])` | `id?: int32` | `number` | Number of stage BGs (optionally by ID). |
+| `numText([id])` | `id?: int32` | `number` | Number of text entities (optionally by ID). |
+| `offsetX()` | — | `number` | Sprite offset X. |
+| `offsetY()` | — | `number` | Sprite offset Y. |
+| `p2BodyDistX()` | — | `number` | Body X distance to P2. |
+| `p2BodyDistY()` | — | `number` | Body Y distance to P2. |
+| `p2BodyDistZ()` | — | `number` | Body Z distance to P2. |
+| `p2DistZ()` | — | `number` | Center Z distance to P2. |
+| `p2StateType()` | — | `string` | P2 state type (`"S"/"C"/"A"/"L"`). |
+| `palFxVar(arg)` | `arg: string` | `number` | Palette-effect variable. |
+| `parentDistX()` | — | `number` | X distance to parent. |
+| `parentDistY()` | — | `number` | Y distance to parent. |
+| `parentDistZ()` | — | `number` | Z distance to parent. |
+| `parentExist()` | — | `boolean` | Parent exists. |
+| `pauseTime()` | — | `number` | Pause time remaining. |
+| `playerIdExist(id)` | `id: int32` | `boolean` | Player ID exists. |
+| `playerIndexExist(idx)` | `idx: int` | `boolean` | Player index exists. |
+| `playerNo()` | — | `number` | Player number (1-based). |
+| `playerNoExist(no)` | `no: int` | `boolean` | Player number exists. |
+| `prevAnim()` | — | `number` | Previous animation number. |
+| `prevMoveType()` | — | `string` | Previous move type. |
+| `prevStateType()` | — | `string` | Previous state type. |
+| `projCancelTime(id)` | `id: int32` | `number` | Projectile cancel time. |
+| `projClsnOverlap(idx, pid, cbox)` | `idx: int, pid: int32, cbox: string` (`"clsn1"`/`"clsn2"`/`"size"`) | `boolean` | Projectile collision overlap. |
+| `reversalDefAttr()` | — | `string` | Reversal definition attribute string. |
+| `rootDistX()` | — | `number` | X distance to root. |
+| `rootDistY()` | — | `number` | Y distance to root. |
+| `rootDistZ()` | — | `number` | Z distance to root. |
+| `roundsExisted()` | — | `number` | Rounds existed. |
+| `runOrder()` | — | `number` | Run order trigger. |
+| `scaleZ()` | — | `number` | Z scale. |
+| `scoreTotal()` | — | `number` | Total score. |
+| `screenPosY()` | — | `number` | Character screen Y. |
+| `shader([name])` | `name?: string` | `boolean` | Custom shader active (optionally by name). See [`docs/ikemen_custom_shader.md`](ikemen_custom_shader.md). |
+| `spriteVar(vname)` | `vname: string` | `number` | Current sprite field (`group`, `image`, `width`, `height`, `xoffset`, `yoffset`). |
+| `stageBgVar(id, idx, vname)` | `id, idx: int32, vname: string` | `number` | Stage BG variable. |
+| `standby()` | — | `boolean` | Character is in standby. |
+| `ticksPerSecond()` | — | `number` | Game logic ticks per second. |
+| `timeMod(m)` | `m: int32` | `number` | State time modulo `m`. |
+| `timeTotal()` | — | `number` | Total match time. |
+| `uniqHitCount()` | — | `number` | Unique hit count. |
 | `xShear()` | — | `number` | X shear value. |
 | `zoomVar(arg)` | `arg: string` | `number` | Zoom variable (scale, pos.x, pos.y, lag, time). |
