@@ -1998,14 +1998,14 @@ func (r *Renderer_VK) createShadowMapTexture(widthHeight int32) *Texture_VK {
 	t := &Texture_VK{width: widthHeight, height: widthHeight, depth: 96, filter: false, mipLevels: 1, uvst: [4]float32{0, 0, 1, 1}, palSlot: false}
 	t.sampler = r.GetSampler(VulkanSamplerInfo{TextureSamplingFilterNearest, TextureSamplingFilterNearest, TextureSamplingWrapClampToEdge, TextureSamplingWrapClampToEdge})
 	format := vk.FormatD32Sfloat
-	t.img = r.CreateImage(uint32(widthHeight), uint32(widthHeight), format, 1, 6*4, vk.ImageUsageFlags(vk.ImageUsageDepthStencilAttachmentBit|vk.ImageUsageSampledBit), 1, vk.ImageTilingOptimal, true)
+	t.img = r.CreateImage(uint32(widthHeight), uint32(widthHeight), format, 1, 24, vk.ImageUsageFlags(vk.ImageUsageDepthStencilAttachmentBit|vk.ImageUsageSampledBit), 1, vk.ImageTilingOptimal, true)
 
 	alloc, err := r.allocator.AllocateImageMemory(t.img, vk.MemoryPropertyDeviceLocalBit)
 	if err != nil {
 		panic(fmt.Errorf("createShadowMapTexture: AllocateImageMemory failed: %w", err))
 	}
 	t.allocation = alloc
-	t.imageView = r.CreateImageView(t.img, vk.FormatD32Sfloat, 0, 1, 6*4, true)
+	t.imageView = r.CreateImageView(t.img, vk.FormatD32Sfloat, 0, 1, 24, true)
 	commandBuffer := gfx.(*Renderer_VK).BeginSingleTimeCommands()
 
 	barriers := []vk.ImageMemoryBarrier{
@@ -2023,7 +2023,7 @@ func (r *Renderer_VK) createShadowMapTexture(widthHeight int32) *Texture_VK {
 				BaseMipLevel:   0,
 				LevelCount:     1,
 				BaseArrayLayer: 0,
-				LayerCount:     6 * 4,
+				LayerCount:     24,
 			},
 		},
 	}
@@ -5327,11 +5327,11 @@ func (r *Renderer_VK) Init() {
 		if err != nil {
 			panic(err)
 		}
-		if r.enableShadow {
-			r.shadowMapProgram, err = r.CreateShadowMapProgram()
-			if err != nil {
-				panic(err)
-			}
+	}
+	if r.enableShadow {
+		r.shadowMapProgram, err = r.CreateShadowMapProgram()
+		if err != nil {
+			panic(err)
 		}
 	}
 	r.destroyResourceQueues[0] = make(chan VulkanResource, 65536)

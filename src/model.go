@@ -1024,8 +1024,7 @@ func loadglTFModel(filepath string) (*Model, error) {
 						}
 						vertexBuffer = append(vertexBuffer, f32.Bytes(binary.LittleEndian, f[:]...)...)
 					}
-					primitive.useJoint1 = false
-					if idx, ok := p.Attributes["WEIGHTS_1"]; primitive.useJoint1 && ok {
+					if idx, ok := p.Attributes["WEIGHTS_1"]; ok {
 						var weightBuffer [][4]float32
 						weights, err := modeler.ReadWeights(doc, doc.Accessors[idx], weightBuffer)
 						if err != nil {
@@ -1034,7 +1033,7 @@ func loadglTFModel(filepath string) (*Model, error) {
 						for _, weight := range weights {
 							vertexBuffer = append(vertexBuffer, f32.Bytes(binary.LittleEndian, weight[:]...)...)
 						}
-					} else if primitive.useJoint1 {
+					} else {
 						return nil, errors.New("Primitive attribute JOINTS_1 is specified but WEIGHTS_1 is not specified.")
 					}
 				}

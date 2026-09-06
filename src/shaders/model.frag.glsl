@@ -167,8 +167,11 @@ float SpotLightShadowCalculation(int index, vec3 pointToLight, vec4 lightSpacePo
 	if(!useShadowMap){
 		return 1.0;
 	}
+	// perspective divide + [0,1] range (same frame as Directional)
+	vec3 projCoords = lightSpacePos.xyz / lightSpacePos.w;
+	projCoords = projCoords.xy * 0.5 + 0.5;
 	float epsilon = 1.0 / 1024.0;
-	vec2 xy = vec2(clamp(lightSpacePos.x,epsilon,1.0-epsilon),clamp(lightSpacePos.y,epsilon,1.0-epsilon));
+	vec2 xy = vec2(clamp(projCoords.x,epsilon,1.0-epsilon),clamp(projCoords.y,epsilon,1.0-epsilon));
 
 	#ifdef GL_ES
 		float closestDepth = COMPAT_SHADOW_MAP_TEXTURE(vec4(1.0, -(xy.y*2.0-1.0),-(xy.x*2.0-1.0),float(index)));

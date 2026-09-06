@@ -100,8 +100,11 @@ float SpotLightShadowCalculation(int index, float3 pointToLight, float4 lightSpa
 	if (miscFlags.y == 0.0) {
 		return 1.0;
 	}
+	// perspective divide + [0,1] range (same frame as Directional)
+	float3 projCoords = lightSpacePos.xyz / lightSpacePos.w;
+	projCoords = projCoords.xy * 0.5 + 0.5;
 	float epsilon = 1.0 / 1024.0;
-	float2 xy = float2(clamp(lightSpacePos.x, epsilon, 1.0 - epsilon), clamp(lightSpacePos.y, epsilon, 1.0 - epsilon));
+	float2 xy = float2(clamp(projCoords.x, epsilon, 1.0 - epsilon), clamp(projCoords.y, epsilon, 1.0 - epsilon));
 	float closestDepth = shadowCubeMap.SampleLevel(s8, float4(1.0, -(xy.y * 2.0 - 1.0), -(xy.x * 2.0 - 1.0), (float)index), 0).r;
 	closestDepth *= farPlane;
 	float currentDepth = length(pointToLight);
