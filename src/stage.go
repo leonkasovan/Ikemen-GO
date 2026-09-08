@@ -1894,7 +1894,7 @@ func (s *Stage) action() {
 		s.bga.action(true)
 
 		if s.model != nil {
-			s.model.step(sys.turbo)
+			s.model.step()
 		}
 	}
 
