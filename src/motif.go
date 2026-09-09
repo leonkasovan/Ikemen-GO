@@ -758,6 +758,7 @@ type SelectInfoProperties struct {
 	} `ini:"teammenu"`
 	Timer         TimerProperties `ini:"timer"`
 	PaletteSelect int32           `ini:"paletteselect"`
+	CoopQueue     bool            `ini:"coopqueue" default:"false"`
 }
 
 type VsScreenProperties struct {
