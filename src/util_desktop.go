@@ -63,8 +63,7 @@ func selectRenderer(cfgVal string) (Renderer, FontRenderer) {
 		gfx = &Renderer_VK{}
 		gfxFont = &FontRenderer_VK{}
 	case "Direct3D 11":
-		gfx = &Renderer_DX{}
-		gfxFont = &FontRenderer_DX{}
+		gfx, gfxFont = selectRendererDX()
 	case "SDL2 Software":
 		gfx = &Renderer_SW{}
 		gfxFont = &FontRenderer_SW{}
@@ -80,3 +79,5 @@ func selectRenderer(cfgVal string) (Renderer, FontRenderer) {
 // platformDefaultConfig is a no-op on desktop platforms.
 // Platform-specific defaults are only applied on armdevice builds.
 func platformDefaultConfig(cfg *Config) {}
+
+
