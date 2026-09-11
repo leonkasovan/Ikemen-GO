@@ -917,9 +917,16 @@ $(FFMPEG_LIBS) &: $(LIBVPX_LIB)
 	@# env vars make exports, but every pkg-config honors --with-path (same
 	@# trick as the version echoes above). Regenerated on each run so the
 	@# embedded prefix can never go stale.
+	@# Go's cgo on Windows cannot execute #!/bin/sh shebang scripts (Go's
+	@# exec.LookPath can't resolve /bin/sh to a Windows path), so on MSYS2
+	@# we write a .cmd batch wrapper instead. FFmpeg's configure (a shell
+	@# script) handles both forms fine.
 	mkdir -p "$(BUILD_PREFIX)/bin"; \
 	_PKGC="$$(command -v pkg-config || echo pkg-config)"; \
-	printf '#!/bin/sh\nexec "%s" --with-path="%s" "$$@"\n' "$$_PKGC" "$(BUILD_PREFIX)/lib/pkgconfig" > "$(BUILD_PREFIX)/bin/pkg-config-local"; \
+	_PKGC_WIN=$$(cygpath -m "$$_PKGC" 2>/dev/null || echo "$$_PKGC"); \
+	_PC_DIR=$$(cygpath -m "$(BUILD_PREFIX)/lib/pkgconfig" 2>/dev/null || echo "$(BUILD_PREFIX)/lib/pkgconfig"); \
+	printf '@echo off\\r\\n"%s" --with-path="%s" %%*\\r\\n' "$$_PKGC_WIN" "$$_PC_DIR" > "$(BUILD_PREFIX)/bin/pkg-config-local.cmd"; \
+	printf '#!/bin/sh\\nexec "%s" --with-path="%s" "$$@"\\n' "$$_PKGC" "$(BUILD_PREFIX)/lib/pkgconfig" > "$(BUILD_PREFIX)/bin/pkg-config-local"; \
 	chmod +x "$(BUILD_PREFIX)/bin/pkg-config-local"
 	@# FFmpeg's configure is a plain POSIX sh script. Run it under `sh` so it
 	@# works everywhere: MSYS2/Linux/macOS sh is bash/dash (FFmpeg supports
