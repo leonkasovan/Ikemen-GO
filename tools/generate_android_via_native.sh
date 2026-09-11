@@ -91,7 +91,7 @@ FFMPEG_URL="${FFMPEG_URL:-https://github.com/FFmpeg/FFmpeg/archive/refs/tags/${F
 LIBVPX_VERSION="${LIBVPX_VERSION:-v1.15.2}"
 LIBVPX_URL="${LIBVPX_URL:-https://github.com/webmproject/libvpx/archive/refs/tags/${LIBVPX_VERSION}.zip}"
 # ikemen-droid APK build
-IKEMEN_DROID_DIR="${IKEMEN_DROID_DIR:-$(pwd)/build/android-apk/ikemen-droid}"
+IKEMEN_DROID_DIR="${IKEMEN_DROID_DIR:-${BINARY_BASE}/android-apk/ikemen-droid}"
 CONFIG="${CONFIG:-release}"
 if [[ "$CONFIG" == "debug" ]]; then
   ANDROID_GRADLE_TASK="${ANDROID_GRADLE_TASK:-assembleDebug}"
@@ -157,9 +157,10 @@ case "${ANDROID_ABI}" in
 esac
 
 # Paths that depend on ANDROID_ABI / JNILIBS_DIR (must come after ABI case statement)
+BINARY_BASE="$(pwd)/build/android_${GO_ANDROID_ARCH}"
 ANDROID_BINARY="${ANDROID_BINARY:-$(pwd)/android/app/libs/${JNILIBS_DIR}/libmain.so}"
-APK_OUTPUT="${APK_OUTPUT:-$(pwd)/build/ikemen-go-${ANDROID_ABI}${CONFIG:+-${CONFIG}}.apk}"
-ANDROID_DEPS_PATH="${ANDROID_DEPS_PATH:-$(pwd)/build/android-deps-${ANDROID_ABI}}"
+APK_OUTPUT="${APK_OUTPUT:-${BINARY_BASE}/ikemen-go-${ANDROID_ABI}${CONFIG:+-${CONFIG}}.apk}"
+ANDROID_DEPS_PATH="${ANDROID_DEPS_PATH:-${BINARY_BASE}/android-deps}"
 
 # Auto-detect GOROOT for MSYS2 MinGW Go if not already set
 if [[ -z "${GOROOT:-}" ]]; then
@@ -467,8 +468,8 @@ install_sdl2_android() {
   echo "═══ Step 5/12 — Cross-compiling SDL2 for Android ${ANDROID_ABI} ═══"
 
   local sdl2_lib="$ANDROID_DEPS_PATH/lib/libSDL2.so"
-  local sdl2_src="$(pwd)/build/SDL-${SDL2_VERSION}"
-  local sdl2_build="$(pwd)/build/SDL-${SDL2_VERSION}-android-${ANDROID_ABI}"
+  local sdl2_src="${BINARY_BASE}/SDL-${SDL2_VERSION}"
+  local sdl2_build="${BINARY_BASE}/SDL-${SDL2_VERSION}-android-${ANDROID_ABI}"
 
   # Check if already built
   if [[ -f "$sdl2_lib" ]]; then
@@ -568,8 +569,8 @@ install_libxmp_android() {
   echo "═══ Step 6/12 — Cross-compiling libxmp for Android ${ANDROID_ABI} ═══"
 
   local xmp_lib="$ANDROID_DEPS_PATH/lib/libxmp.so"
-  local xmp_src="$(pwd)/build/libxmp-${XMP_VERSION}"
-  local xmp_build="$(pwd)/build/libxmp-${XMP_VERSION}-android-${ANDROID_ABI}"
+  local xmp_src="${BINARY_BASE}/libxmp-${XMP_VERSION}"
+  local xmp_build="${BINARY_BASE}/libxmp-${XMP_VERSION}-android-${ANDROID_ABI}"
 
   # Check if already built
   if [[ -f "$xmp_lib" ]]; then
@@ -664,8 +665,8 @@ install_libvpx_android() {
   fi
 
   local vpx_pc="$ANDROID_DEPS_PATH/lib/pkgconfig/vpx.pc"
-  local vpx_src="$(pwd)/build/libvpx-${LIBVPX_VERSION}"
-  local vpx_build="$(pwd)/build/libvpx-${LIBVPX_VERSION}-android-${ANDROID_ABI}"
+  local vpx_src="${BINARY_BASE}/libvpx-${LIBVPX_VERSION}"
+  local vpx_build="${BINARY_BASE}/libvpx-${LIBVPX_VERSION}-android-${ANDROID_ABI}"
 
   # Check if already built
   if [[ -f "$vpx_pc" ]]; then
@@ -761,7 +762,7 @@ install_ffmpeg_android() {
   echo "═══ Step 8/12 — Cross-compiling FFmpeg for Android ${ANDROID_ABI} ═══"
 
   local ffmpeg_pc="$ANDROID_DEPS_PATH/lib/pkgconfig/libavformat.pc"
-  local ffmpeg_src="$(pwd)/build/FFmpeg-${FFMPEG_VERSION}"
+  local ffmpeg_src="${BINARY_BASE}/FFmpeg-${FFMPEG_VERSION}"
 
   # Check if already built
   if [[ -f "$ffmpeg_pc" ]]; then
