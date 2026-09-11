@@ -6417,32 +6417,58 @@ func (l *Loader) prepareTurnsFaces(pn int, fa *FightScreenFace, nm *FightScreenN
 				sc.sff.loadActPalettes(charIdx)
 			}
 
+			// Get palette list
+			pl := &sc.sff.palList
+
 			// Check if the sprite uses or shares palette 1, 1
+			// Compare palette indexes directly because the select screen palette map was mutated by whatever was drawn last
+			// https://github.com/ikemen-engine/Ikemen-GO/issues/3592
 			usesPal11 := false
 			if spr.coldepth <= 8 {
-				pal11Idx, ok := sc.sff.palList.PalTable[[...]uint16{1, 1}]
-				if ok && spr.palidx >= 0 && int(spr.palidx) < len(sc.sff.palList.paletteMap) && pal11Idx < len(sc.sff.palList.paletteMap) {
-					if sc.sff.palList.paletteMap[spr.palidx] == sc.sff.palList.paletteMap[pal11Idx] {
-						usesPal11 = true
-					}
-				}
+				pal11Idx, ok := pl.PalTable[[2]uint16{1, 1}]
+				usesPal11 = ok && spr.palidx == pal11Idx
 			}
+
+			// Create a new palette slice to avoid sharing
+			var srcPal []uint32
 
 			// Apply selected color only if the sprite shares the base palette
 			if usesPal11 {
 				// Pull selected palette index (1-based)
 				targetPal := sc.sff.palList.Get(int(palIdx) - 1)
 				if targetPal != nil {
-					// Decouple clone from global SFF palettes				spr.Pal = make([]uint32, len(targetPal))
-					copy(spr.Pal, targetPal)
-
-					// Pre-compute hash for the new palette
-					spr.palhash = hashPal(targetPal)
-
-					// Force lazy loading for unique recolored texture
-					spr.PalTex = nil
-					spr.palidx = -1
+					// Decouple clone from global SFF palettes
+					srcPal = make([]uint32, len(targetPal))
+					copy(srcPal, targetPal)
 				}
+			} else {
+				// Recolor source
+				// Read the selected palette index from the palette table
+				idx := pl.SelectablePalIndex(palIdx)
+				if idx >= 0 && idx < len(pl.palettes) {
+					srcPal = pl.palettes[idx]
+				}
+			}
+
+			if len(srcPal) == 0 {
+				// Keep own palette
+				srcPal = origSpr.GetPal(pl)
+			}
+
+			if len(srcPal) > 0 {
+				// Decouple clone from global SFF palettes
+				spr.Pal = make([]uint32, len(srcPal))
+				copy(spr.Pal, srcPal)
+
+				spr.paltemp = make([]uint32, len(srcPal))
+				copy(spr.paltemp, srcPal)
+
+				// Pre-compute hash for the new palette
+				spr.palhash = hashPal(srcPal)
+
+				// Force lazy loading for a unique recolored texture
+				spr.PalTex = nil
+				spr.palidx = -1
 			}
 		}
 

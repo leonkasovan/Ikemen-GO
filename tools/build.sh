@@ -68,7 +68,8 @@ DEBUG_BUILD="${DEBUG_BUILD:-0}"
 binName="Default"
 targetOS="${1:-}"
 currentOS="Unknown"
-OUTDIR="build"         # may be overridden below
+OUTDIR="bin"         # may be overridden below
+LIBDIR="lib"         # runtime libs live here at repo root
 BUILDDIR="build"
 DELAYLIB_DIR="$BUILDDIR/delaylib"
 FFMPEG_SRCDIR="$BUILDDIR/ffmpeg-src"
@@ -85,7 +86,7 @@ BUILD_ANDROID_APK="${BUILD_ANDROID_APK:-1}"  # 1=yes, 0=no
 ANDROID_APK_REPO="${ANDROID_APK_REPO:-https://github.com/Jesuszilla/ikemen-droid.git}"
 ANDROID_APK_REF="${ANDROID_APK_REF:-main}"
 ANDROID_APK_DIR="$REPO_ROOT/$BUILDDIR/android-apk/ikemen-droid"
-ANDROID_APK_OUT="${ANDROID_APK_OUT:-$REPO_ROOT/build/ikemen-go.apk}"
+ANDROID_APK_OUT="${ANDROID_APK_OUT:-$REPO_ROOT/bin/ikemen-go.apk}"
 
 # FFmpeg config
 FFMPEG_REV="${FFMPEG_REV:-release/7.1}"
@@ -311,18 +312,19 @@ function main() {
 
 	# Decide output location:
 	# - Non-macOS: binary in top-level (.) and runtime libs in ./lib
-	# - All platforms: outputs in build/
-	# - Android: ALSO puts outputs in build/ (so we get build/libmain.so + build/libmain.h)
+	# - macOS: app bundle uses bin/ later from Makefile
+	# - Android: ALWAYS put outputs in bin/ (so we get bin/libmain.so + bin/libmain.h)
 	case "$(tolower "${targetOS}")" in
-		android) OUTDIR="build" ;;
+		android) OUTDIR="bin" ;;
 		*)
 			case "$OSTYPE" in
-				darwin*) OUTDIR="build" ;;
-				*)       OUTDIR="build"  ;;
+				darwin*) OUTDIR="bin" ;;
+				*)       OUTDIR="."  ;;
 			esac
 		;;
 	esac
 	mkdir -p "$OUTDIR"
+	mkdir -p "$LIBDIR"
 
 	# Make sure Go toolchain is usable
 	ensure_go_env
@@ -390,7 +392,7 @@ function varWin32() {
 		export CC=i686-w64-mingw32-gcc
 		export CXX=i686-w64-mingw32-g++
 	fi
-	binName="Ikemen_GO.386.exe"
+	binName="Ikemen_GO_x86.exe"
 }
  
 function varWin64() {
@@ -400,7 +402,7 @@ function varWin64() {
 		export CC=x86_64-w64-mingw32-gcc
 		export CXX=x86_64-w64-mingw32-g++
 	fi
-	binName="Ikemen_GO.amd64.exe"
+	binName="Ikemen_GO.exe"
 }
 
 function varMacOSARM() {
@@ -416,7 +418,7 @@ function varMacOSARM() {
 			export CXX=o64-clang++
 		;;
 	esac
-	binName="Ikemen_GO"
+	binName="Ikemen_GO_MacOSARM"
 }
 function varMacOS() {
 	export GOOS=darwin
@@ -431,18 +433,18 @@ function varMacOS() {
 			export CXX=o64-clang++
 		;;
 	esac
-	binName="Ikemen_GO"
+	binName="Ikemen_GO_MacOS"
 }
 function varLinux() {
 	export GOOS=linux
 	#export CC=gcc
 	#export CXX=g++
-	binName="Ikemen_GO.amd64"
+	binName="Ikemen_GO_Linux"
 }
 function varLinuxARM() {
 	export GOOS=linux
 	export GOARCH=arm64
-	binName="Ikemen_GO.arm64"
+	binName="Ikemen_GO_LinuxARM"
 }
 function varAndroid() {
 	local host_os="linux" # default to Linux as that's what the runner will be using
@@ -458,7 +460,7 @@ function varAndroid() {
 	export ANDROID_DEPS_PATH="$REPO_ROOT/build/android-deps"
 	# Force pkg-config to ONLY look at the Android libraries
 	export PKG_CONFIG_LIBDIR="$ANDROID_DEPS_PATH/lib/pkgconfig"
-	export PKG_CONFIG_SYSROOT_DIR="$ANDROID_DEPS_PATH"
+	unset PKG_CONFIG_SYSROOT_DIR
 	# Ensure we don't pick up host libraries by clearing this
 	export PKG_CONFIG_PATH=""
 	binName="libmain.so"
@@ -650,6 +652,21 @@ function build_ffmpeg() {
 	} > BUILDINFO.txt
 
 	./configure "${configure_args[@]}"
+
+	# By default FFmpeg only warns when an explicitly requested external decoder cannot be built.
+	if ! grep -q '^#define CONFIG_LIBVPX_VP8_DECODER 1' config_components.h ||
+	   ! grep -q '^#define CONFIG_LIBVPX_VP9_DECODER 1' config_components.h; then
+		echo "ERROR: FFmpeg configured without the required libvpx VP8/VP9 decoders." >&2
+		echo "libvpx pkg-config flags:" >&2
+		"${PKG_CONFIG:-pkg-config}" --cflags --libs vpx >&2 || true
+		echo "Relevant FFmpeg configure diagnostics:" >&2
+		grep -E \
+			'libvpx_vp[89]_decoder|vpx_codec_vp[89]_dx|ERROR|error:' \
+			ffbuild/config.log >&2 || true
+		popd >/dev/null
+		return 1
+	fi
+
 	echo "==> Configure complete. Starting make..."
 	make -j"$(getconf _NPROCESSORS_ONLN || echo 2)"
 	echo "==> Build complete. Installing..."
@@ -818,7 +835,7 @@ function patch_go_sdl2_android() {
 	local f=""
 
 	# 1) Prefer vendored copy (writable, deterministic)
-	local vendorf="$REPO_ROOT/vendor/github.com/ikemen-engine/Ikemen-GO/packages/go-sdl2/sdl/system_android.go"
+	local vendorf="$REPO_ROOT/vendor/github.com/veandco/go-sdl2/sdl/system_android.go"
 	if [[ -f "$vendorf" ]]; then
 		f="$vendorf"
 	else
@@ -849,7 +866,7 @@ function patch_go_sdl2_android() {
 			echo "ERROR: Cannot patch go-sdl2; directory is not writable:" >&2
 			echo "  $d" >&2
 			echo "If you want to use vendor/, run 'go mod vendor' and re-run the build." >&2
-			echo "Otherwise, fix module cache perms (or build via Docker ./tools/generate_android_via_docker.sh)." >&2
+			echo "Otherwise, fix module cache perms (or build via Docker ./build/build_android.sh)." >&2
 			exit 1
 		fi
 
@@ -934,9 +951,9 @@ function stage_android_apk_libs() {
 
 	echo "==> Staging native libs into: $abi_dir"
 	# Engine
-	cp -av "$REPO_ROOT/build/libmain.so" "$abi_dir/"
-	# Deps from cross-compiled Android libraries (SDL2, FFmpeg, libxmp)
-	cp -av "$ANDROID_DEPS_PATH/lib/"*.so* "$abi_dir/" 2>/dev/null || true
+	cp -av "$REPO_ROOT/bin/libmain.so" "$abi_dir/"
+	# Deps (only .so, ignore Windows DLLs)
+	cp -av "$REPO_ROOT/lib/"*.so* "$abi_dir/" 2>/dev/null || true
 }
 
 function stage_android_apk_assets() {
@@ -1097,7 +1114,7 @@ function build() {
 		if [[ "$GOOS" == "linux" ]]; then
 			export CGO_LDFLAGS="${deps_libs} -lpthread -lm -ldl -lz -Wl,-rpath,\$ORIGIN -Wl,-rpath,\$ORIGIN/lib ${CGO_LDFLAGS:-}"
 		elif [[ "$GOOS" == "darwin" ]]; then
-			export CGO_LDFLAGS="${deps_libs} ${CGO_LDFLAGS:-} -Wl,-rpath,@executable_path -Wl,-rpath,@executable_path/../Frameworks"
+			export CGO_LDFLAGS="${deps_libs} ${CGO_LDFLAGS:-} -Wl,-rpath,@executable_path/../lib -Wl,-rpath,@executable_path/../Frameworks"
 		fi		
 	fi
 
@@ -1108,7 +1125,7 @@ function build() {
 
 	# Android has slightly different steps.
 	if [[ "$GOOS" == "android" ]]; then
-		go build -buildmode=c-shared -trimpath -v -tags=android \
+		go build -buildmode=c-shared -trimpath -v -tags=android,gles2 \
 		-ldflags="-s -w -X 'main.Version=${APP_VERSION}' -X 'main.BuildTime=${APP_BUILDTIME}' -X 'runtime.godebugDefault=asyncpreemptoff=1,sigaltstack=0'" \
 		-o "$OUTDIR/$binName" ./src
 	else
@@ -1117,11 +1134,16 @@ function build() {
 		-o "$OUTDIR/$binName" ./src
 	fi
 
+	# bundle libs
+	bundle_shared_libs
+	fix_macos_dylib_paths
+
 	# For Android, optionally build the APK via ikemen-droid
 	build_android_apk
 
 	echo "==> Build successful"
 	echo "    Binary: $OUTDIR/$binName"
+	[[ -d "$LIBDIR" ]] && echo "    Runtime libs (if any): $LIBDIR/"
 }
 
 function buildWin() {
@@ -1153,11 +1175,15 @@ function buildWin() {
 		  -o "$OUTDIR/$binName" ./src
 	fi
 
+	# bundle libs
+	bundle_shared_libs
+
 	# Clean embedded resource object
 	rm -f src/rsrc_windows.syso 2>/dev/null || true
 
 	echo "==> Build successful (Windows)"
 	echo "    Binary: $OUTDIR/$binName"
+	[[ -d "$LIBDIR" ]] && echo "    Runtime DLLs: $LIBDIR/"
 }
 
 # Convert an arbitrary tag (e.g. "v1.2.3", "1.2", "nightly") to a valid
@@ -1242,7 +1268,7 @@ BEGIN
 			VALUE "FileVersion", "${SXS_VERSION}\\0"
 			VALUE "ProductName", "Ikemen GO\\0"
 			VALUE "ProductVersion", "${SXS_VERSION}\\0"
-			VALUE "OriginalFilename", "${binName}\\0"
+			VALUE "OriginalFilename", "Ikemen_GO.exe\\0"
 			VALUE "InternalName", "Ikemen_GO\\0"
 			VALUE "BuildDate", "${APP_BUILDTIME}\\0"
 			VALUE "LegalCopyright", "${APP_COPYRIGHT}\\0"
@@ -1309,29 +1335,55 @@ function bundle_shared_libs() {
 				[[ -f "$d" ]] && { mvk="$d"; break; }
 			done
 		fi
-		[[ -n "$mvk" ]] && cp -av "$mvk" "$dest_lib/" 2>/dev/null || true
+		[[ -n "$mvk" ]] && cp -Lfv "$mvk" "$dest_lib/" 2>/dev/null || true
 	fi
 	# Android specific bundling
 	if [[ "$GOOS" == "android" ]]; then
 		echo "==> Bundling Android dependencies from $ANDROID_DEPS_PATH..."
 		cp -av "$ANDROID_DEPS_PATH"/lib/*.so* "$dest_lib/" 2>/dev/null || true
 	fi
-	# Always try to bundle libxmp for portable runtime on Linux/macOS.
+	# Always try to bundle libxmp and SDL for portable runtime on Linux/macOS.
 	# (Windows and Android were handled above.)
 	if [[ "$GOOS" != "windows" && "$GOOS" != "android" ]]; then
 		# Prefer pkg-config to locate the correct lib directory.
-		local pc libdir libdir_sdl2
+		local pc libdir libdir_sdl2 libdir_sdl3
 		pc="${PKG_CONFIG:-pkg-config}"
 		libdir="$($pc --variable=libdir libxmp 2>/dev/null || true)"
 		if [[ -n "$libdir" && -d "$libdir" ]]; then
 			cp -av "${libdir}"/libxmp*.so*   "$dest_lib/" 2>/dev/null || true
-			cp -av "${libdir}"/libxmp*.dylib "$dest_lib/" 2>/dev/null || true
+			cp -Lfv "${libdir}"/libxmp*.dylib "$dest_lib/" 2>/dev/null || true
 		fi
 		libdir_sdl2="$($pc --variable=libdir sdl2 2>/dev/null || true)"
 		if [[ -n "$libdir_sdl2" && -d "$libdir_sdl2" ]]; then
 			cp -av "${libdir_sdl2}"/libSDL2*.so*   "$dest_lib/" 2>/dev/null || true
-			cp -av "${libdir_sdl2}"/libSDL2*.dylib "$dest_lib/" 2>/dev/null || true
+			cp -Lfv "${libdir_sdl2}"/libSDL2*.dylib "$dest_lib/" 2>/dev/null || true
 		fi
+		# Homebrew's SDL2 compatibility library loads SDL3 at runtime.
+		libdir_sdl3="$($pc --variable=libdir sdl3 2>/dev/null || true)"
+		if [[ -n "$libdir_sdl3" && -d "$libdir_sdl3" ]]; then
+			cp -Lfv "${libdir_sdl3}"/libSDL3*.dylib "$dest_lib/" 2>/dev/null || true
+		fi
+	fi
+}
+
+# Use bundled libraries instead of Homebrew paths in the macOS binary.
+function fix_macos_dylib_paths() {
+	[[ "$GOOS" != "darwin" ]] && return 0
+
+	local binary="$OUTDIR/$binName"
+	local dependency dependencies filename changed=0
+	dependencies="$(otool -L "$binary" | awk 'NR > 1 { sub(/^[[:space:]]+/, ""); sub(/ \(compatibility version.*$/, ""); print }')"
+	while IFS= read -r dependency; do
+		filename="${dependency##*/}"
+		if [[ -n "$dependency" && "$dependency" != @* && -e "$LIBDIR/$filename" ]]; then
+			install_name_tool -change "$dependency" "@rpath/$filename" "$binary"
+			changed=1
+		fi
+	done <<< "$dependencies"
+
+	# install_name_tool invalidates the ad-hoc signature required on Apple Silicon.
+	if ((changed)); then
+		codesign --force --sign - "$binary"
 	fi
 }
 
