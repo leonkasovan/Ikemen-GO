@@ -716,7 +716,7 @@ install_libvpx_android() {
   (cd "$vpx_build" && \
     CC="$cc_compiler" CXX="$cxx_compiler" \
     AR="$toolchain/bin/llvm-ar" LD="$cc_compiler" STRIP="$toolchain/bin/llvm-strip" \
-    ../configure \
+    "$vpx_src/configure" \
       --prefix="$ANDROID_DEPS_PATH" \
       --target=arm64-android-gcc \
       --enable-pic \
@@ -861,7 +861,7 @@ install_ffmpeg_android() {
     --enable-decoder=${libvpx_decoders},opus,vorbis \
     --enable-parser=vp8,vp9,opus,vorbis \
     --enable-jni --enable-mediacodec \
-    --pkg-config="$ANDROID_DEPS_PATH/bin/pkg-config-local") || {
+    --pkg-config="$(pkg_config_local_path)") || {
       echo "❌  FFmpeg configure failed. Check the error above."
       exit 1
     }
@@ -910,9 +910,36 @@ create_pkg_config_local() {
   fi
   local pkgc
   pkgc="$(command -v pkg-config || echo pkg-config)"
-  printf '#!/bin/sh\nexec "%s" --with-path="%s" "$@"\n' "$pkgc" "$pc_dir" > "$wrapper"
-  chmod +x "$wrapper"
-  echo "    pkg-config wrapper: $wrapper (--with-path=$pc_dir)"
+  # Go's cgo on Windows cannot execute #!/bin/sh shebang scripts: Go's
+  # exec.LookPath cannot resolve the POSIX /bin/sh path to a Windows
+  # executable. On MSYS2/Cygwin we therefore write a .cmd batch wrapper
+  # instead, which Go executes natively.
+  if [[ "$OSTYPE" == msys* || "$OSTYPE" == cygwin* ]]; then
+    wrapper="$wrapper_dir/pkg-config-local.cmd"
+    # Convert pkg-config path to Windows format for the .cmd file
+    local pkgc_win
+    if command -v cygpath &>/dev/null; then
+      pkgc_win="$(cygpath -m "$pkgc")"
+    else
+      pkgc_win="$pkgc"
+    fi
+    printf '@echo off\r\n"%s" --with-path="%s" %%*\r\n' "$pkgc_win" "$pc_dir" > "$wrapper"
+    # Remove any stale non-.cmd wrapper from a previous run
+    rm -f "$wrapper_dir/pkg-config-local"
+  else
+    printf '#!/bin/sh\nexec "%s" --with-path="%s" "$@"\n' "$pkgc" "$pc_dir" > "$wrapper"
+    chmod +x "$wrapper"
+    rm -f "$wrapper_dir/pkg-config-local.cmd"
+  fi
+}
+
+# Returns the path to the pkg-config-local wrapper, using .cmd on Windows.
+pkg_config_local_path() {
+  if [[ "$OSTYPE" == msys* || "$OSTYPE" == cygwin* ]]; then
+    echo "$ANDROID_DEPS_PATH/bin/pkg-config-local.cmd"
+  else
+    echo "$ANDROID_DEPS_PATH/bin/pkg-config-local"
+  fi
 }
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -1297,7 +1324,7 @@ build_libmain() {
 
   CGO_ENABLED=1 GOOS=android GOARCH=${GO_ANDROID_ARCH} GOEXPERIMENT=arenas \
   CC="$cc" CXX="$cxx" \
-  PKG_CONFIG="$ANDROID_DEPS_PATH/bin/pkg-config-local" \
+  PKG_CONFIG="$(pkg_config_local_path)" \
   CGO_CFLAGS="-I$deps_include -I$deps_include/SDL2 ${CGO_EXTRA_CFLAGS}" \
   CGO_LDFLAGS="-L$deps_lib -lSDL2 -lGLESv2 -lOpenSLES -llog -Wl,-z,max-page-size=16384 ${CGO_EXTRA_LDFLAGS}" \
   go build -buildmode=c-shared -trimpath -v -tags "$go_tags" \
