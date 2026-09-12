@@ -718,24 +718,36 @@ $(BUILD_PREFIX)/lib/libSDL2.a $(BUILD_PREFIX)/lib/libSDL2.so:
 	mkdir -p $(BUILDDIR)
 	if [ ! -d "$(SDL2_SRCDIR)" ]; then
 		echo "==> Downloading $(SDL2_URL)..."
-		if [ ! -f "$(BUILDDIR)/SDL2.zip" ]; then
-			wget -q "$(SDL2_URL)" -O "$(BUILDDIR)/SDL2.zip"
-		else
-			echo "==> Using existing zip: $(BUILDDIR)/SDL2.zip"
-		fi
-		tmp="$(BUILDDIR)/SDL2.zip-extract"
-		rm -rf "$$tmp"
-		mkdir -p "$$tmp"
-		# SDL's zip contains symlinks (android-project-ant/ -> ../android-project)
-		# that w64devkit's busybox unzip cannot create on Windows (needs the
-		# SeCreateSymbolicLinkPrivilege), aborting extraction. Exclude that
-		# legacy Android-Ant dir — not needed for a desktop build.
-		unzip -q "$(BUILDDIR)/SDL2.zip" -d "$$tmp" -x '*/android-project-ant/*'
-		subdir="$$(find "$$tmp" -mindepth 1 -maxdepth 1 -type d | head -1)"
-		rm -rf "$(SDL2_SRCDIR)"
-		mkdir -p "$(SDL2_SRCDIR)"
-		cp -a "$$subdir"/. "$(SDL2_SRCDIR)"/
-		rm -rf "$$tmp" "$(BUILDDIR)/SDL2.zip"
+		zip="$(BUILDDIR)/SDL2.zip"
+		max_retries=3; retry=0; extracted=0
+		while [ $$retry -lt $$max_retries ] && [ $$extracted -eq 0 ]; do
+			tmp="$(BUILDDIR)/SDL2.zip-extract"
+			rm -rf "$$tmp"
+			mkdir -p "$$tmp"
+			if [ ! -f "$$zip" ] || ! unzip -t "$$zip" >/dev/null 2>&1; then
+				if [ ! -f "$$zip" ]; then
+					echo "==> Downloading $(SDL2_URL) (attempt $$((retry+1))/$$max_retries)..."
+					wget -q "$(SDL2_URL)" -O "$$zip" || { rm -f "$$zip"; retry=$$((retry+1)); continue; }
+				else
+					echo "==> Resuming download $(SDL2_URL) (attempt $$((retry+1))/$$max_retries)..."
+					wget -q -c "$(SDL2_URL)" -O "$$zip" || { rm -f "$$zip"; retry=$$((retry+1)); continue; }
+				fi
+			fi
+			if unzip -q "$$zip" -d "$$tmp" -x '*/android-project-ant/*'; then
+				subdir="$$(find "$$tmp" -mindepth 1 -maxdepth 1 -type d | head -1)"
+				rm -rf "$(SDL2_SRCDIR)"
+				mkdir -p "$(SDL2_SRCDIR)"
+				cp -a "$$subdir"/. "$(SDL2_SRCDIR)"/
+				rm -rf "$$tmp" "$$zip"
+				extracted=1
+			else
+				echo "ERROR: unzip failed for $$zip, retrying..." >&2
+				rm -rf "$$tmp" "$$zip"
+				retry=$$((retry+1))
+			fi
+		done
+		if [ $$extracted -eq 0 ]; then
+			echo "ERROR: failed to download + extract $(SDL2_URL) after $$max_retries attempts" >&2; exit 1; fi
 	fi
 	cmake -S "$(SDL2_SRCDIR)" -B "$(SDL2_BUILDDIR)" \
 		$(SDL2_CMAKE_GENERATOR) \
@@ -827,20 +839,36 @@ $(LIBVPX_LIB):
 	mkdir -p $(BUILDDIR)
 	if [ ! -d "$(LIBVPX_SRCDIR)" ]; then \
 		echo "==> Downloading $(LIBVPX_URL)..."; \
-		if [ ! -f "$(BUILDDIR)/libvpx.zip" ]; then \
-			wget -q "$(LIBVPX_URL)" -O "$(BUILDDIR)/libvpx.zip"; \
-		else \
-			echo "==> Using existing zip: $(BUILDDIR)/libvpx.zip"; \
-		fi; \
-		tmp="$(BUILDDIR)/libvpx.zip-extract"; \
-		rm -rf "$$tmp"; \
-		mkdir -p "$$tmp"; \
-		unzip -q "$(BUILDDIR)/libvpx.zip" -d "$$tmp"; \
-		subdir="$$(find "$$tmp" -mindepth 1 -maxdepth 1 -type d | head -1)"; \
-		rm -rf "$(LIBVPX_SRCDIR)"; \
-		mkdir -p "$(LIBVPX_SRCDIR)"; \
-		cp -a "$$subdir"/. "$(LIBVPX_SRCDIR)"/; \
-		rm -rf "$$tmp" "$(BUILDDIR)/libvpx.zip"; \
+		zip="$(BUILDDIR)/libvpx.zip"; \
+		max_retries=3; retry=0; extracted=0; \
+		while [ $$retry -lt $$max_retries ] && [ $$extracted -eq 0 ]; do \
+			tmp="$(BUILDDIR)/libvpx.zip-extract"; \
+			rm -rf "$$tmp"; \
+			mkdir -p "$$tmp"; \
+			if [ ! -f "$$zip" ] || ! unzip -t "$$zip" >/dev/null 2>&1; then \
+				if [ ! -f "$$zip" ]; then \
+					echo "==> Downloading $(LIBVPX_URL) (attempt $$((retry+1))/$$max_retries)..."; \
+					wget -q "$(LIBVPX_URL)" -O "$$zip" || { rm -f "$$zip"; retry=$$((retry+1)); continue; }; \
+				else \
+					echo "==> Resuming download $(LIBVPX_URL) (attempt $$((retry+1))/$$max_retries)..."; \
+					wget -q -c "$(LIBVPX_URL)" -O "$$zip" || { rm -f "$$zip"; retry=$$((retry+1)); continue; }; \
+				fi; \
+			fi; \
+			if unzip -q "$$zip" -d "$$tmp"; then \
+				subdir="$$(find "$$tmp" -mindepth 1 -maxdepth 1 -type d | head -1)"; \
+				rm -rf "$(LIBVPX_SRCDIR)"; \
+				mkdir -p "$(LIBVPX_SRCDIR)"; \
+				cp -a "$$subdir"/. "$(LIBVPX_SRCDIR)"/; \
+				rm -rf "$$tmp" "$$zip"; \
+				extracted=1; \
+			else \
+				echo "ERROR: unzip failed for $$zip, retrying..." >&2; \
+				rm -rf "$$tmp" "$$zip"; \
+				retry=$$((retry+1)); \
+			fi; \
+		done; \
+		if [ $$extracted -eq 0 ]; then \
+			echo "ERROR: failed to download + extract $(LIBVPX_URL) after $$max_retries attempts" >&2; exit 1; fi; \
 	fi
 	mkdir -p $(LIBVPX_BUILDDIR)
 	cd $(LIBVPX_SRCDIR) && \
@@ -887,20 +915,36 @@ $(FFMPEG_LIBS) &: $(LIBVPX_LIB)
 	mkdir -p $(BUILDDIR)
 	if [ ! -d "$(FFMPEG_SRCDIR)" ]; then
 		echo "==> Downloading $(FFMPEG_URL)..."
-		if [ ! -f "$(BUILDDIR)/FFmpeg.zip" ]; then
-			wget -q "$(FFMPEG_URL)" -O "$(BUILDDIR)/FFmpeg.zip"
-		else
-			echo "==> Using existing zip: $(BUILDDIR)/FFmpeg.zip"
+		zip="$(BUILDDIR)/FFmpeg.zip"
+		max_retries=3; retry=0; extracted=0
+		while [ $$retry -lt $$max_retries ] && [ $$extracted -eq 0 ]; do
+			tmp="$(BUILDDIR)/FFmpeg.zip-extract"
+			rm -rf "$$tmp"
+			mkdir -p "$$tmp"
+		if [ ! -f "$$zip" ] || ! unzip -t "$$zip" >/dev/null 2>&1; then
+			if [ ! -f "$$zip" ]; then
+				echo "==> Downloading $(FFMPEG_URL) (attempt $$((retry+1))/$$max_retries)..."
+				wget -q "$(FFMPEG_URL)" -O "$$zip" || { rm -f "$$zip"; retry=$$((retry+1)); continue; }
+			else
+				echo "==> Resuming download $(FFMPEG_URL) (attempt $$((retry+1))/$$max_retries)..."
+				wget -q -c "$(FFMPEG_URL)" -O "$$zip" || { rm -f "$$zip"; retry=$$((retry+1)); continue; }
+			fi
 		fi
-		tmp="$(BUILDDIR)/FFmpeg.zip-extract"
-		rm -rf "$$tmp"
-		mkdir -p "$$tmp"
-		unzip -q "$(BUILDDIR)/FFmpeg.zip" -d "$$tmp"
-		subdir="$$(find "$$tmp" -mindepth 1 -maxdepth 1 -type d | head -1)"
-		rm -rf "$(FFMPEG_SRCDIR)"
-		mkdir -p "$(FFMPEG_SRCDIR)"
-		cp -a "$$subdir"/. "$(FFMPEG_SRCDIR)"/
-		rm -rf "$$tmp" "$(BUILDDIR)/FFmpeg.zip"
+			if unzip -q "$$zip" -d "$$tmp"; then
+				subdir="$$(find "$$tmp" -mindepth 1 -maxdepth 1 -type d | head -1)"
+				rm -rf "$(FFMPEG_SRCDIR)"
+				mkdir -p "$(FFMPEG_SRCDIR)"
+				cp -a "$$subdir"/. "$(FFMPEG_SRCDIR)"/
+				rm -rf "$$tmp" "$$zip"
+				extracted=1
+			else
+				echo "ERROR: unzip failed for $$zip, retrying..." >&2
+				rm -rf "$$tmp" "$$zip"
+				retry=$$((retry+1))
+			fi
+		done
+		if [ $$extracted -eq 0 ]; then
+			echo "ERROR: failed to download + extract $(FFMPEG_URL) after $$max_retries attempts" >&2; exit 1; fi
 	fi
 	@# Wrap nasm to silence deprecated $ hex warning (FFmpeg n7.1 yuv2yuvX.asm:128)
 	@# nasm 2.16+ warns on `$0x` style; FFmpeg uses it via x86inc.asm macros. Wrapper adds -w.
@@ -925,8 +969,8 @@ $(FFMPEG_LIBS) &: $(LIBVPX_LIB)
 	_PKGC="$$(command -v pkg-config || echo pkg-config)"; \
 	_PKGC_WIN=$$(cygpath -m "$$_PKGC" 2>/dev/null || echo "$$_PKGC"); \
 	_PC_DIR=$$(cygpath -m "$(BUILD_PREFIX)/lib/pkgconfig" 2>/dev/null || echo "$(BUILD_PREFIX)/lib/pkgconfig"); \
-	printf '@echo off\\r\\n"%s" --with-path="%s" %%*\\r\\n' "$$_PKGC_WIN" "$$_PC_DIR" > "$(BUILD_PREFIX)/bin/pkg-config-local.cmd"; \
-	printf '#!/bin/sh\\nexec "%s" --with-path="%s" "$$@"\\n' "$$_PKGC" "$(BUILD_PREFIX)/lib/pkgconfig" > "$(BUILD_PREFIX)/bin/pkg-config-local"; \
+	printf '@echo off\r\n"%s" --with-path="%s" %%*\r\n' "$$_PKGC_WIN" "$$_PC_DIR" > "$(BUILD_PREFIX)/bin/pkg-config-local.cmd"; \
+	printf '#!/bin/sh\nexec "%s" --with-path="%s" "$$@"\n' "$$_PKGC" "$(BUILD_PREFIX)/lib/pkgconfig" > "$(BUILD_PREFIX)/bin/pkg-config-local"; \
 	chmod +x "$(BUILD_PREFIX)/bin/pkg-config-local"
 	@# FFmpeg's configure is a plain POSIX sh script. Run it under `sh` so it
 	@# works everywhere: MSYS2/Linux/macOS sh is bash/dash (FFmpeg supports
@@ -939,7 +983,6 @@ $(FFMPEG_LIBS) &: $(LIBVPX_LIB)
 			--enable-static --disable-shared \
 			--disable-gpl --disable-nonfree \
 			--disable-debug --disable-doc --disable-programs --disable-everything \
-			--disable-autodetect --disable-avdevice --disable-pthreads \
 			$(if $(NO_X86ASM),--disable-x86asm,) \
 			$(if $(X86ASM),--x86asmexe="$$X86ASM_WRAPPER",) \
 			--enable-avformat --enable-avcodec --enable-avutil \
@@ -980,20 +1023,36 @@ $(XMP_LIB):
 	mkdir -p $(BUILDDIR)
 	if [ ! -d "$(XMP_SRCDIR)" ]; then
 		echo "==> Downloading $(XMP_URL)..."
-		if [ ! -f "$(BUILDDIR)/libxmp.zip" ]; then
-			wget -q "$(XMP_URL)" -O "$(BUILDDIR)/libxmp.zip"
-		else
-			echo "==> Using existing zip: $(BUILDDIR)/libxmp.zip"
-		fi
-		tmp="$(BUILDDIR)/libxmp.zip-extract"
-		rm -rf "$$tmp"
-		mkdir -p "$$tmp"
-		unzip -q "$(BUILDDIR)/libxmp.zip" -d "$$tmp"
-		subdir="$$(find "$$tmp" -mindepth 1 -maxdepth 1 -type d | head -1)"
-		rm -rf "$(XMP_SRCDIR)"
-		mkdir -p "$(XMP_SRCDIR)"
-		cp -a "$$subdir"/. "$(XMP_SRCDIR)"/
-		rm -rf "$$tmp" "$(BUILDDIR)/libxmp.zip"
+		zip="$(BUILDDIR)/libxmp.zip"
+		max_retries=3; retry=0; extracted=0
+		while [ $$retry -lt $$max_retries ] && [ $$extracted -eq 0 ]; do
+			tmp="$(BUILDDIR)/libxmp.zip-extract"
+			rm -rf "$$tmp"
+			mkdir -p "$$tmp"
+			if [ ! -f "$$zip" ] || ! unzip -t "$$zip" >/dev/null 2>&1; then
+				if [ ! -f "$$zip" ]; then
+					echo "==> Downloading $(XMP_URL) (attempt $$((retry+1))/$$max_retries)..."
+					wget -q "$(XMP_URL)" -O "$$zip" || { rm -f "$$zip"; retry=$$((retry+1)); continue; }
+				else
+					echo "==> Resuming download $(XMP_URL) (attempt $$((retry+1))/$$max_retries)..."
+					wget -q -c "$(XMP_URL)" -O "$$zip" || { rm -f "$$zip"; retry=$$((retry+1)); continue; }
+				fi
+			fi
+			if unzip -q "$$zip" -d "$$tmp"; then
+				subdir="$$(find "$$tmp" -mindepth 1 -maxdepth 1 -type d | head -1)"
+				rm -rf "$(XMP_SRCDIR)"
+				mkdir -p "$(XMP_SRCDIR)"
+				cp -a "$$subdir"/. "$(XMP_SRCDIR)"/
+				rm -rf "$$tmp" "$$zip"
+				extracted=1
+			else
+				echo "ERROR: unzip failed for $$zip, retrying..." >&2
+				rm -rf "$$tmp" "$$zip"
+				retry=$$((retry+1))
+			fi
+		done
+		if [ $$extracted -eq 0 ]; then
+			echo "ERROR: failed to download + extract $(XMP_URL) after $$max_retries attempts" >&2; exit 1; fi
 	fi
 	cmake -S "$(XMP_SRCDIR)" -B "$(XMP_BUILDDIR)" \
 		-DCMAKE_INSTALL_PREFIX="$(BUILD_PREFIX)" \
