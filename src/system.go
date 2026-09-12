@@ -158,6 +158,7 @@ type SystemStateVars struct {
 // Do not create more than 1.
 var sys = System{
 	soundMixer: &beep.Mixer{},
+	videoMixer: &beep.Mixer{},
 	bgm:        *newBgm(),
 	//soundChannels: newSoundChannels(16), // Lazy allocation in Request()
 	allPalFX: newPalFX(),
@@ -223,6 +224,7 @@ type System struct {
 	debugRef            [2]int // player number, helper index
 	debugLastID         int32
 	soundMixer          *beep.Mixer
+	videoMixer         *beep.Mixer
 	bgm                 Bgm
 	matchMusicSel       []*bgMusic
 	pauseVolumeApplied  bool
@@ -6459,9 +6461,6 @@ func (l *Loader) prepareTurnsFaces(pn int, fa *FightScreenFace, nm *FightScreenN
 				// Decouple clone from global SFF palettes
 				spr.Pal = make([]uint32, len(srcPal))
 				copy(spr.Pal, srcPal)
-
-				spr.paltemp = make([]uint32, len(srcPal))
-				copy(spr.paltemp, srcPal)
 
 				// Pre-compute hash for the new palette
 				spr.palhash = hashPal(srcPal)
