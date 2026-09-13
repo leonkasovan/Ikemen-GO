@@ -1,4 +1,4 @@
-//go:build !android && !armdevice
+//go:build desktop || mugen
 
 package main
 

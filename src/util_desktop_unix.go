@@ -1,4 +1,4 @@
-//go:build !windows && !android && !armdevice
+//go:build !windows && (desktop || mugen)
 
 package main
 

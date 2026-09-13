@@ -1,4 +1,4 @@
-//go:build debug && !android
+//go:build debug && (desktop || mugen || armdevice)
 
 package main
 
