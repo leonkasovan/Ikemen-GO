@@ -4,6 +4,7 @@ import (
 	"container/list"
 	_ "embed"
 	"math"
+	"strings"
 
 	mgl "github.com/go-gl/mathgl/mgl32"
 )
@@ -287,6 +288,28 @@ type CustomShaderRenderData struct {
 	sTime  float32
 	tex1   Texture
 	tex2   Texture
+}
+
+// customShaderSamplesTextures reports whether a custom fragment shader
+// source actually samples a texture. Old Mali DDKs (e.g. Bifrost r13)
+// silently render programs with zero active samplers as black, so loaders
+// warn when this returns false.
+func customShaderSamplesTextures(fragSource string) bool {
+	for _, line := range strings.Split(fragSource, "\n") {
+		t := strings.TrimSpace(line)
+		if i := strings.Index(t, "//"); i >= 0 {
+			t = strings.TrimSpace(t[:i])
+		}
+		if t == "" || strings.HasPrefix(t, "#") {
+			continue
+		}
+		if strings.Contains(t, "COMPAT_TEXTURE(") ||
+			strings.Contains(t, "texture(") ||
+			strings.Contains(t, "texelFetch(") {
+			return true
+		}
+	}
+	return false
 }
 
 // DrawCallStats tracks per-frame batching metrics.

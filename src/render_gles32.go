@@ -2757,6 +2757,10 @@ func (r *Renderer_GLES32) LoadCustomSpriteShader(shaderName string, shaderData [
 
 	shader.needsGrabPass = strings.Contains(fragSource, "bgl_RenderedTexture")
 
+	if !customShaderSamplesTextures(fragSource) {
+		LogMessage("[GLES] WARNING: custom shader %s performs no texture sampling — old Mali drivers (e.g. Bifrost r13) render such programs as black. Keep one non-foldable COMPAT_TEXTURE(tex, texcoord) contribution.", shaderName)
+	}
+
 	id := r.nextShaderID
 	r.nextShaderID++
 	r.customShaders[id] = shader

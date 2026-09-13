@@ -380,6 +380,15 @@ Original: rain + drips + mouse sphere. Converted 1:1 except:
   setters exist but do nothing; draws fall back to the default look.
 * **OpenGL 3.3 / GLES 3.2**: `.frag` GLSL source compiled at load; uniforms
   `p0`…`p15` are floats looked up by name (unused ones are simply not set).
+* **Old Mali GPUs (Bifrost r13, e.g. RK3326/R36S)**: the driver silently
+  renders programs with **zero active texture samplers as black** — compile
+  and link succeed, draws issue without GL errors, mapping shows `-1`s (all
+  normal). Fully procedural frags (`clouds.frag` before the fix) hit this.
+  Keep one non-constant-foldable sample under `#ifdef GL_ES` (see
+  `deploy/stages/clouds.frag` keep-alive tail). Note `t * 0.0` does **not**
+  count — the compiler folds it away and drops the sampler. The engine logs
+  `WARNING: custom shader … performs no texture sampling` at load when the
+  frag source contains no sampling call.
 * **Vulkan**: `.spv` (SPIR-V) is **required**; the loader appends `.spv` to the
   path. `p0`…`p15` arrive via push constants (fragment stage, offset 16, 64
   bytes). Unset `tex1`/`tex2` bind a dummy texture to avoid descriptor errors —
@@ -403,6 +412,7 @@ Original: rain + drips + mouse sphere. Converted 1:1 except:
 * [ ] Dual `#if __VERSION__ >= 450` header, bindings 1–6 correct, no invented uniforms.
 * [ ] No `iMouse`/`iChannel`/`mainImage` leftovers (a comment mentioning them is fine).
 * [ ] `bgl_RenderedTexture` declared only when needed (a stray comment enables the grab pass!).
+* [ ] Procedural (sampler-less) frags carry the `#ifdef GL_ES` sampler keep-alive (old Mali renders them black otherwise).
 * [ ] Every used `p*` documented in the shader header and defaulted: `(pX != 0.0) ? pX : dflt`.
 * [ ] `tex1`/`tex2` either always assigned from the state controller or handled as black in the shader.
 * [ ] `shadertime`/`time` semantics chosen deliberately: omit = infinite, `0` = clear.

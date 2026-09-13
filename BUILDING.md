@@ -751,6 +751,12 @@ Then use `top` to see what grew (positive = more allocations in current).
   The upstream `reisen` library uses C types that are incompatible on 32-bit ARM.
   The project ships a patched local copy at `packages/reisen/` with the fix.
   If updating the dependency, re-apply the fix to `packages/reisen/platform_linux.go`.
+- **Custom stage shaders render black on old Mali GPUs** (e.g. Bifrost r13 on
+  RK3326/R36S): the driver silently drops programs with zero active texture
+  samplers — compiles and draws succeed, output is black. Keep one
+  non-constant-foldable `COMPAT_TEXTURE(tex, texcoord)` contribution in the
+  frag (see `clouds.frag` keep-alive). The engine logs a warning at shader
+  load when a custom frag samples nothing.
 - **Android linker error after switching ABIs** (`libSDL2.so is incompatible with
   aarch64linux`): The `ANDROID_DEPS_PATH` variable may still point to the previous
   ABI's library directory. Run `unset ANDROID_DEPS_PATH` before building.
