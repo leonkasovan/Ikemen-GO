@@ -62,6 +62,7 @@ type ShaderProgram_GLES32 struct {
 	textures      map[string]int   // Sampler name to texture unit
 	name          string           // For debugging
 	needsGrabPass bool
+	vao           uint32 // Private VAO matching this program's attrib locations (custom shaders)
 }
 
 var shaderCompileMutex sync.Mutex
@@ -760,6 +761,7 @@ type Renderer_GLES32 struct {
 	nextShaderID    uint32
 	currentProgram  *ShaderProgram_GLES32
 	grabTexture     *Texture_GLES32
+	grabFbo         uint32 // Blit target for grab passes (CopyTexSubImage2D 0x506 on Bifrost r13)
 	// Shader and vertex data for primitive rendering
 	spriteShader *ShaderProgram_GLES32
 	vertexBuffer uint32
@@ -1183,6 +1185,16 @@ func (r *Renderer_GLES32) Init() {
 	r.SetActiveTexture0() //gl.ActiveTexture(gl.TEXTURE0)
 	r.grabTexture = r.newTexture(sys.scrrect[2], sys.scrrect[3], 32, true).(*Texture_GLES32)
 	r.grabTexture.SetData(nil)
+
+	// Dedicated FBO wrapping the grab texture so ResolveBackBuffer can
+	// BlitFramebuffer into it (no CopyTexSubImage2D readback quirks).
+	gl.GenFramebuffers(1, &r.grabFbo)
+	r.bindFramebuffer(gl.FRAMEBUFFER, r.grabFbo)
+	gl.FramebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, r.grabTexture.handle, 0)
+	if status := gl.CheckFramebufferStatus(gl.FRAMEBUFFER); status != gl.FRAMEBUFFER_COMPLETE {
+		LogMessage("[GLES] Grab framebuffer incomplete: 0x%x", status)
+	}
+	r.bindFramebuffer(gl.FRAMEBUFFER, 0)
 
 	// create a texture for r.fbo
 	gl.GenTextures(1, &r.fbo_texture)
@@ -2756,6 +2768,32 @@ func (r *Renderer_GLES32) LoadCustomSpriteShader(shaderName string, shaderData [
 	shader.RegisterTextures("pal", "tex", "tex1", "tex2", "bgl_RenderedTexture")
 
 	shader.needsGrabPass = strings.Contains(fragSource, "bgl_RenderedTexture")
+	if shader.needsGrabPass {
+		// Grab shaders sample via gl_FragCoord/iResolution math that only
+		// lines up when the scene lives in r.fbo at scrrect size.
+		// Direct-to-window mode uses window pixels + letterbox offsets, so
+		// force the intermediate path while any grab shader is loaded.
+		// ponytail: sticky flag; harmless extra blit if later unloaded.
+		r.useIntermediateFBO = true
+		LogMessage("[GLES] Grab-pass shader %s loaded — forcing intermediate FBO path", shaderName)
+	}
+
+	// Private VAO: drivers assign attrib locations per program (Bifrost r13
+	// drops the unread `uv` to -1 and moves `position` to 0), so the shared
+	// spriteVAO feeds custom programs garbage vertices. Configure this
+	// program's own VAO from its queried locations instead.
+	gl.GenVertexArrays(1, &shader.vao)
+	gl.BindVertexArray(shader.vao)
+	gl.BindBuffer(gl.ARRAY_BUFFER, r.vertexBuffer)
+	if loc, ok := shader.attributes["position"]; ok && loc >= 0 {
+		gl.EnableVertexAttribArray(uint32(loc))
+		gl.VertexAttribPointerWithOffset(uint32(loc), 2, gl.FLOAT, false, 16, 0)
+	}
+	if loc, ok := shader.attributes["uv"]; ok && loc >= 0 {
+		gl.EnableVertexAttribArray(uint32(loc))
+		gl.VertexAttribPointerWithOffset(uint32(loc), 2, gl.FLOAT, false, 16, 8)
+	}
+	gl.BindVertexArray(0)
 
 	if !customShaderSamplesTextures(fragSource) {
 		LogMessage("[GLES] WARNING: custom shader %s performs no texture sampling — old Mali drivers (e.g. Bifrost r13) render such programs as black. Keep one non-foldable COMPAT_TEXTURE(tex, texcoord) contribution.", shaderName)
@@ -2774,6 +2812,9 @@ func (r *Renderer_GLES32) UnloadCustomSpriteShader(shaderName string) {
 	if id, exists := r.customShaderMap[shaderName]; exists {
 		if shader, hasProg := r.customShaders[id]; hasProg {
 			gl.DeleteProgram(shader.program)
+			if shader.vao != 0 {
+				gl.DeleteVertexArrays(1, &shader.vao)
+			}
 			delete(r.customShaders, id)
 			if r.currentProgram == shader {
 				r.currentProgram = nil
@@ -2797,7 +2838,11 @@ func (r *Renderer_GLES32) SetSpritePipeline(shaderName string) {
 	if r.program != targetShader.program {
 		r.currentProgram = targetShader
 		r.ChangeProgram(targetShader.program)
-		gl.BindVertexArray(r.spriteVAO)
+		if targetShader.vao != 0 {
+			gl.BindVertexArray(targetShader.vao)
+		} else {
+			gl.BindVertexArray(r.spriteVAO)
+		}
 	}
 }
 
@@ -2821,15 +2866,35 @@ func (r *Renderer_GLES32) NeedsGrabPass() bool {
 }
 
 func (r *Renderer_GLES32) ResolveBackBuffer() Texture {
-	r.SetActiveTexture0()
-	gl.BindTexture(gl.TEXTURE_2D, r.grabTexture.handle)
+	src := r.fbo
+	if !r.useIntermediateFBO {
+		src = 0
+	}
+	// Blit scene into the grab FBO. CopyTexSubImage2D from r.fbo raises
+	// GL_INVALID_FRAMEBUFFER_OPERATION (0x506) on old Mali DDKs (Bifrost r13).
+	r.bindFramebuffer(gl.READ_FRAMEBUFFER, src)
+	r.bindFramebuffer(gl.DRAW_FRAMEBUFFER, r.grabFbo)
 
-	r.bindFramebuffer(gl.READ_FRAMEBUFFER, r.fbo)
-	gl.ReadBuffer(gl.COLOR_ATTACHMENT0)
+	w, h := r.grabTexture.width, r.grabTexture.height
+	sw, sh := w, h
+	if src != 0 {
+		// ponytail: FBO is renderW×renderH when RenderScale < 1; blit scales.
+		if sw > r.renderW {
+			sw = r.renderW
+		}
+		if sh > r.renderH {
+			sh = r.renderH
+		}
+	}
+	for gl.GetError() != 0 {
+	} // drain stale so the check below reflects the blit itself
+	gl.BlitFramebuffer(0, 0, sw, sh, 0, 0, w, h, gl.COLOR_BUFFER_BIT, gl.NEAREST)
+	if err := gl.GetError(); err != 0 {
+		LogError("[GLES] ResolveBackBuffer blit failed: err=0x%x src=%d grab=%dx%d render=%dx%d scr=%dx%d intermediate=%v",
+			uint32(err), src, w, h, r.renderW, r.renderH, sys.scrrect[2], sys.scrrect[3], r.useIntermediateFBO)
+	}
 
-	gl.CopyTexSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 0, 0, r.grabTexture.width, r.grabTexture.height)
-
-	r.bindFramebuffer(gl.FRAMEBUFFER, r.fbo)
+	r.bindFramebuffer(gl.FRAMEBUFFER, src)
 	return r.grabTexture
 }
 
