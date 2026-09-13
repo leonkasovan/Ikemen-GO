@@ -39,9 +39,12 @@ This repository is a fork of [ikemen-engine/Ikemen-GO](https://github.com/ikemen
 - libvpx built from source (VP8/VP9, decoder-only) and linked into FFmpeg so WebM videos with a VP8/VP9 alpha stream play correctly.
 - Per-platform build directories, Windows toolchain auto-detection, and architecture-suffixed binary names (`Ikemen_GO.amd64.exe`, `*_debug` for debug builds).
 - `make install-remote` to copy the built binary to a device over SSH and `make fetch-log` to pull logs back.
-- Android APK build scripts (via Docker or natively), Android 13 support, and `armeabi-v7a` ABI builds.
+- Android APK build scripts (via Docker or natively), Android 13 support, per-ABI output directories (`build/android_arm64/`, `build/android_arm/`), and `armeabi-v7a` ABI builds.
 - Vendored Go packages (OpenGL bindings, SDL2 headers, `beep`, `reisen`) for reproducible offline builds.
 - ARM device defaults tuned for low-power handhelds (Mali-G31-class GPUs): 75% render scale, models/shadows/MSAA disabled, sprite batching and VSync enabled.
+
+### Input
+- Gamepad left stick always drives U/D/L/R alongside the configured binds, so dpad (`DP_*` defaults) and analog work simultaneously with no remapping. Threshold: `ControllerStickSensitivity` (`[Input]`, default `0.5`).
 
 ## Installing
 Ready-to-use builds are available in the [releases section](https://github.com/ikemen-engine/Ikemen-GO/releases). Stable releases use tags such as `v1.0.0`, while release candidates use tags such as `v1.0.0-rc.1` and are marked as pre-releases. [Nightly builds](https://github.com/ikemen-engine/Ikemen-GO/releases/tag/nightly) are updated after each commit to `develop` and may be less stable.
@@ -66,6 +69,42 @@ DLL dependencies (except Windows system DLLs).
 On **Linux** and **macOS**, the same Makefile detects your platform and builds a native
 binary — `Ikemen_GO.amd64` / `Ikemen_GO.arm64` on Linux, `Ikemen_GO` on macOS — with
 SDL2, FFmpeg, libvpx, and libxmp compiled in statically and system libraries linked dynamically.
+
+On **Android**, the project provides a native build script for arm64-v8a (64-bit ARM) and
+armeabi-v7a (32-bit ARM) APK builds, without requiring Docker. See BUILDING.md for the
+full workflow. Android uses only the `android` tag (no `mugen` tag): default motif
+from `src/motif_android.go`, runtime in `src/util_android.go`.
+
+Built for Android arm64-v8a (64-bit ARM):
+```bash
+./tools/generate_android_via_native.sh --yes
+```
+or
+```bash
+ANDROID_ABI=arm64-v8a ./tools/generate_android_via_native.sh --yes
+```
+
+This produces `build/android_arm64/ikemen-go-arm64-v8a.apk` by default.
+
+Build a debug APK on arm64-v8a:
+```bash
+CONFIG=debug ./tools/generate_android_via_native.sh --yes
+```
+This produces `build/android_arm64/ikemen-go-arm64-v8a-debug.apk`.
+
+Built for Android armeabi-v7a (32-bit ARM):
+```bash
+ANDROID_ABI=armeabi-v7a ./tools/generate_android_via_native.sh --yes
+```
+
+Build a debug APK on armeabi-v7a:
+```bash
+CONFIG=debug ANDROID_ABI=armeabi-v7a ./tools/generate_android_via_native.sh --yes
+```
+
+Each ABI gets its own output directory:
+- `build/android_arm64/` for arm64-v8a (APK + `android-deps/arm64-v8a/`)
+- `build/android_arm/` for armeabi-v7a (APK + `android-deps/armeabi-v7a/`)
 
 Use `make config=debug` for a debug build with memory instrumentation, `make install`
 to assemble a runnable installation with screenpack assets, or `make install-remote`

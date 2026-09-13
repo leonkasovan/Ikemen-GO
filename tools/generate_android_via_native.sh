@@ -19,7 +19,7 @@
 #   2.  Go 1.22+                 (mingw-w64-x86_64-go via pacman)
 #   3.  Eclipse Temurin JDK 17   (for Gradle / sdkmanager)
 #   4.  Android NDK r27d          (cross-compiler for selected ABI)
-#   5.  SDL2 cross-compiled      for Android (into build/android-deps-<ABI>/)
+#   5.  SDL2 cross-compiled      for Android (into build/android_<arch>/android-deps/<ABI>/)
 #   6.  libxmp cross-compiled    for Android
 #   7.  libvpx cross-compiled    for Android (VP8/VP9 decoder for WebM alpha, arm64-v8a)
 #   8.  FFmpeg cross-compiled    for Android (minimal: libvpx VP8/VP9 + Opus/Vorbis)
@@ -90,8 +90,6 @@ FFMPEG_URL="${FFMPEG_URL:-https://github.com/FFmpeg/FFmpeg/archive/refs/tags/${F
 # libvpx cross-compilation for Android (VP8/VP9 decoder for WebM alpha)
 LIBVPX_VERSION="${LIBVPX_VERSION:-v1.15.2}"
 LIBVPX_URL="${LIBVPX_URL:-https://github.com/webmproject/libvpx/archive/refs/tags/${LIBVPX_VERSION}.zip}"
-# ikemen-droid APK build
-IKEMEN_DROID_DIR="${IKEMEN_DROID_DIR:-${BINARY_BASE}/android-apk/ikemen-droid}"
 CONFIG="${CONFIG:-release}"
 if [[ "$CONFIG" == "debug" ]]; then
   ANDROID_GRADLE_TASK="${ANDROID_GRADLE_TASK:-assembleDebug}"
@@ -109,7 +107,7 @@ fi
 # WARNING: Do NOT commit passwords to version control. Use env:VAR or file:PATH.
 #          Keep the generated keystore safe — a lost key cannot be recovered and
 #          the APK can no longer be updated on the Play Store / device.
-ANDROID_KEYSTORE="${ANDROID_KEYSTORE:-$(pwd)/android/release.jks}"
+ANDROID_KEYSTORE="${ANDROID_KEYSTORE:-}"
 ANDROID_KEY_ALIAS="${ANDROID_KEY_ALIAS:-androidkey}"
 ANDROID_KEYSTORE_PASS="${ANDROID_KEYSTORE_PASS:-pass:Secret14!}"
 ANDROID_KEY_PASS="${ANDROID_KEY_PASS:-$ANDROID_KEYSTORE_PASS}"
@@ -158,9 +156,38 @@ esac
 
 # Paths that depend on ANDROID_ABI / JNILIBS_DIR (must come after ABI case statement)
 BINARY_BASE="$(pwd)/build/android_${GO_ANDROID_ARCH}"
-ANDROID_BINARY="${ANDROID_BINARY:-$(pwd)/android/app/libs/${JNILIBS_DIR}/libmain.so}"
+ANDROID_BINARY="${ANDROID_BINARY:-${BINARY_BASE}/libmain.so}"
 APK_OUTPUT="${APK_OUTPUT:-${BINARY_BASE}/ikemen-go-${ANDROID_ABI}${CONFIG:+-${CONFIG}}.apk}"
-ANDROID_DEPS_PATH="${ANDROID_DEPS_PATH:-${BINARY_BASE}/android-deps}"
+ANDROID_KEYSTORE="${ANDROID_KEYSTORE:-${BINARY_BASE}/release.jks}"
+# Put per-ABI deps under the per-ABI output directory so arm64-v8a and
+# armeabi-v7a can coexist without clobbering each other's libs.
+if [[ -z "${ANDROID_DEPS_PATH:-}" ]]; then
+  ANDROID_DEPS_PATH="${BINARY_BASE}/android-deps/${ANDROID_ABI}"
+fi
+
+# If ANDROID_DEPS_PATH was set but points under the old top-level
+# build/android-deps/ (which no longer contains ABI-specific libs),
+# move it into the per-ABI directory under BINARY_BASE.
+#
+# Resolve both sides to a common Windows-native form (cygpath -m) so that
+# an absolute ANDROID_DEPS_PATH from a prior run's .bashrc (e.g.
+# C:/.../build/android-deps) still matches. The old top-level is the
+# sibling of BINARY_BASE/android-deps, so we compare against that too.
+if [[ -n "${ANDROID_DEPS_PATH:-}" ]]; then
+  _deps_win="$(cygpath -m "$ANDROID_DEPS_PATH" 2>/dev/null || echo "$ANDROID_DEPS_PATH")"
+  # Per-ABI deps dir (child of BINARY_BASE)
+  _per_abi_win="$(cygpath -m "${BINARY_BASE}/android-deps" 2>/dev/null || echo "${BINARY_BASE}/android-deps")"
+  # Old top-level build/android-deps (sibling of BINARY_BASE)
+  _old_top_win="$(cygpath -m "$(pwd)/build/android-deps" 2>/dev/null || echo "$(pwd)/build/android-deps")"
+  if [[ "$_deps_win" == "$_per_abi_win" || "$_deps_win" == "$_per_abi_win/" || "$_deps_win" == "$_per_abi_win/"* ||
+        "$_deps_win" == "$_old_top_win" || "$_deps_win" == "$_old_top_win/" || "$_deps_win" == "$_old_top_win/"* ]]; then
+    ANDROID_DEPS_PATH="${BINARY_BASE}/android-deps/${ANDROID_ABI}"
+  fi
+  unset _deps_win _per_abi_win _old_top_win
+fi
+
+# ikemen-droid APK build (depends on BINARY_BASE)
+IKEMEN_DROID_DIR="${IKEMEN_DROID_DIR:-${BINARY_BASE}/android-apk/ikemen-droid}"
 
 # Auto-detect GOROOT for MSYS2 MinGW Go if not already set
 if [[ -z "${GOROOT:-}" ]]; then
@@ -282,12 +309,12 @@ echo ""
 
 install_msys2_packages() {
   echo ""
-  echo "═══ Step 1/12 — Installing MSYS2 build tools ═══"
+  echo "═══ Step 1 — Installing MSYS2 build tools ═══"
 
   # First check which tools are already available on PATH
   local required_bins=(
     make gcc g++ go cmake nasm pkg-config
-    wget unzip
+    wget unzip zip
   )
   local missing=( $(check_tools_on_path "${required_bins[@]}") )
 
@@ -314,6 +341,7 @@ install_msys2_packages() {
     cmake:mingw-w64-x86_64-cmake
     wget:wget
     unzip:unzip
+    zip:zip
   )
   for entry in "${pkg_map[@]}"; do
     local bin="${entry%%:*}"
@@ -363,7 +391,7 @@ install_msys2_packages() {
 
 install_jdk17() {
   echo ""
-  echo "═══ Step 2/12 — Installing JDK 17 (Eclipse Temurin) ═══"
+  echo "═══ Step 2 — Installing JDK 17 (Eclipse Temurin) ═══"
 
   # Check if JDK 17 is already on PATH via java -version
   if command -v java &>/dev/null; then
@@ -420,7 +448,7 @@ install_jdk17() {
 
 install_ndk() {
   echo ""
-  echo "═══ Step 3/12 — Installing Android NDK ${NDK_VERSION} ═══"
+  echo "═══ Step 3 — Installing Android NDK ${NDK_VERSION} ═══"
 
   if [[ -d "$NDK_INSTALL_DIR/build/cmake" ]] && [[ -f "$NDK_INSTALL_DIR/build/cmake/android.toolchain.cmake" ]]; then
     echo "✅  NDK already installed at: $NDK_INSTALL_DIR"
@@ -465,7 +493,7 @@ install_ndk() {
 
 install_sdl2_android() {
   echo ""
-  echo "═══ Step 5/12 — Cross-compiling SDL2 for Android ${ANDROID_ABI} ═══"
+  echo "═══ Step 5 — Cross-compiling SDL2 for Android ${ANDROID_ABI} ═══"
 
   local sdl2_lib="$ANDROID_DEPS_PATH/lib/libSDL2.so"
   local sdl2_src="${BINARY_BASE}/SDL-${SDL2_VERSION}"
@@ -522,14 +550,15 @@ install_sdl2_android() {
   echo "==> Configuring SDL2 for ${ANDROID_ABI} / ${SDK_PLATFORM}..."
   (cd "$sdl2_build" && cmake -G "Unix Makefiles" "$sdl2_src" -Wno-dev \
     -DCMAKE_TOOLCHAIN_FILE="$tc_file" \
-    -DANDROID_ABI="${ANDROID_ABI}" \
-    -DANDROID_PLATFORM="${SDK_PLATFORM}" \
-    -DCMAKE_INSTALL_PREFIX="$ANDROID_DEPS_PATH" \
-    -DSDL_ANDROID_PACKAGE_NAME=org.ikemen_engine.ikemen_go \
-    -DSDL_STATIC=OFF \
-    -DSDL_SHARED=ON \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_SHARED_LINKER_FLAGS="-Wl,-z,max-page-size=16384") || {
+    -DANDROID_ABI="${ANDROID_ABI}" \	-DANDROID_PLATFORM="${SDK_PLATFORM}" \
+	-DCMAKE_INSTALL_PREFIX="$ANDROID_DEPS_PATH" \
+	-DSDL_ANDROID_PACKAGE_NAME=org.ikemen_engine.ikemen_go \
+	-DSDL_STATIC=OFF \
+	-DSDL_SHARED=ON \
+	-DCMAKE_BUILD_TYPE=Release \
+	-DCMAKE_SHARED_LINKER_FLAGS="-Wl,-z,max-page-size=16384" \
+	-DCMAKE_BUILD_DIR="$sdl2_build" \
+	-DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON) || {
       echo "❌  CMake configuration for SDL2 Android failed."
       echo "   Check the error above and ensure NDK is correctly installed."
       exit 1
@@ -566,7 +595,7 @@ install_sdl2_android() {
 
 install_libxmp_android() {
   echo ""
-  echo "═══ Step 6/12 — Cross-compiling libxmp for Android ${ANDROID_ABI} ═══"
+  echo "═══ Step 6 — Cross-compiling libxmp for Android ${ANDROID_ABI} ═══"
 
   local xmp_lib="$ANDROID_DEPS_PATH/lib/libxmp.so"
   local xmp_src="${BINARY_BASE}/libxmp-${XMP_VERSION}"
@@ -653,7 +682,7 @@ install_libxmp_android() {
 
 install_libvpx_android() {
   echo ""
-  echo "═══ Step 7/12 — Cross-compiling libvpx for Android ${ANDROID_ABI} ═══"
+  echo "═══ Step 7 — Cross-compiling libvpx for Android ${ANDROID_ABI} ═══"
 
   # Only arm64-v8a is supported: tools/build.sh (CI) maps android/arm64 to
   # libvpx's arm64-android-gcc target. The armv7-android-gcc target would need
@@ -759,7 +788,7 @@ install_libvpx_android() {
 
 install_ffmpeg_android() {
   echo ""
-  echo "═══ Step 8/12 — Cross-compiling FFmpeg for Android ${ANDROID_ABI} ═══"
+  echo "═══ Step 8 — Cross-compiling FFmpeg for Android ${ANDROID_ABI} ═══"
 
   local ffmpeg_pc="$ANDROID_DEPS_PATH/lib/pkgconfig/libavformat.pc"
   local ffmpeg_src="${BINARY_BASE}/FFmpeg-${FFMPEG_VERSION}"
@@ -899,7 +928,6 @@ install_ffmpeg_android() {
 
 create_pkg_config_local() {
   local wrapper_dir="$ANDROID_DEPS_PATH/bin"
-  local wrapper="$wrapper_dir/pkg-config-local"
   local pc_dir="$ANDROID_DEPS_PATH/lib/pkgconfig"
   mkdir -p "$wrapper_dir"
   # The MSYS2 pkg-config is a native Windows binary: it honors Windows-style
@@ -911,12 +939,16 @@ create_pkg_config_local() {
   fi
   local pkgc
   pkgc="$(command -v pkg-config || echo pkg-config)"
+  #Store ABI-specific wrappers under the per-ABI deps dir alongside the
+# libs so arm64-v8a and armeabi-v7a can coexist without overwriting each other.
+  local wrapper_suffix="pkg-config-local-${ANDROID_ABI}"
+  local wrapper="$wrapper_dir/${wrapper_suffix}"
+  local wrapper_cmd="${wrapper}.cmd"
   # Go's cgo on Windows cannot execute #!/bin/sh shebang scripts: Go's
   # exec.LookPath cannot resolve the POSIX /bin/sh path to a Windows
   # executable. On MSYS2/Cygwin we therefore write a .cmd batch wrapper
   # instead, which Go executes natively.
   if [[ "$OSTYPE" == msys* || "$OSTYPE" == cygwin* ]]; then
-    wrapper="$wrapper_dir/pkg-config-local.cmd"
     # Convert pkg-config path to Windows format for the .cmd file
     local pkgc_win
     if command -v cygpath &>/dev/null; then
@@ -924,22 +956,22 @@ create_pkg_config_local() {
     else
       pkgc_win="$pkgc"
     fi
-    printf '@echo off\r\n"%s" --with-path="%s" %%*\r\n' "$pkgc_win" "$pc_dir" > "$wrapper"
-    # Remove any stale non-.cmd wrapper from a previous run
-    rm -f "$wrapper_dir/pkg-config-local"
+    printf '@echo off\r\n"%s" --with-path="%s" %%*\r\n' "$pkgc_win" "$pc_dir" > "$wrapper_cmd"
+    rm -f "$wrapper_dir/${wrapper_suffix}"
   else
     printf '#!/bin/sh\nexec "%s" --with-path="%s" "$@"\n' "$pkgc" "$pc_dir" > "$wrapper"
     chmod +x "$wrapper"
-    rm -f "$wrapper_dir/pkg-config-local.cmd"
+    rm -f "$wrapper_dir/${wrapper_suffix}.cmd"
   fi
 }
 
 # Returns the path to the pkg-config-local wrapper, using .cmd on Windows.
 pkg_config_local_path() {
+  local wrapper_suffix="pkg-config-local-${ANDROID_ABI}"
   if [[ "$OSTYPE" == msys* || "$OSTYPE" == cygwin* ]]; then
-    echo "$ANDROID_DEPS_PATH/bin/pkg-config-local.cmd"
+    echo "$ANDROID_DEPS_PATH/bin/${wrapper_suffix}.cmd"
   else
-    echo "$ANDROID_DEPS_PATH/bin/pkg-config-local"
+    echo "$ANDROID_DEPS_PATH/bin/${wrapper_suffix}"
   fi
 }
 
@@ -968,7 +1000,7 @@ create_dummy_gl_pc() {
 
 install_sdk() {
   echo ""
-  echo "═══ Step 9/12 — Installing Android SDK (${SDK_PLATFORM} + build-tools ${SDK_BUILD_TOOLS}) ═══"
+  echo "═══ Step 9 — Installing Android SDK (${SDK_PLATFORM} + build-tools ${SDK_BUILD_TOOLS}) ═══"
 
   if [[ -d "$SDK_INSTALL_DIR/platforms/$SDK_PLATFORM" ]] && \
      [[ -d "$SDK_INSTALL_DIR/build-tools/$SDK_BUILD_TOOLS" ]]; then
@@ -1063,7 +1095,7 @@ install_sdk() {
 
 setup_env() {
   echo ""
-  echo "═══ Step 10/12 — Setting up environment variables ═══"
+  echo "═══ Step 10 — Setting up environment variables ═══"
 
   local bashrc="$HOME/.bashrc"
   local marker="# >>> Ikemen-GO Android 11 toolchain >>>"
@@ -1132,7 +1164,7 @@ verify_installation() {
 
   echo ""
   echo "── Build tools ──"
-  for tool in make cmake gcc g++ nasm pkg-config go wget unzip; do
+  for tool in make cmake gcc g++ nasm pkg-config go wget unzip zip; do
     if command -v "$tool" &>/dev/null; then
       echo "  ✅  $tool"
     else
@@ -1270,7 +1302,7 @@ verify_installation() {
 
 build_libmain() {
   echo ""
-  echo "═══ Step 12/12 — Building libmain.so (${ANDROID_ABI}) ═══"
+  echo "═══ Step 12 — Building libmain.so (${ANDROID_ABI}) ═══"
 
   # --- Validate NDK ---
   local toolchain="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/windows-x86_64"
@@ -1312,11 +1344,21 @@ build_libmain() {
   # pkg-config lookup consistent with the Makefile approach.
   create_pkg_config_local
 
+  # --- Package engine assets for the mugen-tagged build ---
+  rm -f src/assets.zip 2>/dev/null || true
+  echo "==> Packaging engine assets into src/assets.zip..."
+  if command -v zip >/dev/null 2>&1; then
+    zip -r -q src/assets.zip data external font
+  else
+    python -m zipfile -c src/assets.zip data external font
+  fi
+  
+
   mkdir -p "$(dirname "$ANDROID_BINARY")"
   echo "  GOOS=android GOARCH=${GO_ANDROID_ARCH} CC=$cc"
   echo "  Output: $ANDROID_BINARY"
 
-  local go_tags="mugen android"
+  local go_tags="android"
   local go_ldflags="-s -w -X 'main.Version=nightly' -X 'runtime.godebugDefault=asyncpreemptoff=1,sigaltstack=0'"
   if [[ "$CONFIG" == "debug" ]]; then
     go_tags="$go_tags debug"
@@ -1345,7 +1387,7 @@ build_libmain() {
 
 download_ikemen_droid_source() {
   echo ""
-  echo "═══ Step 13/12 — Downloading ikemen-droid source ═══"
+  echo "═══ Step 13 — Downloading ikemen-droid source ═══"
 
   # If source already exists, skip
   if [[ -d "$IKEMEN_DROID_DIR" ]]; then
@@ -1380,7 +1422,7 @@ download_ikemen_droid_source() {
 
 download_screenpack() {
   echo ""
-  echo "═══ Step 14/12 — Downloading screenpack assets ═══"
+  echo "═══ Step 14 — Downloading screenpack assets ═══"
 
   local screenpack_url="https://github.com/leonkasovan/Ikemen-GO-Screenpack/archive/refs/heads/master.zip"
   local screenpack_dir="$(pwd)/deploy"
@@ -1477,7 +1519,7 @@ ensure_android_keystore() {
 
 build_apk() {
   echo ""
-  echo "═══ Step 15/12 — Building Android APK ═══"
+  echo "═══ Step 15 — Building Android APK ═══"
 
   # --- Ensure ikemen-droid source is available (download if missing) ---
   if [[ ! -d "$IKEMEN_DROID_DIR" ]]; then
@@ -1560,7 +1602,7 @@ build_apk() {
   : > "$tmp_manifest"
   # 1) Screenpack files from deploy/
   if [[ -d "$screenpack_root" ]]; then
-    (cd "$screenpack_root" && find . -type f ! -name ".screenpack_done" | sed 's|^\./||' | sort) >> "$tmp_manifest"
+    (cd "$screenpack_root" && find . -type f ! -name ".screenpack_done" ! -name "Ikemen_GO.*" ! -path "./.github/*" ! -path "./save/*" | sed 's|^\./||' | sort) >> "$tmp_manifest"
     echo "    Screenpack: $(grep -c . "$tmp_manifest") entries from deploy/"
   else
     echo "    ⚠️  deploy/ not found — no screenpack files"

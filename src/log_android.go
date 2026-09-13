@@ -4,6 +4,7 @@ package main
 
 /*
 #cgo LDFLAGS: -llog
+#include <stdlib.h>
 #include <android/log.h>
 */
 import "C"

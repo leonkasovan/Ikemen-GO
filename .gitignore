@@ -103,17 +103,6 @@ bin/libmain.so
 bin/libmain.h
 lib/*.so
 lib/*.so.*
-build/android-apk/
-
-# Binaries
-build/android-deps/
-build/libxmp-src/
-build/libvpx-src/
-build/sdl2-src/
-build/ffmpeg-src/
-build/ffmpeg/
-build/delaylib/
-build/winres/
 
 # macOS bundle by local make
 .mimocode/*
@@ -128,4 +117,3 @@ external/script/.idea/*
 # macOS bundle
 # ============================
 /I.K.E.M.E.N-Go.app/
-

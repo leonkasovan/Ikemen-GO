@@ -56,7 +56,7 @@ pacman -Syu --noconfirm
 pacman -S --noconfirm git make mingw-w64-x86_64-pkg-config \
   mingw-w64-x86_64-go mingw-w64-x86_64-toolchain \
   mingw-w64-x86_64-nasm mingw-w64-x86_64-cmake
-pacman -S --noconfirm wget unzip
+pacman -S --noconfirm wget unzip zip
 ```
 
 > System libraries (SDL2, libxmp, libvpx) are **not** needed — all four are built from source.
@@ -172,15 +172,16 @@ plus `debug` (memory instrumentation). Every `make` run prints the active tags
 | Tag | Set by | Selects | Default motif |
 |-----|--------|---------|---------------|
 | `desktop` | Makefile: `GO_TAGS += desktop` for every non-armdevice Windows/Linux/macOS build | `motif_desktop.go` and other desktop-normal files | `resources/defaultMotif.ini` |
-| `mugen` | `make mugen` (also passed by the Android build script) | `util_mugen.go` (embedded `assets.zip`, Mugen motif, `xmpDecode` stub), `video_novideo.go` | `resources/defaultMugenMotif.ini` |
+| `mugen` | `make mugen` | `util_mugen.go` (embedded `assets.zip`, Mugen motif, `xmpDecode` stub), `video_novideo.go` | `resources/defaultMugenMotif.ini` |
 | `armdevice` | Makefile on Linux arm64: `GO_TAGS += armdevice` | `util_armdevice.go`; GLES renderers (`font_gles32.go`, `render_gles32.go`, tagged `android \|\| armdevice`) | `resources/defaultMotif.ini` |
-| `android` | Set automatically by Go for `GOOS=android`; also passed by the Android build script | `util_android.go`; GLES renderers; `log_android.go` | via `mugen` (below) |
+| `android` | Set automatically by Go for `GOOS=android`; also passed by the Android build script | `util_android.go` (SDL_main/JNI, dialogs, GLES renderer select); `motif_android.go` (default motif); GLES renderers; `log_android.go` | `resources/defaultMotif.ini` |
 
 The variant tags are mutually exclusive in practice — `defaultMotif` is
 defined exactly once per build: `motif_desktop.go` (desktop), `util_mugen.go`
-(mugen), `util_armdevice.go` (armdevice). Android builds pass the `mugen` tag,
-so they get the Mugen motif from `util_mugen.go`; `util_android.go`
-deliberately does **not** define one.
+(mugen), `util_armdevice.go` (armdevice), `motif_android.go` (android).
+Android builds use only the `android` tag (no `mugen` tag), so they get the
+default motif from `motif_android.go`; `util_android.go` holds the runtime
+(SDL_main/JNI entry, dialogs, renderer selection) but no motif.
 
 ### Linkage: the `static` tag (Windows only)
 
@@ -205,7 +206,7 @@ deliberately does **not** define one.
 | Linux / macOS desktop | `desktop` (+ `debug`) | `motif_desktop.go` |
 | Mugen | `mugen static` (Windows) / `mugen` (Linux/macOS) | `util_mugen.go` |
 | ARM device (Linux arm64) | `armdevice` (+ `debug`) | `util_armdevice.go` |
-| Android | `mugen android` (+ `debug`) | `util_mugen.go` |
+| Android | `android` (+ `debug`) | `motif_android.go` |
 
 `debug` adds the memory-instrumentation sources
 (`common_debug.go`, `main_mem_test.go`, …).
@@ -219,10 +220,11 @@ deliberately does **not** define one.
   `make vet TAGS="mugen static"` to vet the mugen build.
 - The mugen build strips `desktop` from the tag set (`MUGEN_GO_TAGS`), so the
   desktop motif is never compiled into it.
-- Files shared by desktop and mugen builds (dialogs, fonts, renderers) keep
-  `!android && !armdevice` tags instead of `desktop`: the mugen build needs
-  them, and `desktop || mugen` would wrongly pull them into Android (which
-  passes `mugen`).
+- Files shared by desktop and mugen builds (dialogs, fonts, renderers) use
+  `desktop || mugen` so they stay out of the GLES-only Android/armdevice
+   builds; GLES files use `android || armdevice`. `log_desktop.go` is
+   `debug && (desktop || mugen || armdevice)`; `log_android.go` is
+   `debug && android`.
 
 ---
 
@@ -312,7 +314,8 @@ Build works as a normal Linux build (see prerequisites above). Two WSL-specific 
 
 ### Build
 
-```bashmake                          # Native release → Ikemen_GO
+```bash
+make                          # Native release → Ikemen_GO
 make config=debug             # Debug build
 make install                  # Release → deploy/
 make install config=debug     # Debug → deploy/
@@ -355,7 +358,7 @@ brew install git make cmake pkg-config go nasm wget sdl2 molten-vk
 
 ### Build
 
-```bashmake                          # Native release → Ikemen_GO
+```bash
 make config=debug             # Debug build
 make install                  # Release → deploy/
 make install config=debug     # Debug → deploy/
@@ -486,12 +489,33 @@ If you update the `reisen` dependency version, copy the updated source into
 
 ### Outputs
 
+Like desktop builds, Android artifacts are separated by ABI under `build/` so you can keep
+arm64-v8a and armeabi-v7a outputs side by side without clobbering each other:
+
+```
+build/android_arm64/          64-bit ARM (arm64-v8a)
+build/android_arm/            32-bit ARM (armeabi-v7a)
+```
+
+Each directory holds the APK, the staged ikemen-droid wrapper (under `build/android_apk/`),
+and any per-ABI outputs produced by the script.
+
 | File | Description |
 |------|-------------|
-| `build/ikemen-go-<ABI>.apk` | Installable signed APK (release), e.g. `ikemen-go-arm64-v8a.apk` |
-| `build/ikemen-go-<ABI>-debug.apk` | Installable debug APK (see below), e.g. `ikemen-go-armeabi-v7a-debug.apk` |
-| `build/android-deps-<ABI>/` | Cross-compiled library dependencies per ABI |
+| `build/android_<arch>/ikemen-go-<ABI>.apk` | Installable signed APK (release), e.g. `build/android_arm64/ikemen-go-arm64-v8a.apk` |
+| `build/android_<arch>/ikemen-go-<ABI>-debug.apk` | Installable debug APK (see below), e.g. `build/android_arm/ikemen-go-armeabi-v7a-debug.apk` |
+| `build/android_arm64/android-deps/<ABI>/` | arm64-v8a cross-compiled library dependencies |
 | `android/release.jks` | Auto-generated signing keystore |
+
+### APK assets (manifest.txt)
+
+Before staging, the script generates `manifest.txt` (screenpack files from
+`deploy/` overlaid with engine `data/`, `font/`, `external/`) and copies only
+listed files into the APK. These are always excluded from the manifest:
+
+- `deploy/Ikemen_GO.*` — desktop binaries left by `make install`
+- `deploy/.github/` — CI metadata, not runtime assets
+- `deploy/save/` — local saves (`config.ini`, `stats.json`)
 
 ### Build variants
 
@@ -551,7 +575,9 @@ ANDROID_ABI=armeabi-v7a ./tools/generate_android_via_native.sh --yes
 ```
 
 When you change the ABI, all native dependencies (SDL2, libxmp, FFmpeg) are
-rebuilt from scratch into a separate directory (`build/android-deps-<ABI>/`).
+rebuilt from scratch into a separate directory (`build/android_<arch>/android-deps/<ABI>/`), and
+the APK is written to the matching per-ABI output directory
+(`build/android_arm64/` for arm64-v8a, `build/android_arm/` for armeabi-v7a).
 
 > **Important**: If you previously built a different ABI, make sure the
 > `ANDROID_DEPS_PATH` environment variable is **not stale** from the previous
