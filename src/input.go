@@ -264,6 +264,14 @@ func GetJoystickState(kc KeyConfig) [14]bool {
 		}
 	}
 
+	// Left stick always drives directions alongside bound inputs, so both
+	// dpad and analog work out of the box with default DP_* bindings.
+	stick := sys.cfg.Input.ControllerStickSensitivity
+	out[0] = out[0] || axes[1] < -stick // up (LS_Y-)
+	out[1] = out[1] || axes[1] > stick  // down (LS_Y+)
+	out[2] = out[2] || axes[0] < -stick // left (LS_X-)
+	out[3] = out[3] || axes[0] > stick  // right (LS_X+)
+
 	return out
 }
 
