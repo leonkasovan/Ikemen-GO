@@ -896,6 +896,10 @@ func (t *Texture_DX) Release() {
 
 func (t *Texture_DX) GetSerial() uint64 { return t.serial }
 
+func (t Texture_DX) MarkNonSwappable() {
+	// No-op: DirectX backend has no VRAM swap-out.
+}
+
 func dxMapFormat(depth int32) int {
 	switch depth {
 	case 8:
@@ -1337,7 +1341,8 @@ func (r *Renderer_DX) Init() {
 	// Dummy 1x1 textures for unbound model sampler slots (env==nil, unused maps).
 	r.dummyTex = r.newTextureInternal(1, 1, 32, false)
 	r.dummyTex.SetData([]byte{255, 255, 255, 255})
-	r.dummyCube = r.newCubeMapTexture(1, false, 0).(*Texture_DX)
+	dummyCube, _ := r.newCubeMapTexture(1, false, 0)
+	r.dummyCube = dummyCube.(*Texture_DX)
 	// Sensible defaults for the model constant buffers.
 	r.modelVSUniforms.numData[mdlMorphDim] = 1
 	r.modelPSUniforms.matMisc[1] = 0.5 // alphaThreshold
@@ -1838,8 +1843,8 @@ func (r *Renderer_DX) DisableBlending() {
 	r.bindBlend(nil)
 }
 
-func (r *Renderer_DX) newTexture(width, height, depth int32, filter bool) (t Texture) {
-	return r.newTextureInternal(width, height, depth, filter)
+func (r *Renderer_DX) newTexture(width, height, depth int32, filter bool) (t Texture, err error) {
+	return r.newTextureInternal(width, height, depth, filter), nil
 }
 
 func (r *Renderer_DX) newPaletteTexture() (t Texture) {
@@ -1886,11 +1891,11 @@ func (r *Renderer_DX) newPaletteTexture() (t Texture) {
 	return t
 }
 
-func (r *Renderer_DX) newModelTexture(width, height, depth int32, filter bool) (t Texture) {
-	return r.newTextureInternal(width, height, depth, filter)
+func (r *Renderer_DX) newModelTexture(width, height, depth int32, filter bool) (t Texture, err error) {
+	return r.newTextureInternal(width, height, depth, filter), nil
 }
 
-func (r *Renderer_DX) newDataTexture(width, height int32) (t Texture) {
+func (r *Renderer_DX) newDataTexture(width, height int32) (t Texture, err error) {
 	tx := &Texture_DX{width: width, height: height, depth: 128, filter: false, serial: textureSerialNumber}
 	textureSerialNumber++
 	tx.resource = C.dx_create_texture(r.device, C.int(width), C.int(height), dxFmtRGBA32F, dxBindSRV, 1, 1, 1, 0, dxUsageDefault, 0)
@@ -1899,10 +1904,11 @@ func (r *Renderer_DX) newDataTexture(width, height int32) (t Texture) {
 	chkRes(tx.srv)
 	tx.sampler = r.pointClamp
 	runtime.SetFinalizer(tx, func(t *Texture_DX) { t.Release() })
-	return tx
+	t = tx
+	return t, nil
 }
 
-func (r *Renderer_DX) newHDRTexture(width, height int32) (t Texture) {
+func (r *Renderer_DX) newHDRTexture(width, height int32) (t Texture, err error) {
 	tx := &Texture_DX{width: width, height: height, depth: 128, filter: true, serial: textureSerialNumber}
 	textureSerialNumber++
 	tx.resource = C.dx_create_texture(r.device, C.int(width), C.int(height), dxFmtRGBA32F, dxBindSRV, 1, 1, 1, 0, dxUsageDefault, 0)
@@ -1912,10 +1918,11 @@ func (r *Renderer_DX) newHDRTexture(width, height int32) (t Texture) {
 	tx.sampler = C.dx_create_sampler(r.device, dxFilterMinMagMipLine, dxAddrMirror, dxAddrMirror)
 	chkRes(tx.sampler)
 	runtime.SetFinalizer(tx, func(t *Texture_DX) { t.Release() })
-	return tx
+	t = tx
+	return t, nil
 }
 
-func (r *Renderer_DX) newCubeMapTexture(widthHeight int32, mipmap bool, lowestMipLevel int32) (t Texture) {
+func (r *Renderer_DX) newCubeMapTexture(widthHeight int32, mipmap bool, lowestMipLevel int32) (t Texture, err error) {
 	mips := 1
 	if mipmap {
 		mips = 1
@@ -1932,7 +1939,8 @@ func (r *Renderer_DX) newCubeMapTexture(widthHeight int32, mipmap bool, lowestMi
 	chkRes(tx.srv)
 	tx.sampler = r.linearClamp
 	runtime.SetFinalizer(tx, func(t *Texture_DX) { t.Release() })
-	return tx
+	t = tx
+	return t, nil
 }
 
 func (r *Renderer_DX) SetVertexData(values ...float32) {

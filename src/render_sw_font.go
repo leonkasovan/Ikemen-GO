@@ -282,9 +282,10 @@ func (r *Renderer_SW) drawFontGlyph(f *Font_SW, g *swGlyph,
 	x1, y1, x2, y2, x3, y3, x4, y4 float32, window [4]int32, blend bool) {
 
 	if g.tex == nil {
-		t := r.newTexture(g.width, g.height, 8, true).(*swTexture)
-		t.SetData(g.cov)
-		g.tex = t
+		t, _ := r.newTexture(g.width, g.height, 8, true)
+		st := t.(*swTexture)
+		st.SetData(g.cov)
+		g.tex = st
 	}
 
 	rw := float32(f.windowWidth)

@@ -1496,13 +1496,20 @@ func (s *Sprite) ensureTex() {
 		return
 	}
 	memSpriteDrawn(len(s.pendingData))
+	// ponytail: deferred sprite upload uses fallible newTexture; log and keep pending on VRAM exhaustion
+	var tex Texture
+	var err error
 	if s.pendingDepth == 8 {
-		s.Tex = gfx.newTexture(s.pendingW, s.pendingH, 8, false)
-		s.Tex.SetData(s.pendingData)
+		tex, err = gfx.newTexture(s.pendingW, s.pendingH, 8, false)
 	} else {
-		s.Tex = gfx.newTexture(s.pendingW, s.pendingH, s.pendingDepth, s.pendingFilter)
-		s.Tex.SetData(s.pendingData)
+		tex, err = gfx.newTexture(s.pendingW, s.pendingH, s.pendingDepth, s.pendingFilter)
 	}
+	if err != nil {
+		LogMessage("[VRAM] ensureTex newTexture failed: %v", err)
+		return
+	}
+	s.Tex = tex
+	s.Tex.SetData(s.pendingData)
 	s.pendingData = nil
 	s.pendingDepth = 0
 	s.pendingW = 0
@@ -1555,6 +1562,10 @@ func (s *Sprite) CachePalTex(pal []uint32) Texture {
 
 func (s *Sprite) Draw(x, y, xscale, yscale float32, rxadd float32, rot Rotation, projectionMode int32, fLength float32, fx *PalFX, window *[4]int32) {
 	s.ensureTex()
+	if s.Tex == nil {
+		return
+	}
+
 	x += float32(sys.gameWidth-320)/2 - xscale*float32(s.Offset[0])
 	y += float32(sys.gameHeight-240) - yscale*float32(s.Offset[1])
 	var rcx, rcy float32

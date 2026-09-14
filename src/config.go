@@ -216,6 +216,9 @@ type Config struct {
 		ImageSuballocThresholdKB int      `ini:"ImageSuballocThresholdKB"` // ≤ this (KB) suballocated; 0 to disable
 		ImageSuballocBlockSizeMB int      `ini:"ImageSuballocBlockSizeMB"` // block size (MB) for suballocation pool
 		PaletteAtlasSize         int32    `ini:"PaletteAtlasSize"`         // Size of palette atlas texture (square, RGBA)
+		VRAMFallbackEnabled      bool     `ini:"VRAMFallbackEnabled"`      // Vulkan only: master switch for VRAM→HOST_VISIBLE fallback
+		VRAMSwapThresholdPercent int      `ini:"VRAMSwapThresholdPercent"` // Vulkan only: heap % that triggers swappable texture eviction
+		VRAMSwapCooldownFrames   int      `ini:"VRAMSwapCooldownFrames"`   // Vulkan only: frames between swap attempts
 	} `ini:"Video"`
 	Sound struct {
 		SampleRate           int32   `ini:"SampleRate"`

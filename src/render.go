@@ -21,6 +21,7 @@ type Texture interface {
 	CopyData(src *Texture)
 	Release()
 	GetSerial() uint64
+	MarkNonSwappable()
 }
 
 type Renderer interface {
@@ -53,12 +54,12 @@ type Renderer interface {
 	SetModelPipeline(eq BlendEquation, src, dst BlendFunc, depthTest, depthMask, doubleSided, invertFrontFace, useUV, useNormal, useTangent, useVertColor, useJoint0, useJoint1, useOutlineAttribute bool, numVertices, vertAttrOffset uint32)
 	SetMeshOutlinePipeline(invertFrontFace bool, meshOutline float32)
 	ReleaseModelPipeline()
-	newTexture(width, height, depth int32, filter bool) (t Texture)
+	newTexture(width, height, depth int32, filter bool) (t Texture, err error)
 	newPaletteTexture() (t Texture)
-	newModelTexture(width, height, depth int32, filter bool) (t Texture)
-	newDataTexture(width, height int32) (t Texture)
-	newHDRTexture(width, height int32) (t Texture)
-	newCubeMapTexture(widthHeight int32, mipmap bool, lowestMipLevel int32) (t Texture)
+	newModelTexture(width, height, depth int32, filter bool) (t Texture, err error)
+	newDataTexture(width, height int32) (t Texture, err error)
+	newHDRTexture(width, height int32) (t Texture, err error)
+	newCubeMapTexture(widthHeight int32, mipmap bool, lowestMipLevel int32) (t Texture, err error)
 
 	ReadPixels(data []uint8, width, height int)
 	EnableScissor(x, y, width, height int32)
@@ -1549,7 +1550,12 @@ func extrudeAtlasImage(data []byte, width, height, stride, bpp int32) ([]byte, i
 }
 
 func CreateTextureAtlas(width, height int32, depth int32, filter bool) *TextureAtlas {
-	ta := &TextureAtlas{width: width, height: height, texture: gfx.newTexture(width, height, depth, filter), depth: depth, filter: filter, skyline: list.New(), resize: false}
+	tex, err := gfx.newTexture(width, height, depth, filter)
+	if err != nil {
+		LogMessage("[VRAM] failed to create texture atlas: " + err.Error() + "\n")
+		return &TextureAtlas{width: width, height: height, depth: depth, filter: filter, skyline: list.New(), resize: false}
+	}
+	ta := &TextureAtlas{width: width, height: height, texture: tex, depth: depth, filter: filter, skyline: list.New(), resize: false}
 	ta.texture.SetData(nil) // Allocate storage where supported.
 	ta.clearTexture(ta.texture, width, height)
 	ta.skyline.PushBack([2]int32{0, 0})
@@ -1689,7 +1695,11 @@ func (ta *TextureAtlas) Resize(width, height int32) {
 		panic("New height cannot be smaller than old height")
 	}
 	memAtlasResize(ta.width, ta.height, width, height)
-	t := gfx.newTexture(width, height, ta.depth, ta.filter)
+	t, err := gfx.newTexture(width, height, ta.depth, ta.filter)
+	if err != nil {
+		LogMessage("[VRAM] failed to resize texture atlas: " + err.Error() + "\n")
+		return
+	}
 	ta.clearTexture(t, width, height)
 	t.CopyData(&ta.texture)
 	ta.skyline.PushBack([2]int32{ta.width, 0})

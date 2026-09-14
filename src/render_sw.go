@@ -121,6 +121,10 @@ func (t *swTexture) Release() {
 	t.data = nil
 }
 
+func (t swTexture) MarkNonSwappable() {
+	// No-op: software backend keeps pixels in system memory; nothing to evict.
+}
+
 // Renderer_SW is a CPU-only rendering backend: the engine composes every frame
 // into a system-memory framebuffer (r.pix), which is uploaded once per frame
 // to a streaming SDL texture and presented via SDL_RenderCopy/Present.
@@ -402,28 +406,28 @@ func (r *Renderer_SW) makeTexture(width, height, depth int32, filter, palSlot bo
 	return t
 }
 
-func (r *Renderer_SW) newTexture(width, height, depth int32, filter bool) Texture {
-	return r.makeTexture(width, height, depth, filter, false)
+func (r *Renderer_SW) newTexture(width, height, depth int32, filter bool) (Texture, error) {
+	return r.makeTexture(width, height, depth, filter, false), nil
 }
 
 func (r *Renderer_SW) newPaletteTexture() Texture {
 	return r.makeTexture(256, 1, 32, false, true)
 }
 
-func (r *Renderer_SW) newModelTexture(width, height, depth int32, filter bool) Texture {
+func (r *Renderer_SW) newModelTexture(width, height, depth int32, filter bool) (Texture, error) {
 	return r.newTexture(width, height, depth, filter)
 }
 
-func (r *Renderer_SW) newDataTexture(width, height int32) Texture {
-	return r.makeTexture(width, height, 128, false, false)
+func (r *Renderer_SW) newDataTexture(width, height int32) (Texture, error) {
+	return r.makeTexture(width, height, 128, false, false), nil
 }
 
-func (r *Renderer_SW) newHDRTexture(width, height int32) Texture {
-	return r.makeTexture(width, height, 128, false, false)
+func (r *Renderer_SW) newHDRTexture(width, height int32) (Texture, error) {
+	return r.makeTexture(width, height, 128, false, false), nil
 }
 
-func (r *Renderer_SW) newCubeMapTexture(widthHeight int32, mipmap bool, lowestMipLevel int32) Texture {
-	return r.makeTexture(widthHeight, widthHeight, 32, false, false)
+func (r *Renderer_SW) newCubeMapTexture(widthHeight int32, mipmap bool, lowestMipLevel int32) (Texture, error) {
+	return r.makeTexture(widthHeight, widthHeight, 32, false, false), nil
 }
 
 // ---- Model path (disabled on this backend) ----
