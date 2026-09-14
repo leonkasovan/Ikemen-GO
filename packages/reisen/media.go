@@ -17,9 +17,10 @@ import (
 // Media is a media file containing
 // audio, video and other types of streams.
 type Media struct {
-	ctx     *C.AVFormatContext
-	packet  *C.AVPacket
-	streams []Stream
+	ctx      *C.AVFormatContext
+	readerIO *C.AVIOContext
+	packet   *C.AVPacket
+	streams  []Stream
 }
 
 // StreamCount returns the number of streams.
@@ -242,8 +243,11 @@ func (media *Media) CloseDecode() error {
 
 // Close closes the media container.
 func (media *Media) Close() {
-	C.avformat_free_context(media.ctx)
-	media.ctx = nil
+	C.avformat_close_input(&media.ctx)
+	if media.readerIO != nil {
+		closeReaderIO(media.readerIO)
+		media.readerIO = nil
+	}
 }
 
 // NewMedia returns a new media container analyzer

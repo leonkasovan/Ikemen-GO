@@ -1,5 +1,12 @@
 # Reisen [![GoDoc](https://godoc.org/github.com/zergon321/reisen?status.svg)](https://pkg.go.dev/github.com/zergon321/reisen)
 
+> Ikemen-GO fork note: synced to upstream
+> `ikemen-engine/reisen@7972c2bbc957` (2026-09-14). To re-sync: copy
+> upstream `*.go`, then re-apply the three local deltas — (1) cgo
+> `pkg-config` → `LDFLAGS` lines (source-built FFmpeg has no .pc files),
+> (2) `ReadVideoFrameInto` pooling in `video.go`, (3) `C.size_t`/`C.int64_t`
+> types in `platform_linux.go`.
+
 A simple library to extract video and audio frames from media containers (based on **libav**, i.e. **ffmpeg**).
 
 ## Dependencies
