@@ -13150,6 +13150,7 @@ const (
 	modifyBgm_loopend
 	modifyBgm_position
 	modifyBgm_freqmul
+	modifyBgm_loopcount
 )
 
 func (sc modifyBgm) Run(c *Char, _ []int32) bool {
@@ -13159,8 +13160,8 @@ func (sc modifyBgm) Run(c *Char, _ []int32) bool {
 		return false
 	}
 
-	var volumeSet, loopStartSet, loopEndSet, posSet, freqSet = false, false, false, false, false
-	var volume, loopstart, loopend, position int = 100, 0, 0, 0
+	var volumeSet, loopStartSet, loopEndSet, posSet, freqSet, loopCountSet = false, false, false, false, false, false
+	var volume, loopstart, loopend, position, loopcount int = 100, 0, 0, 0, 0
 	var freqmul float32 = 1.0
 
 	// Safety default sets
@@ -13186,6 +13187,14 @@ func (sc modifyBgm) Run(c *Char, _ []int32) bool {
 		case modifyBgm_freqmul:
 			freqmul = float32(exp[0].evalF(c))
 			freqSet = true
+		case modifyBgm_loopcount:
+			tmp := int(exp[0].evalI(c))
+			if tmp < 0 {
+				loopcount = -1
+			} else {
+				loopcount = Max(tmp-1, 0)
+			}
+			loopCountSet = true
 		}
 		return true
 	})
@@ -13200,6 +13209,11 @@ func (sc modifyBgm) Run(c *Char, _ []int32) bool {
 		sys.bgm.Seek(position)
 	}
 	if sl, ok := sys.bgm.volctrl.Streamer.(*StreamLooper); ok {
+		if loopCountSet && sl.loopcount != loopcount {
+			WithSpeakerLock(func() {
+				sl.loopcount = loopcount
+			})
+		}
 		if (loopStartSet && sl.loopstart != loopstart) || (loopEndSet && sl.loopend != loopend) {
 			sys.bgm.SetLoopPoints(loopstart, loopend)
 		}
