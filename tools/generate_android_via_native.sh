@@ -48,6 +48,7 @@
 # Usage:
 #   ./tools/generate_android_via_native.sh              # interactive (asks before each step)
 #   ./tools/generate_android_via_native.sh --yes        # non-interactive, auto-confirm all
+#   CONFIG=debug ./tools/generate_android_via_native.sh --yes  # debug build (debug APK + pprof on :6060)
 #   ./tools/generate_android_via_native.sh --help       # show this header
 # =============================================================================
 
@@ -165,9 +166,10 @@ if [[ -z "${ANDROID_DEPS_PATH:-}" ]]; then
   ANDROID_DEPS_PATH="${BINARY_BASE}/android-deps/${ANDROID_ABI}"
 fi
 
-# If ANDROID_DEPS_PATH was set but points under the old top-level
-# build/android-deps/ (which no longer contains ABI-specific libs),
-# move it into the per-ABI directory under BINARY_BASE.
+# If ANDROID_DEPS_PATH was set but points at one of the legacy layouts
+# (old top-level build/android-deps/, or the old ABI-suffixed
+# build/android-deps-<ABI>/ scheme), move it into the per-ABI directory
+# under BINARY_BASE so the libs always match the selected ANDROID_ABI.
 #
 # Resolve both sides to a common Windows-native form (cygpath -m) so that
 # an absolute ANDROID_DEPS_PATH from a prior run's .bashrc (e.g.
@@ -180,7 +182,9 @@ if [[ -n "${ANDROID_DEPS_PATH:-}" ]]; then
   # Old top-level build/android-deps (sibling of BINARY_BASE)
   _old_top_win="$(cygpath -m "$(pwd)/build/android-deps" 2>/dev/null || echo "$(pwd)/build/android-deps")"
   if [[ "$_deps_win" == "$_per_abi_win" || "$_deps_win" == "$_per_abi_win/" || "$_deps_win" == "$_per_abi_win/"* ||
-        "$_deps_win" == "$_old_top_win" || "$_deps_win" == "$_old_top_win/" || "$_deps_win" == "$_old_top_win/"* ]]; then
+        "$_deps_win" == "$_old_top_win" || "$_deps_win" == "$_old_top_win/" || "$_deps_win" == "$_old_top_win/"* ||
+        "$_deps_win" == *"/android-deps" || "$_deps_win" == *"/android-deps/"* ||
+        "$_deps_win" == *"/android-deps-"* ]]; then
     ANDROID_DEPS_PATH="${BINARY_BASE}/android-deps/${ANDROID_ABI}"
   fi
   unset _deps_win _per_abi_win _old_top_win
@@ -220,7 +224,7 @@ export GOCACHE="${GOCACHE:-$HOME/.cache/go-build}"
 # ────────────────────────────────────────────────────────────────────────────
 
 if [[ "${1:-}" == "--help" ]]; then
-  sed -n '2,20p' "$0"
+  sed -n '1,52p' "$0"
   exit 0
 fi
 
@@ -270,6 +274,22 @@ java_major_version() {
     awk -F '.' '{print $1}'
   # On failure, awk produces empty output. The callers handle that gracefully
   # (empty string in numeric context [[ ... -eq 11 ]] evaluates as 0).
+}
+
+# Return the ELF machine type of a shared object: "arm", "aarch64", or
+# "elf<machine>" for anything else ("none" if unreadable). Reads e_machine
+# (offset 18, 2 bytes little-endian) via od — no external ELF tools needed.
+elf_machine_of() {
+  local so="$1"
+  [[ -f "$so" ]] || { echo "none"; return; }
+  local -a bytes
+  read -r -a bytes <<< "$(od -An -tu1 -j18 -N2 "$so" 2>/dev/null)"
+  local machine=$(( ${bytes[0]:-0} + ${bytes[1]:-0} * 256 ))
+  case "$machine" in
+    40)  echo "arm" ;;
+    183) echo "aarch64" ;;
+    *)   echo "elf$machine" ;;
+  esac
 }
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -1316,6 +1336,18 @@ build_libmain() {
   if [[ ! -d "$ANDROID_DEPS_PATH/lib" ]]; then
     echo "❌  SDL2 android deps not found: $ANDROID_DEPS_PATH"
     echo "   Run steps 5-8 first to cross-compile SDL2/libxmp/libvpx/FFmpeg."
+    exit 1
+  fi
+
+  # --- Guard against wrong-ABI prebuilt deps (e.g. a stale ANDROID_DEPS_PATH) ---
+  local expected_machine="aarch64"
+  [[ "$GO_ANDROID_ARCH" == "arm" ]] && expected_machine="arm"
+  local found_machine
+  found_machine="$(elf_machine_of "$ANDROID_DEPS_PATH/lib/libSDL2.so")"
+  if [[ "$found_machine" != "$expected_machine" ]]; then
+    echo "❌  $ANDROID_DEPS_PATH/lib/libSDL2.so is '$found_machine', expected '$expected_machine' for ${ANDROID_ABI}."
+    echo "   ANDROID_DEPS_PATH points at wrong-ABI libs. Unset it (and fix ~/.bashrc if it is exported there), then re-run:"
+    echo "     unset ANDROID_DEPS_PATH"
     exit 1
   fi
 
