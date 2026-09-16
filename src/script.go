@@ -5310,7 +5310,8 @@ func systemScriptInit(l *lua.LState) {
 		}
 		ready, err := sys.netConnection.LoadingReady()
 		if err != nil {
-			l.RaiseError(err.Error())
+			l.Push(lua.LBool(false))
+			return 1
 		}
 		l.Push(lua.LBool(ready))
 		return 1
@@ -7070,7 +7071,7 @@ func systemScriptInit(l *lua.LState) {
 		  non-fatal session warning occurred.
 		function synchronize() end*/
 		if err := sys.synchronize(); err != nil {
-			if sys.sessionWarning != "" {
+			if sys.sessionWarning != "" || sys.esc {
 				l.Push(lua.LBool(false))
 				return 1
 			}
@@ -7477,6 +7478,9 @@ func systemScriptInit(l *lua.LState) {
 			userDataError(l, 1, ts)
 		}
 		ts.text = strArg(l, 2)
+		if ts.textWrap {
+			ts.wrapText(ts.text, len([]rune(ts.text)))
+		}
 		return 0
 	})
 	luaRegister(l, "textImgSetTextDelay", func(*lua.LState) int {

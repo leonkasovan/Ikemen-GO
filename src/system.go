@@ -224,7 +224,7 @@ type System struct {
 	debugRef            [2]int // player number, helper index
 	debugLastID         int32
 	soundMixer          *beep.Mixer
-	videoMixer         *beep.Mixer
+	videoMixer          *beep.Mixer
 	bgm                 Bgm
 	matchMusicSel       []*bgMusic
 	pauseVolumeApplied  bool
@@ -3404,7 +3404,7 @@ func (s *System) stepRoundState() {
 		}
 		roundnotskip := s.gsf(GSF_roundnotskip)
 		skipEligible := skipCandidate && anyButton && !roundnotskip && !matchEndDialoguePending
-		if s.rollback.session != nil && s.rollback.session.config.LogsEnabled {
+		if s.rollback.session != nil && s.rollback.session.config.StateLogsEnabled {
 			s.rollback.session.log.logRoundSkipCheck(fadeoutStart, anyButton, roundnotskip, skipEligible, matchEndDialoguePending)
 		}
 		if skipEligible {
@@ -4069,6 +4069,7 @@ func (s *System) runMatch() (reload bool) {
 	if err := s.synchronize(); err != nil {
 		LogMessage(err.Error())
 		s.esc = true
+		return false
 	}
 	if s.netConnection != nil {
 		defer func() {
@@ -4417,7 +4418,7 @@ func (s *System) runNextRound() bool {
 	motifEndActive := s.motif.me.active
 	canAdvance := roundOver && !s.fightLoopEnd && (tickFrame || motifEndActive)
 	holdPostMatch := canAdvance && s.holdPostMatchForDialogue()
-	if s.rollback.session != nil && s.rollback.session.config.LogsEnabled && s.intro < 0 {
+	if s.rollback.session != nil && s.rollback.session.config.StateLogsEnabled && s.intro < 0 {
 		s.rollback.session.log.logRoundAdvanceCheck(roundOver, tickFrame, motifEndActive, s.fightLoopEnd, holdPostMatch, canAdvance)
 	}
 	if canAdvance {

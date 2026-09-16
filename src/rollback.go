@@ -6,6 +6,7 @@ import (
 	"hash/crc32"
 	"log"
 	"math"
+	"net"
 	"os"
 	"strings"
 	"time"
@@ -21,10 +22,12 @@ type RollbackSystem struct {
 }
 
 type RollbackProperties struct {
+	Port                  int  `ini:"Port"`
 	FrameDelay            int  `ini:"FrameDelay" sync:"host"`
 	DisconnectNotifyStart int  `ini:"DisconnectNotifyStart" sync:"host"`
 	DisconnectTimeout     int  `ini:"DisconnectTimeout" sync:"host"`
-	LogsEnabled           bool `ini:"LogsEnabled" sync:"host"`
+	StateLogsEnabled      bool `ini:"StateLogsEnabled" sync:"host"`
+	GgpoLogsEnabled       bool `ini:"GgpoLogsEnabled" sync:"host"`
 	SaveStageData         bool `ini:"SaveStageData" sync:"host"`
 	DesyncTest            bool `ini:"DesyncTest" sync:"host"`
 	DesyncTestFrames      int  `ini:"DesyncTestFrames" sync:"host"`
@@ -40,7 +43,12 @@ func (rs *RollbackSystem) hijackRunMatch() bool {
 	rs.ggpoAnalogInputs = make([][6]int8, 2)
 
 	// Initialize rollback network session and synchronize state
-	rs.preMatchSetup()
+	if err := rs.preMatchSetup(); err != nil {
+		rs.session.Close()
+		sys.netConnection.fail(err)
+		return false
+	}
+	syncDeadline := time.Now().Add(time.Duration(sys.cfg.Netplay.SyncTimeout) * time.Millisecond)
 
 	var running bool
 
@@ -52,6 +60,12 @@ func (rs *RollbackSystem) hijackRunMatch() bool {
 			int(math.Max(0, float64(rs.session.next-rs.session.now-1))))
 		if err != nil {
 			panic(err)
+		}
+		// GGPO's disconnect timeout only runs after initial synchronization.
+		if rs.netConnection != nil && !rs.session.synchronized && time.Now().After(syncDeadline) {
+			rs.netConnection.fail(fmt.Errorf("Timed out establishing rollback connection to %s (local UDP port %d).\nCheck UDP forwarding and firewall settings on both peers.",
+				net.JoinHostPort(rs.session.remoteIp, fmt.Sprint(rs.netConnection.rollbackRemotePort)), rs.session.config.Port))
+			break
 		}
 
 		// Desync/disconnect callbacks may request a session abort outside the normal input path.
@@ -90,29 +104,51 @@ func (rs *RollbackSystem) hijackRunMatch() bool {
 	return false
 }
 
-func (rs *RollbackSystem) preMatchSetup() {
+func (rs *RollbackSystem) preMatchSetup() error {
 	if rs.session != nil && sys.netConnection != nil {
+		if !sys.netConnection.IsConnected() || sys.netConnection.isClosing() || sys.esc || sys.gameEnd {
+			return Error("Rollback connection was closed before startup")
+		}
+		// Use the actual TCP peer address (also resolves client-side hostnames).
+		remoteIP := sys.netConnection.conn.RemoteAddr().(*net.TCPAddr).IP
+		localIP := sys.netConnection.conn.LocalAddr().(*net.TCPAddr).IP
+		if remoteIP.To4() == nil {
+			return Error("Rollback currently requires an IPv4 peer address")
+		}
+
+		localPort := rs.session.config.Port
+		remotePort := sys.netConnection.rollbackRemotePort
+
+		if localPort < 1 || localPort > 65535 || remotePort < 1 || remotePort > 65535 {
+			return Error("Rollback UDP ports were not negotiated")
+		}
+
+		// A local/proxy peer needs different UDP ports or packets loop back into our own rollback socket.
+		if (remoteIP.IsLoopback() || remoteIP.Equal(localIP)) && localPort == remotePort {
+			return fmt.Errorf("Cannot use UDP port %d for both rollback players on the same machine.\nConfigure a different Rollback.Port for each instance.", localPort)
+		}
+
+		rs.session.remoteIp = remoteIP.String()
+		log.Printf("Rollback startup: TCP local=%s peer=%s; UDP local=0.0.0.0:%d peer=%s",
+			sys.netConnection.conn.LocalAddr(), sys.netConnection.conn.RemoteAddr(), localPort,
+			net.JoinHostPort(rs.session.remoteIp, fmt.Sprint(remotePort)))
+		var err error
 		if rs.session.host != "" {
 			// Initialize client as P2
-			rs.session.InitP2(2, 7550, 7600, rs.session.host)
+			err = rs.session.InitP2(2, localPort, remotePort, rs.session.remoteIp)
 			rs.session.playerNo = 2
 		} else {
 			// Initialize host as P1
-			rs.session.InitP1(2, 7600, 7550, rs.session.remoteIp)
+			err = rs.session.InitP1(2, localPort, remotePort, rs.session.remoteIp)
 			rs.session.playerNo = 1
+		}
+		if err != nil {
+			return fmt.Errorf("Cannot start rollback on UDP port %d: %w", localPort, err)
 		}
 
 		// Synchronize matchTime at match start
 		sys.matchTime = rs.session.netTime //s.time = rs.session.netTime // Old typo?
 		sys.preMatchTime = sys.netConnection.preMatchTime
-
-		// Wait until both peers have fully synchronized?
-		//if !rs.session.IsConnected() {
-		//	for !rs.session.synchronized {
-		//		rs.session.backend.Idle(0)
-		//	}
-		//}
-		//sys.netConnection.Close()
 
 		// Borrow netConnection replay recording
 		rs.session.recording = sys.netConnection.recording
@@ -130,6 +166,7 @@ func (rs *RollbackSystem) preMatchSetup() {
 
 	// Reset rollback session timer
 	rs.session.netTime = 0
+	return nil
 }
 
 func (rs *RollbackSystem) postMatchSetup() {
@@ -392,10 +429,11 @@ func (rs *RollbackSystem) anyButton() bool {
 	return false
 }
 
+// Logs are sized for the worst case scenario, where every frame of the buffer carries a max rollback
 type RollbackLogger struct {
 	filename   string
 	currentLog strings.Builder
-	logs       [(MaxSaveStates * 2) + 3]string
+	logs       [(MaxSaveStates + 2) * (MaxSaveStates + 1)]string
 }
 
 func NewRollbackLogger(timestamp string) RollbackLogger {
@@ -418,7 +456,7 @@ func (g *RollbackLogger) logState(action string, stateIdx int, state *GameState)
 }
 
 func (g *RollbackLogger) logRoundSkipCheck(fadeoutStart int32, anyButton, roundnotskip, skipEligible, matchEndDialogue bool) {
-	if sys.rollback.session == nil || !sys.rollback.session.config.LogsEnabled {
+	if sys.rollback.session == nil || !sys.rollback.session.config.StateLogsEnabled {
 		return
 	}
 	var inputs [2]InputBits
@@ -442,7 +480,7 @@ func (g *RollbackLogger) logRoundSkipCheck(fadeoutStart int32, anyButton, roundn
 }
 
 func (g *RollbackLogger) logRoundAdvanceCheck(roundOver, tickFrame, motifEndActive, fightLoopEnd, holdPostMatch, canAdvance bool) {
-	if sys.rollback.session == nil || !sys.rollback.session.config.LogsEnabled {
+	if sys.rollback.session == nil || !sys.rollback.session.config.StateLogsEnabled {
 		return
 	}
 	fmt.Fprintf(&g.currentLog,
@@ -474,8 +512,9 @@ func (g *RollbackLogger) updateStateLogs() {
 }
 
 func (g *RollbackLogger) saveStateLogs() {
-	// Header indicating the number of frames captured
-	fullLog := fmt.Sprintf("Writing save state data from the last %d frames.\n\n", len(g.logs))
+	// Header indicating the number of entries captured
+	// Each save and each load writes one, so this is not quite a frame count
+	fullLog := fmt.Sprintf("Writing save state data from the last %d entries.\n\n", len(g.logs))
 	// Collect all the logs in the buffer
 	for i := range g.logs {
 		fullLog += g.logs[i]
@@ -691,13 +730,13 @@ func (r *RollbackSession) SaveGameState(stateIdx int) int {
 	r.saveStates[stateIdx].SaveState(stateIdx)
 
 	if r.config.DesyncTest {
-		if r.config.LogsEnabled {
+		if r.config.StateLogsEnabled {
 			r.log.logState("Saving", stateIdx, r.saveStates[stateIdx])
 			r.log.updateStateLogs()
 		}
 		return r.saveStates[stateIdx].Checksum()
 	} else {
-		if r.config.LogsEnabled {
+		if r.config.StateLogsEnabled {
 			r.log.logState("Saving", stateIdx, r.saveStates[stateIdx])
 			r.log.updateStateLogs()
 		}
@@ -725,11 +764,14 @@ func (r *RollbackSession) LoadGameState(stateIdx int) {
 
 	r.saveStates[stateIdx].LoadState(stateIdx)
 
-	if r.config.DesyncTest && r.config.LogsEnabled {
+	if r.config.DesyncTest && r.config.StateLogsEnabled {
 		r.log.logState("Loading", stateIdx, r.saveStates[stateIdx])
 	}
 
 	sys.statePool.gameStatePool.Put(r.saveStates[stateIdx])
+
+	// Drop the entry alongside the Put, or a later Get can hand out a stale state
+	delete(r.saveStates, stateIdx)
 
 	lastLoadedFrame = stateIdx
 }
@@ -792,7 +834,7 @@ func (r *RollbackSession) OnEvent(info *ggpo.Event) {
 		if sys.postMatchFlg {
 			return
 		}
-		if r.config.LogsEnabled {
+		if r.config.StateLogsEnabled {
 			r.log.saveStateLogs()
 		}
 		LogMessage("EventCodeDisconnectedFromPeer")
@@ -805,7 +847,7 @@ func (r *RollbackSession) OnEvent(info *ggpo.Event) {
 		LogMessage("EventCodeTimeSync: FramesAhead %f TimeSyncPeriodInFrames: %d", info.FramesAhead, info.TimeSyncPeriodInFrames)
 		r.loopTimer.OnGGPOTimeSyncEvent(info.FramesAhead)
 	case ggpo.EventCodeDesync:
-		if r.config.LogsEnabled {
+		if r.config.StateLogsEnabled {
 			r.log.saveStateLogs()
 		}
 		LogMessage("EventCodeDesync")
@@ -913,8 +955,8 @@ func (rs *RollbackSession) AnyButton() bool {
 	return false
 }
 
-func (rs *RollbackSession) InitP1(numPlayers int, localPort int, remotePort int, remoteIp string) {
-	if rs.config.LogsEnabled {
+func (rs *RollbackSession) InitP1(numPlayers int, localPort int, remotePort int, remoteIp string) error {
+	if rs.config.GgpoLogsEnabled {
 		logFileName := fmt.Sprintf("save/logs/Rollback-%s.log", rs.timestamp)
 		f, err := os.OpenFile(logFileName, os.O_CREATE|os.O_RDWR, 0666)
 		if err != nil {
@@ -937,7 +979,9 @@ func (rs *RollbackSession) InitP1(numPlayers int, localPort int, remotePort int,
 	peer := ggpo.NewPeer(rs, localPort, numPlayers, inputSize)
 	rs.backend = &peer
 
-	peer.InitializeConnection()
+	if err := peer.InitializeConnection(); err != nil {
+		return err
+	}
 
 	var handle ggpo.PlayerHandle
 	result := peer.AddPlayer(&player, &handle)
@@ -960,10 +1004,11 @@ func (rs *RollbackSession) InitP1(numPlayers int, localPort int, remotePort int,
 	peer.SetFrameDelay(handle, rs.config.FrameDelay)
 
 	peer.Start()
+	return nil
 }
 
-func (rs *RollbackSession) InitP2(numPlayers int, localPort int, remotePort int, remoteIp string) {
-	if rs.config.LogsEnabled {
+func (rs *RollbackSession) InitP2(numPlayers int, localPort int, remotePort int, remoteIp string) error {
+	if rs.config.GgpoLogsEnabled {
 		logFileName := fmt.Sprintf("save/logs/Rollback-%s.log", rs.timestamp)
 		f, err := os.OpenFile(logFileName, os.O_CREATE|os.O_RDWR, 0666)
 		if err != nil {
@@ -986,7 +1031,9 @@ func (rs *RollbackSession) InitP2(numPlayers int, localPort int, remotePort int,
 	peer := ggpo.NewPeer(rs, localPort, numPlayers, inputSize)
 	rs.backend = &peer
 
-	peer.InitializeConnection()
+	if err := peer.InitializeConnection(); err != nil {
+		return err
+	}
 
 	var handle ggpo.PlayerHandle
 	result := peer.AddPlayer(&player, &handle)
@@ -1009,11 +1056,12 @@ func (rs *RollbackSession) InitP2(numPlayers int, localPort int, remotePort int,
 	peer.SetFrameDelay(handle2, rs.config.FrameDelay)
 
 	peer.Start()
+	return nil
 }
 
 func (rs *RollbackSession) InitSyncTest(numPlayers int) {
 	rs.syncTest = true
-	if rs.config.LogsEnabled {
+	if rs.config.GgpoLogsEnabled {
 		logFileName := fmt.Sprintf("save/logs/Rollback-Desync-Test-%s.log", rs.timestamp)
 		f, err := os.OpenFile(logFileName, os.O_CREATE|os.O_RDWR, 0666)
 		if err != nil {
