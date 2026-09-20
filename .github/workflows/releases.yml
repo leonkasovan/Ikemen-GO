@@ -41,6 +41,7 @@ jobs:
     outputs:
       version: ${{ steps.meta.outputs.version }}
       releaseTag: ${{ steps.meta.outputs.releaseTag }}
+      releaseName: ${{ steps.meta.outputs.releaseName }}
       releaseKind: ${{ steps.meta.outputs.releaseKind }}
       artifactVersion: ${{ steps.meta.outputs.artifactVersion }}
       prerelease: ${{ steps.meta.outputs.prerelease }}
@@ -64,6 +65,7 @@ jobs:
           ref_name="$GITHUB_REF_NAME"
           input_tag="${INPUT_TAG:-}"
           previous_tag=""
+          release_name=""
 
           if [ -n "$input_tag" ]; then
             tag_pattern='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-rc\.([1-9][0-9]*))?$'
@@ -146,8 +148,10 @@ jobs:
           elif [ "${{ github.event_name }}" = "workflow_dispatch" ] && \
                [ "$ref_name" != "develop" ]; then
             version="$ref_name"
-            release_tag="$ref_name"
             artifact_version="$(printf '%s' "$ref_name" | sed 's#[^A-Za-z0-9._-]#-#g')"
+            # Prefix the tag so it can never collide with the branch it was built from.
+            release_tag="branch-$artifact_version"
+            release_name="$ref_name"
             release_kind="branch"
             prerelease="true"
             make_latest="false"
@@ -162,6 +166,7 @@ jobs:
 
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "releaseTag=$release_tag" >> "$GITHUB_OUTPUT"
+          echo "releaseName=${release_name:-$release_tag}" >> "$GITHUB_OUTPUT"
           echo "releaseKind=$release_kind" >> "$GITHUB_OUTPUT"
           echo "artifactVersion=$artifact_version" >> "$GITHUB_OUTPUT"
           echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
@@ -181,32 +186,26 @@ jobs:
             goos: windows
             goarch: amd64
             bin: Ikemen_GO.amd64.exe
-            glibc: ''
-            target: ''
             build_target: Win64
           - runner_os: linux
-            os: ubuntu-22.04
+            os: ubuntu-24.04
             goos: linux
             goarch: amd64
             bin: Ikemen_GO.amd64
-            glibc: '2.13'
-            target: ''
             build_target: Linux
           - runner_os: macos
-            os: macos-14 # macos-13
+            os: macos-15
             goos: darwin
             goarch: arm64 # amd64
             bin: Ikemen_GO
-            glibc: ''
-            target: '10.7'
+            # Minimum macOS for the binary. Go 1.27 needs 13+, arm64 needs 11+.
+            macos_min: '13.0'
             build_target: MacOSARM # MacOS
           - runner_os: android
-            os: ubuntu-22.04
+            os: ubuntu-24.04
             goos: android
             goarch: arm64
             bin: ikemen-go.apk
-            glibc: ''
-            target: ''
             build_target: Android
     runs-on: ${{ matrix.cfg.os }}
     steps:
@@ -217,7 +216,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.20.x'
+          go-version: '1.27.x'
           cache: true
           cache-dependency-path: |
             go.sum
@@ -254,7 +253,9 @@ jobs:
         run: |
           if [ "$RUNNER_OS" = "Linux" ]; then
             sudo apt-get update && sudo apt-get install -y libasound2-dev libgl1-mesa-dev xorg-dev libgtk-3-dev \
-              build-essential pkg-config git yasm nasm curl ca-certificates libxmp-dev libsdl2-dev
+              build-essential pkg-config git yasm nasm curl ca-certificates libxmp-dev libsdl2-dev \
+              cmake ninja-build libpulse-dev libudev-dev libwayland-dev wayland-protocols libxkbcommon-dev \
+              libdrm-dev libgbm-dev libdecor-0-dev libibus-1.0-dev
           fi
           if [ "$RUNNER_OS" = "macOS" ]; then
             # Avoid update, disable analytics, prefer taps over API, and retry.
@@ -352,6 +353,8 @@ jobs:
         shell: bash
         env:
           BUILD_FFMPEG: "yes"
+          # Linux only: keeps the archive off the runner's glibc.
+          BUILD_SDL2: ${{ matrix.cfg.runner_os == 'linux' && 'yes' || 'no' }}
           GOOS: ${{ matrix.cfg.goos }}
           GOARCH: ${{ matrix.cfg.goarch }}
           CGO_ENABLED: "1"
@@ -359,11 +362,35 @@ jobs:
           APP_VERSION: ${{ needs.tag.outputs.version }}
           APP_BUILDTIME: ${{ needs.tag.outputs.buildTime }}
         run: |
+          # Pin the deployment target: cgo means external linking, so ld64 writes
+          # LC_BUILD_VERSION and honours MACOSX_DEPLOYMENT_TARGET (Go's -macos does not).
+          if [ "$RUNNER_OS" = "macOS" ] && [ -n "${{ matrix.cfg.macos_min }}" ]; then
+            export MACOSX_DEPLOYMENT_TARGET="${{ matrix.cfg.macos_min }}"
+            echo "MACOSX_DEPLOYMENT_TARGET=$MACOSX_DEPLOYMENT_TARGET"
+          fi
           go env -w GO111MODULE=on
           go mod download
           ./tools/build.sh ${{ matrix.cfg.build_target }}
           if [ "$RUNNER_OS" = "macOS" ]; then
             make appbundle BINNAME=${{ matrix.cfg.bin }}
+          fi
+          # Report the minimum OS actually recorded in the built binary.
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            echo "==> macOS minimum version recorded in binary:"
+            otool -l "bin/${{ matrix.cfg.bin }}" 2>/dev/null \
+              | awk '/LC_BUILD_VERSION/{f=1} f&&/minos/{print "  minos "$2; exit}' \
+              || echo "  (otool unavailable)"
+          fi
+          # Report the highest glibc version actually required by the shipped ELFs.
+          # The Linux binary lands in ./ (macOS uses bin/), so check both.
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            echo "==> glibc requirements of shipped binaries:"
+            for f in "${{ matrix.cfg.bin }}" "bin/${{ matrix.cfg.bin }}" lib/*.so*; do
+              [ -f "$f" ] || continue
+              max=$(objdump -T "$f" 2>/dev/null | grep -oE "GLIBC_2\.[0-9]+(\.[0-9]+)?" \
+                | sort -uV | tail -1)
+              echo "  $f -> ${max:-none}"
+            done
           fi
 
       - name: Build Android (Docker Compose)
@@ -686,7 +713,7 @@ jobs:
           artifacts: "release-assets/*"
           commit: ${{ github.sha }}
           tag: ${{ needs.tag.outputs.releaseTag }}
-          name: ${{ needs.tag.outputs.releaseTag }}
+          name: ${{ needs.tag.outputs.releaseName }}
 
           # Rolling and temporary releases may be updated.
           # Tagged RC/stable releases are immutable.
