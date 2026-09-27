@@ -195,6 +195,14 @@ func realMain() {
 	sys.cachedCfgTable = nil
 	// Apply platform-specific performance defaults (e.g. RenderScale, EnableModel on armdevice)
 	platformDefaultConfig(&sys.cfg)
+
+	// Optional local editor/API HTTP service (-httpservice). It exposes the
+	// motif / stage / character breakdown used by the in-game Editor menu and
+	// can also be queried by external tools. The Editor menu starts the same
+	// service on demand, so this flag only controls the boot-time start.
+	if _, ok := sys.cmdFlags["-httpservice"]; ok {
+		startEditorHTTPService()
+	}
 	// LogDebug("[INIT] Config Loaded. System Script: %s", sys.cfg.Config.System)
 
 	if sys.cfg.Debug.DumpLuaTables {
@@ -275,6 +283,7 @@ func processCommandLine() {
 			"-nojoy":          true,
 			"-nomusic":        true,
 			"-nosound":        true,
+			"-httpservice":    true,
 		}
 		key := ""
 		player := 1
@@ -309,6 +318,7 @@ func processCommandLine() {
 -setvolume <num>        Sets master volume to <num> (0-100)
 -tcpport <num>          Overrides host TCP port number
 -udpport <num>          Overrides rollback UDP port number
+-httpservice            Starts the built-in editor web service (port 6700)
 	
 Quick VS Options:
 -p<n> <playername>      Loads player n, eg. -p3 kfm

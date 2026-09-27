@@ -470,7 +470,7 @@ endif
 # ============================================================================
 
 .PHONY: all release debug help \
-        deps-check check-go-env vet \
+        deps-check check-go-env vet test \
         ffmpeg libvpx xmp sdl2 mugen winres install install-remote fetch-log appbundle \
         screenpack \
         clean distclean FORCE
@@ -630,6 +630,54 @@ vet: check-go-env
 	@GOEXPERIMENT=arenas CGO_CFLAGS="$$( $(PKG_CONFIG) --cflags $(_CGO_PKGS) 2>/dev/null || true )" \
 		go vet -tags "$(GO_TAGS)" ./src
 	@echo "==> go vet passed"
+
+# ============================================================================
+# Go Tests
+# ============================================================================
+# Runs the Go test suites with the same build tags and cgo environment as
+# the current configuration (GO_TAGS, e.g. `static desktop` on Windows;
+# `armdevice` on Linux arm64).
+#
+# Unlike `vet` this also needs the library SEARCH path (CGO_LDFLAGS): `go
+# test` links a real test binary, so cgo must resolve libav*/libxmp/SDL2 at
+# link time, not just find their headers. On Windows SDL2 is linked by name
+# from $(BUILD_PREFIX)/lib, which is why that -L is always added.
+#
+# Pass TESTFLAGS to filter, e.g.:
+#   make test TESTFLAGS="-run TestEditor -v"
+#   make test TESTFLAGS="-race"
+# Note: always quote TESTFLAGS when it contains spaces — unquoted it splits
+# into several make arguments, and only the first reaches the variable.
+#
+# Note on the hardcoded -vet=off: `go test` runs a subset of `go vet` before it
+# builds, and on Go 1.27 this engine trips the printf check in a number of
+# pre-existing call sites (script.go, util_desktop.go, ...), which fails the
+# test build outright. `make vet` is the target that reports those properly.
+# ============================================================================
+test: check-go-env sdl2 $(SRC_SYSO)
+	@_GOEXPERIMENT=$$( GOEXPERIMENT=arenas go env GOEXPERIMENT 2>/dev/null | grep -q arenas && echo arenas || true ) ; \
+	echo "==> Running go test on ./src (tags: $(GO_TAGS))..." ; \
+	echo "    GOEXPERIMENT=$${_GOEXPERIMENT:-<none>} TESTFLAGS=$(TESTFLAGS)" ; \
+	case "$(HOST_OS)" in \
+		windows) \
+			_PC_WINPATH="$$(cygpath -m "$(BUILD_PREFIX)/lib/pkgconfig" 2>/dev/null || echo "$(BUILD_PREFIX)/lib/pkgconfig")" ; \
+			_CGO_CFLAGS=$$( $(PKG_CONFIG) --with-path="$${_PC_WINPATH}" --cflags $(_CGO_PKGS) ) ; \
+			_CGO_LDFLAGS="-L$(BUILD_PREFIX)/lib $$( $(PKG_CONFIG) --with-path="$${_PC_WINPATH}" --static --libs $(_CGO_PKGS) )" ; \
+			GOEXPERIMENT="$$_GOEXPERIMENT" \
+			CGO_CFLAGS="-DLIBXMP_STATIC $$_CGO_CFLAGS" \
+			CGO_LDFLAGS="$$_CGO_LDFLAGS" \
+			go test -vet=off $(GO_VERBOSE) -tags "$(GO_TAGS)" $(TESTFLAGS) ./src;; \
+		*) \
+			_PC_PATH="$(BUILD_PREFIX)/lib/pkgconfig:/usr/lib/pkgconfig:/usr/local/lib/pkgconfig$(if $(PKG_CONFIG_PATH),:$(PKG_CONFIG_PATH),)" ; \
+			_CGO_CFLAGS=$$( PKG_CONFIG_LIBDIR= PKG_CONFIG_PATH="$${_PC_PATH}" $(PKG_CONFIG) --cflags $(_CGO_PKGS) ) ; \
+			_CGO_LDFLAGS="-L$(BUILD_PREFIX)/lib $$( PKG_CONFIG_LIBDIR= PKG_CONFIG_PATH="$${_PC_PATH}" $(PKG_CONFIG) --static --libs $(_CGO_PKGS) )" ; \
+			PKG_CONFIG_PATH="$${_PC_PATH}" \
+			GOEXPERIMENT="$$_GOEXPERIMENT" \
+			CGO_CFLAGS="-DLIBXMP_STATIC $$_CGO_CFLAGS" \
+			CGO_LDFLAGS="$$_CGO_LDFLAGS" \
+			go test -vet=off $(GO_VERBOSE) -tags "$(GO_TAGS)" $(TESTFLAGS) ./src;; \
+	esac
+	@echo "==> go test passed"
 
 # ============================================================================
 # SDL2 Static Build (CMake)

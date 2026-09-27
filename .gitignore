@@ -93,12 +93,16 @@ external/gamecontrollerdb.txt
 !tools/*.sh
 save/*
 
+# WebView2 profile for the in-game editor (regenerated at runtime)
+/src/save/
+
 # ============================
-# IDE files
+# IDE / agent tooling files
 # ============================
 .vscode/*
 .vs/*
 .idea/*
+.commandcode/
 
 # Android build outputs (generated)
 bin/*.apk

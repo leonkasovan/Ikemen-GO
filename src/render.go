@@ -600,11 +600,28 @@ func applyRotation(modelview mgl.Mat4, rp RenderParams) mgl.Mat4 {
 	return modelview
 }
 
+// rotationCenter returns the pivot the rotation is performed around, including
+// the tiling offset and the AngleDraw pivot offset.
+//
+// Projection mode 2 is deliberately excluded from the rcOffset term: that mode
+// feeds rcx/rcy to the projection matrix as a camera position rather than as a
+// rotation center, and the mode 2 branch below never adds the offset. The
+// matching inverse translate after applyRotation must therefore also skip it,
+// otherwise the sprite is displaced by -rcOffset instead of rotating about it.
+func rotationCenter(rp RenderParams, n int, botdist, dy float32) (float32, float32) {
+	cx := rp.rcx + float32(n)*botdist
+	cy := rp.rcy + dy
+	if rp.projectionMode != 2 {
+		cx += rp.rcOffset[0]
+		cy += rp.rcOffset[1]
+	}
+	return cx, cy
+}
+
 // Builds the base projection transform depending on projectionMode
 func applyProjection(modelview mgl.Mat4, rp RenderParams, n int, botdist, dy float32) mgl.Mat4 {
 	// Calculate actual rotation center
-	rotCenterX := rp.rcx + rp.rcOffset[0] + float32(n)*botdist
-	rotCenterY := rp.rcy + rp.rcOffset[1] + dy
+	rotCenterX, rotCenterY := rotationCenter(rp, n, botdist, dy)
 
 	if rp.projectionMode == 0 {
 		// No projection, just center on pivot + tile offset
@@ -794,8 +811,7 @@ func renderSpriteHTile(modelview mgl.Mat4, x1, y1, x2, y2, x3, y3, x4, y4, dy, w
 			mat = applyProjection(mat, rp, int(n), botdist, dy)
 			mat = applyRotation(mat, rp)
 
-			rotCenterX := rp.rcx + rp.rcOffset[0] + float32(n)*botdist
-			rotCenterY := rp.rcy + rp.rcOffset[1] + dy
+			rotCenterX, rotCenterY := rotationCenter(rp, int(n), botdist, dy)
 
 			mat = mat.Mul4(mgl.Translate3D(-rotCenterX, -rotCenterY, 0))
 		}
@@ -835,7 +851,8 @@ func renderSpriteQuad(modelview mgl.Mat4, rp RenderParams, emit quadEmitter) {
 		modelview = applyProjection(modelview, rp, 0, 1, 0)
 		modelview = applyShear(modelview, rp.rxadd, rp.ys*float32(rp.size[1]))
 		modelview = applyRotation(modelview, rp)
-		modelview = modelview.Mul4(mgl.Translate3D(-(rp.rcx + rp.rcOffset[0]), -(rp.rcy + rp.rcOffset[1]), 0))
+		rotCenterX, rotCenterY := rotationCenter(rp, 0, 1, 0)
+		modelview = modelview.Mul4(mgl.Translate3D(-rotCenterX, -rotCenterY, 0))
 
 		emit(modelview, x1, y1, x2, y2, x3, y3, x4, y4, uv)
 		return

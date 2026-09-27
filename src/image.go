@@ -684,7 +684,7 @@ type Sprite struct {
 	pendingFilter bool   // bilinear filter flag for RGB textures
 	pendingW      int32  // texture width (matches the pixel buffer, not necessarily s.Size)
 	pendingH      int32  // texture height
-	sffv1BasePal bool // SFFv1 sprite palette duplicates the base palette
+	sffv1BasePal  bool   // SFFv1 sprite palette duplicates the base palette
 }
 
 func (s *Sprite) isBlank() bool {
@@ -1795,11 +1795,24 @@ func loadingCanceled() bool {
 
 // Loads the full SFF file
 func loadSff(filename string, char bool, isMainThread bool, isActPal bool) (*Sff, error) {
-	if loadingCanceled() {
+	return loadSffEx(filename, char, isMainThread, isActPal, false)
+}
+
+// loadSffEx loads the full SFF file. keepPixels reads the file privately and
+// leaves the decoded pixels on the CPU instead of uploading them, for a caller
+// that has to read them back (the editor sprite preview). A borrowed SFF, or one
+// that has already been uploaded, no longer holds any pixel data.
+func loadSffEx(filename string, char bool, isMainThread bool, isActPal bool, keepPixels bool) (*Sff, error) {
+	// A preview load must not be cancelled by an unrelated screen transition.
+	canceled := loadingCanceled
+	if keepPixels {
+		canceled = func() bool { return false }
+	}
+	if !keepPixels && canceled() {
 		return nil, ErrLoadingCanceled
 	}
 	// Borrow an existing SFF if possible
-	if s := findActiveSff(filename); s != nil {
+	if s := findActiveSff(filename); s != nil && !keepPixels {
 		memLog("SFF borrowed: %s (reuse, sprites=%d palettes=%d)", filename, len(s.sprites), len(s.palList.palettes))
 		return s, nil
 	}
@@ -1832,7 +1845,7 @@ func loadSff(filename string, char bool, isMainThread bool, isActPal bool) (*Sff
 	var prev *Sprite
 	shofs := int64(s.header.FirstSpriteHeaderOffset)
 	for i := 0; i < len(spriteList); i++ {
-		if loadingCanceled() {
+		if canceled() {
 			return nil, ErrLoadingCanceled
 		}
 		f.Seek(shofs, 0)
@@ -1854,7 +1867,7 @@ func loadSff(filename string, char bool, isMainThread bool, isActPal bool) (*Sff
 		if size == 0 {
 			if int(indexOfPrevious) < i {
 				dst, src := spriteList[i], spriteList[int(indexOfPrevious)]
-				if loadingCanceled() {
+				if canceled() {
 					return nil, ErrLoadingCanceled
 				}
 				// Moved to shareCopy() itself
@@ -1902,11 +1915,18 @@ func loadSff(filename string, char bool, isMainThread bool, isActPal bool) (*Sff
 			sys.runMainThreadTask()
 		}
 	}
-	if loadingCanceled() {
+	if canceled() {
 		return nil, ErrLoadingCanceled
 	}
 
 	memLog("SFF loaded: %s — sprites=%d palettes=%d", filename, len(s.sprites), len(s.palList.palettes))
+
+	if keepPixels {
+		// The caller reads the pixels itself, so stop before they are uploaded
+		// and freed. Nothing below this point touches the pixel data.
+		memLog("SFF loaded (pixels kept): %s", filename)
+		return s, nil
+	}
 
 	// For sprites with large pixel data (>128 KB), eagerly create GPU textures
 	// to free CPU heap memory. Large sprites (character sprites, backgrounds)

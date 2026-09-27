@@ -3480,6 +3480,41 @@ func systemScriptInit(l *lua.LState) {
 		l.Push(lua.LString(sys.cmdFlags[strArg(l, 1)]))
 		return 1
 	})
+	luaRegister(l, "editorURL", func(l *lua.LState) int {
+		/*Get the URL of the built-in editor web service (`-httpservice`, port 6700).
+		@function editorURL
+		@tparam[opt] string view Editor view: `'motif'`, `'stage'` or `'character'` (default `'motif'`).
+		@treturn string url Editor URL.*/
+		view := "motif"
+		if !nilArg(l, 1) {
+			view = strArg(l, 1)
+		}
+		l.Push(lua.LString(fmt.Sprintf("http://127.0.0.1:%d/?view=%v", EditorPort, editorNormalizeView(view))))
+		return 1
+	})
+	luaRegister(l, "openEditor", func(l *lua.LState) int {
+		/*Open the built-in web editor for the given view.
+		Starts the editor HTTP service on demand when it is not running yet, and
+		shows the page in the built-in window (or the default browser where there
+		is none). Returns without waiting: a cold window can take a while to come
+		up, and the game keeps running in the meantime.
+		@function openEditor
+		@tparam[opt] string view Editor view: `'motif'`, `'stage'` or `'character'` (default `'motif'`).
+		@treturn bool opened `true` when the editor was asked to open, `false` when there is nothing to show.*/
+		view := "motif"
+		if !nilArg(l, 1) {
+			view = strArg(l, 1)
+		}
+		l.Push(lua.LBool(openEditorAsync(view)))
+		return 1
+	})
+	luaRegister(l, "closeEditor", func(l *lua.LState) int {
+		/*Close the built in editor window, when there is one.
+		@function closeEditor
+		@treturn bool closed `true` when a window was open and is now closing.*/
+		l.Push(lua.LBool(editorWebViewClose()))
+		return 1
+	})
 	luaRegister(l, "getConsecutiveWins", func(l *lua.LState) int {
 		/*Get the number of consecutive wins for a team.
 		@function getConsecutiveWins

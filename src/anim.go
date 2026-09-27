@@ -1014,7 +1014,12 @@ func (a *Animation) Draw(window *[4]int32, x, y, xcs, ycs, xs, xbs, ys,
 		fLength *= ycs
 	}
 
-	rcOffset := [2]float32{rotPivot[0] * sys.widthScale, rotPivot[1] * sys.heightScale}
+	// The pivot is an offset in the same stage space as the sprite, so it has to
+	// follow the same transforms the anchor went through: the camera zoom (xcs/ycs)
+	// applied to x and y above, and the stage-to-screen scale here. Omitting the
+	// zoom made the pivot drift relative to the sprite whenever the camera was
+	// zoomed in (KO/intro zoom, stage zoom).
+	rcOffset := [2]float32{rotPivot[0] * xcs * sys.widthScale, rotPivot[1] * ycs * sys.heightScale}
 
 	blendMode, blendAlpha := a.alphaToBlend()
 

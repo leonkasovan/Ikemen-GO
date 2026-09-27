@@ -3981,9 +3981,9 @@ func (be BytecodeExp) run_ex2(c *Char, i *int, oc *Char) {
 			case OC_ex2_projvar_projangle:
 				sys.bcStack.PushF(p.rot.angle)
 			case OC_ex2_projvar_projyangle:
-				sys.bcStack.PushF(p.rot.xangle)
-			case OC_ex2_projvar_projxangle:
 				sys.bcStack.PushF(p.rot.yangle)
+			case OC_ex2_projvar_projxangle:
+				sys.bcStack.PushF(p.rot.xangle)
 			case OC_ex2_projvar_projcancelanim:
 				sys.bcStack.PushI(p.cancelanim)
 			case OC_ex2_projvar_projedgebound:

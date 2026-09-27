@@ -1978,6 +1978,34 @@ function main.f_default()
 	hook.run("main.f_default")
 end
 
+--;===========================================================
+--; EDITOR
+--;===========================================================
+-- Opens the built-in web editor for the given view: 'motif', 'stage' or
+-- 'character'. The editor breaks the loaded definitions down structurally, the
+-- same way the engine parses them (see src/editor_server.go and src/motif.go):
+-- motif sections/keys come from the Motif struct layout and the [Title Info]
+-- menu.itemname breakdown mirrors main.f_start(), while the stage and character
+-- views are built from select.def.
+-- The local HTTP service (port 6700) is started on demand here, or at boot when
+-- the engine is launched with the -httpservice flag.
+function main.f_editor(view)
+	local url = editorURL(view)
+	-- openEditor() returns as soon as the editor has been asked to open, so the
+	-- game keeps running while a cold built-in window comes up.
+	if openEditor(view) then
+		print('Editor opening: ' .. url)
+		return true
+	end
+	print('Unable to open web browser for the editor: ' .. url)
+	main.f_warning(
+		'Unable to open a web browser for the editor.\nOpen this address manually:\n' .. url,
+		motif[main.group],
+		motif[main.background]
+	)
+	return false
+end
+
 -- Associative elements table storing functions controlling behaviour of each
 -- menu item (modes configuration). Can be appended via external module.
 main.t_itemname = {
@@ -2574,6 +2602,22 @@ main.t_itemname = {
 		setHomeTeam(1)
 		hook.run("main.t_itemname", t, item)
 		return start.f_selectMode
+	end,
+	--EDITOR (built-in web editor, served by -httpservice on port 6700)
+	['editormotif'] = function(t, item)
+		hook.run("main.t_itemname", t, item)
+		main.f_editor('motif')
+		return nil
+	end,
+	['editorstage'] = function(t, item)
+		hook.run("main.t_itemname", t, item)
+		main.f_editor('stage')
+		return nil
+	end,
+	['editorcharacter'] = function(t, item)
+		hook.run("main.t_itemname", t, item)
+		main.f_editor('character')
+		return nil
 	end,
 }
 main.t_itemname.teamarcade = main.t_itemname.arcade

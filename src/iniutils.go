@@ -2152,7 +2152,19 @@ func SetAnim(obj interface{}, fVal, structVal, parent reflect.Value, sffOverride
 }
 
 // SetTextSprite sets the TextSprite field generically for any struct.
+// SetTextSprite fills a *TextSprite field from the struct that declares it,
+// allocating the TextSprite.
 func SetTextSprite(obj interface{}, fVal, structVal, parent reflect.Value) {
+	setTextSpriteInto(NewTextSprite(), obj, fVal, structVal, parent)
+}
+
+// setTextSpriteInto applies the values of the owning struct to an existing
+// TextSprite, instead of allocating a new one. PopulateDataPointers only fills a
+// nil pointer, and the Lua side of the engine holds a handle to the TextSprite it
+// was given, so replacing the object leaves every such handle pointing at the
+// old one. Refilling in place is what lets an edited value show up without
+// rebuilding the motif table the script holds.
+func setTextSpriteInto(ts *TextSprite, obj interface{}, fVal, structVal, parent reflect.Value) {
 	offset := [2]float32{0, 0}
 	font := [8]int32{-1, 0, 0, 255, 255, 255, 255, -1}
 	scale := [2]float32{1, 1}
@@ -2281,8 +2293,6 @@ func SetTextSprite(obj interface{}, fVal, structVal, parent reflect.Value) {
 
 	objVal := reflect.ValueOf(obj).Elem()
 
-	// textImgNew
-	ts := NewTextSprite()
 	// textImgSetFont
 	fntField := objVal.FieldByName("Fnt")
 	key := reflect.ValueOf(int(font[0]))
@@ -2342,7 +2352,14 @@ func SetTextSprite(obj interface{}, fVal, structVal, parent reflect.Value) {
 }
 
 // SetPalFx sets the PalFX field generically for any struct.
+// SetPalFx fills a *PalFX field from the struct that declares it, allocating it.
 func SetPalFx(obj interface{}, fVal, structVal, parent reflect.Value) {
+	setPalFxInto(newPalFX(), obj, fVal, structVal, parent)
+}
+
+// setPalFxInto applies the owning struct's values to an existing PalFX. See
+// setTextSpriteInto for why an in place fill is needed.
+func setPalFxInto(palfx *PalFX, obj interface{}, fVal, structVal, parent reflect.Value) {
 	time := int32(-1)
 	color := float32(256)
 	hue := float32(0)
@@ -2405,7 +2422,6 @@ func SetPalFx(obj interface{}, fVal, structVal, parent reflect.Value) {
 		invertBlend = int32(fv.Int())
 	}
 
-	palfx := newPalFX()
 	palfx.time = time
 	palfx.color = color / 256
 	palfx.hue = hue / 512
@@ -2454,7 +2470,14 @@ func SetPalFx(obj interface{}, fVal, structVal, parent reflect.Value) {
 }
 
 // SetRect sets the Rect field generically for any struct.
+// SetRect fills a *Rect field from the struct that declares it, allocating it.
 func SetRect(obj interface{}, fVal, structVal, parent reflect.Value) {
+	setRectInto(NewRect(), obj, fVal, structVal, parent)
+}
+
+// setRectInto applies the owning struct's values to an existing Rect. See
+// setTextSpriteInto for why an in place fill is needed.
+func setRectInto(rect *Rect, obj interface{}, fVal, structVal, parent reflect.Value) {
 	time := int32(0)
 	layerno := int16(0)
 	localcoord := [2]float32{0, 0}
@@ -2509,7 +2532,6 @@ func SetRect(obj interface{}, fVal, structVal, parent reflect.Value) {
 	}
 
 	// rectNew
-	rect := NewRect()
 	// rectSetLocalcoord
 	rect.SetLocalcoord(localcoord[0], localcoord[1])
 	// rectSetTime
@@ -2535,7 +2557,14 @@ func SetRect(obj interface{}, fVal, structVal, parent reflect.Value) {
 }
 
 // SetFade sets the Fade field generically for any struct.
+// SetFade fills a *Fade field from the struct that declares it, allocating it.
 func SetFade(obj interface{}, fVal, structVal, parent reflect.Value) {
+	setFadeInto(newFade(), obj, fVal, structVal, parent)
+}
+
+// setFadeInto applies the owning struct's values to an existing Fade. See
+// setTextSpriteInto for why an in place fill is needed.
+func setFadeInto(fade *Fade, obj interface{}, fVal, structVal, parent reflect.Value) {
 	time := int32(0)
 	col := [3]int32{0, 0, 0}
 	animData := &Anim{}
@@ -2582,7 +2611,6 @@ func SetFade(obj interface{}, fVal, structVal, parent reflect.Value) {
 		}
 	}
 
-	fade := newFade()
 	fade.time = time
 	fade.col = col
 	fade.animData = animData
