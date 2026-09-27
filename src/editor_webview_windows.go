@@ -158,6 +158,12 @@ func editorWebViewOpen(url, title string, width, height uint) bool {
 
 	if !editorWebViewRuntimeInstalled() {
 		LogMessage("[Editor] WebView2 runtime not installed, using the browser")
+		// Nothing will clear editorWebViewOpening for us (no goroutine is
+		// started on this path), so reset it here or every later call would
+		// report "still opening" and never fall back to the browser.
+		editorWebViewMu.Lock()
+		editorWebViewOpening = false
+		editorWebViewMu.Unlock()
 		return false
 	}
 	ready := make(chan bool, 1)
