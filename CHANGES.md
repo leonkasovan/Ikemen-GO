@@ -35,8 +35,9 @@ New command line flag `-httpservice` starts a local-only HTTP service
   cannot drift apart: in a stage a background block (`[BGdef]`, `[BG n]`,
   `[bgctrldef]`, `[bgctrl]`) owns its layers and controllers, and each
   `[Begin Action n]` hangs under the layer that plays it. Neither view has a
-  schema behind its keys, so their key tables drop the *State* and
-  *Type / default* columns, which the Motif view keeps.
+  schema behind its keys, so their key tables drop the *State* column, which
+  the Motif view keeps. Type and default are tooltips on the key name and the
+  value control rather than a column, in every view.
 - `GET /api/file?path=…`, `POST /api/save` — view and edit any `.def`/`.ini`
   file inside the game folder. Writes are line based, so ordering, comments and
   indentation are preserved.
@@ -69,8 +70,11 @@ New command line flag `-httpservice` starts a local-only HTTP service
   next to the character / stage `.def` being edited.
 
 New `Editor` submenu in the title menu (Motif / Stage / Character) is defined by
-`menu.itemname.editor*` entries in the default motif, so every screenpack gets
-it without changes. Selecting an item starts the service on demand and shows it
+`menu.itemname.editor*` entries in the default motif
+(`src/resources/defaultMotif.ini`, shipped in `deploy/data/ikemen1` /
+`ikemen-480`), so screenpacks based on it get it without changes. The mugen
+motif (`src/resources/defaultMugenMotif.ini`, `deploy/data/mugen1`) does not
+declare it. Selecting an item starts the service on demand and shows it
 in a **built in WebView2 window** on Windows
 (`github.com/jchv/go-webview2`, pure Go, no cgo, embedded `WebView2Loader.dll`),
 with the profile kept in `save/editor-webview`. The window lives on its own
@@ -150,10 +154,15 @@ the game folder.
 
   Every key of a whole `[Title Info]` block applies live, but not by one
   mechanism — each one needs a different one, which is why the block is a decent
-  test of the classification. Verified against `deploy/` with the debug build
-  (`-httpservice`, `POST /api/save`): all thirteen below return
-  `applied=true, needsReload=false`, and saving each one twice produces no
-  second diff and no drift.
+  test of the classification. Nine of the thirteen below are covered by the
+  automated tests (`TestEditorApplyTitleInfoBlockLive` /
+  `TestEditorApplyTitleInfoBlockReachesIni` in `src/editor_server_test.go`); the
+  remaining four (`menu.window.margins.y`, `menu.window.visibleitems`,
+  `menu.boxcursor.visible`, `menu.boxcursor.tween.snap`) were verified by hand
+  against `deploy/` with the debug build (`-httpservice`, `POST /api/save`).
+  Hand-verified: all thirteen return `applied=true, needsReload=false`, and
+  saving each one twice produces no second diff and no drift (the double-save
+  assertion is automated only for `menu.pos`).
 
   | Key | Route | Why that one is needed |
   | --- | --- | --- |
@@ -173,6 +182,75 @@ the game folder.
   rect is refilled as well. The refill is harmless there and the Lua table write
   is what actually changes the behaviour — `rectSetWindow` / `rectUpdate` run
   every frame from the table, so the edit shows on the next frame either way.
+
+  #### Which `[Select Info]` keys apply live
+
+  Classified the same way (`editorMotifApplyClassify` against
+  `SelectInfoProperties` in `src/motif.go`): of the 282 keys of a full
+  `[Select Info]` block, 146 apply live — 32 assigned directly, 114 assigned
+  and refreshed — and 136 need a reload.
+
+  - **assigned** — grid behaviour and plain values: `rows`, `columns`,
+    `wrapping`, `pos`, `showemptyboxes`, `moveoveremptyboxes`, `coopqueue`,
+    `cell.size`, `cell.spacing`, `cell.random.switchtime`,
+    `p1`-`p4.cursor.startcell` / `tween.factor` / `move.snd`,
+    `p1`-`p4.random.move.snd`, `p2.cursor.blink`, `random.move.snd.cancel`,
+    `stage.move.snd`, `stage.done.snd`, `cancel.snd`, `p1/p2.name.spacing`,
+    `stage.pos`.
+  - **refreshed** — snapshotted text and fades, refilled in place:
+    `fadein.time`, `fadeout.time`, `p1`-`p4.cursor.active.*` /
+    `done.spr` / `done.scale` / `done.snd`, `title.offset` / `font` /
+    `layerno`, every `title.<mode>.text`, the ten `cell.*-N` override rows,
+    `p1/p2.name.offset` / `font` / `layerno`, `stage.font` / `active.font` /
+    `active2.font` / `done.font` / `layerno`.
+  - **reload** — `*Anim`-only snapshots, which carry element state a refill
+    would not reset: `cell.bg.*`, `cell.random.spr` / `scale`, `cell.slot.*`,
+    every `p1/p2.face.*` (including `done` / `random` / `loading` / `slot`),
+    every `face2.*`, `portrait.*` and `stage.portrait.*`.
+
+  #### Which `[Option Info]` keys apply live
+
+  Classified the same way (`editorMotifApplyClassify` against
+  `OptionInfoProperties` in `src/motif.go`): of the 114 keys of a full
+  `[Option Info]` block, 106 apply live — 14 assigned directly, 92 assigned
+  and refreshed — and 8 need a reload.
+
+  - **assigned** — plain values: `menu.pos`, `menu.item.spacing`,
+    `menu.window.margins.y`, `menu.window.visibleitems`,
+    `menu.title.uppercase`, `cursor.move.snd`, `cursor.done.snd`,
+    `cancel.snd`, `keymenu.p1/p2.menuoffset`, `keymenu.pos`,
+    `keymenu.item.spacing`, `keymenu.window.margins.y`,
+    `keymenu.window.visibleitems`.
+  - **refreshed** — snapshotted text, fades, rects and overlays, refilled in
+    place: `fadein.*`, `fadeout.*`, `title.*`, every
+    `menu.item.*` (including `selected` / `value` / `info` and their `active`
+    variants), `menu.boxcursor.*`, `menu.boxbg.*`, every
+    `menu.valuename.*`, `textinput.*` (including the `overlay`),
+    `keymenu.p1/p2.playerno.*`, `keymenu.item.value/info.*.offset`,
+    `keymenu.boxcursor.coords`, every `keymenu.itemname.*`.
+  - **reload** — `*Anim`-only snapshots: `menu.arrow.up.*` and
+    `menu.arrow.down.*`.
+
+  #### Which `[VS Screen]` keys apply live
+
+  Classified the same way (`editorMotifApplyClassify` against
+  `VsScreenProperties` in `src/motif.go`): of the 139 keys of a full
+  `[VS Screen]` block, 49 apply live — 31 assigned directly, 18 assigned
+  and refreshed — and 90 need a reload.
+
+  - **assigned** — plain values: `time`, `p1/p2.num` / `spacing` / `padding`,
+    `p1/p2.name.num` / `spacing`, `orderselect.enabled`, every `pN.key`,
+    `done.key`, `skip.key`, `p1/p2.value.icon.spacing`, `p1/p2.value.snd`,
+    `stage.pos`, `timer.count` / `framespercount` / `displaytime`,
+    `done.time`.
+  - **refreshed** — snapshotted text and fades, refilled in place:
+    `fadein.time`, `fadeout.time`, `match.*`, `p1/p2.name.offset` / `font` /
+    `layerno`, `stage.text` / `offset` / `font` / `scale`, `timer.offset` /
+    `font` / `scale` / `text`.
+  - **reload** — `*Anim`-only snapshots: `p1/p2.anim` / `offset` / `facing` /
+    `scale` / `window` / `applypal`, `p1/p2.done.anim`, every `pN.icon.*`,
+    every `pN.value.icon.*` / `value.empty.icon.*`, `stage.portrait.*`
+    (including `bg`), `loading.*` (including `done` / `wait`).
 
   A no-op save now also leaves the file byte for byte identical. The engine's
   own motif aligns its inline comments with runs of spaces

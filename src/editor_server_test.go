@@ -766,6 +766,10 @@ func TestEditorBuildRuntimeSectionHasTypes(t *testing.T) {
 	if k := byKey["start"]; k.Type != "[2]float32" || k.Defined {
 		t.Errorf("start = %+v, want a [2]float32 key that the file does not define", k)
 	}
+	// mask starts at -1 (newAnimation inside newBackGround), not blank.
+	if k := byKey["mask"]; k.Type != "int32" || k.Default != "-1" {
+		t.Errorf("mask = %+v, want int32 = -1", k)
+	}
 	// A key the file has that the parser does not read is reported as unknown.
 	if k := byKey["bogus"]; k.Key != "" {
 		t.Error("an unexpected key showed up in a runtime section")
@@ -914,7 +918,7 @@ func TestEditorPageElementIDs(t *testing.T) {
 		t.Errorf("defCombo is called %d times, want the definition plus one per .def view", n)
 	}
 	// A .def has no schema behind its keys, so the shared .def key table drops
-	// the State and Type / default columns; the motif view keeps all five.
+	// the State column; the motif view keeps all four.
 	plainCalls := 0
 	for _, line := range strings.Split(editorPageHTML, "\n") {
 		line = strings.TrimSpace(line)
@@ -924,6 +928,15 @@ func TestEditorPageElementIDs(t *testing.T) {
 	}
 	if plainCalls != 1 {
 		t.Errorf("%d renderKeys calls drop the schema columns, want only the shared .def one", plainCalls)
+	}
+	// Type and default are tooltips, not a column: the header has no
+	// "Type / default" cell, and the key cell plus the value control carry
+	// the type/default as a title attribute.
+	if strings.Contains(editorPageHTML, "Type / default</th>") {
+		t.Error("the key table still has a Type / default column")
+	}
+	if !strings.Contains(editorPageHTML, `'<td class="k"'`) || !strings.Contains(editorPageHTML, `title="`) {
+		t.Error("the key cells do not carry a tooltip")
 	}
 }
 

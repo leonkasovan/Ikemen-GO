@@ -591,7 +591,7 @@ func editorBGElementSchema() editorSchemaSectionJSON {
 		{"layerno", "int32", "0"},
 		{"actionno", "int32", "-1"},
 		{"spriteno", "[2]int32", ""},
-		{"mask", "int32", ""},
+		{"mask", "int32", "-1"},
 		{"positionlink", "bool", "false"},
 		{"autoresizeparallax", "bool", "false"},
 		{"start", "[2]float32", "0, 0"},
@@ -1182,7 +1182,7 @@ func editorKeyStateRank(k editorMotifKeyJSON) int {
 // editorBuildRuntimeSection expands a section the engine parses at load time
 // instead of through the Motif struct: the layers of a <name>BGdef block and the
 // background controllers. The keys come from the parser that reads them
-// (readBackGround / bgCtrl.read in stage.go), so the Type / default column and
+// (readBackGround / bgCtrl.read in stage.go), so tooltips and
 // the missing/unknown states are filled in exactly like a struct backed section.
 func editorBuildRuntimeSection(name, title string, vals map[string]string) editorMotifSectionJSON {
 	sch := editorRuntimeSchema(name)
@@ -3093,9 +3093,11 @@ function badge(k) {
 	if (k.unknown) { return '<span class="tag un">unknown</span>'; }
 	return '<span class="tag ok">defined</span>';
 }
-// renderKeys renders the key table. plain drops the State and Type / default
-// columns: the motif view has a schema behind every key, so both say something,
-// while a .def opened from the Stage view has neither.
+// renderKeys renders the key table. plain drops the State column: the motif
+// view has a schema behind every key so the state says something, while a
+// .def opened from the Stage view has none. Type and default never had a
+// column of their own: they ride along as a tooltip on the key name and on
+// the value control, so the table stays three columns wide.
 function renderKeys(container, path, section, keys, reload, plain) {
 	if (!keys.length) {
 		container.innerHTML = '<div class="small">no keys</div>';
@@ -3103,15 +3105,25 @@ function renderKeys(container, path, section, keys, reload, plain) {
 	}
 	var h = plain
 		? ['<table><thead><tr><th>Key</th><th>Value</th><th></th></tr></thead><tbody>']
-		: ['<table><thead><tr><th>Key</th><th>State</th><th>Type / default</th><th>Value</th><th></th></tr></thead><tbody>'];
+		: ['<table><thead><tr><th>Key</th><th>State</th><th>Value</th><th></th></tr></thead><tbody>'];
 	keys.forEach(function (k, i) {
-		var meta = esc(k.type || '');
-		if (k.default) { meta += (meta ? ' ' : '') + '= ' + esc(k.default); }
+		// Tooltip for the key cell and the value control: "type — default X",
+		// or just the type when the engine has no fixed default. A blank
+		// default means the parser leaves the zero value alone; the sentinels
+		// below are the engine's own "unset" markers spelled out.
+		var meta = k.type || '';
+		var def = k.default || '';
+		if (def === '' && (k.key === 'zoomdelta' || k.key === 'zoomscaledelta' || k.key === 'xbottomzoomdelta')) {
+			def = '(unset)';
+		} else if (def === '' && k.key === 'roundpos') {
+			def = '(stage default)';
+		}
+		var tip = meta;
+		if (def) { tip += (tip ? ' — default ' : 'default ') + def; }
 		h.push('<tr>');
-		h.push('<td class="k">' + esc(k.key) + '</td>');
+		h.push('<td class="k"' + (tip ? ' title="' + escAttr(tip) + '"' : '') + '>' + esc(k.key) + '</td>');
 		if (!plain) {
 			h.push('<td>' + badge(k) + '</td>');
-			h.push('<td class="small">' + meta + '</td>');
 		}
 		// Enumerated keys (type, trans, projection, ...) become a combo box of
 		// the values the engine accepts; everything else stays a text field.
@@ -3140,10 +3152,12 @@ function renderKeys(container, path, section, keys, reload, plain) {
 				// A value the engine does not know: keep it, flagged as custom.
 				opts.push('<option value="' + escAttr(value) + '" selected>' + esc(value) + ' (custom)</option>');
 			}
-			field = '<select id="kv-' + i + '" data-value="' + escAttr(target) + '">'
+			field = '<select id="kv-' + i + '" data-value="' + escAttr(target) + '"'
+				+ (tip ? ' title="' + escAttr(tip) + '"' : '') + '>'
 				+ opts.join('') + '</select>';
 		} else {
-			field = '<input id="kv-' + i + '" value="' + escAttr(value) + '" placeholder="' + escAttr(k.default || '') + '">';
+			field = '<input id="kv-' + i + '" value="' + escAttr(value) + '" placeholder="' + escAttr(k.default || '') + '"'
+				+ (tip ? ' title="' + escAttr(tip) + '"' : '') + '">';
 		}
 		h.push('<td class="v">' + field + '</td>');
 		h.push('<td class="a"><button class="mini" data-save="' + i + '">Save</button>');
@@ -3197,7 +3211,7 @@ function loadMotif() {
 	api('/api/motif').then(function (data) {
 		state.motif = data;
 		el('motif-hint').innerHTML = 'Motif: <b>' + esc(data.path || '(not found)') + '</b> &middot; '
-			+ (data.sections || []).length + ' sections &middot; values come from the motif file, type/default from the engine struct';
+			+ (data.sections || []).length + ' sections &middot; values come from the motif file, type/default shown on hover';
 		renderTree();
 		if (!selName && state.motif.tree && state.motif.tree.length) {
 			selName = null;
@@ -3466,8 +3480,8 @@ function showFileSection(sid, els) {
 		return;
 	}
 	var keys = n.keys.map(function (k) { return { key: k.key, value: k.value, defined: true, choices: k.choices }; });
-	// A .def has no schema behind its keys, so the State and Type / default
-	// columns would only repeat themselves here.
+	// A .def has no schema behind its keys, so the State column would only
+	// repeat itself here.
 	renderKeys(els.keys, state.page.path, n.name, keys, function () { loadFile(state.page.path, els); }, true);
 }
 // defCombo fills a view's combo box with one "label — def" entry per file and
