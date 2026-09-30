@@ -41,6 +41,16 @@ New command line flag `-httpservice` starts a local-only HTTP service
 - `GET /api/file?path=…`, `POST /api/save` — view and edit any `.def`/`.ini`
   file inside the game folder. Writes are line based, so ordering, comments and
   indentation are preserved.
+- `POST /api/reload` — reload the configured motif from disk into the running
+  engine (runs the Lua `loadMotif()` global on the engine thread and replaces
+  the script's `motif` global with the rebuilt table, which every menu reads
+  every frame — swapping the Go struct alone would leave the old visuals on
+  screen; a broken file fails the protected call and keeps the running motif),
+  so reload-only keys no longer need a restart. Requires `X-Editor-Request`;
+  refused with 409 mid-match / netplay / replay / asset load, 404 with no
+  motif. Motif view `Reload motif in engine` button; needs-reload saves say
+  "saved, reload the motif to apply". Applied saves also report `applyWarning`
+  when a font index has no `[Files]` entry and keeps the old typeface.
 - Enumerated keys are rendered as a combo box instead of a text field. The value
   sets come from the engine parsers: `trans` (`default`, `none`, `add`, `add1`,
   `addalpha`, `sub`, `subadd`), `projection` (`orthographic`, `perspective`,
@@ -51,9 +61,10 @@ New command line flag `-httpservice` starts a local-only HTTP service
   `enable`, `null`, `palfx`, `posset`, `posadd`, `remappal`, `sinx`, `siny`,
   `velset`, `veladd`) and fonts (`truetype`, `bitmap`). A value the engine does
   not know is kept and shown as `(custom)`.
-- The *State* column of a key is `defined` (the file sets it), `missing` (the
-  engine knows it and uses its `default` tag) or `unknown` (in the file but not
-  in the editor's model). `unknown` only ever meant "not in my model", never
+- The *State* column of a key is an icon — `●` defined (the file sets it),
+  `○` missing (the engine knows it and uses its `default` tag) or `⚠`
+  unknown (in the file but not in the editor's model), with the state name as
+  a tooltip. `unknown` only ever meant "not in my model", never
   "the engine ignores it", so the three parsers that are not driven by `ini`
   tags are modelled as well: `[Music]` (the `splitMusicKey` key splitter), the
   map fields whose section name comes from the file (`ResultsScreen`,
@@ -144,7 +155,10 @@ the game folder.
   - **reload** — the key is only read at load time (background definitions,
     `localcoord`, `[Music]`, the `[Files]` asset paths) or sits under a user
     named section (`[Survival Results Screen]`, `[Pause Menu]`), which has no
-    single field to scope a rebuild to.
+    single field to scope a rebuild to. `POST /api/reload` (`Reload motif in
+    engine` button) runs the Lua `loadMotif()` global and swaps the script's
+    `motif` global for these, so no restart is needed; refused while a match
+    runs.
   Keys the engine has no field for, and keys whose screen cannot be rebuilt, are
   reported as not applied rather than as needing a restart, since a restart would
   not help either.  Measured on the bundled motif: 1205 keys assigned directly,

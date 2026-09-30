@@ -883,6 +883,7 @@ func TestEditorPageElementIDs(t *testing.T) {
 	// preview each .def view owns.
 	preview := []string{"-sff-file", "-sff-group", "-sff-number", "-sff-img", "-sff-show", "-sff-hint"}
 	for _, id := range []string{"motif-sections", "motif-keys", "motif-title",
+		"motif-reload",
 		"stage-list", "stage-sections", "stage-keys", "stage-title", "stage-hint",
 		"character-list", "character-sections", "character-keys", "character-title", "character-hint"} {
 		if !ids[id] {
@@ -1048,6 +1049,168 @@ func TestEditorSaveKeepsInlineCommentSpacing(t *testing.T) {
 	want := strings.Replace(text, "visible = 0 ", "visible = 1 ", 1)
 	if string(got) != want {
 		t.Errorf("after a real save:\n got %q\nwant %q", got, want)
+	}
+}
+
+// -------------------------------------------------------------------
+// Motif reload over HTTP (POST /api/reload)
+// -------------------------------------------------------------------
+
+func TestEditorMotifReloadBlocked(t *testing.T) {
+	oldRunning := sys.gameRunning
+	oldEnd, oldPost := sys.fightLoopEnd, sys.postMatchFlg
+	oldNet, oldReplay := sys.netConnection, sys.replayFile
+	oldRollback := sys.rollback.session
+	oldLoader := sys.loader.state
+	defer func() {
+		sys.gameRunning = oldRunning
+		sys.fightLoopEnd, sys.postMatchFlg = oldEnd, oldPost
+		sys.netConnection, sys.replayFile = oldNet, oldReplay
+		sys.rollback.session = oldRollback
+		sys.loader.state = oldLoader
+	}()
+
+	quiet := func() {
+		sys.gameRunning = false
+		sys.fightLoopEnd, sys.postMatchFlg = true, false
+		sys.netConnection, sys.replayFile = nil, nil
+		sys.rollback.session = nil
+		sys.loader.state = LS_Complete
+	}
+
+	// A quiet menu state allows a reload.
+	quiet()
+	if reason := editorMotifReloadBlocked(); reason != "" {
+		t.Errorf("a quiet engine blocks a reload: %q", reason)
+	}
+
+	// Anything that owns frame state blocks it.
+	for _, c := range []struct {
+		name  string
+		setup func()
+	}{
+		{"match flag", func() { sys.gameRunning = true }},
+		{"mid-match frames", func() { sys.gameRunning = true; sys.fightLoopEnd = false }},
+		{"netplay", func() { sys.netConnection = &NetConnection{} }},
+		{"replay", func() { sys.replayFile = &ReplayFile{} }},
+		{"rollback", func() { sys.rollback.session = &RollbackSession{} }},
+		{"loading", func() { sys.loader.state = LS_Loading }},
+	} {
+		quiet()
+		c.setup()
+		if reason := editorMotifReloadBlocked(); reason == "" {
+			t.Errorf("%s does not block a reload", c.name)
+		}
+	}
+}
+
+func TestEditorHandleReloadGuards(t *testing.T) {
+	oldRunning := sys.gameRunning
+	oldEnd, oldPost := sys.fightLoopEnd, sys.postMatchFlg
+	oldNet, oldReplay := sys.netConnection, sys.replayFile
+	oldRollback := sys.rollback.session
+	oldLoader := sys.loader.state
+	defer func() {
+		sys.gameRunning = oldRunning
+		sys.fightLoopEnd, sys.postMatchFlg = oldEnd, oldPost
+		sys.netConnection, sys.replayFile = oldNet, oldReplay
+		sys.rollback.session = oldRollback
+		sys.loader.state = oldLoader
+	}()
+
+	reload := func() *httptest.ResponseRecorder {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/reload", nil)
+		req.Header.Set("X-Editor-Request", "1")
+		editorHandleReload(rr, req)
+		return rr
+	}
+
+	// Reloads require the custom header so cross-site requests are blocked.
+	rr := httptest.NewRecorder()
+	editorHandleReload(rr, httptest.NewRequest(http.MethodPost, "/api/reload", nil))
+	if rr.Code != http.StatusForbidden {
+		t.Errorf("POST /api/reload without X-Editor-Request = %d, want 403", rr.Code)
+	}
+	// Only POST is accepted.
+	rr = httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/reload", nil)
+	req.Header.Set("X-Editor-Request", "1")
+	editorHandleReload(rr, req)
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Errorf("GET /api/reload = %d, want 405", rr.Code)
+	}
+
+	// The handler runs the reload on the engine thread; stand in for
+	// System.await, which drains that queue in the game.
+	stop := make(chan struct{})
+	drained := make(chan struct{})
+	go func() {
+		defer close(drained)
+		for {
+			select {
+			case f := <-sys.mainThreadTask:
+				f()
+			case <-stop:
+				return
+			}
+		}
+	}()
+	defer func() {
+		close(stop)
+		<-drained
+	}()
+
+	// A running match is refused with 409, and nothing is reloaded.
+	sys.gameRunning = true
+	sys.fightLoopEnd, sys.postMatchFlg = true, false
+	sys.netConnection, sys.replayFile = nil, nil
+	sys.rollback.session = nil
+	sys.loader.state = LS_Complete
+	if rr := reload(); rr.Code != http.StatusConflict {
+		t.Errorf("POST /api/reload during a match = %d, want 409: %s", rr.Code, rr.Body.String())
+	}
+	sys.gameRunning = false
+
+	// Without a configured motif there is nothing to reload.
+	sys.gameRunning = false
+	sys.fightLoopEnd, sys.postMatchFlg = true, false
+	sys.netConnection, sys.replayFile = nil, nil
+	sys.rollback.session = nil
+	sys.loader.state = LS_Complete
+	oldBase := sys.baseDir
+	sys.baseDir = t.TempDir()
+	defer func() { sys.baseDir = oldBase }()
+	if rr := reload(); rr.Code != http.StatusNotFound {
+		t.Errorf("POST /api/reload without a motif = %d, want 404: %s", rr.Code, rr.Body.String())
+	}
+
+	// With a motif but no Lua state (unit tests never boot the script), the
+	// reload cannot hand the table to anyone.
+	oldFlags := sys.cmdFlags
+	sys.cmdFlags = map[string]string{}
+	defer func() { sys.cmdFlags = oldFlags }()
+	motifPath := filepath.Join(sys.baseDir, "m.def")
+	if err := os.WriteFile(motifPath, []byte("[Info]\nname = M\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	sys.cmdFlags["-r"] = motifPath
+	if rr := reload(); rr.Code != http.StatusInternalServerError {
+		t.Errorf("POST /api/reload without Lua = %d, want 500: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestEditorReloadMarkup(t *testing.T) {
+	// The motif view offers a reload button that posts to the reload endpoint
+	// and re-renders the breakdown afterwards.
+	if !strings.Contains(editorPageHTML, `id="motif-reload"`) {
+		t.Error("the motif view has no reload button")
+	}
+	if !strings.Contains(editorPageHTML, "function reloadMotif()") {
+		t.Error("the reloadMotif() function is missing from the page")
+	}
+	if !strings.Contains(editorPageHTML, "'/api/reload'") {
+		t.Error("the page never posts to /api/reload")
 	}
 }
 
@@ -1741,7 +1904,7 @@ func TestEditorApplyMotifSyncOnEngineThread(t *testing.T) {
 		<-drained
 	}()
 
-	applied, reason, err := editorApplyMotifSync("Title Info", "menu.item.active.font", "2", false)
+	applied, reason, warning, err := editorApplyMotifSync("Title Info", "menu.item.active.font", "2", false)
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
@@ -1753,6 +1916,52 @@ func TestEditorApplyMotifSyncOnEngineThread(t *testing.T) {
 	}
 	if got := editorINIKeyValue(editorTestSection(t, &sys.motif, "Title Info"), "menu.item.active.font"); got != "2" {
 		t.Errorf("in-memory font = %q, want 2", got)
+	}
+	// The fixture loads no fonts, so index 2 resolves to nothing: the struct
+	// is assigned but the snapshot keeps its font, and the save says so
+	// instead of a bare "applied".
+	if warning == "" {
+		t.Error("no warning for an unloaded font index, so the toast would claim a full apply")
+	} else if !strings.Contains(warning, "font 2 is not loaded") {
+		t.Errorf("warning = %q, want it to name the unloaded font", warning)
+	}
+}
+
+func TestEditorFontResolutionWarning(t *testing.T) {
+	oldMotif := sys.motif
+	defer func() { sys.motif = oldMotif }()
+	f, err := ini.LoadSources(editorINIOptions(), []byte("[Title Info]\nmenu.item.active.font = 1\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sys.motif = Motif{IniFile: f, Sff: newSff(), Fnt: map[int]*Fnt{1: {}, 2: {}}}
+	query := editorMotifQuery("Title Info", "menu.item.active.font")
+
+	// A loaded index resolves quietly.
+	if w := editorFontResolutionWarning(&sys.motif, query); w != "" {
+		t.Errorf("a loaded font warns: %q", w)
+	}
+	// Anything else with a font leaf stays quiet too: non-font keys, the -1
+	// default (not a font), and values that are not a font array.
+	for _, c := range []struct{ section, key, value string }{
+		{"Title Info", "menu.item.spacing", "10, 10"},
+		{"Title Info", "menu.item.active.font", "-1, 0, 0, 255, 255, 255, 255, -1"},
+	} {
+		// Assign only: the fixture has no populated snapshots, so there is no
+		// screen to reapply.
+		if err := SetValueUpdate(&sys.motif, sys.motif.IniFile, editorMotifQuery(c.section, c.key), c.value); err != nil {
+			t.Fatal(err)
+		}
+		if w := editorFontResolutionWarning(&sys.motif, editorMotifQuery(c.section, c.key)); w != "" {
+			t.Errorf("%s warns: %q", c.key, w)
+		}
+	}
+	// An index with no loaded font warns.
+	if err := SetValueUpdate(&sys.motif, sys.motif.IniFile, query, "9, 0, 0, 255, 255, 255, 255, -1"); err != nil {
+		t.Fatal(err)
+	}
+	if w := editorFontResolutionWarning(&sys.motif, query); !strings.Contains(w, "font 9 is not loaded") {
+		t.Errorf("an unloaded font warns %q, want it to name font 9", w)
 	}
 }
 

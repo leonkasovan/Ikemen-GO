@@ -93,6 +93,7 @@ func startEditorHTTPService() string {
 	mux.HandleFunc("/api/file", editorHandleFile)
 	mux.HandleFunc("/api/sff", editorHandleSFF)
 	mux.HandleFunc("/api/save", editorHandleSave)
+	mux.HandleFunc("/api/reload", editorHandleReload)
 
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -2076,6 +2077,7 @@ func editorRunOnMainThread(fn func() error) error {
 type editorApplyOutcome struct {
 	applied bool
 	reason  string
+	warning string
 	err     error
 }
 
@@ -2084,6 +2086,13 @@ type editorApplyOutcome struct {
 // classification reads the live motif, and every field of it is only ever read
 // and written on the engine thread.
 func editorRunOnEngineThread(fn func() editorApplyOutcome) (editorApplyOutcome, error) {
+	return editorRunOnEngineThreadTimeout(editorApplyTimeout, fn)
+}
+
+// editorRunOnEngineThreadTimeout is editorRunOnEngineThread with an explicit
+// wait bound. A motif reload re-parses the file and rebuilds its assets, so it
+// waits longer than a single key apply.
+func editorRunOnEngineThreadTimeout(timeout time.Duration, fn func() editorApplyOutcome) (editorApplyOutcome, error) {
 	done := make(chan editorApplyOutcome, 1)
 	select {
 	case sys.mainThreadTask <- func() { done <- fn() }:
@@ -2093,8 +2102,8 @@ func editorRunOnEngineThread(fn func() editorApplyOutcome) (editorApplyOutcome, 
 	select {
 	case out := <-done:
 		return out, nil
-	case <-time.After(editorApplyTimeout):
-		return editorApplyOutcome{}, fmt.Errorf("the engine did not apply the change within %v", editorApplyTimeout)
+	case <-time.After(timeout):
+		return editorApplyOutcome{}, fmt.Errorf("the engine did not apply the change within %v", timeout)
 	}
 }
 
@@ -2632,14 +2641,51 @@ func editorApplyMotifValue(m *Motif, section, key, value string, remove bool, mo
 	return nil
 }
 
+// editorFontResolutionWarning reports when a saved font index cannot change
+// what the engine draws: the refill resolves the font through the motif's
+// loaded fonts, so an index with no [Files] entry (or a value that is not a
+// font array at all) leaves the snapshot pointing at the old font while the
+// file and the struct hold the new one. A bare "applied" would lie about that,
+// so the save reports it instead. Negative indices (the -1 default) are not
+// fonts and never warn.
+func editorFontResolutionWarning(m *Motif, query string) string {
+	parts := parseQueryPath(query)
+	if len(parts) == 0 || !strings.EqualFold(parts[len(parts)-1].name, "font") {
+		return ""
+	}
+	field, ok := editorFieldByQuery(m, query)
+	if !ok {
+		return ""
+	}
+	idx := -1
+	switch field.Kind() {
+	case reflect.Array:
+		if field.Len() == 0 || field.Index(0).Kind() < reflect.Int || field.Index(0).Kind() > reflect.Int64 {
+			return ""
+		}
+		idx = int(field.Index(0).Int())
+	default:
+		return ""
+	}
+	if idx < 0 || m == nil || m.Fnt == nil {
+		return ""
+	}
+	if _, ok := m.Fnt[idx]; !ok {
+		return fmt.Sprintf("font %d is not loaded, so the text keeps the old font", idx)
+	}
+	return ""
+}
+
 // editorApplyMotifSync brings the running motif back in line with an editor
 // edit. The file on disk is always written first; this keeps the in-memory copy
 // from drifting (so a later Motif.Save cannot write back the old value) and,
 // when the key allows it, pushes the value into the live struct so the change
 // shows without a restart.
 //
-// applied reports whether the running engine now draws the new value.
-func editorApplyMotifSync(section, key, value string, remove bool) (applied bool, reason string, err error) {
+// applied reports whether the running engine now draws the new value. warning
+// reports when it applied but part of the value could not take effect (an
+// unloaded font index), so the caller can say so instead of a bare "applied".
+func editorApplyMotifSync(section, key, value string, remove bool) (applied bool, reason, warning string, err error) {
 	out, err := editorRunOnEngineThread(func() editorApplyOutcome {
 		// Classification reads the live motif to see whether the edited key's
 		// screen can be scoped to a single struct field, so it happens here on
@@ -2652,12 +2698,20 @@ func editorApplyMotifSync(section, key, value string, remove bool) (applied bool
 		if err := editorApplyMotifValue(&sys.motif, section, key, value, remove, mode); err != nil {
 			return editorApplyOutcome{reason: why, err: err}
 		}
-		return editorApplyOutcome{applied: mode != editorApplyReload, reason: why}
+		outcome := editorApplyOutcome{applied: mode != editorApplyReload, reason: why}
+		if outcome.applied && !remove {
+			// The struct and the snapshot are updated, but an unloaded font
+			// index leaves the typeface behind: report it alongside applied
+			// rather than as a reload reason, since reloading (or restarting)
+			// would not load the font either.
+			outcome.warning = editorFontResolutionWarning(&sys.motif, editorMotifQuery(section, key))
+		}
+		return outcome
 	})
 	if err != nil {
-		return false, "", err
+		return false, "", "", err
 	}
-	return out.applied, out.reason, out.err
+	return out.applied, out.reason, out.warning, out.err
 }
 
 // editorSaveRequestJSON is the payload of /api/save.
@@ -2724,9 +2778,9 @@ func editorHandleSave(w http.ResponseWriter, r *http.Request) {
 	}
 	// The running engine mirrors the motif only, so push the edit into it when
 	// this is the configured motif. Any other file is inert to the engine.
-	applied, needsReload, reason, applyErr := false, false, "", error(nil)
+	applied, needsReload, reason, warning, applyErr := false, false, "", "", error(nil)
 	if editorIsMotifPath(req.Path) {
-		applied, reason, applyErr = editorApplyMotifSync(req.Section, req.Key, req.Value, req.Remove)
+		applied, reason, warning, applyErr = editorApplyMotifSync(req.Section, req.Key, req.Value, req.Remove)
 		needsReload = applyErr == nil && !applied
 	}
 	if applyErr != nil {
@@ -2737,8 +2791,8 @@ func editorHandleSave(w http.ResponseWriter, r *http.Request) {
 			action, req.Section, req.Key, req.Path, applyErr)
 		reason = applyErr.Error()
 	}
-	LogMessage("[Editor] %v [%v] %v in %v (applied=%v needsReload=%v err=%v)",
-		action, req.Section, req.Key, req.Path, applied, needsReload, applyErr)
+	LogMessage("[Editor] %v [%v] %v in %v (applied=%v needsReload=%v warning=%v err=%v)",
+		action, req.Section, req.Key, req.Path, applied, needsReload, warning, applyErr)
 	res := map[string]any{
 		"ok":          true,
 		"path":        req.Path,
@@ -2752,10 +2806,135 @@ func editorHandleSave(w http.ResponseWriter, r *http.Request) {
 	if reason != "" {
 		res["applyReason"] = reason
 	}
+	if warning != "" {
+		res["applyWarning"] = warning
+	}
 	if applyErr != nil {
 		res["applyError"] = applyErr.Error()
 	}
 	editorWriteJSON(w, res)
+}
+
+// editorReloadTimeout bounds how long a motif reload waits for the engine to
+// pick the change up. A reload re-parses the motif and rebuilds its assets
+// (SFF, backgrounds, fonts), so it gets more slack than a single key apply.
+const editorReloadTimeout = 30 * time.Second
+
+// editorMotifReloadBlocked reports why the motif cannot be reloaded right now,
+// or "" when a reload is safe to attempt. The motif is drawn every frame and
+// its snapshots are handed to the Lua script as handles, so rebuilding it in
+// the middle of a match (or while assets are loading, or while netplay / a
+// replay owns the game state) would tear down objects the frame is using.
+func editorMotifReloadBlocked() string {
+	if sys.middleOfMatch() || sys.gameRunning {
+		return "a match is running"
+	}
+	if sys.netplay() {
+		return "netplay or a replay is active"
+	}
+	if sys.loader.state == LS_Loading {
+		return "assets are loading"
+	}
+	return ""
+}
+
+// editorReloadMotifSync reloads the configured motif from disk and hands it to
+// the running script, mirroring boot (`motif = loadMotif()` in
+// external/script/main.lua): the Lua loadMotif() global re-parses the file,
+// swaps sys.motif, rebuilds the cached table (with the menu itemname overlays)
+// and returns it, and the returned table replaces the script's `motif` global,
+// which every menu screen reads every frame.
+//
+// Going through the Lua global instead of calling Go loadMotif directly is the
+// whole point: replacing sys.motif alone leaves the script drawing the table
+// it already holds, so no visual would change. A failed parse raises inside
+// the protected call and leaves the running motif untouched.
+//
+// It must run on the engine thread (see editorRunOnMainThread): the call runs
+// Lua code, and the game loop reads the motif every frame. The call is
+// protected, matching the nested statusLFunc calls in system.go. Callers hold
+// editorSaveMu (see editorHandleReload): the reload re-reads the file a save
+// just wrote, so it has to run after the write lands.
+func editorReloadMotifSync() (path string, err error) {
+	out, err := editorRunOnEngineThreadTimeout(editorReloadTimeout, func() editorApplyOutcome {
+		if reason := editorMotifReloadBlocked(); reason != "" {
+			return editorApplyOutcome{reason: reason}
+		}
+		path := editorMotifPath()
+		if path == "" {
+			return editorApplyOutcome{reason: "no motif configured"}
+		}
+		if sys.luaLState == nil {
+			return editorApplyOutcome{reason: "the engine Lua state is not running"}
+		}
+		l := sys.luaLState
+		fn := l.GetGlobal("loadMotif")
+		if fn == lua.LNil {
+			return editorApplyOutcome{err: fmt.Errorf("the engine has no loadMotif global")}
+		}
+		top := l.GetTop()
+		defer l.SetTop(top)
+		// No argument: like boot, the configured motif is resolved inside.
+		if err := l.CallByParam(lua.P{Fn: fn, NRet: 1, Protect: true}); err != nil {
+			return editorApplyOutcome{err: err}
+		}
+		tbl, ok := l.Get(-1).(*lua.LTable)
+		if !ok {
+			return editorApplyOutcome{err: fmt.Errorf("loadMotif did not return a motif table")}
+		}
+		l.SetGlobal("motif", tbl)
+		return editorApplyOutcome{applied: true}
+	})
+	if err != nil {
+		return "", err
+	}
+	if out.err != nil {
+		return "", out.err
+	}
+	if !out.applied {
+		return "", fmt.Errorf("%s", out.reason)
+	}
+	return editorMotifPath(), nil
+}
+
+// editorHandleReload reloads the configured motif from disk into the running
+// engine, so edits to reload-only keys (background definitions, [Music],
+// [Files] asset paths, localcoord, ...) show up without restarting the game.
+// Only safe outside a match; use the Lua reload() global for mid-match char /
+// stage / fight screen refreshes instead.
+func editorHandleReload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		editorWriteError(w, http.StatusMethodNotAllowed, "POST required")
+		return
+	}
+	// The custom header forces a CORS preflight, blocking cross-site reloads.
+	if r.Header.Get("X-Editor-Request") == "" {
+		editorWriteError(w, http.StatusForbidden, "missing X-Editor-Request header")
+		return
+	}
+	// Serialize with saves: a reload re-reads the file a save just wrote, so
+	// it has to run after the write lands and its live apply.
+	editorSaveMu.Lock()
+	defer editorSaveMu.Unlock()
+	path, err := editorReloadMotifSync()
+	if err != nil {
+		msg := err.Error()
+		code := http.StatusInternalServerError
+		if msg == "a match is running" || msg == "netplay or a replay is active" ||
+			msg == "assets are loading" {
+			code = http.StatusConflict
+		}
+		if msg == "no motif configured" {
+			code = http.StatusNotFound
+		}
+		LogMessage("[Editor] motif reload refused (%v): %v", path, msg)
+		editorWriteError(w, code, "%s", msg)
+		return
+	}
+	LogMessage("[Editor] motif reloaded from %v", path)
+	editorWriteJSON(w, map[string]any{
+		"ok": true, "path": path, "message": "reloaded",
+	})
 }
 
 // editorEditINIFile updates (or removes, when value is nil) a single key inside
@@ -2969,6 +3148,8 @@ select{background:#0e1117;border:1px solid var(--line);color:var(--fg);border-ra
 <main>
   <section id="view-motif">
     <div class="hint" id="motif-hint"></div>
+    <div style="margin:0 0 12px"><button class="mini" id="motif-reload">Reload motif in engine</button>
+    <span class="small">re-reads the motif file into the running engine (blocked during a match)</span></div>
     <div class="grid">
       <div class="panel">
         <div class="small">Sections</div>
@@ -3087,11 +3268,12 @@ function setView(view) {
 
 /* ---- shared key table ---- */
 function badge(k) {
-	// Three states, three colors: green = the file sets it and the engine reads
-	// it, grey = the engine default applies, red = the engine ignores the key.
-	if (!k.defined) { return '<span class="tag miss">missing</span>'; }
-	if (k.unknown) { return '<span class="tag un">unknown</span>'; }
-	return '<span class="tag ok">defined</span>';
+	// Three states, three icons: ● green = the file sets it and the engine
+	// reads it, ○ grey = the engine default applies, ⚠ red = the engine
+	// ignores the key. The full state name rides along as a tooltip.
+	if (!k.defined) { return '<span class="tag miss" title="missing">○</span>'; }
+	if (k.unknown) { return '<span class="tag un" title="unknown">⚠</span>'; }
+	return '<span class="tag ok" title="defined">●</span>';
 }
 // renderKeys renders the key table. plain drops the State column: the motif
 // view has a schema behind every key so the state says something, while a
@@ -3185,16 +3367,20 @@ function renderKeys(container, path, section, keys, reload, plain) {
 			if (res.ok) {
 				var what = (remove ? 'Removed ' : 'Saved ') + k.key;
 				if (res.applied) {
-					// Pushed into the running engine, no restart needed.
-					toast(what + ' — applied');
+					// Pushed into the running engine. A warning means the value
+					// is live but part of it could not take effect (an
+					// unloaded font index keeps the old typeface).
+					toast(what + (res.applyWarning ? ' — applied, but ' + res.applyWarning : ' — applied'),
+						!!res.applyWarning);
 				} else if (res.applyError) {
 					// The engine has no field for this key, or cannot rebuild
 					// the screen, so a restart would not help either; the file
 					// still has the value.
 					toast(what + ' — not applied: ' + res.applyError, true);
 				} else if (res.needsReload) {
-					// Written to the file; the engine reads it on reload.
-					toast(what + ' — restart to apply'
+					// Written to the file; the running engine picks it up on
+					// "Reload motif in engine" (or a restart).
+					toast(what + ' — saved, reload the motif to apply'
 						+ (res.applyReason ? ': ' + res.applyReason : ''), true);
 				} else {
 					toast(what);
@@ -3218,6 +3404,22 @@ function loadMotif() {
 			selectFirst();
 		} else if (selName) {
 			selectByName(selName);
+		}
+	}).catch(function (e) { toast(String(e), true); });
+}
+// reloadMotif re-reads the motif file into the running engine, so edits to
+// reload-only keys (backgrounds, [Music], [Files] paths, ...) show up without
+// restarting the game. Refused with 409 while a match runs.
+function reloadMotif() {
+	fetch('/api/reload', {
+		method: 'POST',
+		headers: { 'X-Editor-Request': '1' }
+	}).then(function (r) { return r.json(); }).then(function (res) {
+		if (res.ok) {
+			toast('Motif reloaded');
+			loadMotif();
+		} else {
+			toast(res.error || 'reload failed', true);
 		}
 	}).catch(function (e) { toast(String(e), true); });
 }
@@ -3627,6 +3829,7 @@ function init() {
 	}).catch(function () { el('status').textContent = 'offline'; });
 	initSff();
 	loadMotif();
+	el('motif-reload').onclick = reloadMotif;
 	var m = /[?&]view=([a-z]+)/.exec(window.location.search);
 	setView(m ? m[1] : 'motif');
 }

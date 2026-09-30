@@ -37,6 +37,20 @@ Implementation: `src/editor_server.go`, `src/editor_webview_windows.go`
   `loadSffEx` decode with `keepPixels`, cached).
 - `POST /api/save` — `{path, section, key, value, remove}`; line-based edit
   preserving order, comments, indentation, and inline-comment spacing.
+- `POST /api/reload` — reload the configured motif from disk into the running
+  engine, so edits to reload-only keys show up without restarting the game.
+  Runs the Lua `loadMotif()` global on the engine thread (re-parse, swap
+  `sys.motif`, rebuilt table with the menu itemname overlays) and replaces the
+  script's `motif` global with the result, which every menu screen reads every
+  frame — replacing the Go struct alone would leave the script drawing the old
+  table. A broken file fails the protected call and keeps the running motif.
+  Requires the `X-Editor-Request` header like `/api/save`. Refused with
+  `409` while a match runs, netplay / a replay is active, or assets are
+  loading; `404` when no motif is configured. The Motif view has a
+  `Reload motif in engine` button for it; a save that needs a reload says
+  "saved, reload the motif to apply". Screens that captured their section in a
+  Lua local at load (the pause-menu entries in `menu.t_menus`) keep drawing it
+  until they are reopened.
 
 Enumerated keys render as combo boxes (`trans`, `projection`, `textwrap`,
 `banktype`, `space`, `savedata`, `scalemode`, `scalefilter`, font `type`,
@@ -51,7 +65,9 @@ line (`SetValueUpdate` / `updateINIFile`) so a later `Motif.Save` cannot
 overwrite the edit, and — when possible — pushes the value into the running
 engine without a restart. Posted to the engine thread and waited for
 (`editorApplyTimeout` 2s). Response fields: `applied`, `needsReload`,
-`applyReason` / `applyError`.
+`applyReason` / `applyError`, plus `applyWarning` when the value is live but
+part of it could not take effect (a font index with no `[Files]` entry keeps
+the old typeface; reloading would not load it either).
 
 Three modes, decided by walking the key to the struct that declares it
 (`editorMotifApplyClassify`, `src/editor_server.go:2452`):
@@ -66,7 +82,12 @@ Three modes, decided by walking the key to the struct that declares it
   handles to these objects.
 - **reload** — load-time only: background definitions, `localcoord`,
   `[Music]`, `[Files]` asset paths, user-named map sections — or an
-  `*Anim`-only snapshot (element state a refill would not reset).
+  `*Anim`-only snapshot (element state a refill would not reset). A save to
+  one of these says "saved, reload the motif to apply"; `POST /api/reload`
+  (the `Reload motif in engine` button) then runs the Lua `loadMotif()`
+  global on the engine thread and replaces the script's `motif` global with
+  the rebuilt table — without restarting the game. Refused while a match
+  runs, netplay / a replay is active, or assets are loading.
 
 Measured on the bundled motif: 1205 assigned, 2427 refreshed, 5816
 reload-only.
