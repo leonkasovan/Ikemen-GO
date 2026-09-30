@@ -680,6 +680,16 @@ test: check-go-env sdl2 $(SRC_SYSO)
 	@echo "==> go test passed"
 
 # ============================================================================
+# Editor tests
+# ============================================================================
+# Subset of `test` for the built-in editor web service (src/editor_server.go,
+# motif live-apply, INI helpers): `make test-editor`, equivalently
+# `make test TESTFLAGS="-run TestEditor -v -count=1"`.
+# ============================================================================
+test-editor:
+	@$(MAKE) --no-print-directory test TESTFLAGS="-run TestEditor -v -count=1"
+
+# ============================================================================
 # SDL2 Static Build (CMake)
 # URL defined above as $(SDL2_URL)
 # ============================================================================

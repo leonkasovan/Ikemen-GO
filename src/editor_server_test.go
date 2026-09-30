@@ -1840,6 +1840,113 @@ func TestEditorSelectGridQuery(t *testing.T) {
 	}
 }
 
+// Saving [Select Info] rows re-runs the position pass, which must not move the
+// teammenu cursor: Anim.SetPos overwrites offsetInit, so deriving the shift
+// from offsetInit added it on top of itself on every re-apply and walked the
+// cursor across the screen.
+func TestEditorSelectRowsSaveKeepsCursorPos(t *testing.T) {
+	m := &Motif{}
+	newAnimAt := func(off [2]float32) *Anim {
+		// Seeded the way SetAnim seeds AnimData from the struct Offset.
+		a := NewAnim(nil, "")
+		a.SetPos(off[0], off[1])
+		return a
+	}
+	seedPlayer := func(ps *PlayerSelectProperties) {
+		tm := &ps.TeamMenu
+		tm.SelfTitle.AnimData = newAnimAt(tm.SelfTitle.Offset)
+		tm.EnemyTitle.AnimData = newAnimAt(tm.EnemyTitle.Offset)
+		tm.SelfTitle.TextSpriteData, tm.EnemyTitle.TextSpriteData = &TextSprite{}, &TextSprite{}
+		tm.Item.TextSpriteData, tm.Item.Active.TextSpriteData, tm.Item.Active2.TextSpriteData =
+			&TextSprite{}, &TextSprite{}, &TextSprite{}
+		tm.Item.Cursor.AnimData = newAnimAt(tm.Item.Cursor.Offset)
+		tm.Value.Icon.AnimData = newAnimAt(tm.Value.Icon.Offset)
+		tm.Value.Empty.Icon.AnimData = newAnimAt(tm.Value.Empty.Icon.Offset)
+		pm := &ps.PalMenu
+		pm.Bg.AnimData = newAnimAt(pm.Bg.Offset)
+		pm.Number.TextSpriteData, pm.Text.TextSpriteData = &TextSprite{}, &TextSprite{}
+		ps.Face.Random.AnimData = newAnimAt(ps.Face.Random.Offset)
+		ps.Face.Slot.AnimData = newAnimAt(ps.Face.Slot.Offset)
+		ps.Face2.Random.AnimData = newAnimAt(ps.Face2.Random.Offset)
+		ps.Face2.Slot.AnimData = newAnimAt(ps.Face2.Slot.Offset)
+	}
+	players := []*PlayerSelectProperties{
+		&m.SelectInfo.P1, &m.SelectInfo.P2, &m.SelectInfo.P3, &m.SelectInfo.P4,
+		&m.SelectInfo.P5, &m.SelectInfo.P6, &m.SelectInfo.P7, &m.SelectInfo.P8,
+	}
+	// The reported setup: a cursor offset under a shifted menu and item.
+	m.SelectInfo.Rows = 2
+	ps := &m.SelectInfo.P1
+	ps.TeamMenu.Pos = [2]float32{10, 20}
+	ps.TeamMenu.Item.Offset = [2]float32{3, 4}
+	ps.TeamMenu.Item.Cursor.Offset = [2]float32{1, 2}
+	for _, p := range players {
+		seedPlayer(p)
+	}
+	seedMenu := func(me *MenuProperties) {
+		me.Arrow.Up.AnimData = newAnimAt(me.Arrow.Up.Offset)
+		me.Arrow.Down.AnimData = newAnimAt(me.Arrow.Down.Offset)
+		me.Item.TextSpriteData, me.Item.Selected.TextSpriteData, me.Item.Selected.Active.TextSpriteData,
+			me.Item.Active.TextSpriteData, me.Item.Value.TextSpriteData, me.Item.Value.Active.TextSpriteData,
+			me.Item.Value.Conflict.TextSpriteData, me.Item.Info.TextSpriteData, me.Item.Info.Active.TextSpriteData =
+			&TextSprite{}, &TextSprite{}, &TextSprite{}, &TextSprite{}, &TextSprite{},
+			&TextSprite{}, &TextSprite{}, &TextSprite{}, &TextSprite{}
+	}
+	for _, me := range []*MenuProperties{
+		&m.TitleInfo.Menu, &m.OptionInfo.Menu, &m.ReplayInfo.Menu,
+		&m.AttractMode.Menu, &m.OptionInfo.KeyMenu.MenuProperties,
+	} {
+		seedMenu(me)
+	}
+	m.OptionInfo.KeyMenu.P1.Playerno.TextSpriteData = &TextSprite{}
+	m.OptionInfo.KeyMenu.P2.Playerno.TextSpriteData = &TextSprite{}
+	m.SelectInfo.Stage.Portrait.Bg.AnimData = newAnimAt(m.SelectInfo.Stage.Portrait.Bg.Offset)
+	m.SelectInfo.Stage.Portrait.Random.AnimData = newAnimAt(m.SelectInfo.Stage.Portrait.Random.Offset)
+	m.SelectInfo.Stage.TextSpriteData, m.SelectInfo.Stage.Active.TextSpriteData,
+		m.SelectInfo.Stage.Active2.TextSpriteData, m.SelectInfo.Stage.Done.TextSpriteData =
+		&TextSprite{}, &TextSprite{}, &TextSprite{}, &TextSprite{}
+	m.VsScreen.P1.Name.TextSpriteData = &TextSprite{}
+	m.VsScreen.P2.Name.TextSpriteData = &TextSprite{}
+	m.VsScreen.P3.Name.TextSpriteData = &TextSprite{}
+	m.VsScreen.P4.Name.TextSpriteData = &TextSprite{}
+	m.VsScreen.P5.Name.TextSpriteData = &TextSprite{}
+	m.VsScreen.P6.Name.TextSpriteData = &TextSprite{}
+	m.VsScreen.P7.Name.TextSpriteData = &TextSprite{}
+	m.VsScreen.P8.Name.TextSpriteData = &TextSprite{}
+	m.VsScreen.Stage.Portrait.Bg.AnimData = newAnimAt(m.VsScreen.Stage.Portrait.Bg.Offset)
+	m.VsScreen.Stage.TextSpriteData = &TextSprite{}
+	m.HiscoreInfo.Item.Rank.TextSpriteData = &TextSprite{}
+	m.HiscoreInfo.Item.Result.TextSpriteData = &TextSprite{}
+	m.HiscoreInfo.Item.Name.TextSpriteData = &TextSprite{}
+
+	m.applyPostParsePosAdjustments() // boot
+
+	cur := m.SelectInfo.P1.TeamMenu.Item.Cursor.AnimData
+	// Cursor.Offset + TeamMenu.Pos + Item.Offset.
+	want := [2]float32{1 + 10 + 3, 2 + 20 + 4}
+	if cur.x != want[0] || cur.y != want[1] {
+		t.Fatalf("cursor pos = [%v %v], want %v", cur.x, cur.y, want)
+	}
+
+	// Saving rows assigns the field and re-runs the same pass.
+	if err := SetValue(m, "select_info.rows", "3"); err != nil {
+		t.Fatal(err)
+	}
+	if m.SelectInfo.Rows != 3 {
+		t.Fatalf("Rows = %v, want the saved 3", m.SelectInfo.Rows)
+	}
+	m.applyPostParsePosAdjustments()
+	if cur.x != want[0] || cur.y != want[1] {
+		t.Errorf("saving rows moved the cursor to [%v %v], want %v", cur.x, cur.y, want)
+	}
+
+	// And again: the pass must be idempotent no matter how often it re-runs.
+	m.applyPostParsePosAdjustments()
+	if cur.x != want[0] || cur.y != want[1] {
+		t.Errorf("re-running the pass moved the cursor to [%v %v], want %v", cur.x, cur.y, want)
+	}
+}
+
 // The motif menu tables are built once at load; the reload re-runs those
 // builders (main.f_rebuildMenus), so the keys they consume ask for a reload
 // instead of reporting a live apply the menu tables would not reflect.

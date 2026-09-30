@@ -296,6 +296,22 @@ changed while the grid the draw loop walks kept its boot dimensions — a saved
   (`editorRebuildSelectGrid`) after the value is applied, and `POST /api/reload`
   rebuilds it as well. The keys stay classified as assigned (live).
 
+### fix: saving a live motif key walked every `*Anim` further across the screen
+`src/motif.go` — `applyPostParsePosAdjustments`
+
+`Anim.SetPos` overwrites `offsetInit`, and the position pass derived the shift
+from `offsetInit` itself (`a.SetPos(a.offsetInit[0]+dx, …)`), so the first run
+— at boot — already stored the shifted position as the base, and every
+re-apply added the shift on top of itself again. Saving `[Select Info]` `rows`
+therefore moved `p1.teammenu.item.cursor.anim` (and every other Anim the pass
+touches: menu arrows, teammenu titles/icons, face slots, portraits), one shift
+per save, and the draw loop (`main.f_animPosDraw`, which resets to `offsetInit`
+every frame) amplified it. The pass now recomputes each Anim from its
+struct-declared `Offset` plus the container shift, making re-applying
+idempotent; `offsetInit` keeps its shifted meaning for the draw/reset paths.
+Covered by `TestEditorSelectRowsSaveKeepsCursorPos`
+(`src/editor_server_test.go`, run with `make test-editor`).
+
 ### fix: editor motif reload rebuilds the menus; boot-only keys report "restart needed"
 `src/editor_server.go`, `external/script/main.lua`, `external/script/menu.lua`,
 `external/script/options.lua`

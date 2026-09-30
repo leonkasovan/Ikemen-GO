@@ -56,6 +56,8 @@ the Makefile and linked statically into the binary.
 | `make sdl2` | Build SDL2 |
 | `make screenpack` | Clone/update screenpack |
 | `make install` | Assemble runnable deploy/ |
+| `make test` | Full Go test suite on `./src` (current build tags; needs built libs) |
+| `make test-editor` | Editor subset only (`TestEditor*`); `TESTFLAGS="-run TestFoo -v"` filters (quote it) |
 | `make clean` | Remove build artifacts |
 | `make distclean` | Remove artifacts + library sources |
 

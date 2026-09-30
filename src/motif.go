@@ -2583,16 +2583,19 @@ func (m *Motif) resolvePath() {
 }
 
 func (m *Motif) applyPostParsePosAdjustments() {
-	animSetPos := func(a *Anim, dx, dy float32) {
-		a.SetPos(a.offsetInit[0]+dx, a.offsetInit[1]+dy)
+	// ponytail: SetPos overwrites offsetInit, so the shift is recomputed from
+	// the struct-declared Offset on every run. Reading offsetInit back added
+	// the shift on top of itself each time the pass re-ran, so saving any live
+	// key (e.g. [Select Info] rows) walked every Anim further across the
+	// screen — the teammenu cursor included.
+	animSetPos := func(a *Anim, ox, oy, dx, dy float32) {
+		if a == nil {
+			return
+		}
+		a.SetPos(ox+dx, oy+dy)
 	}
 	textSetPos := func(ts *TextSprite, dx, dy float32) {
 		ts.SetPos(ts.offsetInit[0]+dx, ts.offsetInit[1]+dy)
-	}
-	offsetAnims := func(dx, dy float32, anims ...*Anim) {
-		for _, a := range anims {
-			animSetPos(a, dx, dy)
-		}
 	}
 	offsetTexts := func(dx, dy float32, texts ...*TextSprite) {
 		for _, ts := range texts {
@@ -2602,7 +2605,8 @@ func (m *Motif) applyPostParsePosAdjustments() {
 	shiftMenu := func(me *MenuProperties) {
 		dx, dy := me.Pos[0], me.Pos[1]
 		// Arrows
-		offsetAnims(dx, dy, me.Arrow.Up.AnimData, me.Arrow.Down.AnimData)
+		animSetPos(me.Arrow.Up.AnimData, me.Arrow.Up.Offset[0], me.Arrow.Up.Offset[1], dx, dy)
+		animSetPos(me.Arrow.Down.AnimData, me.Arrow.Down.Offset[0], me.Arrow.Down.Offset[1], dx, dy)
 		// Common item texts
 		offsetTexts(dx, dy,
 			me.Item.TextSpriteData,
@@ -2618,10 +2622,10 @@ func (m *Motif) applyPostParsePosAdjustments() {
 		)
 		// Backgrounds
 		for _, ap := range me.Item.Bg {
-			animSetPos(ap.AnimData, dx, dy)
+			animSetPos(ap.AnimData, ap.Offset[0], ap.Offset[1], dx, dy)
 		}
 		for _, ap := range me.Item.Active.Bg {
-			animSetPos(ap.AnimData, dx, dy)
+			animSetPos(ap.AnimData, ap.Offset[0], ap.Offset[1], dx, dy)
 		}
 	}
 	shiftMovelist := func(mv *MenuInfoProperties) {
@@ -2629,43 +2633,43 @@ func (m *Motif) applyPostParsePosAdjustments() {
 			return
 		}
 		ml := &mv.Movelist
-		offsetAnims(ml.Pos[0], ml.Pos[1], ml.Arrow.Up.AnimData, ml.Arrow.Down.AnimData)
+		animSetPos(ml.Arrow.Up.AnimData, ml.Arrow.Up.Offset[0], ml.Arrow.Up.Offset[1], ml.Pos[0], ml.Pos[1])
+		animSetPos(ml.Arrow.Down.AnimData, ml.Arrow.Down.Offset[0], ml.Arrow.Down.Offset[1], ml.Pos[0], ml.Pos[1])
 		offsetTexts(ml.Pos[0], ml.Pos[1], ml.Title.TextSpriteData, ml.Text.TextSpriteData)
 	}
 	adjustSelect := func(ps *PlayerSelectProperties) {
 		tm := &ps.TeamMenu
 		// TeamMenu backgrounds
 		for _, ap := range tm.Bg {
-			animSetPos(ap.AnimData, tm.Pos[0], tm.Pos[1])
+			animSetPos(ap.AnimData, ap.Offset[0], ap.Offset[1], tm.Pos[0], tm.Pos[1])
 		}
 		for _, ap := range tm.Active.Bg {
-			animSetPos(ap.AnimData, tm.Pos[0], tm.Pos[1])
+			animSetPos(ap.AnimData, ap.Offset[0], ap.Offset[1], tm.Pos[0], tm.Pos[1])
 		}
 		// Titles & base text
-		offsetAnims(tm.Pos[0], tm.Pos[1], tm.SelfTitle.AnimData, tm.EnemyTitle.AnimData)
+		animSetPos(tm.SelfTitle.AnimData, tm.SelfTitle.Offset[0], tm.SelfTitle.Offset[1], tm.Pos[0], tm.Pos[1])
+		animSetPos(tm.EnemyTitle.AnimData, tm.EnemyTitle.Offset[0], tm.EnemyTitle.Offset[1], tm.Pos[0], tm.Pos[1])
 		offsetTexts(tm.Pos[0], tm.Pos[1], tm.SelfTitle.TextSpriteData, tm.EnemyTitle.TextSpriteData)
 		offsetTexts(tm.Pos[0], tm.Pos[1], tm.Item.TextSpriteData, tm.Item.Active.TextSpriteData, tm.Item.Active2.TextSpriteData)
 
 		// Icons at (Pos + Item.Offset)
 		offX := tm.Pos[0] + tm.Item.Offset[0]
 		offY := tm.Pos[1] + tm.Item.Offset[1]
-		offsetAnims(offX, offY,
-			tm.Item.Cursor.AnimData,
-			tm.Value.Icon.AnimData,
-			tm.Value.Empty.Icon.AnimData,
-		)
+		animSetPos(tm.Item.Cursor.AnimData, tm.Item.Cursor.Offset[0], tm.Item.Cursor.Offset[1], offX, offY)
+		animSetPos(tm.Value.Icon.AnimData, tm.Value.Icon.Offset[0], tm.Value.Icon.Offset[1], offX, offY)
+		animSetPos(tm.Value.Empty.Icon.AnimData, tm.Value.Empty.Icon.Offset[0], tm.Value.Empty.Icon.Offset[1], offX, offY)
 		// Palette menu
 		pm := &ps.PalMenu
-		animSetPos(pm.Bg.AnimData, pm.Pos[0], pm.Pos[1])
+		animSetPos(pm.Bg.AnimData, pm.Bg.Offset[0], pm.Bg.Offset[1], pm.Pos[0], pm.Pos[1])
 		offsetTexts(pm.Pos[0], pm.Pos[1], pm.Number.TextSpriteData, pm.Text.TextSpriteData)
 
 		// Face.Random and Face2.Random
-		offsetAnims(ps.Face.Pos[0], ps.Face.Pos[1], ps.Face.Random.AnimData)
-		offsetAnims(ps.Face2.Pos[0], ps.Face2.Pos[1], ps.Face2.Random.AnimData)
+		animSetPos(ps.Face.Random.AnimData, ps.Face.Random.Offset[0], ps.Face.Random.Offset[1], ps.Face.Pos[0], ps.Face.Pos[1])
+		animSetPos(ps.Face2.Random.AnimData, ps.Face2.Random.Offset[0], ps.Face2.Random.Offset[1], ps.Face2.Pos[0], ps.Face2.Pos[1])
 
 		// Face.Slot and Face2.Slot
-		offsetAnims(ps.Face.Pos[0], ps.Face.Pos[1], ps.Face.Slot.AnimData)
-		offsetAnims(ps.Face2.Pos[0], ps.Face2.Pos[1], ps.Face2.Slot.AnimData)
+		animSetPos(ps.Face.Slot.AnimData, ps.Face.Slot.Offset[0], ps.Face.Slot.Offset[1], ps.Face.Pos[0], ps.Face.Pos[1])
+		animSetPos(ps.Face2.Slot.AnimData, ps.Face2.Slot.Offset[0], ps.Face2.Slot.Offset[1], ps.Face2.Pos[0], ps.Face2.Pos[1])
 	}
 
 	// Select Screen: Players
@@ -2679,7 +2683,8 @@ func (m *Motif) applyPostParsePosAdjustments() {
 	// Select Screen: Stage
 	{
 		st := &m.SelectInfo.Stage
-		offsetAnims(st.Pos[0], st.Pos[1], st.Portrait.Bg.AnimData, st.Portrait.Random.AnimData)
+		animSetPos(st.Portrait.Bg.AnimData, st.Portrait.Bg.Offset[0], st.Portrait.Bg.Offset[1], st.Pos[0], st.Pos[1])
+		animSetPos(st.Portrait.Random.AnimData, st.Portrait.Random.Offset[0], st.Portrait.Random.Offset[1], st.Pos[0], st.Pos[1])
 		offsetTexts(st.Pos[0], st.Pos[1], st.TextSpriteData, st.Active.TextSpriteData, st.Active2.TextSpriteData, st.Done.TextSpriteData)
 	}
 
@@ -2741,7 +2746,7 @@ func (m *Motif) applyPostParsePosAdjustments() {
 	// VS Screen: stage
 	{
 		st := &m.VsScreen.Stage
-		offsetAnims(st.Pos[0], st.Pos[1], st.Portrait.Bg.AnimData)
+		animSetPos(st.Portrait.Bg.AnimData, st.Portrait.Bg.Offset[0], st.Portrait.Bg.Offset[1], st.Pos[0], st.Pos[1])
 		offsetTexts(st.Pos[0], st.Pos[1], st.TextSpriteData)
 	}
 

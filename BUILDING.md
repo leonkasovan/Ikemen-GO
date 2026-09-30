@@ -118,6 +118,8 @@ pacman -S --noconfirm wget unzip zip
 | `make install config=debug` | Debug build + screenpack → `deploy/` |
 | `make mugen`         | Self-contained `Mugen_GO(.exe)` drop-in for existing M.U.G.E.N game folders (SDL2 only; no FFmpeg/XMP; embedded assets) |
 | `make vet`           | Run `go vet` on `./src` with the current build tags (run after a build so the cgo headers are available) |
+| `make test`          | Run the full Go test suite on `./src` with the current build tags (see [Testing](#testing)) |
+| `make test-editor`   | Run the editor subset only (`TestEditor*`: motif live-apply, INI helpers, SFF, webview) |
 | `make install-remote` | Build binary, then scp it to a remote device (see [Deploying to a remote device](#deploying-to-a-remote-device)) |
 | `make appbundle`     | Create macOS `.app` bundle (I.K.E.M.E.N-Go.app) |
 | `make clean`         | Remove the current platform's build dir (e.g. `build/windows_amd64/`) — binary, libs, downloaded sources, everything for that platform |
@@ -254,6 +256,24 @@ default motif from `motif_android.go`; `util_android.go` holds the runtime
    builds; GLES files use `android || armdevice`. `log_desktop.go` is
    `debug && (desktop || mugen || armdevice)`; `log_android.go` is
    `debug && android`.
+
+---
+
+## Testing
+
+```bash
+make test                                # full Go test suite (./src, current build tags)
+make test-editor                         # editor subset only (TestEditor* in src/editor_server_test.go)
+make test TESTFLAGS="-run TestFoo -v"    # filter by test name; always quote TESTFLAGS when it contains spaces
+```
+
+- Both targets use the same build tags and cgo environment as the build
+  (`GO_TAGS`, locally built SDL2/FFmpeg/XMP headers and libs), so run them
+  after a normal build — `sdl2` is built automatically as a prerequisite, the
+  rest (`ffmpeg`, `xmp`) comes with any `make` build.
+- `test` passes `-vet=off` to `go test` (Go 1.27's printf check trips on
+  pre-existing call sites); `make vet` is the target that reports vet issues
+  properly.
 
 ---
 
