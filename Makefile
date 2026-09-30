@@ -1410,30 +1410,43 @@ appbundle:
 # ============================================================================
 # Screenpack Download / Extract
 # ============================================================================
-# Downloads the Elecbyte screenpack as a zip archive and extracts it directly
-# into $(INSTALLDIR). The `install` target then overlays engine data and the
-# binary on top — no separate merge step needed.
+# Downloads the Elecbyte screenpack as a zip archive (with a progress bar and
+# up to 3 download attempts, resuming a leftover partial zip) and extracts it
+# directly into $(INSTALLDIR). The `install` target then overlays engine data
+# and the binary on top — no separate merge step needed.
 # URL defined above as $(SCREENPACK_URL).
 
 screenpack:
-	@echo "==> Downloading Elecbyte screenpack..."
 	mkdir -p $(BUILDDIR)
 	if [ ! -d "$(INSTALLDIR)" ]; then
-		echo "==> Downloading $(SCREENPACK_URL)..."
-		if [ ! -f "$(BUILDDIR)/screenpack.zip" ]; then
-			wget -q "$(SCREENPACK_URL)" -O "$(BUILDDIR)/screenpack.zip"
-		else
-			echo "==> Using existing zip: $(BUILDDIR)/screenpack.zip"
-		fi
-		tmp="$(BUILDDIR)/screenpack.zip-extract"
-		rm -rf "$$tmp"
-		mkdir -p "$$tmp"
-		unzip -q "$(BUILDDIR)/screenpack.zip" -d "$$tmp"
-		subdir="$$(find "$$tmp" -mindepth 1 -maxdepth 1 -type d | head -1)"
-		rm -rf "$(INSTALLDIR)"
-		mkdir -p "$(INSTALLDIR)"
-		cp -a "$$subdir"/. "$(INSTALLDIR)"/
-		rm -rf "$$tmp" "$(BUILDDIR)/screenpack.zip"
+		zip="$(BUILDDIR)/screenpack.zip"
+		max_retries=3; retry=0; extracted=0
+		while [ $$retry -lt $$max_retries ] && [ $$extracted -eq 0 ]; do
+			if [ ! -f "$$zip" ]; then
+				echo "==> Downloading $(SCREENPACK_URL) (attempt $$((retry+1))/$$max_retries)..."
+				wget -q --show-progress "$(SCREENPACK_URL)" -O "$$zip" || { rm -f "$$zip"; retry=$$((retry+1)); continue; }
+			else
+				echo "==> Resuming download $(SCREENPACK_URL) (attempt $$((retry+1))/$$max_retries)..."
+				wget -q --show-progress -c "$(SCREENPACK_URL)" -O "$$zip" || { rm -f "$$zip"; retry=$$((retry+1)); continue; }
+			fi
+			tmp="$(BUILDDIR)/screenpack.zip-extract"
+			rm -rf "$$tmp"
+			mkdir -p "$$tmp"
+			if unzip -q "$$zip" -d "$$tmp"; then
+				subdir="$$(find "$$tmp" -mindepth 1 -maxdepth 1 -type d | head -1)"
+				rm -rf "$(INSTALLDIR)"
+				mkdir -p "$(INSTALLDIR)"
+				cp -a "$$subdir"/. "$(INSTALLDIR)"/
+				rm -rf "$$tmp" "$$zip"
+				extracted=1
+			else
+				echo "ERROR: unzip failed for $$zip, retrying..." >&2
+				rm -rf "$$tmp" "$$zip"
+				retry=$$((retry+1))
+			fi
+		done
+		if [ $$extracted -eq 0 ]; then
+			echo "ERROR: failed to download + extract $(SCREENPACK_URL) after $$max_retries attempts" >&2; exit 1; fi
 	fi
 	@echo "==> Screenpack ready in $(INSTALLDIR)"
 
