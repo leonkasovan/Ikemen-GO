@@ -1566,38 +1566,65 @@ function start.f_slotSelected(cell, side, cmd, player, x, y)
 	return main.f_btnPalNo(cmd) > 0 and (not t_reservedChars[side][start.t_grid[y + 1][x + 1].char_ref] or start.t_grid[start.c[player].selY + 1][start.c[player].selX + 1].char == 'randomselect'),false
 end
 
---generate start.t_grid table, assign row and cell to main.t_selChars
-local cnt = motif.select_info.columns + 1
-local row = 1
-local col = 0
-start.t_grid = {[row] = {}}
-for i = 1, motif.select_info.rows * motif.select_info.columns do
-	if i == cnt then
-		row = row + 1
-		cnt = cnt + motif.select_info.columns
-		start.t_grid[row] = {}
+--builds start.t_grid from the current motif dimensions, assigning row and cell
+--to main.t_selChars. Called once below, and again by the editor when [Select Info]
+--rows, columns or the cell geometry change: the grid is otherwise built only at
+--load, so such an edit would keep the cell layout the motif had at boot.
+function start.f_updateGrid()
+	-- The draw loop covers rows * columns cells and indexes start.t_grid for
+	-- each one, so the char grid is grown to match. It is never shrunk: the
+	-- entries past the last visible cell still hold the characters that
+	-- start.f_selectReset and the cursor walk hand out.
+	local cells = motif.select_info.rows * motif.select_info.columns
+	for i = #main.t_selGrid + 1, cells do
+		table.insert(main.t_selGrid, {['chars'] = {}, ['slot'] = 1})
 	end
-	col = #start.t_grid[row] + 1
-	local cell_spacing = getCellSpacing(col - 1, row - 1)
-	local cell_offset = getCellOffset(col - 1, row - 1)
-	start.t_grid[row][col] = {
-		x = (col - 1) * (motif.select_info.cell.size[1] + cell_spacing[1]) + cell_offset[1],
-		y = (row - 1) * (motif.select_info.cell.size[2] + cell_spacing[2]) + cell_offset[2]
-	}
-	if start.f_selGrid(i).char ~= nil then
-		start.t_grid[row][col].char = start.f_selGrid(i).char
-		start.t_grid[row][col].char_ref = start.f_selGrid(i).char_ref
-		start.t_grid[row][col].hidden = start.f_selGrid(i).hidden
-		for j = 1, #main.t_selGrid[i].chars do
-			start.f_selGrid(i, j).row = row
-			start.f_selGrid(i, j).col = col
+	local cnt = motif.select_info.columns + 1
+	local row = 1
+	local col = 0
+	start.t_grid = {[row] = {}}
+	for i = 1, cells do
+		if i == cnt then
+			row = row + 1
+			cnt = cnt + motif.select_info.columns
+			start.t_grid[row] = {}
+		end
+		col = #start.t_grid[row] + 1
+		local cell_spacing = getCellSpacing(col - 1, row - 1)
+		local cell_offset = getCellOffset(col - 1, row - 1)
+		start.t_grid[row][col] = {
+			x = (col - 1) * (motif.select_info.cell.size[1] + cell_spacing[1]) + cell_offset[1],
+			y = (row - 1) * (motif.select_info.cell.size[2] + cell_spacing[2]) + cell_offset[2]
+		}
+		local cellData = start.f_selGrid(i)
+		if cellData.char ~= nil then
+			start.t_grid[row][col].char = cellData.char
+			start.t_grid[row][col].char_ref = cellData.char_ref
+			start.t_grid[row][col].hidden = cellData.hidden
+			for j = 1, #main.t_selGrid[i].chars do
+				start.f_selGrid(i, j).row = row
+				start.f_selGrid(i, j).col = col
+			end
+		end
+		local overrideSkip = getCellSkip(col - 1, row - 1)
+		if cellData.skip == 1 or overrideSkip then
+			start.t_grid[row][col].skip = 1
 		end
 	end
-	local overrideSkip = getCellSkip(col - 1, row - 1)
-	if start.f_selGrid(i).skip == 1 or overrideSkip then
-		start.t_grid[row][col].skip = 1
+	-- A smaller grid can leave the cursor past its bounds; pull it back inside.
+	for _, c in ipairs(start.c) do
+		if c.selY > motif.select_info.rows - 1 then
+			c.selY = motif.select_info.rows - 1
+		end
+		if c.selX > motif.select_info.columns - 1 then
+			c.selX = motif.select_info.columns - 1
+		end
 	end
+	start.needUpdateDrawList = true
+	return true
 end
+
+start.f_updateGrid()
 if gameOption('Debug.DumpLuaTables') then main.f_printTable(start.t_grid, 'debug/t_grid.txt') end
 
 local function updateCommon(common, add)
@@ -1893,7 +1920,11 @@ function start.f_selectReset(hardReset, preserveProgress)
 	end
 	local col = 1
 	local row = 1
-	for i = 1, #main.t_selGrid do
+	-- Only the visible cells have a start.t_grid entry; entries past the last
+	-- one (a select.def with more characters than cells, or a grid shrunk after
+	-- an edit) are still walked by the cursor but must not be indexed here.
+	local maxCells = motif.select_info.rows * motif.select_info.columns
+	for i = 1, math.min(#main.t_selGrid, maxCells) do
 		if i > motif.select_info.columns * row then
 			row = row + 1
 			col = 1

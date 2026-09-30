@@ -402,6 +402,11 @@ local function f_registerPauseMenu(id, sec, bg, movelist)
 	end
 	for i = 1, #menu.t_menus do
 		if menu.t_menus[i].id == id then
+			-- A motif reload replaces the section tables, so an existing entry is
+			-- re-bound to the new copy instead of kept (menu.f_start is re-run by
+			-- the editor reload through main.f_rebuildMenus).
+			menu.t_menus[i].sec = sec
+			menu.t_menus[i].bg = bg
 			return
 		end
 	end
@@ -417,6 +422,22 @@ end
 
 -- Dynamically generates all menus and submenus
 function menu.f_start()
+	-- The built-in [Pause Menu] entry captures its section at file scope, and a
+	-- motif reload replaces the table, so re-bind it to the current copy. The
+	-- [Training Pause Menu] (and every other derived menu) is re-bound by the
+	-- register loop below. The vardisplay pointers are rebuilt from scratch so a
+	-- second run does not leave stale entries behind.
+	if motif.pause_menu ~= nil and motif.pause_menu.pause_menu ~= nil then
+		for _, v in ipairs(menu.t_menus) do
+			if v.id == 'menu' then
+				v.sec = motif.pause_menu.pause_menu
+				if motif.pausebgdef ~= nil and motif.pausebgdef.pausebgdef ~= nil then
+					v.bg = motif.pausebgdef.pausebgdef
+				end
+			end
+		end
+	end
+	menu.t_vardisplayPointers = {}
 	if motif.pause_menu ~= nil then
 		for k, sec in pairs(motif.pause_menu) do
 			local id = f_pauseMenuIdFromKey(k)

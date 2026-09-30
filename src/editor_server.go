@@ -2443,6 +2443,105 @@ func editorReapplyMotifScreen(m *Motif, query string) {
 	editorSyncMotifLuaTable(m, query)
 }
 
+// editorSelectGridQuery reports whether an applied key changes the select
+// screen's cell grid: its size (rows / columns) or the offset and spacing baked
+// into every cell of start.t_grid when the script builds it. Drawing reads the
+// rest of a cell override (scale, facing, ...) straight from the motif, so only
+// these need the grid rebuilt.
+func editorSelectGridQuery(query string) bool {
+	parts := strings.Split(strings.ToLower(strings.TrimSpace(query)), ".")
+	if len(parts) < 2 || parts[0] != "select_info" {
+		return false
+	}
+	switch parts[1] {
+	case "rows", "columns":
+		return true
+	case "cell":
+		if len(parts) < 3 {
+			return false
+		}
+		// cell.size / cell.spacing, and the per-cell overrides that are baked
+		// into start.t_grid (cell.<c>-<r>.offset / .spacing / .skip).
+		if len(parts) == 3 {
+			return parts[2] == "size" || parts[2] == "spacing"
+		}
+		switch parts[len(parts)-1] {
+		case "offset", "spacing", "skip":
+			return true
+		}
+	}
+	return false
+}
+
+// editorMotifMenuBuildKey reports whether a key is read by the menu builders
+// (main.f_start / menu.f_start / options.f_start) into the menu tables they
+// build once at load. The editor's reload re-runs those builders
+// (main.f_rebuildMenus), so a save to one of these asks for a reload rather
+// than a live apply that the menu tables would not reflect: the itemname labels
+// and the section title drawn at the top of a menu are copied, while
+// itemname_order is generated in Go.
+func editorMotifMenuBuildKey(query string) bool {
+	// Switches which menu (title vs attract) the script builds.
+	if query == "attract_mode.enabled" {
+		return true
+	}
+	// menu.itemname.<name> labels, at any depth (keymenu.itemname.<name>).
+	parts := strings.Split(query, ".")
+	for i, p := range parts {
+		if p == "itemname" && i+1 < len(parts) {
+			return true
+		}
+	}
+	// <section>.menu.title.uppercase, applied when the labels are built.
+	if strings.HasSuffix(query, ".menu.title.uppercase") {
+		return true
+	}
+	// The section title is copied into the menu title (main.menu.title /
+	// options.menu.title) when the menu is built.
+	switch query {
+	case "title_info.title.text", "option_info.title.text", "attract_mode.title.text":
+		return true
+	}
+	return false
+}
+
+// editorCallLuaMethod runs a zero argument method of a global Lua table on the
+// engine thread. A missing table or method (an older script, or a unit test
+// with no Lua state) is a no-op, so callers do not have to guard.
+func editorCallLuaMethod(table, method, what string) {
+	l := sys.luaLState
+	if l == nil {
+		return
+	}
+	tbl, ok := l.GetGlobal(table).(*lua.LTable)
+	if !ok {
+		return
+	}
+	fn, ok := tbl.RawGetString(method).(*lua.LFunction)
+	if !ok {
+		return
+	}
+	top := l.GetTop()
+	defer l.SetTop(top)
+	if err := l.CallByParam(lua.P{Fn: fn, NRet: 0, Protect: true}); err != nil {
+		LogMessage("[Editor] unable to rebuild %v: %v", what, err)
+	}
+}
+
+// editorRebuildSelectGrid rebuilds the select screen's cell grid after rows,
+// columns or the cell geometry changed (start.f_updateGrid). The grid is built
+// once when the script loads, so this is what makes the edit reach the screen.
+func editorRebuildSelectGrid() {
+	editorCallLuaMethod("start", "f_updateGrid", "the select grid")
+}
+
+// editorRebuildMotifMenus rebuilds the menus the motif declares after a reload
+// swapped the motif table (main.f_rebuildMenus): main.menu, the pause menus,
+// the options menu, and the attract vs title group choice.
+func editorRebuildMotifMenus() {
+	editorCallLuaMethod("main", "f_rebuildMenus", "the motif menus")
+}
+
 // editorMotifApplyMode is what a motif key save can achieve.
 type editorMotifApplyMode int
 
@@ -2454,6 +2553,11 @@ const (
 	// editorApplyRefresh: assigning the field is not enough, but the screen's
 	// snapshots can be rebuilt in place, so the next draw shows the new value.
 	editorApplyRefresh
+	// editorApplyRestart: the value is consumed once while the script boots into
+	// a structure nothing rebuilds (a required module, the select.def roster),
+	// so not even a motif reload can apply it. The file is written and the
+	// in-memory copy kept in line, but the engine only picks it up on restart.
+	editorApplyRestart
 )
 
 // editorMotifApplyClassify decides what a save can achieve for a key, with the
@@ -2476,9 +2580,17 @@ func editorMotifApplyClassify(section, key string) (editorMotifApplyMode, string
 		return editorApplyReload, "it rebuilds every derived pointer in the tree"
 	}
 	if sec == "files" {
-		// These name assets that loadFiles() reads and uploads at load time.
+		// Values the script reads once while it boots, into a structure nothing
+		// in the reload path rebuilds: the module require list (t_modules) and the
+		// select.def roster (main.t_selGrid / main.t_selChars).
 		switch k {
-		case "spr", "snd", "select", "fight", "glyphs", "module", "model",
+		case "module", "select":
+			return editorApplyRestart, "the script reads it once at load, so it needs a restart"
+		}
+		// These name assets that loadFiles() reads and uploads when the motif
+		// itself is (re)loaded, which the reload re-runs.
+		switch k {
+		case "spr", "snd", "fight", "glyphs", "model",
 			"logo.storyboard", "intro.storyboard":
 			return editorApplyReload, "it names a file the engine loads at startup"
 		}
@@ -2488,6 +2600,14 @@ func editorMotifApplyClassify(section, key string) (editorMotifApplyMode, string
 		return editorApplyLive, ""
 	}
 	query := editorMotifQuery(sec, k)
+	// The menus the motif declares are built once, at script load, from the
+	// itemname labels and the section title drawn at their top. The reload
+	// re-runs those builders (main.f_rebuildMenus), so these keys ask for a
+	// reload: assigning the field would leave the menu tables drawing the boot
+	// copy.
+	if editorMotifMenuBuildKey(query) {
+		return editorApplyReload, "the motif menus are built once, and a reload rebuilds them"
+	}
 	// A value a load time pointer snapshots (TextProperties, AnimationProperties,
 	// ...) is drawn from that snapshot, not from the field, so the snapshot has
 	// to be refilled for the edit to show up.
@@ -2612,11 +2732,12 @@ func editorApplyMotifValue(m *Motif, section, key, value string, remove bool, mo
 		return nil
 	}
 	query := editorMotifQuery(section, key)
-	if mode == editorApplyReload {
+	if mode == editorApplyReload || mode == editorApplyRestart {
 		// Record the value but leave the live struct alone: the key only means
-		// something once the load time passes run again. A key the reflection
-		// walk does not know (a background definition key) falls back to a
-		// literal write, so the in-memory copy never drifts either way.
+		// something once the load time passes (or a restart) run again. A key
+		// the reflection walk does not know (a background definition key) falls
+		// back to a literal write, so the in-memory copy never drifts either
+		// way.
 		if err := updateINIFile(m, m.IniFile, query, value); err != nil {
 			editorSetMotifKey(m, section, key, value)
 		}
@@ -2638,6 +2759,12 @@ func editorApplyMotifValue(m *Motif, section, key, value string, remove bool, mo
 	// applyPostParsePosAdjustments. Re-applying the screen covers both cases, and
 	// it is harmless when nothing was snapshotted from the key.
 	editorReapplyMotifScreen(m, query)
+	// rows / columns and the cell geometry are baked into the select screen's
+	// Lua grid when the script loads, so the grid has to be rebuilt for the edit
+	// to show on the next frame.
+	if editorSelectGridQuery(query) {
+		editorRebuildSelectGrid()
+	}
 	return nil
 }
 
@@ -2685,23 +2812,27 @@ func editorFontResolutionWarning(m *Motif, query string) string {
 // when the key allows it, pushes the value into the live struct so the change
 // shows without a restart.
 //
-// applied reports whether the running engine now draws the new value. warning
-// reports when it applied but part of the value could not take effect (an
-// unloaded font index), so the caller can say so instead of a bare "applied".
-func editorApplyMotifSync(section, key, value string, remove bool) (applied bool, reason, warning string, err error) {
+// applied reports whether the running engine now draws the new value, and mode
+// is how the save was classified so the caller can tell a reload-only save from
+// one that needs a restart. warning reports when it applied but part of the
+// value could not take effect (an unloaded font index), so the caller can say so
+// instead of a bare "applied".
+func editorApplyMotifSync(section, key, value string, remove bool) (applied bool, mode editorMotifApplyMode, reason, warning string, err error) {
+	mode = editorApplyReload
 	out, err := editorRunOnEngineThread(func() editorApplyOutcome {
 		// Classification reads the live motif to see whether the edited key's
 		// screen can be scoped to a single struct field, so it happens here on
 		// the engine thread, never on the HTTP goroutine.
-		mode := editorApplyReload
+		m := editorApplyReload
 		why := "removing a key restores its default, which needs a reload"
 		if !remove {
-			mode, why = editorMotifApplyClassify(section, key)
+			m, why = editorMotifApplyClassify(section, key)
 		}
-		if err := editorApplyMotifValue(&sys.motif, section, key, value, remove, mode); err != nil {
+		mode = m
+		if err := editorApplyMotifValue(&sys.motif, section, key, value, remove, m); err != nil {
 			return editorApplyOutcome{reason: why, err: err}
 		}
-		outcome := editorApplyOutcome{applied: mode != editorApplyReload, reason: why}
+		outcome := editorApplyOutcome{applied: m == editorApplyLive || m == editorApplyRefresh, reason: why}
 		if outcome.applied && !remove {
 			// The struct and the snapshot are updated, but an unloaded font
 			// index leaves the typeface behind: report it alongside applied
@@ -2712,9 +2843,9 @@ func editorApplyMotifSync(section, key, value string, remove bool) (applied bool
 		return outcome
 	})
 	if err != nil {
-		return false, "", "", err
+		return false, mode, "", "", err
 	}
-	return out.applied, out.reason, out.warning, out.err
+	return out.applied, mode, out.reason, out.warning, out.err
 }
 
 // editorSaveRequestJSON is the payload of /api/save.
@@ -2781,10 +2912,12 @@ func editorHandleSave(w http.ResponseWriter, r *http.Request) {
 	}
 	// The running engine mirrors the motif only, so push the edit into it when
 	// this is the configured motif. Any other file is inert to the engine.
-	applied, needsReload, reason, warning, applyErr := false, false, "", "", error(nil)
+	applied, needsReload, needsRestart, reason, warning, applyErr := false, false, false, "", "", error(nil)
 	if editorIsMotifPath(req.Path) {
-		applied, reason, warning, applyErr = editorApplyMotifSync(req.Section, req.Key, req.Value, req.Remove)
-		needsReload = applyErr == nil && !applied
+		var mode editorMotifApplyMode
+		applied, mode, reason, warning, applyErr = editorApplyMotifSync(req.Section, req.Key, req.Value, req.Remove)
+		needsReload = applyErr == nil && !applied && mode == editorApplyReload
+		needsRestart = applyErr == nil && !applied && mode == editorApplyRestart
 	}
 	if applyErr != nil {
 		// The file is already written; only the live update failed. This is
@@ -2797,14 +2930,15 @@ func editorHandleSave(w http.ResponseWriter, r *http.Request) {
 	LogMessage("[Editor] %v [%v] %v in %v (applied=%v needsReload=%v warning=%v err=%v)",
 		action, req.Section, req.Key, req.Path, applied, needsReload, warning, applyErr)
 	res := map[string]any{
-		"ok":          true,
-		"path":        req.Path,
-		"section":     req.Section,
-		"key":         req.Key,
-		"value":       req.Value,
-		"message":     action,
-		"applied":     applied,
-		"needsReload": needsReload,
+		"ok":           true,
+		"path":         req.Path,
+		"section":      req.Section,
+		"key":          req.Key,
+		"value":        req.Value,
+		"message":      action,
+		"applied":      applied,
+		"needsReload":  needsReload,
+		"needsRestart": needsRestart,
 	}
 	if reason != "" {
 		res["applyReason"] = reason
@@ -2886,6 +3020,12 @@ func editorReloadMotifSync() (path string, err error) {
 			return editorApplyOutcome{err: fmt.Errorf("loadMotif did not return a motif table")}
 		}
 		l.SetGlobal("motif", tbl)
+		// The menus the motif declares and the select screen's cell grid are
+		// built once at script load, so a reload has to rebuild them too for an
+		// edited itemname / attract-mode / rows / columns to show without
+		// restarting the game.
+		editorRebuildMotifMenus()
+		editorRebuildSelectGrid()
 		return editorApplyOutcome{applied: true}
 	})
 	if err != nil {
@@ -3380,6 +3520,11 @@ function renderKeys(container, path, section, keys, reload, plain) {
 					// the screen, so a restart would not help either; the file
 					// still has the value.
 					toast(what + ' — not applied: ' + res.applyError, true);
+				} else if (res.needsRestart) {
+					// Read once while the script boots into a structure nothing
+					// rebuilds: only a restart picks it up.
+					toast(what + ' — saved, restart the game to apply'
+						+ (res.applyReason ? ': ' + res.applyReason : ''), true);
 				} else if (res.needsReload) {
 					// Written to the file; the running engine picks it up on
 					// "Reload motif in engine" (or a restart).

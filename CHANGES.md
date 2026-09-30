@@ -273,6 +273,57 @@ the game folder.
   every aligned line. The whitespace in front of a `;` is now preserved, and
   only the value is replaced.
 
+### fix: editor edits to `[Select Info]` rows / columns did not move the select grid
+`src/editor_server.go`, `external/script/start.lua`
+
+The select screen's cell grid (`start.t_grid`, built from the `main.t_selGrid` /
+`main.t_selChars` cells) is assembled once when the script loads, from
+`motif.select_info.rows * motif.select_info.columns`, the cell size / spacing and
+the per-cell `offset` / `spacing` / `skip` overrides. The live apply treated
+these keys as plain assignments, so the struct field and the Lua motif table
+changed while the grid the draw loop walks kept its boot dimensions — a saved
+`rows` / `columns` edit therefore changed nothing on screen.
+
+- `external/script/start.lua`: the grid build moved into `start.f_updateGrid()`
+  (still called once at load), which grows `main.t_selGrid` to the current cell
+  count, rebuilds `start.t_grid`, re-maps each character's row / column, pulls a
+  now out-of-range cursor back inside and flags the draw list for rebuild.
+  `start.f_selectReset` now walks only the visible cells, so a grid shrunk
+  after an edit cannot index past `start.t_grid`.
+- `src/editor_server.go`: a save that touches `rows`, `columns`, `cell.size`,
+  `cell.spacing` or a `cell.<c>-<r>.offset` / `.spacing` / `.skip` override
+  (`editorSelectGridQuery`) asks the script to rebuild the grid
+  (`editorRebuildSelectGrid`) after the value is applied, and `POST /api/reload`
+  rebuilds it as well. The keys stay classified as assigned (live).
+
+### fix: editor motif reload rebuilds the menus; boot-only keys report "restart needed"
+`src/editor_server.go`, `external/script/main.lua`, `external/script/menu.lua`,
+`external/script/options.lua`
+
+The motif reload only swapped the motif table and refilled snapshots, so keys
+the system scripts read once at load kept drawing the boot copy. The menus are
+the biggest case: `main.f_start`, `menu.f_start` and `options.f_start` copy the
+itemname labels and the menu title out of `motif` at boot.
+
+- `main.f_rebuildMenus()` (new) recomputes `main.group` / `main.background` from
+  `[Attract Mode] enabled` and re-runs `main.f_start`, `menu.f_start` and
+  `options.f_start`. `POST /api/reload` calls it after swapping the motif table,
+  so itemname, attract-mode, menu-title and pause-menu edits apply without a
+  restart. `menu.f_start` was made re-entrant (it re-binds the built-in
+  `[Pause Menu]` entry and rebuilds `menu.t_vardisplayPointers` instead of
+  appending); `options.f_start` resets `options.t_vardisplayPointers` for the
+  same reason.
+- `editorMotifApplyClassify` now reports those keys as **reload** instead of a
+  live/refresh apply the menu tables would not reflect: `[Attract Mode]
+  enabled`, `menu.itemname.*` / `keymenu.itemname.*`, `menu.title.uppercase`,
+  and the `title_info` / `option_info` / `attract_mode` `title.text` drawn as
+  the menu title.
+- A fourth apply mode, **restart**, reports values the reload cannot rebuild:
+  `[Files] module` (Lua `require` caches it) and `[Files] select` (the boot pass
+  builds the character / stage roster from it). The save response adds
+  `needsRestart` and the UI says "saved, restart the game to apply" instead of
+  implying a reload would work.
+
 ### feat: static libvpx build for WebM alpha (VP8/VP9)
 `Makefile`
 

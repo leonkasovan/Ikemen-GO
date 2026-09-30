@@ -2739,7 +2739,13 @@ function main.f_createMenu(tbl, bool_bgreset, bool_main, bool_f1, bool_del)
 		end
 		main.menu.f = nil
 		while true do
-			if tbl.reset then
+			if tbl.rebuild then
+				-- The editor's motif reload rebuilt this menu in place; re-read its
+				-- items so the new labels show without restarting the game.
+				tbl.rebuild = false
+				t = main.f_hiddenItems(tbl.items)
+				item = math.max(1, math.min(item, #t))
+			elseif tbl.reset then
 				tbl.reset = false
 			else
 				main.f_menuCommonDraw(t, item, cursorPosY, moveTxt, motif[main.group], motif[main.background], false)
@@ -2921,7 +2927,15 @@ end
 
 -- Dynamically generates all menus and submenus
 function main.f_start()
-	main.menu = {title = main.f_itemnameUpper(motif[main.group].title.text, motif[main.group].menu.title.uppercase), submenu = {}, items = {}}
+	-- Reuse the table object: the running title loop holds a reference to it, so
+	-- the editor's motif reload (main.f_rebuildMenus) updates the menu in place
+	-- and sets `rebuild` to have that loop re-read its items.
+	if main.menu == nil then
+		main.menu = {}
+	end
+	main.menu.title = main.f_itemnameUpper(motif[main.group].title.text, motif[main.group].menu.title.uppercase)
+	main.menu.submenu = {}
+	main.menu.items = {}
 	main.menu.loop = main.f_createMenu(main.menu, true, main.group == 'title_info', main.group == 'title_info', false)
 	local w = main.f_menuWindow(motif[main.group].menu)
 	local t_pos = {} --for storing current main.menu table position
@@ -3028,6 +3042,27 @@ function main.f_start()
 	--	animSetWindow(v.AnimData, w[1], w[2], w[3], w[4])
 	--end
 	if gameOption('Debug.DumpLuaTables') then main.f_printTable(main.menu, 'debug/t_mainMenu.txt') end
+end
+
+-- Rebuilds the menus the motif declares: which group the title loop runs
+-- (attract vs title), main.menu, the pause menus and the options menu. Called by
+-- the editor's motif reload after it swaps the motif table: every one of these
+-- builders reads the itemname labels and the menu title out of `motif` once and
+-- keeps copies, so without this a reloaded [Attract Mode] enabled or
+-- menu.itemname.* would keep drawing the boot menu until the game restarted.
+function main.f_rebuildMenus()
+	if motif.attract_mode.enabled then
+		main.group = 'attract_mode'
+		main.background = 'attractbgdef'
+	else
+		main.group = 'title_info'
+		main.background = 'titlebgdef'
+	end
+	main.f_start()
+	menu.f_start()
+	options.f_start()
+	-- Ask the running title loop to re-read the rebuilt menu on its next frame.
+	main.menu.rebuild = true
 end
 
 function main.f_clearShuffleTables()

@@ -1637,6 +1637,10 @@ end
 
 -- Dynamically generates all menus and submenus
 function options.f_start()
+	-- The vardisplay pointers are rebuilt from scratch: the editor's motif reload
+	-- re-runs this function, and stale entries would keep pointing at the old
+	-- menu tables.
+	options.t_vardisplayPointers = {}
 	-- external shaders
 	options.t_shaders = {}
 	for _, v in ipairs(getDirectoryFiles('external/shaders')) do

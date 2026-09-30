@@ -1228,7 +1228,6 @@ func TestEditorMotifKeyNeedsReload(t *testing.T) {
 		{"Music", "title.bgm"},
 		{"Files", "spr"},
 		{"files", "snd"},
-		{"Files", "select"},
 		{"Files", "fight"},
 		{"Files", "model"},
 		{"Files", "glyphs"},
@@ -1242,6 +1241,16 @@ func TestEditorMotifKeyNeedsReload(t *testing.T) {
 			t.Errorf("%v.%v applies live, want a reload", c.section, c.key)
 		} else if reason == "" {
 			t.Errorf("%v.%v asks for a reload without a reason", c.section, c.key)
+		}
+	}
+	// Values the script reads once into a structure nothing rebuilds can only be
+	// picked up by a restart, so they must not claim a reload would apply them.
+	for _, c := range []struct{ section, key string }{
+		{"Files", "select"},
+		{"Files", "module"},
+	} {
+		if mode, reason := editorMotifApplyClassify(c.section, c.key); mode != editorApplyRestart {
+			t.Errorf("%v.%v is %v (%v), want a restart", c.section, c.key, mode, reason)
 		}
 	}
 	// Plain values go straight into the struct: their declaring struct holds no
@@ -1793,6 +1802,85 @@ func TestEditorSyncMotifLuaTableNoState(t *testing.T) {
 	editorSyncMotifLuaTable(&Motif{IniFile: f}, "title_info.menu.tween.factor")
 }
 
+// The select screen's cell grid (start.t_grid) is built once at load, so the
+// cells rows / columns / cell geometry produce only move after the grid is
+// rebuilt. Every other key must not trigger a rebuild.
+func TestEditorSelectGridQuery(t *testing.T) {
+	for _, q := range []string{
+		"select_info.rows",
+		"select_info.columns",
+		"select_info.cell.size",
+		"select_info.cell.spacing",
+		"select_info.cell.0-0.offset",
+		"select_info.cell.1-2.spacing",
+		"select_info.cell.*-*.skip",
+	} {
+		if !editorSelectGridQuery(q) {
+			t.Errorf("%v does not rebuild the select grid, want a rebuild", q)
+		}
+	}
+	for _, q := range []string{
+		"select_info.pos",
+		"select_info.cell.bg",
+		"select_info.cell.random.switchtime",
+		"select_info.cell.0-0.scale",
+		"title_info.menu.pos",
+		"select_info.rowsx",
+	} {
+		if editorSelectGridQuery(q) {
+			t.Errorf("%v rebuilds the select grid, want no rebuild", q)
+		}
+	}
+	// The keys the bug report is about must stay live appliers, so the grid
+	// rebuild (rather than a reload) is what makes the edit show.
+	for _, k := range []string{"rows", "columns", "cell.size", "cell.spacing"} {
+		if mode, reason := editorMotifApplyClassify("Select Info", k); mode == editorApplyReload {
+			t.Errorf("Select Info %v asks for a reload (%v), want a live apply", k, reason)
+		}
+	}
+}
+
+// The motif menu tables are built once at load; the reload re-runs those
+// builders (main.f_rebuildMenus), so the keys they consume ask for a reload
+// instead of reporting a live apply the menu tables would not reflect.
+func TestEditorMotifMenuBuildKey(t *testing.T) {
+	for _, q := range []string{
+		"attract_mode.enabled",
+		"title_info.menu.itemname.arcade",
+		"option_info.menu.itemname.exit",
+		"option_info.keymenu.itemname.rumble",
+		"attract_mode.menu.itemname.exit",
+		"title_info.title.text",
+		"option_info.title.text",
+		"title_info.menu.title.uppercase",
+	} {
+		if !editorMotifMenuBuildKey(q) {
+			t.Errorf("%v is not treated as a menu build key", q)
+		}
+	}
+	for _, q := range []string{
+		"title_info.menu.itemname_order",
+		"title_info.menu.pos",
+		"title_info.menu.item.spacing",
+		"select_info.rows",
+		"replay_info.title.text",
+	} {
+		if editorMotifMenuBuildKey(q) {
+			t.Errorf("%v is treated as a menu build key, want a live apply", q)
+		}
+	}
+	// The keys the reload now rebuilds must be classified as reloads.
+	for _, c := range []struct{ section, key string }{
+		{"Attract Mode", "enabled"},
+		{"Title Info", "menu.itemname.arcade"},
+		{"Option Info", "keymenu.itemname.rumble"},
+	} {
+		if mode, reason := editorMotifApplyClassify(c.section, c.key); mode != editorApplyReload {
+			t.Errorf("%v.%v is %v (%v), want a reload", c.section, c.key, mode, reason)
+		}
+	}
+}
+
 // The apply is posted to the engine thread and its result is waited for, so the
 // game loop never sees a half written motif.
 func TestEditorMotifKeyCoverage(t *testing.T) {
@@ -1904,7 +1992,7 @@ func TestEditorApplyMotifSyncOnEngineThread(t *testing.T) {
 		<-drained
 	}()
 
-	applied, reason, warning, err := editorApplyMotifSync("Title Info", "menu.item.active.font", "2", false)
+	applied, _, reason, warning, err := editorApplyMotifSync("Title Info", "menu.item.active.font", "2", false)
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
