@@ -1936,6 +1936,11 @@ func TestEditorFontResolutionWarning(t *testing.T) {
 	}
 	sys.motif = Motif{IniFile: f, Sff: newSff(), Fnt: map[int]*Fnt{1: {}, 2: {}}}
 	query := editorMotifQuery("Title Info", "menu.item.active.font")
+	// Populate the struct the way a save would: the INI text alone leaves
+	// Font at its zero value, and the warning reads the struct field.
+	if err := SetValueUpdate(&sys.motif, sys.motif.IniFile, query, "1, 0, 0, 255, 255, 255, 255, -1"); err != nil {
+		t.Fatal(err)
+	}
 
 	// A loaded index resolves quietly.
 	if w := editorFontResolutionWarning(&sys.motif, query); w != "" {

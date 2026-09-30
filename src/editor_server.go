@@ -2667,10 +2667,13 @@ func editorFontResolutionWarning(m *Motif, query string) string {
 	default:
 		return ""
 	}
-	if idx < 0 || m == nil || m.Fnt == nil {
+	if idx < 0 || m == nil {
 		return ""
 	}
-	if _, ok := m.Fnt[idx]; !ok {
+	// A nil map (a bare test fixture, say) means nothing was ever loaded:
+	// every non-negative index is unresolvable. reserveUserFontSlots blocks
+	// taken slots with nil placeholders, which are not usable fonts either.
+	if f, ok := m.Fnt[idx]; !ok || f == nil {
 		return fmt.Sprintf("font %d is not loaded, so the text keeps the old font", idx)
 	}
 	return ""
