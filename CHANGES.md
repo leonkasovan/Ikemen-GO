@@ -312,6 +312,25 @@ idempotent; `offsetInit` keeps its shifted meaning for the draw/reset paths.
 Covered by `TestEditorSelectRowsSaveKeepsCursorPos`
 (`src/editor_server_test.go`, run with `make test-editor`).
 
+### fix: editor saves to `[Select Info]` pos / showemptyboxes never reached the screen
+`src/editor_server.go`, `external/script/start.lua`
+
+The select screen draws from a cached draw list (`staticDrawList`) whose items
+bake in `motif.select_info.pos` and the grid cells at build time; the list is
+rebuilt only when `start.needUpdateDrawList` is set. Saving `pos` synced the
+Lua table but set no flag, so the old positions kept drawing — and the same
+applied to `showemptyboxes`, which is only read while that list is built. Both
+keys now trigger the grid refresh (`start.f_updateGrid`, which flags the list),
+like rows / columns / the cell geometry already did. Covered by the updated
+`TestEditorSelectGridQuery` and `TestEditorRebuildSelectGridCallsLua`.
+
+A single `cell.spacing = 2` additionally never looked like a change: the
+generic array parser turns it into `[2, 0]`, so only the row pitch moved by
+2px. `getCellSpacing` now mirrors a lone x into y (`{2, 0}` → `{2, 2}`),
+matching the per-cell override right above it and the Mugen convention the
+default motif documents ("spacing accepts only x value which is used for both
+coordinates"). Applies at load and live alike, since both go through it.
+
 ### fix: editor motif reload rebuilds the menus; boot-only keys report "restart needed"
 `src/editor_server.go`, `external/script/main.lua`, `external/script/menu.lua`,
 `external/script/options.lua`

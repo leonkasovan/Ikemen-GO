@@ -1804,11 +1804,15 @@ func TestEditorSyncMotifLuaTableNoState(t *testing.T) {
 
 // The select screen's cell grid (start.t_grid) is built once at load, so the
 // cells rows / columns / cell geometry produce only move after the grid is
-// rebuilt. Every other key must not trigger a rebuild.
+// rebuilt, and so do pos and showemptyboxes: they are baked into the cached
+// draw list built from that grid, and the rebuild flags that list too.
+// Every other key must not trigger a rebuild.
 func TestEditorSelectGridQuery(t *testing.T) {
 	for _, q := range []string{
 		"select_info.rows",
 		"select_info.columns",
+		"select_info.pos",
+		"select_info.showemptyboxes",
 		"select_info.cell.size",
 		"select_info.cell.spacing",
 		"select_info.cell.0-0.offset",
@@ -1820,7 +1824,6 @@ func TestEditorSelectGridQuery(t *testing.T) {
 		}
 	}
 	for _, q := range []string{
-		"select_info.pos",
 		"select_info.cell.bg",
 		"select_info.cell.random.switchtime",
 		"select_info.cell.0-0.scale",
@@ -1838,6 +1841,32 @@ func TestEditorSelectGridQuery(t *testing.T) {
 			t.Errorf("Select Info %v asks for a reload (%v), want a live apply", k, reason)
 		}
 	}
+}
+
+// The grid rebuild has to reach the running script: a save only shows when
+// start.f_updateGrid runs and flags the cached draw list for rebuild.
+func TestEditorRebuildSelectGridCallsLua(t *testing.T) {
+	oldState := sys.luaLState
+	defer func() { sys.luaLState = oldState }()
+
+	sys.luaLState = lua.NewState()
+	defer sys.luaLState.Close()
+	called := false
+	startTbl := sys.luaLState.NewTable()
+	startTbl.RawSetString("f_updateGrid", sys.luaLState.NewFunction(func(l *lua.LState) int {
+		called = true
+		return 0
+	}))
+	sys.luaLState.SetGlobal("start", startTbl)
+
+	editorRebuildSelectGrid()
+	if !called {
+		t.Error("saving a grid key did not run start.f_updateGrid, so the edit would never reach the screen")
+	}
+
+	// Without the script (or without the function) it stays a silent no-op.
+	sys.luaLState.SetGlobal("start", lua.LNil)
+	editorRebuildSelectGrid()
 }
 
 // Saving [Select Info] rows re-runs the position pass, which must not move the

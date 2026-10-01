@@ -78,9 +78,10 @@ Four modes, decided by walking the key to the struct that declares it
   The screen is still re-applied (position pass, Lua table sync). A value can
   also be baked into a load-time Lua structure rather than drawn from the
   field: applying `[Select Info]` `rows` / `columns` / `cell.size` /
-  `cell.spacing` / `cell.<c>-<r>` geometry also rebuilds the select screen's
-  cell grid (`start.f_updateGrid`), which is otherwise only built at script
-  load.
+  `cell.spacing` / `cell.<c>-<r>` geometry — and `pos` / `showemptyboxes`,
+  which are baked into the cached draw list built from that grid — also
+  rebuilds the select screen's cell grid (`start.f_updateGrid`), which is
+  otherwise only built at script load.
 - **refreshed** — the field is snapshotted (`*TextSprite` / `*PalFX` /
   `*Rect` / `*Fade` via `PopulateDataPointers`), so the snapshots are
   refilled in place (`setTextSpriteInto` / `setFadeInto` / `setPalFxInto` /
@@ -176,10 +177,14 @@ Classified against `SelectInfoProperties` (`src/motif.go:659`).
 The cell grid is its own case: `rows`, `columns`, `cell.size`, `cell.spacing`
 and the `cell.<c>-<r>.offset` / `.spacing` / `.skip` overrides are assigned to
 the struct, but the screen draws from a Lua grid (`start.t_grid`) built once at
-script load, so the field alone would not move a cell. Those keys also rebuild
-that grid in the running script (`start.f_updateGrid`, called by
-`editorRebuildSelectGrid` after the apply and by `POST /api/reload`), so a save
-shows on the next frame.
+script load, so the field alone would not move a cell. `pos` and
+`showemptyboxes` are assigned too, but they are baked into the cached draw
+list built from that grid, which is likewise only rebuilt on demand. Those
+keys also rebuild that grid in the running script (`start.f_updateGrid`,
+called by `editorRebuildSelectGrid` after the apply and by `POST /api/reload`),
+which flags the draw list for rebuild, so a save shows on the next frame. A
+lone `cell.spacing = 2` covers both axes (Mugen convention, as with the
+per-cell overrides); without that it would parse as `[2, 0]`.
 
 **refreshed (114):** `fadein.time`, `fadeout.time`, `title.offset` / `font` /
 `layerno`, every `title.<mode>.text`, the ten `cell.*-N` override rows,

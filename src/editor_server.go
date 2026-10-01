@@ -2443,18 +2443,20 @@ func editorReapplyMotifScreen(m *Motif, query string) {
 	editorSyncMotifLuaTable(m, query)
 }
 
-// editorSelectGridQuery reports whether an applied key changes the select
-// screen's cell grid: its size (rows / columns) or the offset and spacing baked
-// into every cell of start.t_grid when the script builds it. Drawing reads the
-// rest of a cell override (scale, facing, ...) straight from the motif, so only
-// these need the grid rebuilt.
+// editorSelectGridQuery reports whether an applied key needs the select
+// screen's cell grid rebuilt: its size (rows / columns), the offset and
+// spacing baked into every cell of start.t_grid when the script builds it, or
+// the values baked into the cached draw list built from that grid (pos,
+// showemptyboxes). Drawing reads the rest of a cell override (scale,
+// facing, ...) straight from the motif, so only these need the rebuild —
+// which also flags the draw list itself for rebuild.
 func editorSelectGridQuery(query string) bool {
 	parts := strings.Split(strings.ToLower(strings.TrimSpace(query)), ".")
 	if len(parts) < 2 || parts[0] != "select_info" {
 		return false
 	}
 	switch parts[1] {
-	case "rows", "columns":
+	case "rows", "columns", "pos", "showemptyboxes":
 		return true
 	case "cell":
 		if len(parts) < 3 {
@@ -2529,7 +2531,8 @@ func editorCallLuaMethod(table, method, what string) {
 }
 
 // editorRebuildSelectGrid rebuilds the select screen's cell grid after rows,
-// columns or the cell geometry changed (start.f_updateGrid). The grid is built
+// columns, the cell geometry, pos or showemptyboxes changed
+// (start.f_updateGrid). The grid and the draw list built from it are assembled
 // once when the script loads, so this is what makes the edit reach the screen.
 func editorRebuildSelectGrid() {
 	editorCallLuaMethod("start", "f_updateGrid", "the select grid")
@@ -2759,9 +2762,10 @@ func editorApplyMotifValue(m *Motif, section, key, value string, remove bool, mo
 	// applyPostParsePosAdjustments. Re-applying the screen covers both cases, and
 	// it is harmless when nothing was snapshotted from the key.
 	editorReapplyMotifScreen(m, query)
-	// rows / columns and the cell geometry are baked into the select screen's
-	// Lua grid when the script loads, so the grid has to be rebuilt for the edit
-	// to show on the next frame.
+	// rows / columns, the cell geometry, pos and showemptyboxes are baked into
+	// the select screen's Lua grid and the draw list built from it when the
+	// script loads, so the grid has to be rebuilt for the edit to show on the
+	// next frame.
 	if editorSelectGridQuery(query) {
 		editorRebuildSelectGrid()
 	}

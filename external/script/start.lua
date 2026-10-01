@@ -1178,7 +1178,13 @@ function getCellSpacing(col, row)
 			return override.spacing
 		end
 	end
-	return motif.select_info.cell.spacing
+	-- ponytail: a single value covers both axes (Mugen convention, same as the
+	-- override above), so cell.spacing = 2 behaves like 2, 2 rather than 2, 0.
+	local base = motif.select_info.cell.spacing
+	if base ~= nil and base[1] ~= 0 and base[2] == 0 then
+		return {base[1], base[1]}
+	end
+	return base
 end
 
 function getCellSkip(col, row)
