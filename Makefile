@@ -1139,54 +1139,53 @@ $(WINRES_DIR)/Ikemen_GO.rc: FORCE
 	VREV="$(_sxs_build)"; \
 	YEAR="$(APP_BUILDTIME)"; YEAR="$${YEAR%%-*}"; \
 	COPY="$(APP_COPYRIGHT)"; \
-	cat > $(WINRES_DIR)/Ikemen_GO.exe.manifest <<-MANEOF
-	<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-	<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
-	  <assemblyIdentity type="win32" name="Ikemen_GO" version="$${SXS}" processorArchitecture="$(ASM_ARCH)"/>
-	  <dependency>
-	    <dependentAssembly>
-	      <assemblyIdentity type="win32" name="Microsoft.Windows.Common-Controls"
-	        version="6.0.0.0" processorArchitecture="*" publicKeyToken="6595b64144ccf1df" language="*"/>
-	    </dependentAssembly>
-	  </dependency>
-	</assembly>
-	MANEOF
-	cat > $(WINRES_DIR)/Ikemen_GO.rc <<-RCEOF
-	#include <windows.h>
-	#include <winver.h>
-	1 ICON "Ikemen_Cylia_V2.ico"
-	1 RT_MANIFEST "Ikemen_GO.exe.manifest"
-
-	VS_VERSION_INFO VERSIONINFO
-	 FILEVERSION $${VMAJ},$${VMIN},$${VPAT},$${VREV}
-	 PRODUCTVERSION $${VMAJ},$${VMIN},$${VPAT},$${VREV}
-	 FILEFLAGSMASK 0x3fL
-	 FILEFLAGS 0x0L
-	 FILEOS 0x4L
-	 FILETYPE 0x1L
-	 FILESUBTYPE 0x0L
-	BEGIN
-	    BLOCK "StringFileInfo"
-	    BEGIN
-	        BLOCK "040904B0"
-	        BEGIN
-	            VALUE "CompanyName", "Ikemen GO\0"
-	            VALUE "FileDescription", "Ikemen GO\0"
-	            VALUE "FileVersion", "$${SXS}\0"
-	            VALUE "ProductName", "Ikemen GO\0"
-	            VALUE "ProductVersion", "$${SXS}\0"
-	            VALUE "OriginalFilename", "$(BINNAME)\0"
-	            VALUE "InternalName", "Ikemen_GO\0"
-	            VALUE "BuildDate", "$(APP_BUILDTIME)\0"
-	            VALUE "LegalCopyright", "$${COPY}\0"
-	        END
-	    END
-	    BLOCK "VarFileInfo"
-	    BEGIN
-	        VALUE "Translation", 0x0409, 1200
-	    END
-	END
-	RCEOF
+	# ponytail: printf, not heredoc — CRLF endings break heredoc delimiters (cat hangs forever).
+	printf '%s\n' \
+		'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' \
+		'<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">' \
+		'  <assemblyIdentity type="win32" name="Ikemen_GO" version="'"$${SXS}"'" processorArchitecture="$(ASM_ARCH)"/>' \
+		'  <dependency>' \
+		'    <dependentAssembly>' \
+		'      <assemblyIdentity type="win32" name="Microsoft.Windows.Common-Controls"' \
+		'        version="6.0.0.0" processorArchitecture="*" publicKeyToken="6595b64144ccf1df" language="*"/>' \
+		'    </dependentAssembly>' \
+		'  </dependency>' \
+		'</assembly>' > $(WINRES_DIR)/Ikemen_GO.exe.manifest
+	printf '%s\n' \
+		'#include <windows.h>' \
+		'#include <winver.h>' \
+		'1 ICON "Ikemen_Cylia_V2.ico"' \
+		'1 RT_MANIFEST "Ikemen_GO.exe.manifest"' \
+		'' \
+		'VS_VERSION_INFO VERSIONINFO' \
+		' FILEVERSION '"$${VMAJ},$${VMIN},$${VPAT},$${VREV}" \
+		' PRODUCTVERSION '"$${VMAJ},$${VMIN},$${VPAT},$${VREV}" \
+		' FILEFLAGSMASK 0x3fL' \
+		' FILEFLAGS 0x0L' \
+		' FILEOS 0x4L' \
+		' FILETYPE 0x1L' \
+		' FILESUBTYPE 0x0L' \
+		'BEGIN' \
+		'    BLOCK "StringFileInfo"' \
+		'    BEGIN' \
+		'        BLOCK "040904B0"' \
+		'        BEGIN' \
+		'            VALUE "CompanyName", "Ikemen GO\0"' \
+		'            VALUE "FileDescription", "Ikemen GO\0"' \
+		'            VALUE "FileVersion", "'"$${SXS}"'\0"' \
+		'            VALUE "ProductName", "Ikemen GO\0"' \
+		'            VALUE "ProductVersion", "'"$${SXS}"'\0"' \
+		'            VALUE "OriginalFilename", "$(BINNAME)\0"' \
+		'            VALUE "InternalName", "Ikemen_GO\0"' \
+		'            VALUE "BuildDate", "$(APP_BUILDTIME)\0"' \
+		'            VALUE "LegalCopyright", "'"$${COPY}"'\0"' \
+		'        END' \
+		'    END' \
+		'    BLOCK "VarFileInfo"' \
+		'    BEGIN' \
+		'        VALUE "Translation", 0x0409, 1200' \
+		'    END' \
+		'END' > $(WINRES_DIR)/Ikemen_GO.rc
 
 # Windows resource embedding — produces the .syso object for the linker.
 # The shell guard makes this a no-op on non-Windows.
@@ -1427,7 +1426,7 @@ appbundle:
 # URL defined above as $(SCREENPACK_URL).
 
 screenpack:
-	mkdir -p $(BUILDDIR)
+	@mkdir -p $(BUILDDIR)
 	if [ ! -d "$(INSTALLDIR)" ]; then
 		zip="$(BUILDDIR)/screenpack.zip"
 		max_retries=3; retry=0; extracted=0

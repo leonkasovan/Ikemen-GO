@@ -2960,6 +2960,19 @@ func editorHandleSave(w http.ResponseWriter, r *http.Request) {
 		needsReload = applyErr == nil && !applied && mode == editorApplyReload
 		needsRestart = applyErr == nil && !applied && mode == editorApplyRestart
 	}
+	if needsReload {
+		// The key only takes effect once the motif is reloaded, so run that
+		// reload now instead of leaving it as a manual step. When the reload
+		// is refused (a match is running, ...) the save keeps its needsReload
+		// answer and the user reloads later, as before.
+		if _, err := editorReloadMotifSync(); err == nil {
+			applied, needsReload = true, false
+			reason = ""
+		} else {
+			LogMessage("[Editor] automatic reload after saving [%v] %v refused: %v",
+				req.Section, req.Key, err)
+		}
+	}
 	if applyErr != nil {
 		// The file is already written; only the live update failed. This is
 		// reported apart from needsReload on purpose: a restart will not help a
@@ -3464,16 +3477,32 @@ function badge(k) {
 // re-render (after a save or a reload) keeps what the user filtered on.
 // containers are addressed by their element id (motif-keys, stage-keys, ...).
 var keyFilter = {};
-// applyKeyFilter hides the rows whose KEY column does not contain the text in
+// keyFilterMatch reports whether a lowercased KEY cell matches the lowercased
+// filter text. A "*" is a wildcard for any (possibly empty) run, so
+// "font*offset" finds every font offset key: the pieces around each "*"
+// must appear in order. Without "*" it is a plain substring, as before.
+function keyFilterMatch(text, q) {
+	var parts = q.split('*');
+	var pos = 0;
+	for (var i = 0; i < parts.length; i++) {
+		if (!parts[i]) { continue; }
+		pos = text.indexOf(parts[i], pos);
+		if (pos < 0) { return false; }
+		pos += parts[i].length;
+	}
+	return true;
+}
+// applyKeyFilter hides the rows whose KEY column does not match the text in
 // the container's filter box and reports how many rows are shown. Matching is
-// a case-insensitive substring, so "font" finds every font key of a section.
+// a case-insensitive substring, so "font" finds every font key of a section;
+// "*" wildcards any run, so "font*offset" narrows it to the font offsets.
 function applyKeyFilter(container) {
 	var q = String(keyFilter[container.id] || '').trim().toLowerCase();
 	var rows = container.querySelectorAll('tbody tr');
 	var shown = 0;
 	Array.prototype.forEach.call(rows, function (tr) {
 		var cell = tr.querySelector('td.k');
-		var hit = !q || (cell && cell.textContent.toLowerCase().indexOf(q) >= 0);
+		var hit = !q || (cell && keyFilterMatch(cell.textContent.toLowerCase(), q));
 		tr.classList.toggle('hidden', !hit);
 		if (hit) { shown++; }
 	});
@@ -3556,7 +3585,7 @@ function renderKeys(container, path, section, keys, reload, plain) {
 	});
 	h.push('</tbody></table>');
 	container.innerHTML = '<div class="keyfilter">'
-		+ '<input type="text" class="keyfilter-input" placeholder="Filter keys\u2026"'
+		+ '<input type="text" class="keyfilter-input" placeholder="Filter keys (* wildcards)\u2026"'
 		+ ' value="' + escAttr(keyFilter[container.id] || '') + '" spellcheck="false">'
 		+ '<span class="small keyfilter-count"></span></div>'
 		+ h.join('');

@@ -1224,6 +1224,14 @@ func TestEditorKeyFilterMarkup(t *testing.T) {
 	if !strings.Contains(editorPageHTML, "value=\"' + escAttr(keyFilter[container.id] || '') + '\"") {
 		t.Error("the filter box does not restore its previous text")
 	}
+	// "*" is a wildcard for any run ("font*offset"); without it the match is
+	// a plain case-insensitive substring.
+	if !strings.Contains(editorPageHTML, "function keyFilterMatch(") {
+		t.Error("keyFilterMatch() is missing from the page")
+	}
+	if !strings.Contains(editorPageHTML, "q.split('*')") {
+		t.Error("the filter does not support * wildcards")
+	}
 }
 
 func TestEditorReloadMarkup(t *testing.T) {
@@ -2144,6 +2152,38 @@ func TestEditorSelectTitleQuery(t *testing.T) {
 	} {
 		if editorSelectTitleQuery(q) {
 			t.Errorf("%s was mistaken for a select title key", q)
+		}
+	}
+}
+
+// A save auto-reloads exactly the reload-classified keys, so this locks the
+// covered set: face/portrait anims, cells, asset paths, music, background
+// definitions, menu build keys and localcoord. Whatever classifies as a reload
+// is reloaded by the save; live and refresh keys are untouched by that path.
+func TestEditorAutoReloadCoversReloadKeys(t *testing.T) {
+	for _, c := range []struct{ section, key string }{
+		{"Select Info", "p1.face.scale"},
+		{"Select Info", "p2.face2.random.spr"},
+		{"Select Info", "stage.portrait.scale"},
+		{"Select Info", "cell.bg.spr"},
+		{"Files", "spr"},
+		{"Music", "round1.bgm"},
+		{"TitleBGdef", "time"},
+		{"Title Info", "menu.itemname.arcade"},
+		{"Select Info", "localcoord"},
+	} {
+		if mode, reason := editorMotifApplyClassify(c.section, c.key); mode != editorApplyReload {
+			t.Errorf("%v %v is %v (%v), want a reload", c.section, c.key, mode, reason)
+		}
+	}
+	// ... while these stay out of the auto-reload path.
+	for _, c := range []struct{ section, key string }{
+		{"Select Info", "title.offset"},
+		{"Select Info", "rows"},
+		{"Files", "select"},
+	} {
+		if mode, _ := editorMotifApplyClassify(c.section, c.key); mode == editorApplyReload {
+			t.Errorf("%v %v is a reload, want it applied without one", c.section, c.key)
 		}
 	}
 }

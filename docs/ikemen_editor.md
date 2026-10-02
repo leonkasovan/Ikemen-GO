@@ -25,7 +25,7 @@ Implementation: `src/editor_server.go`, `src/editor_webview_windows.go`
   (`src/stage.go`), marked `runtime`; `[Begin Action n]` and other keyless
   sections returned as `raw`.  In the UI, type and default are tooltips on the key name and the value control, not a column; a blank default means the parser leaves the zero value
 alone. Every key table has a filter box above it that narrows the visible rows
-  by the KEY column (case-insensitive substring, live as you type); the text is
+  by the KEY column (case-insensitive substring, live as you type, "*" matches any run); the text is
   kept per table, so a save or reload that re-renders the section restores it. Sentinel defaults are spelled
   out: `zoomdelta` / `zoomscaledelta` / `xbottomzoomdelta` `(unset)`
   (`math.MaxFloat32` in `newBackGround`), `roundpos` `(stage default)`.
@@ -48,8 +48,9 @@ alone. Every key table has a filter box above it that narrows the visible rows
   Requires the `X-Editor-Request` header like `/api/save`. Refused with
   `409` while a match runs, netplay / a replay is active, or assets are
   loading; `404` when no motif is configured. The Motif view has a
-  `Reload motif in engine` button for it; a save that needs a reload says
-  "saved, reload the motif to apply". Besides swapping the motif table, the
+   `Reload motif in engine` button for it; a save that needs a reload runs it
+   automatically, and only says "saved, reload the motif to apply" when the
+   reload is refused. Besides swapping the motif table, the
   reload re-runs the builders for the two structures the script otherwise keeps
   from boot: the select screen's cell grid (`start.f_updateGrid`) and the menus
   (`main.f_rebuildMenus`: `main.menu`, the pause menus, the options menu, and
@@ -92,12 +93,13 @@ Four modes, decided by walking the key to the struct that declares it
 - **reload** — load-time only: background definitions, `localcoord`,
   `[Music]`, `[Files]` asset paths, user-named map sections, the keys the menu
   builders read (itemname labels, the menu title, `[Attract Mode] enabled`) —
-  or an `*Anim`-only snapshot (element state a refill would not reset). A save
-  to one of these says "saved, reload the motif to apply"; `POST /api/reload`
-  (the `Reload motif in engine` button) then runs the Lua `loadMotif()` global
-  on the engine thread, replaces the script's `motif` global with the rebuilt
-  table, and re-runs the select-grid, menu and select-title builders
-  (`editorRebuildAfterReload`) — without restarting the game. The title refresh
+   or an `*Anim`-only snapshot (element state a refill would not reset). A save
+   to one of these reloads automatically; only when the reload is refused does
+   it say "saved, reload the motif to apply". `POST /api/reload`
+   (the `Reload motif in engine` button) then runs the Lua `loadMotif()` global
+   on the engine thread, replaces the script's `motif` global with the rebuilt
+    table, and re-runs the select-grid, menu and select-title builders
+    (`editorRebuildAfterReload`) — without restarting the game. The title refresh
   matters because the rebuilt table carries a fresh, empty title `TextSprite`,
   whose text is only copied in from the mode keyed map when a mode is picked
   (`main.f_setSelectTitle`). Refused while a match runs, netplay / a replay is active, or assets are
