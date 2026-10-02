@@ -2175,6 +2175,7 @@ func setTextSpriteInto(ts *TextSprite, obj interface{}, fVal, structVal, parent 
 	focallength := float32(2048)
 	projection := int32(0)
 	text := ""
+	textIsString := false
 	layerno := int16(1)
 	localcoord := [2]int32{0, 0}
 	window := [4]float32{0, 0, 0, 0}
@@ -2240,6 +2241,7 @@ func setTextSpriteInto(ts *TextSprite, obj interface{}, fVal, structVal, parent 
 	}
 	if fv, ok := get("Text"); ok && fv.Kind() == reflect.String {
 		text = fv.String()
+		textIsString = true
 	}
 	if fv, ok := get("Layerno"); ok && fv.Kind() >= reflect.Int && fv.Kind() <= reflect.Int64 {
 		layerno = int16(fv.Int())
@@ -2306,15 +2308,26 @@ func setTextSpriteInto(ts *TextSprite, obj interface{}, fVal, structVal, parent 
 	ts.bank = font[1]
 	// textImgSetAlign
 	ts.align = font[2]
-	// textImgSetText
-	ts.text = text
-	ts.textInit = text
+	// textImgSetText. A TextMapProperties owns its text as a mode keyed map
+	// (select_info.title.text.arcade, ...) that the Lua script fills in at
+	// runtime, so there is no single Go string to read. Leave the sprite's
+	// current text (and textInit) alone rather than blanking it: refilling the
+	// snapshot after an offset / font edit must not wipe the title the script
+	// is drawing.
+	if textIsString {
+		ts.text = text
+		ts.textInit = text
+	}
 	// textImgSetColor
 	ts.SetColor(font[3], font[4], font[5], font[6])
 	// textImgSetLocalcoord
 	ts.SetLocalcoord(localcoord[0], localcoord[1])
-	// textImgSetPos
+	// textImgSetPos. offsetBase keeps the struct-declared Offset, which
+	// applyPostParsePosAdjustments recomputes the container shift from; SetPos
+	// overwrites offsetInit, so reading it back would add the shift on top of
+	// itself every time the pass re-ran (see motif.go).
 	ts.SetPos(offset[0], offset[1])
+	ts.offsetBase = offset
 	// textImgSetScale
 	ts.SetScale(scale[0], scale[1])
 	// textImgSetXShear

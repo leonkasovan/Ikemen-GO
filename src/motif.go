@@ -2594,8 +2594,16 @@ func (m *Motif) applyPostParsePosAdjustments() {
 		}
 		a.SetPos(ox+dx, oy+dy)
 	}
+	// Same idempotence for the text sprites: recompute from the struct-declared
+	// Offset (offsetBase) rather than offsetInit, which SetPos overwrote. The
+	// pass is global, so reading offsetInit back walked the TextSprites of every
+	// screen that was not refilled — saving [Select Info] title.offset pushed the
+	// title menu item texts (menu.pos = 159, 158) off a 320x240 screen.
 	textSetPos := func(ts *TextSprite, dx, dy float32) {
-		ts.SetPos(ts.offsetInit[0]+dx, ts.offsetInit[1]+dy)
+		if ts == nil {
+			return
+		}
+		ts.SetPos(ts.offsetBase[0]+dx, ts.offsetBase[1]+dy)
 	}
 	offsetTexts := func(dx, dy float32, texts ...*TextSprite) {
 		for _, ts := range texts {

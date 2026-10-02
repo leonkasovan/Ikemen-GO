@@ -2538,11 +2538,41 @@ func editorRebuildSelectGrid() {
 	editorCallLuaMethod("start", "f_updateGrid", "the select grid")
 }
 
+// editorSelectTitleQuery reports whether an applied key touched the [Select
+// Info] title the script draws at the top of the select screen: its offset /
+// font / layerno, or one of the mode keyed title.text.<mode> entries.
+func editorSelectTitleQuery(query string) bool {
+	parts := strings.Split(strings.ToLower(strings.TrimSpace(query)), ".")
+	return len(parts) >= 2 && parts[0] == "select_info" && parts[1] == "title"
+}
+
+// editorRebuildSelectTitle re-applies the current mode's text to the select
+// screen's title sprite (main.f_refreshSelectTitle). The sprite is refilled in
+// place by the refresh, but its text is copied from the mode keyed map when a
+// mode is picked, so an edited title.text.<mode> would not show until then.
+func editorRebuildSelectTitle() {
+	editorCallLuaMethod("main", "f_refreshSelectTitle", "the select title")
+}
+
 // editorRebuildMotifMenus rebuilds the menus the motif declares after a reload
 // swapped the motif table (main.f_rebuildMenus): main.menu, the pause menus,
 // the options menu, and the attract vs title group choice.
 func editorRebuildMotifMenus() {
 	editorCallLuaMethod("main", "f_rebuildMenus", "the motif menus")
+}
+
+// editorRebuildAfterReload re-runs every script builder whose structure is
+// assembled once at load and would otherwise keep drawing the boot copy after a
+// reload swapped the motif table: the menus (main.f_rebuildMenus), the select
+// cell grid (start.f_updateGrid) and the select title text
+// (main.f_refreshSelectTitle). The title rebuild is what makes the reload not
+// blank the select title: the new motif table carries a fresh, empty title
+// TextSprite, and its text is only copied in from the mode keyed map when a
+// mode is picked (main.f_setSelectTitle).
+func editorRebuildAfterReload() {
+	editorRebuildMotifMenus()
+	editorRebuildSelectGrid()
+	editorRebuildSelectTitle()
 }
 
 // editorMotifApplyMode is what a motif key save can achieve.
@@ -2768,6 +2798,13 @@ func editorApplyMotifValue(m *Motif, section, key, value string, remove bool, mo
 	// next frame.
 	if editorSelectGridQuery(query) {
 		editorRebuildSelectGrid()
+	}
+	// The select title's text is a mode keyed map the script copies into the
+	// title sprite when a mode is picked, so the refill alone leaves an edited
+	// title.text.<mode> unread: ask the script to re-apply the current mode's
+	// text (main.f_refreshSelectTitle).
+	if editorSelectTitleQuery(query) {
+		editorRebuildSelectTitle()
 	}
 	return nil
 }
@@ -3028,8 +3065,7 @@ func editorReloadMotifSync() (path string, err error) {
 		// built once at script load, so a reload has to rebuild them too for an
 		// edited itemname / attract-mode / rows / columns to show without
 		// restarting the game.
-		editorRebuildMotifMenus()
-		editorRebuildSelectGrid()
+		editorRebuildAfterReload()
 		return editorApplyOutcome{applied: true}
 	})
 	if err != nil {
@@ -3238,6 +3274,8 @@ main{padding:16px}
 .grid{display:grid;grid-template-columns:340px 1fr;gap:16px;align-items:start}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px}
 .small{font-size:11px;color:var(--dim)}
+.keyfilter{display:flex;gap:8px;align-items:center;margin:0 0 8px}
+.keyfilter input{flex:1;max-width:280px;background:#0e1117;border:1px solid var(--line);color:var(--fg);border-radius:4px;padding:4px 6px;font-size:12px}
 .sffrow{display:flex;gap:6px;align-items:center;margin:4px 0}
 .sffrow label{display:flex;gap:4px;align-items:center;color:var(--dim);font-size:11px}
 .sffrow input[type=text],.sffrow input:not([type]){flex:1;min-width:0;background:#0e1117;border:1px solid var(--line);color:var(--fg);border-radius:4px;padding:4px 6px;font-size:12px}
@@ -3422,11 +3460,34 @@ function badge(k) {
 	if (k.unknown) { return '<span class="tag un" title="unknown">⚠</span>'; }
 	return '<span class="tag ok" title="defined">●</span>';
 }
+// keyFilter keeps the text typed into each key table's filter box, so a
+// re-render (after a save or a reload) keeps what the user filtered on.
+// containers are addressed by their element id (motif-keys, stage-keys, ...).
+var keyFilter = {};
+// applyKeyFilter hides the rows whose KEY column does not contain the text in
+// the container's filter box and reports how many rows are shown. Matching is
+// a case-insensitive substring, so "font" finds every font key of a section.
+function applyKeyFilter(container) {
+	var q = String(keyFilter[container.id] || '').trim().toLowerCase();
+	var rows = container.querySelectorAll('tbody tr');
+	var shown = 0;
+	Array.prototype.forEach.call(rows, function (tr) {
+		var cell = tr.querySelector('td.k');
+		var hit = !q || (cell && cell.textContent.toLowerCase().indexOf(q) >= 0);
+		tr.classList.toggle('hidden', !hit);
+		if (hit) { shown++; }
+	});
+	var note = container.querySelector('.keyfilter-count');
+	if (note) {
+		note.textContent = q ? shown + ' / ' + rows.length + ' keys' : '';
+	}
+}
 // renderKeys renders the key table. plain drops the State column: the motif
 // view has a schema behind every key so the state says something, while a
 // .def opened from the Stage view has none. Type and default never had a
 // column of their own: they ride along as a tooltip on the key name and on
-// the value control, so the table stays three columns wide.
+// the value control, so the table stays three columns wide. A filter box
+// above the table narrows the rows by the KEY column's text.
 function renderKeys(container, path, section, keys, reload, plain) {
 	if (!keys.length) {
 		container.innerHTML = '<div class="small">no keys</div>';
@@ -3494,7 +3555,22 @@ function renderKeys(container, path, section, keys, reload, plain) {
 		h.push('</td></tr>');
 	});
 	h.push('</tbody></table>');
-	container.innerHTML = h.join('');
+	container.innerHTML = '<div class="keyfilter">'
+		+ '<input type="text" class="keyfilter-input" placeholder="Filter keys\u2026"'
+		+ ' value="' + escAttr(keyFilter[container.id] || '') + '" spellcheck="false">'
+		+ '<span class="small keyfilter-count"></span></div>'
+		+ h.join('');
+	// Live filter: as the box changes, only the matching rows stay visible. It
+	// hides rows rather than re-rendering, so the Save / Del button indexes and
+	// the input's focus are untouched. The filter text survives a re-render.
+	var input = container.querySelector('.keyfilter-input');
+	if (input) {
+		input.oninput = function () {
+			keyFilter[container.id] = input.value;
+			applyKeyFilter(container);
+		};
+	}
+	applyKeyFilter(container);
 	// Belt and braces: make every combo box really show its stored value, no
 	// matter how the browser handled the selected attribute above.
 	Array.prototype.forEach.call(container.querySelectorAll('select[data-value]'), function (sel) {

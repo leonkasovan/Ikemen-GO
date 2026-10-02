@@ -2006,6 +2006,28 @@ function main.f_editor(view)
 	return false
 end
 
+-- Sets the [Select Info] title text for the mode being picked and remembers the
+-- mode key, so the editor can re-apply the same text after a live [Select Info]
+-- `title.*` edit without making the player pick the mode again (see
+-- main.f_refreshSelectTitle and src/editor_server.go, editorRebuildSelectTitle).
+function main.f_setSelectTitle(key)
+	main.selectTitleKey = key
+	local sec = motif.select_info.title
+	textImgSetText(sec.TextSpriteData, sec.text[key])
+end
+
+-- Re-applies the [Select Info] title text the current mode set. The editor calls
+-- it after refreshing the title's TextSprite, so an edited title.text.<mode>
+-- shows without re-picking the mode. A no-op until a mode has been picked
+-- (main.f_setSelectTitle records the key).
+function main.f_refreshSelectTitle()
+	local sec = motif.select_info.title
+	if main.selectTitleKey == nil or sec == nil or sec.TextSpriteData == nil then
+		return
+	end
+	textImgSetText(sec.TextSpriteData, sec.text[main.selectTitleKey])
+end
+
 -- Associative elements table storing functions controlling behaviour of each
 -- menu item (modes configuration). Can be appended via external module.
 main.t_itemname = {
@@ -2041,7 +2063,7 @@ main.t_itemname = {
 		if (t ~= nil and t[item].itemname == 'arcade') or (t == nil and not main.teamarcade) then
 			main.teamMenu[1].single = true
 			main.teamMenu[2].single = true
-			textImgSetText(motif.select_info.title.TextSpriteData, motif.select_info.title.text.arcade)
+			main.f_setSelectTitle('arcade')
 			main.teamarcade = false
 		else --teamarcade
 			main.teamMenu[1].simul = true
@@ -2052,7 +2074,7 @@ main.t_itemname = {
 			main.teamMenu[2].single = true
 			main.teamMenu[2].tag = true
 			main.teamMenu[2].turns = true
-			textImgSetText(motif.select_info.title.TextSpriteData, motif.select_info.title.text.teamarcade)
+			main.f_setSelectTitle('teamarcade')
 			main.teamarcade = true
 		end
 		main.f_setCredits()
@@ -2077,7 +2099,7 @@ main.t_itemname = {
 		main.selectMenu[2] = true
 		main.teamMenu[1].single = true
 		main.teamMenu[2].single = true
-		textImgSetText(motif.select_info.title.TextSpriteData, motif.select_info.title.text.bonus)
+		main.f_setSelectTitle('bonus')
 		remapInput(1, getLastInputController())
 		remapInput(getLastInputController(), 1)
 		setGameMode('bonus')
@@ -2107,7 +2129,7 @@ main.t_itemname = {
 		main.teamMenu[2].single = true
 		main.teamMenu[2].tag = true
 		main.teamMenu[2].turns = true
-		textImgSetText(motif.select_info.title.TextSpriteData, motif.select_info.title.text.freebattle)
+		main.f_setSelectTitle('freebattle')
 		remapInput(1, getLastInputController())
 		remapInput(getLastInputController(), 1)
 		setGameMode('freebattle')
@@ -2182,7 +2204,7 @@ main.t_itemname = {
 		main.teamMenu[2].single = true
 		main.teamMenu[2].tag = true
 		main.teamMenu[2].turns = true
-		textImgSetText(motif.select_info.title.TextSpriteData, motif.select_info.title.text.netplaysurvivalcoop)
+		main.f_setSelectTitle('netplaysurvivalcoop')
 		setGameMode('netplaysurvivalcoop')
 		hook.run("main.t_itemname", t, item)
 		return start.f_selectMode
@@ -2223,7 +2245,7 @@ main.t_itemname = {
 		main.teamMenu[2].tag = true
 		main.teamMenu[2].turns = true
 		main.f_setCredits()
-		textImgSetText(motif.select_info.title.TextSpriteData, motif.select_info.title.text.netplayteamcoop)
+		main.f_setSelectTitle('netplayteamcoop')
 		setGameMode('netplayteamcoop')
 		hook.run("main.t_itemname", t, item)
 		return start.f_selectMode
@@ -2248,7 +2270,7 @@ main.t_itemname = {
 		main.teamMenu[2].single = true
 		main.teamMenu[2].tag = true
 		main.teamMenu[2].turns = true
-		textImgSetText(motif.select_info.title.TextSpriteData, motif.select_info.title.text.netplayversus)
+		main.f_setSelectTitle('netplayversus')
 		setGameMode('netplayversus')
 		setHomeTeam(1)
 		hook.run("main.t_itemname", t, item)
@@ -2359,7 +2381,7 @@ main.t_itemname = {
 		main.teamMenu[2].single = true
 		main.teamMenu[2].tag = true
 		main.teamMenu[2].turns = true
-		textImgSetText(motif.select_info.title.TextSpriteData, motif.select_info.title.text.survival)
+		main.f_setSelectTitle('survival')
 		remapInput(1, getLastInputController())
 		remapInput(getLastInputController(), 1)
 		setGameMode('survival')
@@ -2402,7 +2424,7 @@ main.t_itemname = {
 		main.teamMenu[2].single = true
 		main.teamMenu[2].tag = true
 		main.teamMenu[2].turns = true
-		textImgSetText(motif.select_info.title.TextSpriteData, motif.select_info.title.text.survivalcoop)
+		main.f_setSelectTitle('survivalcoop')
 		setGameMode('survivalcoop')
 		hook.run("main.t_itemname", t, item)
 		return start.f_selectMode
@@ -2443,7 +2465,7 @@ main.t_itemname = {
 		main.teamMenu[2].tag = true
 		main.teamMenu[2].turns = true
 		main.f_setCredits()
-		textImgSetText(motif.select_info.title.TextSpriteData, motif.select_info.title.text.teamcoop)
+		main.f_setSelectTitle('teamcoop')
 		setGameMode('teamcoop')
 		hook.run("main.t_itemname", t, item)
 		return start.f_selectMode
@@ -2482,7 +2504,7 @@ main.t_itemname = {
 		main.teamMenu[2].tag = true
 		main.teamMenu[2].turns = true
 		main.f_setCredits()
-		textImgSetText(motif.select_info.title.TextSpriteData, motif.select_info.title.text.timeattack)
+		main.f_setSelectTitle('timeattack')
 		remapInput(1, getLastInputController())
 		remapInput(getLastInputController(), 1)
 		setGameMode('timeattack')
@@ -2510,7 +2532,7 @@ main.t_itemname = {
 		main.matchWins.simul = {0, 0}
 		main.matchWins.single = {0, 0}
 		main.matchWins.tag = {0, 0}
-		textImgSetText(motif.select_info.title.TextSpriteData, motif.select_info.title.text.training)
+		main.f_setSelectTitle('training')
 		remapInput(1, getLastInputController())
 		remapInput(getLastInputController(), 1)
 		setGameMode('training')
@@ -2532,7 +2554,7 @@ main.t_itemname = {
 		if (start.challenger == 0 and t[item].itemname == 'versus') or (start.challenger ~= 0 and not main.teamarcade) then
 			main.teamMenu[1].single = true
 			main.teamMenu[2].single = true
-			textImgSetText(motif.select_info.title.TextSpriteData, motif.select_info.title.text.versus)
+			main.f_setSelectTitle('versus')
 		else --teamversus
 			main.teamMenu[1].simul = true
 			main.teamMenu[1].single = true
@@ -2542,7 +2564,7 @@ main.t_itemname = {
 			main.teamMenu[2].single = true
 			main.teamMenu[2].tag = true
 			main.teamMenu[2].turns = true
-			textImgSetText(motif.select_info.title.TextSpriteData, motif.select_info.title.text.teamversus)
+			main.f_setSelectTitle('teamversus')
 		end
 		if start.challenger > 0 then
 			setGameMode('challenger')
@@ -2572,7 +2594,7 @@ main.t_itemname = {
 		main.teamMenu[1].tag = true
 		main.teamMenu[2].simul = true
 		main.teamMenu[2].tag = true
-		textImgSetText(motif.select_info.title.TextSpriteData, motif.select_info.title.text.versuscoop)
+		main.f_setSelectTitle('versuscoop')
 		setGameMode('versuscoop')
 		setHomeTeam(1)
 		hook.run("main.t_itemname", t, item)
@@ -2595,7 +2617,7 @@ main.t_itemname = {
 		main.teamMenu[2].single = true
 		main.teamMenu[2].tag = true
 		main.teamMenu[2].turns = true
-		textImgSetText(motif.select_info.title.TextSpriteData, motif.select_info.title.text.watch)
+		main.f_setSelectTitle('watch')
 		remapInput(1, getLastInputController())
 		remapInput(getLastInputController(), 1)
 		setGameMode('watch')

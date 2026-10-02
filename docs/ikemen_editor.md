@@ -23,9 +23,10 @@ Implementation: `src/editor_server.go`, `src/editor_webview_windows.go`
   tag), current value, defined / missing / unknown state; `<name>BGdef`
   layers and controllers expanded from `readBackGround` / `bgCtrl.read`
   (`src/stage.go`), marked `runtime`; `[Begin Action n]` and other keyless
-  sections returned as `raw`. In the UI, type and default are tooltips on
-  the key name and the value control, not a column; a blank default means
-  the parser leaves the zero value alone. Sentinel defaults are spelled
+  sections returned as `raw`.  In the UI, type and default are tooltips on the key name and the value control, not a column; a blank default means the parser leaves the zero value
+alone. Every key table has a filter box above it that narrows the visible rows
+  by the KEY column (case-insensitive substring, live as you type); the text is
+  kept per table, so a save or reload that re-renders the section restores it. Sentinel defaults are spelled
   out: `zoomdelta` / `zoomscaledelta` / `xbottomzoomdelta` `(unset)`
   (`math.MaxFloat32` in `newBackGround`), `roundpos` `(stage default)`.
 - `GET /api/stages`, `GET /api/characters` — select.def `[Characters]` /
@@ -95,8 +96,11 @@ Four modes, decided by walking the key to the struct that declares it
   to one of these says "saved, reload the motif to apply"; `POST /api/reload`
   (the `Reload motif in engine` button) then runs the Lua `loadMotif()` global
   on the engine thread, replaces the script's `motif` global with the rebuilt
-  table, and re-runs the select-grid and menu builders — without restarting the
-  game. Refused while a match runs, netplay / a replay is active, or assets are
+  table, and re-runs the select-grid, menu and select-title builders
+  (`editorRebuildAfterReload`) — without restarting the game. The title refresh
+  matters because the rebuilt table carries a fresh, empty title `TextSprite`,
+  whose text is only copied in from the mode keyed map when a mode is picked
+  (`main.f_setSelectTitle`). Refused while a match runs, netplay / a replay is active, or assets are
   loading.
 - **restart** — the value is read once while the script boots into a structure
   the reload cannot rebuild (`[Files] module`, which Lua `require`s once and
@@ -191,6 +195,25 @@ per-cell overrides); without that it would parse as `[2, 0]`.
 `p1`–`p4.cursor.active.anim` / `active.scale` / `done.spr` / `done.scale` /
 `done.snd`, `p1/p2.name.offset` / `font` / `layerno`, `stage.font` /
 `active.font` / `active2.font` / `done.font` / `layerno`.
+
+The map-backed texts here (`title`, `record`, and elsewhere the menu items,
+text input, `[Title Info] connecting`, `[Hiscore Info] title` and
+`[Warning Info] text`) keep their text in a mode keyed map the script fills in
+at runtime, so there is no single Go string for a refill to read.
+`setTextSpriteInto` (`src/iniutils.go`) therefore keeps the sprite's current
+`text` / `textInit` for them instead of assigning the empty default, which is
+what lets `title.offset` / `title.font` refresh the sprite without blanking the
+drawn title. Plain `TextProperties` (`[Option Info] title`, `[Replay Info]
+title`) still re-read their Go string. Covered by
+`TestEditorSelectInfoTitleRefreshKeepsText` and `TestEditorTextMapRefillKeepsText`.
+
+Because the select title's text comes from the script's mode pick, the editor
+also calls `main.f_refreshSelectTitle()` (`editorRebuildSelectTitle`) after any
+`[Select Info] title.*` refresh, so an edited `title.text.<mode>` shows without
+re-picking the mode (`main.f_setSelectTitle` records the current key). The
+position pass is global and now idempotent for TextSprites too
+(`TextSprite.offsetBase`), so editing one screen does not walk another's text
+off screen (`TestEditorSaveDoesNotWalkOtherScreenTexts`).
 
 **reload (136):** `cell.bg.*`, `cell.random.spr` / `scale`, `cell.slot.*`,
 every `p1/p2.face.*` (incl. `done` / `random` / `loading` / `slot`), every

@@ -1200,6 +1200,32 @@ func TestEditorHandleReloadGuards(t *testing.T) {
 	}
 }
 
+func TestEditorKeyFilterMarkup(t *testing.T) {
+	// Every key table carries a filter box that narrows the rows by the KEY
+	// column. It filters live (oninput) and hides non-matching rows.
+	if !strings.Contains(editorPageHTML, `class="keyfilter"`) ||
+		!strings.Contains(editorPageHTML, `class="keyfilter-input"`) {
+		t.Error("the key table has no filter box")
+	}
+	if !strings.Contains(editorPageHTML, "function applyKeyFilter(") {
+		t.Error("applyKeyFilter() is missing from the page")
+	}
+	if !strings.Contains(editorPageHTML, "keyFilter[container.id] = input.value") {
+		t.Error("the filter box is not wired to the live filter")
+	}
+	if !strings.Contains(editorPageHTML, "tr.classList.toggle('hidden', !hit)") {
+		t.Error("applyKeyFilter does not hide non-matching rows")
+	}
+	// The match is against the KEY cell, and the filter text survives a
+	// re-render (a save reloads the section).
+	if !strings.Contains(editorPageHTML, "tr.querySelector('td.k')") {
+		t.Error("the filter does not read the KEY column")
+	}
+	if !strings.Contains(editorPageHTML, "value=\"' + escAttr(keyFilter[container.id] || '') + '\"") {
+		t.Error("the filter box does not restore its previous text")
+	}
+}
+
 func TestEditorReloadMarkup(t *testing.T) {
 	// The motif view offers a reload button that posts to the reload endpoint
 	// and re-renders the breakdown afterwards.
@@ -1493,6 +1519,170 @@ func TestEditorApplyMotifValueRefresh(t *testing.T) {
 	}
 	if once != handle.offsetInit {
 		t.Errorf("a repeated apply drifted the sprite: %v then %v", once, handle.offsetInit)
+	}
+}
+
+// A [Select Info] title is a TextMapProperties: its text lives in a mode keyed
+// map (title.text.arcade, ...) the Lua script copies into the TextSprite when a
+// mode is picked (main.t_itemname: textImgSetText). Unlike the other text
+// properties, whose Text is a Go string, there is no single string for the
+// refill to read, so refreshing the snapshot after a title.offset / title.font
+// edit used to blank the sprite and make the title disappear until the mode was
+// picked again. The refill must keep the text while still applying the edit.
+func TestEditorSelectInfoTitleRefreshKeepsText(t *testing.T) {
+	oldMotif := sys.motif
+	oldBase := sys.baseDir
+	sys.baseDir = t.TempDir()
+	defer func() { sys.motif, sys.baseDir = oldMotif, oldBase }()
+
+	f, err := ini.LoadSources(editorINIOptions(), []byte("[Select Info]\n"+
+		"title.offset = 159, 19\n"+
+		"title.font = f-6x9.def, 0, 0, 255, 255, 255, 255, -1\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := &Motif{IniFile: f, Sff: newSff()}
+	sys.motif = *m
+	m.populateDataPointers()
+	m.applyPostParsePosAdjustments()
+
+	ts := m.SelectInfo.Title.TextSpriteData
+	if ts == nil {
+		t.Fatal("the [Select Info] title was not populated with a TextSprite")
+	}
+	// Stand in for the mode pick: the script sets the sprite's text.
+	// textImgSetText only touches text, so textInit keeps its load value.
+	ts.text = "ARCADE"
+	textInit := ts.textInit
+	beforeOffset := ts.offsetInit
+
+	for _, c := range []struct{ key, value string }{
+		{"title.offset", "100, 50"},
+		{"title.font", "1, 2, 1, 10, 20, 30, 255, -1"},
+	} {
+		mode, reason := editorMotifApplyClassify("Select Info", c.key)
+		if mode != editorApplyRefresh {
+			t.Errorf("%s is classified %v (%v), want it refreshed live", c.key, mode, reason)
+		}
+		if err := editorApplyMotifValue(m, "Select Info", c.key, c.value, false, mode); err != nil {
+			t.Fatalf("saving %s: %v", c.key, err)
+		}
+		if ts.text != "ARCADE" {
+			t.Errorf("after saving %s the title text is %q, want the mode text to survive", c.key, ts.text)
+		}
+		if ts.textInit != textInit {
+			t.Errorf("after saving %s textInit is %q, want %q", c.key, ts.textInit, textInit)
+		}
+	}
+	// The edits still reached the snapshot: the refill is not simply skipped.
+	if ts.offsetInit == beforeOffset {
+		t.Error("title.offset did not move the title TextSprite")
+	}
+	if want := [2]float32{100, 50}; ts.offsetInit != want {
+		t.Errorf("title.offset = %v, want %v", ts.offsetInit, want)
+	}
+	if ts.bank != 2 {
+		t.Errorf("title.font bank = %v, want the saved 2", ts.bank)
+	}
+}
+
+// The [Select Info] title is not the only map-backed text: record, the menu
+// items (ItemProperties) and the text input all keep their text in a mode keyed
+// map the script fills at runtime. The refill has to keep the text for every one
+// of them, while a plain string Text (e.g. [Option Info] title) must still
+// follow its struct field. Both share the setTextSpriteInto path.
+func TestEditorTextMapRefillKeepsText(t *testing.T) {
+	oldMotif, oldBase := sys.motif, sys.baseDir
+	sys.baseDir = t.TempDir()
+	defer func() { sys.motif, sys.baseDir = oldMotif, oldBase }()
+
+	f, err := ini.LoadSources(editorINIOptions(), []byte("[Select Info]\n"+
+		"record.offset = 10, 20\n"+
+		"[Option Info]\n"+
+		"title.offset = 30, 40\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := &Motif{IniFile: f, Sff: newSff()}
+	sys.motif = *m
+	m.populateDataPointers()
+	m.applyPostParsePosAdjustments()
+
+	// record: the script sets its text through start.f_getRecordText, which
+	// reads record.text[gameMode()].
+	record := m.SelectInfo.Record.TextSpriteData
+	if record == nil {
+		t.Fatal("the [Select Info] record was not populated with a TextSprite")
+	}
+	record.text = "RECORD 100"
+	if mode, _ := editorMotifApplyClassify("Select Info", "record.offset"); mode != editorApplyRefresh {
+		t.Fatalf("record.offset is classified %v, want refreshed", mode)
+	}
+	if err := editorApplyMotifValue(m, "Select Info", "record.offset", "50, 60", false, editorApplyRefresh); err != nil {
+		t.Fatalf("saving record.offset: %v", err)
+	}
+	if record.text != "RECORD 100" {
+		t.Errorf("record text = %q, want the script's text to survive the refill", record.text)
+	}
+
+	// [Option Info] title is a TextProperties: its Text is a Go string, so the
+	// refill must re-read it rather than blank it or keep a stale runtime value.
+	title := m.OptionInfo.Title.TextSpriteData
+	if title == nil {
+		t.Fatal("the [Option Info] title was not populated with a TextSprite")
+	}
+	m.OptionInfo.Title.Text = "OPTIONS"
+	title.text = "stale"
+	if mode, _ := editorMotifApplyClassify("Option Info", "title.offset"); mode != editorApplyRefresh {
+		t.Fatalf("option title.offset is classified %v, want refreshed", mode)
+	}
+	if err := editorApplyMotifValue(m, "Option Info", "title.offset", "70, 80", false, editorApplyRefresh); err != nil {
+		t.Fatalf("saving option title.offset: %v", err)
+	}
+	if title.text != "OPTIONS" {
+		t.Errorf("option title text = %q, want the string field OPTIONS", title.text)
+	}
+}
+
+// The position pass is global: it shifts every screen's TextSprites by their
+// container offset. It has to be idempotent, or editing one screen walks the
+// TextSprites of another — with the default title menu (menu.pos = 159, 158) a
+// single [Select Info] title.offset save pushes the menu item texts to y=316 on
+// a 320x240 screen, so the title menu comes up empty.
+func TestEditorSaveDoesNotWalkOtherScreenTexts(t *testing.T) {
+	oldMotif, oldBase := sys.motif, sys.baseDir
+	sys.baseDir = t.TempDir()
+	defer func() { sys.motif, sys.baseDir = oldMotif, oldBase }()
+
+	f, err := ini.LoadSources(editorINIOptions(), []byte("[Title Info]\n"+
+		"menu.pos = 159, 158\n"+
+		"[Select Info]\n"+
+		"title.offset = 159, 19\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := &Motif{IniFile: f, Sff: newSff()}
+	sys.motif = *m
+	// The INI is not mapped onto the struct here, so seed the field the pass reads.
+	m.TitleInfo.Menu.Pos = [2]float32{159, 158}
+	m.populateDataPointers()
+	m.applyPostParsePosAdjustments()
+
+	item := m.TitleInfo.Menu.Item.TextSpriteData
+	if item == nil {
+		t.Fatal("the title menu item was not populated with a TextSprite")
+	}
+	boot := item.offsetInit
+
+	mode, _ := editorMotifApplyClassify("Select Info", "title.offset")
+	if mode != editorApplyRefresh {
+		t.Fatalf("title.offset is classified %v, want refreshed", mode)
+	}
+	if err := editorApplyMotifValue(m, "Select Info", "title.offset", "100, 50", false, mode); err != nil {
+		t.Fatalf("saving title.offset: %v", err)
+	}
+	if item.offsetInit != boot {
+		t.Errorf("saving [Select Info] title.offset walked the title menu item from %v to %v", boot, item.offsetInit)
 	}
 }
 
@@ -1867,6 +2057,95 @@ func TestEditorRebuildSelectGridCallsLua(t *testing.T) {
 	// Without the script (or without the function) it stays a silent no-op.
 	sys.luaLState.SetGlobal("start", lua.LNil)
 	editorRebuildSelectGrid()
+}
+
+// The select title text comes from the Lua script's mode pick, not the struct,
+// so a title refresh has to ask the script to re-apply it; otherwise an edited
+// title.text.<mode> does not show until the player picks the mode again.
+func TestEditorRebuildSelectTitleCallsLua(t *testing.T) {
+	oldState := sys.luaLState
+	defer func() { sys.luaLState = oldState }()
+
+	sys.luaLState = lua.NewState()
+	defer sys.luaLState.Close()
+	called := false
+	mainTbl := sys.luaLState.NewTable()
+	mainTbl.RawSetString("f_refreshSelectTitle", sys.luaLState.NewFunction(func(l *lua.LState) int {
+		called = true
+		return 0
+	}))
+	sys.luaLState.SetGlobal("main", mainTbl)
+
+	editorRebuildSelectTitle()
+	if !called {
+		t.Error("a title refresh did not run main.f_refreshSelectTitle, so the mode text would stay stale")
+	}
+
+	// Without the script (or without the function) it stays a silent no-op.
+	sys.luaLState.SetGlobal("main", lua.LNil)
+	editorRebuildSelectTitle()
+}
+
+// A reload swaps in a fresh motif table, so its title TextSprite starts empty:
+// the reload path has to re-run the script builders, including the select
+// title refresh, or the title text stays blank.
+func TestEditorRebuildAfterReloadCallsLua(t *testing.T) {
+	oldState := sys.luaLState
+	defer func() { sys.luaLState = oldState }()
+
+	sys.luaLState = lua.NewState()
+	defer sys.luaLState.Close()
+	menus, grid, title := false, false, false
+	mainTbl := sys.luaLState.NewTable()
+	mainTbl.RawSetString("f_rebuildMenus", sys.luaLState.NewFunction(func(l *lua.LState) int {
+		menus = true
+		return 0
+	}))
+	mainTbl.RawSetString("f_refreshSelectTitle", sys.luaLState.NewFunction(func(l *lua.LState) int {
+		title = true
+		return 0
+	}))
+	sys.luaLState.SetGlobal("main", mainTbl)
+	startTbl := sys.luaLState.NewTable()
+	startTbl.RawSetString("f_updateGrid", sys.luaLState.NewFunction(func(l *lua.LState) int {
+		grid = true
+		return 0
+	}))
+	sys.luaLState.SetGlobal("start", startTbl)
+
+	editorRebuildAfterReload()
+	if !menus {
+		t.Error("the reload did not rebuild the motif menus")
+	}
+	if !grid {
+		t.Error("the reload did not rebuild the select grid")
+	}
+	if !title {
+		t.Error("the reload did not refresh the select title, so the title text would stay blank")
+	}
+}
+
+func TestEditorSelectTitleQuery(t *testing.T) {
+	for _, q := range []string{
+		"select_info.title.offset",
+		"select_info.title.font",
+		"select_info.title.text.arcade",
+		"select_info.title.layerno",
+	} {
+		if !editorSelectTitleQuery(q) {
+			t.Errorf("%s is not recognized as a select title key", q)
+		}
+	}
+	for _, q := range []string{
+		"select_info.record.offset",
+		"select_info.p1.name.offset",
+		"title_info.title.text",
+		"select_info",
+	} {
+		if editorSelectTitleQuery(q) {
+			t.Errorf("%s was mistaken for a select title key", q)
+		}
+	}
 }
 
 // Saving [Select Info] rows re-runs the position pass, which must not move the

@@ -886,6 +886,7 @@ type TextSprite struct {
 	hidewithbars   bool
 	// initial, unscaled values
 	offsetInit   [2]float32
+	offsetBase   [2]float32 // struct-declared Offset, before the position pass; makes the pass idempotent
 	scaleInit    [2]float32
 	windowInit   [4]float32
 	velocityInit [2]float32

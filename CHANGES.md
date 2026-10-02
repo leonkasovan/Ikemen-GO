@@ -2,6 +2,78 @@
 
 ## Features
 
+### fix: a motif reload blanked the `[Select Info]` title text
+`src/editor_server.go`, `src/editor_server_test.go`
+
+`POST /api/reload` swaps in a freshly parsed motif table, so its select title
+`TextSpriteData` is a new, empty sprite. The title text is copied into that
+sprite only when a game mode is picked (`main.f_setSelectTitle`), so a reload
+left the select title blank until the player picked a mode again — reported
+after saving an unrelated reload-only key (`[Select Info]
+p1.teammenu.item.cursor.offset`). The reload path now re-applies the current
+mode's text as part of its rebuild step, alongside the menu and select-grid
+rebuilds (`main.f_refreshSelectTitle`, the same call the live `title.*` refresh
+uses). Covered by `TestEditorRebuildAfterReloadCallsLua`.
+
+### feat: filter box on the editor key tables
+`src/editor_server.go`
+
+Each key table (Motif / Stage / Character) now has a filter box above it that
+narrows the visible rows by the KEY column. Matching is a case-insensitive
+substring, applied live as you type; only non-matching rows are hidden, so the
+Save / Del targets and the input focus are untouched. The filter text is kept
+per table, so a save or a reload that re-renders the section restores it.
+
+### fix: editing `[Select Info]` `title.offset` / `title.font` blanked the title
+`src/iniutils.go`, `src/editor_server_test.go`
+
+`[Select Info]` `title` is a `TextMapProperties`: its text is a mode keyed map
+(`title.text.arcade`, `title.text.versus`, ...) that the Lua script copies into
+the title's `*TextSprite` when a mode is picked (`main.t_itemname`:
+`textImgSetText`). The editor's live refresh rebuilds a screen's snapshots from
+the struct, and `setTextSpriteInto` read `Text` only when it was a Go string.
+For the map it read nothing and assigned the empty default back, so saving
+`title.offset` or `title.font` blanked the drawn title until a mode was picked
+again. The refill now leaves the sprite's `text` and `textInit` untouched when
+the owning `Text` is not a string, while still applying the offset / font.
+Covered by `TestEditorSelectInfoTitleRefreshKeepsText`.
+
+An audit of the other `TextMapProperties` owners found the same path: `record`
+(filled by `start.f_getRecordText` from `record.text[gameMode()]`), the menu
+items (`ItemProperties`), the text input, `[Title Info] connecting`,
+`[Hiscore Info] title` and `[Warning Info] text`. They are all covered by the
+same guard. `[Option Info] title` and `[Replay Info] title` are plain
+`TextProperties` (a Go string), so the refill still re-reads them, which
+`TestEditorTextMapRefillKeepsText` checks alongside `record`.
+
+### fix: saving a live motif key walked every screen's TextSprites off screen
+`src/motif.go`, `src/font.go`, `src/iniutils.go`, `src/editor_server_test.go`
+
+`applyPostParsePosAdjustments` is global: it shifts every screen's TextSprites
+by their container offset (`Menu.Pos` and friends). `Anim.SetPos` had been made
+idempotent (recomputed from the struct `Offset`), but the TextSprite half still
+read `offsetInit` back and added the shift on top of itself. Since the editor
+refills only the edited screen, every other screen's `offsetInit` already held
+the shift, so saving `[Select Info] title.offset` moved the title menu item
+texts from `(159, 158)` to `(318, 316)` on a 320x240 canvas — off screen, so the
+main menu came up with no text. `setTextSpriteInto` now records the struct
+declared offset in a new `TextSprite.offsetBase`, and the pass recomputes from
+it, making the pass idempotent for text as well. Covered by
+`TestEditorSaveDoesNotWalkOtherScreenTexts`.
+
+### fix: an edited `[Select Info]` `title.text.<mode>` now shows without re-picking the mode
+`external/script/main.lua`, `src/editor_server.go`, `src/editor_server_test.go`
+
+The select title's text is copied out of the mode keyed map when the player
+picks a mode (`main.t_itemname`). A live edit to `title.text.<mode>` synced the
+Lua motif table but left the sprite drawing the boot copy, so the change only
+appeared after re-entering the mode. The 16 mode pick sites now go through
+`main.f_setSelectTitle(key)`, which also records the key, and
+`main.f_refreshSelectTitle()` re-applies it. The editor calls it after any
+`[Select Info] title.*` refresh (`editorRebuildSelectTitle`), so offset / font /
+layerno and the mode text all reach the running select screen. Covered by
+`TestEditorRebuildSelectTitleCallsLua` and `TestEditorSelectTitleQuery`.
+
 ### feat: built-in editor web service (`-httpservice`, port 6700) and Editor menu
 `src/editor_server.go`, `src/main.go`, `src/script.go`,
 `external/script/main.lua`, `src/resources/defaultMotif.ini`
