@@ -358,6 +358,11 @@ func loadConfig(def string) (*Config, error) {
 			if sectionName == ini.DEFAULT_SECTION {
 				continue
 			}
+			// The editor keeps its own state (pinned keys) in the user
+			// config: not engine configuration, so don't warn for it.
+			if editorOwnsConfigSection(sectionName) {
+				continue
+			}
 			for _, key := range section.Keys() {
 				keyName := key.Name()
 				value, dup := iniFirstValue(key)

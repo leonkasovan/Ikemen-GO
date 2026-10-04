@@ -2,6 +2,148 @@
 
 ## Features
 
+### perf: editor read path — memoised schema, gated header regex, cached `[Info]`
+`src/editor_server.go`, `src/editor_server_test.go`
+
+The editor's read endpoints were profiled and three hot spots removed. All three
+are behaviour preserving: no response shape, no classification and no file
+editing semantics change. Measured on the editor read path (`make test-editor`
+toolchain, Ryzen 5 3500U, `static desktop` tags):
+
+- **The schema walk was rebuilt on every call.**
+  `editorMotifStructure` reflects over `reflect.TypeOf(Motif{})`, so its result
+  depends only on the compiled type — yet it returned all 36 sections / 9,577
+  keys fresh on every call, and `/api/motif` called it twice (once via
+  `editorMotifSections`, once for the response's `structure` field), with
+  `/api/status` paying a third for a `len()`. At **6.8 ms, 1.98 MB and 11,094
+  allocations each**, it was the single most expensive step of the request. It is
+  now memoised behind a `sync.Once` — mirroring the existing
+  `editorDefaultsOnce` / `editorDefaultsINI` pair — for **24 ns and zero
+  allocations**. The walk moved to `buildEditorMotifStructure`; the cached slice
+  is shared and documented as read-only.
+- **The header regex ran on every line of a .def.** `editorRawSections` called
+  `editorHeaderPattern.FindStringSubmatch(trimmed)` and only *then* tested
+  `strings.HasPrefix(trimmed, "[")`. The pattern is anchored and the line is
+  already trimmed, so it cannot match anything that does not open with `[` —
+  the cheap test just ran second. Inverting the order keeps the regex off the
+  keys, comments and blank lines that make up the bulk of a motif:
+  **9.26 ms → 0.84 ms on a 6k line .def (11x, 24 → 208 MB/s)**,
+  411 KB → 405 KB per call. The function runs twice per `/api/motif` request.
+- **`editorReadInfo` re-read and re-parsed every .def it touched.** It is
+  called once per `select.def` entry and once per file found in the `stages/`
+  scan, so `/api/characters` and `/api/stages` re-parsed every character and
+  stage on every visit, and again on the next one. Measured at **13.7 ms, 2.95 MB
+  and 20,934 allocations per call** on a 6k line .def — over a second and
+  ~300 MB of garbage for a 100 character roster, to read three keys out of
+  `[Info]`. Results are now memoised against the file's mtime and size, with the
+  same validation and LRU eviction style as the `.sff` cache
+  (`editorInfoCacheMax`, 256 entries). Only successful parses are cached, so a
+  missing, unreadable or `[Info]`-less file keeps returning the zero value
+  exactly as before. `editorSffStat` was generalised to `editorFileStat` and
+  shared by both caches.
+
+Covered by `TestEditorRawSectionsHeaderGate` (the gate is checked against an
+ungated reference over the real motif plus `[`, `[]]`, `[a]b]`, indented and
+commented headers), `TestEditorMotifStructureIsMemoised`,
+`TestEditorReadInfoCache` (hit and invalidation) and
+`TestEditorReadInfoCacheBound`.
+
+Not changed here, pending a decision on the wire format: `/api/motif` also
+returns `structure`, which the page never reads, and `sections`, of which it
+reads only `.length` — roughly 1.3 MB of the ~2 MB response is redundant, and
+the tree duplicates every key the sections already carry. Trimming those two
+fields would cut the payload by about 62%, but `structure` may be part of the
+API for external tooling, so it should become opt-in (`?structure=1`) rather
+than be dropped.
+
+### fix: editor service hardening (read caps, atomic writes, cache bounds, reload locking)
+`src/editor_server.go`, `src/editor_server_test.go`
+
+A review pass over the built-in editor fixed six issues:
+
+- **Dead reflection branch.** `editorMotifKeyDerivedPtrs` checked
+  `owner.Kind() == reflect.Map` inside a branch already guarded by
+  `owner.Kind() != reflect.Struct`, so the case was unreachable; removed, with
+  `TestEditorMotifKeyDerivedPtrsMapDescent` pinning the map descent the loader
+  uses.
+- **Unbounded file reads.** `editorHandleFile` / `editorReadINISections` /
+  `editorMotifINI` read any in-sandbox file whole, so a multi-gigabyte blob was
+  an OOM. Reads now stat first against `editorMaxReadFile` (16 MiB) and only
+  accept an extension allowlist; `GET /api/file` reports 413 / 415. The audit
+  was then extended to every remaining handler: `/api/stages` and
+  `/api/characters` (`LoadText` on select.def), the save-side read in
+  `editorEditINIFile`, the pins store (`editorSetPinFile`, `GET /api/pins`),
+  the engine config / motif lookups, and `editorReadInfo` are all stat'ed
+  against the cap before they read.
+- **Non-atomic writes.** `editorWriteTextFile` and `editorSetPinFile` now go
+  through `editorWriteFileAtomic` (temp file in the same directory + rename),
+  so a crash mid-save keeps the previous file instead of a truncated one.
+- **Stale, unbounded SFF cache.** The decoded `.sff` cache is now LRU bounded
+  (`editorSffCacheMax`) and validated against the file's mtime / size, and the
+  encoded PNG of each sprite is cached on the entry instead of re-encoded per
+  request.
+- **Re-entrant reload.** `editorReloadMotifSync` takes `editorSaveMu` itself;
+  the core is split into `editorReloadMotifLocked` for `editorHandleSave`, which
+  already holds the lock, removing the re-entrancy wait.
+- **Dead code.** `editorKeyByState` (a no-op) and `editorSectionHeaders` (a test
+  only wrapper) are gone; `editorKeyStateRank` is now the single source of the
+  row order, restoring the stable defined/missing/unknown grouping the test
+  expects.
+
+The mutating endpoints also share one `editorReadJSONRequest` preamble (method +
+`X-Editor-Request` + body cap) instead of repeating it in three handlers.
+
+### fix: editor saves to `[Select Info]` stage geometry now reload
+`src/editor_server.go`, `src/editor_server_test.go`, `docs/ikemen_editor.md`
+
+Saving `stage.pos`, `stage.offset` / `stage.scale` or the `offset` / `scale`
+of the `active` / `active2` / `done` stage texts applied live but left the
+stage block drawing the boot copy, so the edit only showed after a restart.
+Those tails reload through a new scope table (`editorReloadTails`: one row
+per section prefix, matched on the key's last segment), deliberately scoped
+instead of a blanket `*.offset` / `*.scale` / `*.pos` / `*.font` rule — the
+same tails apply live anywhere else (every `[Title Info]` key), so the
+blanket rule would demote hundreds of working keys. A save to a listed tail
+auto-reloads. The rest of the stage block keeps its classification
+(`stage.font`, `stage.move.snd`, …). Covered by
+`TestEditorMotifReloadTailKey` and the extended
+`TestEditorAutoReloadCoversReloadKeys`; the `[Select Info]` counts in
+`docs/ikemen_editor.md` move with the keys (121 / 282 live — 35 assigned, 86
+refreshed, 161 reload).
+
+### feat: pinned editor keys (`[Editor Pins]` in the engine config)
+`src/editor_server.go`, `src/editor_server_test.go`, `docs/ikemen_editor.md`
+
+Every key table (Motif / Stage / Character) now leads with a Pin column
+(◈ pinned, ◇ unpinned). Clicking it toggles the mark and pinned rows float
+to the top of their section; the key filter still applies to all rows. Pins
+are keyed by file, section and key and persist in a new `[Editor Pins]`
+section of the engine config (`save/config.ini`, `-config` aware), one
+`path|section|key = 1` line per pin, written with a line-based edit so the
+rest of the config is untouched. New endpoints: `GET /api/pins` lists them,
+`POST /api/pins` toggles one (needs the `X-Editor-Request` header like
+`/api/save`). The engine loader skips the section (`editorOwnsConfigSection`)
+instead of warning per key that the Config struct has no such field.
+Covered by `TestEditorPinsFile`, `TestEditorHandlePins` and
+the Pin assertions in `TestEditorPageElementIDs`.
+
+### fix: editor saves to `[Select Info]` cursor `active` / `done` / `preview` visuals now reload
+`src/editor_server.go`, `src/editor_server_test.go`, `docs/ikemen_editor.md`
+
+Saving `p1.cursor.active.scale` (and the other visuals under `cursor.active`,
+`cursor.done` and `cursor.preview` — `anim`, `spr`, `offset`, `facing`,
+`scale`, …, for `p1`–`p8`) reported a live refresh but changed nothing on
+screen: those maps hold a single implicit entry, so the query has no map key
+(`select_info.p1.cursor.active.scale`), and `editorMotifKeyDerivedPtrs` fell
+through to the broad snapshot list, which looks refillable. The walk now
+descends into the map element when the next part names one of its fields, so
+the `*Anim`-only element classifies as reload and the save auto-reloads like
+the `face` / `face2` visuals already did. The plain `done.snd` (a `[2]int32`,
+no snapshot) classifies as live. Covered by the extended
+`TestEditorAutoReloadCoversReloadKeys`; the `[Select Info]` counts in
+`docs/ikemen_editor.md` move with the keys (130 / 282 live — 36 assigned, 94
+refreshed, 152 reload).
+
 ### fix: a motif reload blanked the `[Select Info]` title text
 `src/editor_server.go`, `src/editor_server_test.go`
 
@@ -162,16 +304,18 @@ in a **built in WebView2 window** on Windows
 (`github.com/jchv/go-webview2`, pure Go, no cgo, embedded `WebView2Loader.dll`),
 with the profile kept in `save/editor-webview`. The window lives on its own
 locked OS thread, reuses itself when another view is picked, and the browser is
-only used as a fallback (other platforms, or when the WebView2 runtime is
-missing). Lua globals: `openEditor(view)`, `editorURL(view)` and
+only used as a fallback (when the WebView2 runtime is missing, or on other
+platforms). Lua globals: `openEditor(view)`, `editorURL(view)` and
 `closeEditor()`. `openEditor()` returns as soon as the editor has been asked to
   open: the window is created on its own thread, and waiting for it used to block
-  the engine thread for up to 20s on a cold start, freezing the game while the
-  menu item was picked. Its return value is therefore "the editor was asked to
-  open", and only false when the service could not start at all. A second request
-  while a cold start is in flight joins that one instead of opening a competing
-  window, and the window size is read on the engine thread before the goroutine
-  starts, since the game window it follows can change on a resolution switch.
+  the engine thread while a cold window came up, freezing the game for up to
+  20s on a cold start. Its return value is therefore "the editor was asked to
+  open", and only false when the service could not start at all (an error from
+  `editorWebViewOpen`, which the Windows binding returns when the runtime is
+  missing rather than creating a window). A second request while a cold start is
+  in flight joins that one instead of opening a competing window, and the window
+  size is read on the engine thread before the goroutine starts, since the game
+  window it follows can change on a resolution switch.
   The service is bound to loopback, writes require the
 `X-Editor-Request` header (blocks cross-site writes) and reject any path outside
 the game folder.

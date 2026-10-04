@@ -56,6 +56,15 @@ const (
 	EditorPort = 6700
 	// editorMaxBody caps the size of request bodies accepted by the editor API.
 	editorMaxBody = 1 << 20
+	// editorMaxReadFile caps the size of a file the editor reads whole (through
+	// /api/file or the motif / INI helpers). A stat check refuses anything
+	// larger before it is read, so a huge in-sandbox blob cannot OOM the
+	// process. 16 MiB fits any real .def / .ini / motif with room to spare.
+	editorMaxReadFile = 16 << 20
+	// editorMaxSFF caps the size of a .sff the editor decodes for the sprite
+	// preview. A .sff is read and decoded whole, so a huge one is refused the
+	// same way.
+	editorMaxSFF = 256 << 20
 )
 
 var (
@@ -71,6 +80,15 @@ var (
 
 	editorDefaultsOnce sync.Once
 	editorDefaultsINI  *ini.File
+
+	// editorStructureOnce memoises editorMotifStructure. The walk reflects over
+	// reflect.TypeOf(Motif{}), so its result depends only on the compiled type
+	// and is identical for every call, yet it is the entire response schema:
+	// recomputing it twice per /api/motif was the single most expensive step of
+	// the read path (~7 ms and ~2 MB of garbage each time). The cached slice is
+	// shared, so callers must treat it as read-only.
+	editorStructureOnce sync.Once
+	editorStructure     []editorSchemaSectionJSON
 )
 
 // startEditorHTTPService starts the editor HTTP service exactly once and returns
@@ -94,6 +112,7 @@ func startEditorHTTPService() string {
 	mux.HandleFunc("/api/sff", editorHandleSFF)
 	mux.HandleFunc("/api/save", editorHandleSave)
 	mux.HandleFunc("/api/reload", editorHandleReload)
+	mux.HandleFunc("/api/pins", editorHandlePins)
 
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -268,9 +287,12 @@ func editorMotifPath() string {
 		name = strings.TrimSpace(v)
 	}
 	if name == "" {
-		if cfg, _, err := LoadINIFile(editorConfigPath(), editorINIOptions()); err == nil && cfg != nil {
-			if sec, err := cfg.GetSection("Config"); err == nil {
-				name = editorINIKeyValue(sec, "Motif")
+		cfgPath := editorConfigPath()
+		if _, err := editorFileWithinCap(cfgPath, editorMaxReadFile); err == nil {
+			if cfg, _, err := LoadINIFile(cfgPath, editorINIOptions()); err == nil && cfg != nil {
+				if sec, err := cfg.GetSection("Config"); err == nil {
+					name = editorINIKeyValue(sec, "Motif")
+				}
 			}
 		}
 	}
@@ -297,9 +319,11 @@ func editorDefaultINI() *ini.File {
 func editorSelectDefPath() string {
 	name := ""
 	if motif := editorMotifPath(); motif != "" {
-		if f, _, err := LoadINIFile(motif, editorINIOptions()); err == nil && f != nil {
-			if sec, err := f.GetSection("Files"); err == nil {
-				name = editorINIKeyValue(sec, "select")
+		if _, err := editorFileWithinCap(motif, editorMaxReadFile); err == nil {
+			if f, _, err := LoadINIFile(motif, editorINIOptions()); err == nil && f != nil {
+				if sec, err := f.GetSection("Files"); err == nil {
+					name = editorINIKeyValue(sec, "select")
+				}
 			}
 		}
 	}
@@ -475,6 +499,29 @@ func editorWriteError(w http.ResponseWriter, code int, format string, a ...any) 
 		"ok":    false,
 		"error": fmt.Sprintf(format, a...),
 	})
+}
+
+// editorReadJSONRequest is the shared preamble of the mutating endpoints: it
+// enforces POST (when requirePost), the X-Editor-Request header that forces a
+// CORS preflight, and a body within editorMaxBody, then returns the raw JSON
+// body. It reports false after writing the error response, so a handler just
+// returns when the second result is false.
+func editorReadJSONRequest(w http.ResponseWriter, r *http.Request, requirePost bool) ([]byte, bool) {
+	if requirePost && r.Method != http.MethodPost {
+		editorWriteError(w, http.StatusMethodNotAllowed, "POST required")
+		return nil, false
+	}
+	// The custom header forces a CORS preflight, blocking cross-site writes.
+	if r.Header.Get("X-Editor-Request") == "" {
+		editorWriteError(w, http.StatusForbidden, "missing X-Editor-Request header")
+		return nil, false
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, editorMaxBody))
+	if err != nil {
+		editorWriteError(w, http.StatusBadRequest, "unable to read body: %v", err)
+		return nil, false
+	}
+	return body, true
 }
 
 // openExternalURL launches the platform default handler for the given URL.
@@ -758,11 +805,20 @@ func editorRuntimeSchema(name string) *editorSchemaSectionJSON {
 	}
 }
 
-// editorMotifStructure walks the Motif struct and reports the INI layout that
-// motif.go is able to assign: section -> dotted key -> field type/default.
+// editorMotifStructure returns the memoised result of buildEditorMotifStructure.
+// The returned slice is shared by every caller and must not be modified.
+func editorMotifStructure() []editorSchemaSectionJSON {
+	editorStructureOnce.Do(func() {
+		editorStructure = buildEditorMotifStructure()
+	})
+	return editorStructure
+}
+
+// buildEditorMotifStructure walks the Motif struct and reports the INI layout
+// that motif.go is able to assign: section -> dotted key -> field type/default.
 // It also covers the two parsers that are not struct driven: the [Music] key
 // splitter and the map fields whose section name comes from the file.
-func editorMotifStructure() []editorSchemaSectionJSON {
+func buildEditorMotifStructure() []editorSchemaSectionJSON {
 	out := []editorSchemaSectionJSON{}
 	t := reflect.TypeOf(Motif{})
 	for i := 0; i < t.NumField(); i++ {
@@ -919,13 +975,19 @@ func editorRawSections(text string) (headers map[string]string, bodies map[strin
 	}
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		if m := editorHeaderPattern.FindStringSubmatch(trimmed); m != nil && strings.HasPrefix(trimmed, "[") {
-			flush()
-			name = strings.TrimSpace(m[1])
-			norm = editorNormSection(name)
-			headers[norm] = name
-			body = body[:0]
-			continue
+		// editorHeaderPattern is anchored and the line is already trimmed, so it
+		// can only ever match when the line opens with '['. Gating on that cheap
+		// test keeps the regex off the keys, comments and blank lines that make
+		// up the bulk of a .def, which is ~12x faster on a 6k line motif.
+		if strings.HasPrefix(trimmed, "[") {
+			if m := editorHeaderPattern.FindStringSubmatch(trimmed); m != nil {
+				flush()
+				name = strings.TrimSpace(m[1])
+				norm = editorNormSection(name)
+				headers[norm] = name
+				body = body[:0]
+				continue
+			}
 		}
 		if norm != "" {
 			body = append(body, line)
@@ -935,16 +997,13 @@ func editorRawSections(text string) (headers map[string]string, bodies map[strin
 	return headers, bodies
 }
 
-// editorSectionHeaders returns every section name of a .def spelled the way
-// the file spells it. go-ini lowercases section names when InsensitiveSections
-// is on, which would show "title info" instead of "Title Info".
-func editorSectionHeaders(text string) map[string]string {
-	headers, _ := editorRawSections(text)
-	return headers
-}
-
 // editorReadINISections reads every section of an INI file, preserving order.
+// The size is checked first, so the helper is safe to call on any in-sandbox
+// path.
 func editorReadINISections(path string) ([]editorSectionJSON, error) {
+	if _, err := editorFileWithinCap(path, editorMaxReadFile); err != nil {
+		return nil, err
+	}
 	f, text, err := LoadINIFile(path, editorINIOptions())
 	if err != nil {
 		return nil, err
@@ -994,6 +1053,10 @@ func editorSectionsFromINI(path string, f *ini.File, text string) []editorSectio
 func editorMotifINI() (*ini.File, string) {
 	path := editorMotifPath()
 	if path == "" {
+		return nil, ""
+	}
+	if _, err := editorFileWithinCap(path, editorMaxReadFile); err != nil {
+		LogMessage("[Editor] refusing to read motif %v: %v", path, err)
 		return nil, ""
 	}
 	f, text, err := LoadINIFile(path, editorINIOptions())
@@ -1154,7 +1217,7 @@ func editorBuildSection(name, title, field string, sch *editorSchemaSectionJSON,
 	}
 	// Group by state so the table can be scanned top down: what the file sets,
 	// then what falls back to the engine default, then what the engine ignores.
-	// Inside a group the order the schema declared is kept.
+	// Inside a group the order the schema declared is kept (a stable sort).
 	sort.SliceStable(section.Keys, func(i, j int) bool {
 		return editorKeyStateRank(section.Keys[i]) < editorKeyStateRank(section.Keys[j])
 	})
@@ -1670,6 +1733,70 @@ func editorExistingFile(p string) string {
 	return ""
 }
 
+// editorFileWithinCap reports the size of the existing file at p, refusing it
+// when it is larger than max. The size is stat'ed before anything is read, so a
+// multi gigabyte in-sandbox blob (a log, a movie, an archive) is rejected
+// rather than loaded into memory.
+func editorFileWithinCap(p string, max int64) (int64, error) {
+	info, err := os.Stat(filepath.FromSlash(p))
+	if err != nil {
+		return 0, err
+	}
+	if info.IsDir() {
+		return 0, fmt.Errorf("not a file: %v", p)
+	}
+	if info.Size() > max {
+		return 0, fmt.Errorf("file is too large to read (%d bytes, limit %d): %v", info.Size(), max, p)
+	}
+	return info.Size(), nil
+}
+
+// editorTextExtensions are the file types the editor reads as text through
+// /api/file and the INI helpers. Restricting the extension keeps the endpoint
+// from parsing arbitrary binaries as INI and from reading huge media files.
+var editorTextExtensions = map[string]bool{
+	".def": true, ".ini": true, ".txt": true, ".cfg": true,
+	".air": true, ".cmd": true, ".cns": true, ".st": true,
+	".json": true, ".lua": true, ".md": true,
+}
+
+// editorReadableTextFile resolves p inside the game folder and checks it is an
+// existing text-like file within editorMaxReadFile, returning its absolute
+// path. It is the single gate for every whole-file read of the editor.
+func editorReadableTextFile(p string) (string, error) {
+	abs, err := editorSandboxPath(p)
+	if err != nil {
+		return "", err
+	}
+	existing := editorExistingFile(abs)
+	if existing == "" {
+		return "", fmt.Errorf("file not found: %v", p)
+	}
+	if !editorTextExtensions[strings.ToLower(filepath.Ext(existing))] {
+		return "", fmt.Errorf("unsupported file type: %v", filepath.Base(existing))
+	}
+	if _, err := editorFileWithinCap(existing, editorMaxReadFile); err != nil {
+		return "", err
+	}
+	return filepath.FromSlash(existing), nil
+}
+
+// editorFileReadStatus maps an editorReadableTextFile error to the HTTP status
+// the API reports it with.
+func editorFileReadStatus(err error) int {
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "not found"):
+		return http.StatusNotFound
+	case strings.Contains(msg, "too large"):
+		return http.StatusRequestEntityTooLarge
+	case strings.Contains(msg, "unsupported file type"):
+		return http.StatusUnsupportedMediaType
+	default:
+		return http.StatusBadRequest
+	}
+}
+
 // editorResolveDefPath resolves a character/stage reference from select.def to a
 // relative path inside the game folder (empty when it cannot be found).
 func editorResolveDefPath(def, dir string) string {
@@ -1707,10 +1834,94 @@ func editorUnquote(v string) string {
 	return v
 }
 
+// editorInfoCacheMax bounds the [Info] cache. The entries are a few dozen bytes
+// each, so the cap only exists to keep a long session that browses many .def
+// files from growing without bound.
+const editorInfoCacheMax = 256
+
+// editorInfoEntry is one cached [Info] block plus the identity it was read
+// from. Like the .sff cache, the mtime and size are re-checked on every lookup,
+// so editing a .def on disk invalidates the entry instead of serving stale
+// metadata.
+type editorInfoEntry struct {
+	info  editorInfoJSON
+	mtime time.Time
+	size  int64
+	used  int64
+}
+
+// editorInfoCache memoises editorReadInfo. It is called once per select.def
+// entry and once per file found in the stages/ scan, so a /api/characters or
+// /api/stages request otherwise re-reads and re-parses every def it touches --
+// measured at ~13.7 ms and ~3 MB of garbage per call on a 6k line .def, i.e.
+// over a second and ~300 MB for a 100 character roster. Repeated requests then
+// re-paid it again. Entries are validated against the file and evicted LRU.
+var editorInfoCache = struct {
+	mu   sync.Mutex
+	m    map[string]*editorInfoEntry
+	tick int64
+}{m: map[string]*editorInfoEntry{}}
+
+// editorInfoCacheLookup returns the cached [Info] for path when it still
+// matches the file on disk, dropping it otherwise.
+func editorInfoCacheLookup(path string) *editorInfoJSON {
+	mtime, size, err := editorFileStat(path)
+	if err != nil {
+		return nil
+	}
+	editorInfoCache.mu.Lock()
+	defer editorInfoCache.mu.Unlock()
+	e := editorInfoCache.m[path]
+	if e == nil {
+		return nil
+	}
+	if e.size != size || !e.mtime.Equal(mtime) {
+		delete(editorInfoCache.m, path)
+		return nil
+	}
+	editorInfoCache.tick++
+	e.used = editorInfoCache.tick
+	return &e.info
+}
+
+// editorInfoCachePut stores one [Info] block and evicts the least recently
+// used entry once the cache is over its cap.
+func editorInfoCachePut(path string, info editorInfoJSON) {
+	mtime, size, err := editorFileStat(path)
+	if err != nil {
+		return
+	}
+	editorInfoCache.mu.Lock()
+	defer editorInfoCache.mu.Unlock()
+	editorInfoCache.tick++
+	editorInfoCache.m[path] = &editorInfoEntry{
+		info: info, mtime: mtime, size: size, used: editorInfoCache.tick,
+	}
+	for len(editorInfoCache.m) > editorInfoCacheMax {
+		var oldest string
+		var oldestUsed int64
+		for k, e := range editorInfoCache.m {
+			if oldest == "" || e.used < oldestUsed {
+				oldest, oldestUsed = k, e.used
+			}
+		}
+		delete(editorInfoCache.m, oldest)
+	}
+}
+
 // editorReadInfo reads the [Info] block of a def file (best effort).
+//
+// Only a successful parse is cached, so a missing, unreadable or [Info]-less
+// file keeps returning the zero value until it changes, exactly as before.
 func editorReadInfo(path string) editorInfoJSON {
 	info := editorInfoJSON{}
 	if path == "" {
+		return info
+	}
+	if cached := editorInfoCacheLookup(path); cached != nil {
+		return *cached
+	}
+	if _, err := editorFileWithinCap(path, editorMaxReadFile); err != nil {
 		return info
 	}
 	f, _, err := LoadINIFile(filepath.FromSlash(path), editorINIOptions())
@@ -1724,6 +1935,7 @@ func editorReadInfo(path string) editorInfoJSON {
 	info.Name = editorUnquote(editorINIKeyValue(sec, "name"))
 	info.Author = editorUnquote(editorINIKeyValue(sec, "author"))
 	info.Localcoord = editorUnquote(editorINIKeyValue(sec, "localcoord"))
+	editorInfoCachePut(path, info)
 	return info
 }
 
@@ -1827,6 +2039,10 @@ func editorListDefFiles(dir string, limit int) []string {
 // editorHandleStages serves the stage list built from select.def.
 func editorHandleStages(w http.ResponseWriter, r *http.Request) {
 	sel := editorSelectDefPath()
+	if _, err := editorFileWithinCap(sel, editorMaxReadFile); err != nil {
+		editorWriteError(w, editorFileReadStatus(err), "unable to read %v: %v", sel, err)
+		return
+	}
 	text, err := LoadText(sel)
 	if err != nil {
 		editorWriteError(w, http.StatusNotFound, "unable to read %v: %v", sel, err)
@@ -1862,13 +2078,9 @@ func editorHandleFile(w http.ResponseWriter, r *http.Request) {
 	if rel == "" {
 		rel = editorMotifPath()
 	}
-	abs, err := editorSandboxPath(rel)
+	abs, err := editorReadableTextFile(rel)
 	if err != nil {
-		editorWriteError(w, http.StatusBadRequest, "%v", err)
-		return
-	}
-	if editorExistingFile(abs) == "" {
-		editorWriteError(w, http.StatusNotFound, "file not found: %v", rel)
+		editorWriteError(w, editorFileReadStatus(err), "%v", err)
 		return
 	}
 	sections, err := editorReadINISections(abs)
@@ -1887,28 +2099,149 @@ func editorHandleFile(w http.ResponseWriter, r *http.Request) {
 // Sprite preview (/api/sff)
 // ---------------------------------------------------------------------------
 
-// editorSffCache holds the .sff files the editor decoded for preview, so paging
-// through sprites does not re-read the whole file every time. Sprites are
-// immutable once loaded, and the pixel data is kept on the CPU for that reason.
-var editorSffCache = struct {
-	mu sync.Mutex
-	m  map[string]*Sff
-}{m: map[string]*Sff{}}
+// editorSffCacheMax is how many decoded .sff files are kept at once. A decoded
+// file holds its pixel data for the process lifetime, so the cache is bounded
+// and evicts the least recently used entry past this.
+const editorSffCacheMax = 8
 
-// editorLoadSff returns the decoded .sff at an absolute path, loading it on
-// first use.
-func editorLoadSff(abs string) (*Sff, error) {
+// editorSffEntry is one decoded .sff plus the on-disk identity it was read
+// from. The mtime and size are checked on every lookup, so editing a .sff on
+// disk invalidates the entry instead of serving stale sprites.
+type editorSffEntry struct {
+	sff   *Sff
+	mtime time.Time
+	size  int64
+	used  int64
+	// png caches the encoded PNG of every sprite served so far, so paging
+	// back to a sprite does not re-encode it. The entry is rebuilt when the
+	// file changes, which drops the PNGs with it.
+	png map[[2]uint16][]byte
+}
+
+// editorSffCache holds the .sff files the editor decoded for preview, so paging
+// through sprites does not re-read the whole file every time. Entries are
+// invalidated when the file changes and evicted LRU once the cap is reached.
+var editorSffCache = struct {
+	mu   sync.Mutex
+	m    map[string]*editorSffEntry
+	tick int64
+}{m: map[string]*editorSffEntry{}}
+
+// editorFileStat reads the identity a cache entry is validated against.
+func editorFileStat(abs string) (time.Time, int64, error) {
+	info, err := os.Stat(abs)
+	if err != nil {
+		return time.Time{}, 0, err
+	}
+	return info.ModTime(), info.Size(), nil
+}
+
+// editorSffCacheLookup returns the cached entry when it still matches the file
+// on disk, dropping it otherwise.
+func editorSffCacheLookup(abs string) *editorSffEntry {
+	mtime, size, err := editorFileStat(abs)
+	if err != nil {
+		return nil
+	}
 	editorSffCache.mu.Lock()
 	defer editorSffCache.mu.Unlock()
-	if s := editorSffCache.m[abs]; s != nil {
-		return s, nil
+	e := editorSffCache.m[abs]
+	if e == nil {
+		return nil
+	}
+	if e.size != size || !e.mtime.Equal(mtime) {
+		delete(editorSffCache.m, abs)
+		return nil
+	}
+	editorSffCache.tick++
+	e.used = editorSffCache.tick
+	return e
+}
+
+// editorSffCachePut stores a decoded .sff and evicts the least recently used
+// entry when the cache is over its cap.
+func editorSffCachePut(abs string, s *Sff) {
+	mtime, size, err := editorFileStat(abs)
+	if err != nil {
+		return
+	}
+	editorSffCache.mu.Lock()
+	defer editorSffCache.mu.Unlock()
+	editorSffCache.tick++
+	editorSffCache.m[abs] = &editorSffEntry{
+		sff: s, mtime: mtime, size: size, used: editorSffCache.tick,
+		png: map[[2]uint16][]byte{},
+	}
+	for len(editorSffCache.m) > editorSffCacheMax {
+		var oldest string
+		var oldestUsed int64
+		for k, e := range editorSffCache.m {
+			if oldest == "" || e.used < oldestUsed {
+				oldest, oldestUsed = k, e.used
+			}
+		}
+		delete(editorSffCache.m, oldest)
+	}
+}
+
+// editorLoadSff returns the decoded .sff at an absolute path, loading it on
+// first use and reloading it when the file on disk has changed.
+func editorLoadSff(abs string) (*Sff, error) {
+	e, err := editorSffCacheEntry(abs)
+	if err != nil {
+		return nil, err
+	}
+	return e.sff, nil
+}
+
+// editorSffCacheEntry returns the live cache entry for abs, loading the file
+// when it is missing or stale.
+func editorSffCacheEntry(abs string) (*editorSffEntry, error) {
+	if e := editorSffCacheLookup(abs); e != nil {
+		return e, nil
+	}
+	if _, err := editorFileWithinCap(abs, editorMaxSFF); err != nil {
+		return nil, err
 	}
 	s, err := loadSffEx(abs, true, false, false, true)
 	if err != nil {
 		return nil, err
 	}
-	editorSffCache.m[abs] = s
-	return s, nil
+	editorSffCachePut(abs, s)
+	e := editorSffCacheLookup(abs)
+	if e == nil {
+		// The file changed between the load and the lookup: fall back to the
+		// freshly decoded copy without caching it.
+		return &editorSffEntry{sff: s, png: map[[2]uint16][]byte{}}, nil
+	}
+	return e, nil
+}
+
+// editorSffSpritePNG returns the encoded PNG of one sprite, encoding it on
+// first use and caching the bytes on the entry.
+func editorSffSpritePNG(e *editorSffEntry, key [2]uint16, spr *Sprite) ([]byte, error) {
+	editorSffCache.mu.Lock()
+	if e.png == nil {
+		e.png = map[[2]uint16][]byte{}
+	}
+	if b := e.png[key]; b != nil {
+		editorSffCache.mu.Unlock()
+		return b, nil
+	}
+	editorSffCache.mu.Unlock()
+	img := editorSffSpriteImage(e.sff, spr)
+	if img == nil {
+		return nil, nil
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		return nil, err
+	}
+	b := buf.Bytes()
+	editorSffCache.mu.Lock()
+	e.png[key] = b
+	editorSffCache.mu.Unlock()
+	return b, nil
 }
 
 // editorSffSpriteImage renders one sprite to an image. 8 bit sprites are
@@ -2001,30 +2334,35 @@ func editorHandleSFF(w http.ResponseWriter, r *http.Request) {
 		editorWriteError(w, http.StatusNotFound, "file not found: %v", rel)
 		return
 	}
-	sff, err := editorLoadSff(abs)
+	entry, err := editorSffCacheEntry(abs)
 	if err != nil {
-		editorWriteError(w, http.StatusInternalServerError, "unable to read %v: %v", rel, err)
+		code := http.StatusInternalServerError
+		if strings.Contains(err.Error(), "too large") {
+			code = http.StatusRequestEntityTooLarge
+		}
+		editorWriteError(w, code, "unable to read %v: %v", rel, err)
 		return
 	}
-	spr := sff.sprites[[2]uint16{group, number}]
+	key := [2]uint16{group, number}
+	spr := entry.sff.sprites[key]
 	if spr == nil {
 		editorWriteError(w, http.StatusNotFound, "no sprite %v,%v in %v", group, number, rel)
 		return
 	}
-	img := editorSffSpriteImage(sff, spr)
-	if img == nil {
-		editorWriteError(w, http.StatusNotFound, "sprite %v,%v of %v has no image data", group, number, rel)
+	// PNG is in the standard library and every browser renders it in an <img>.
+	// The encoded bytes are cached, so paging back to a sprite is free.
+	data, err := editorSffSpritePNG(entry, key, spr)
+	if err != nil {
+		editorWriteError(w, http.StatusInternalServerError, "unable to encode %v,%v of %v: %v", group, number, rel, err)
 		return
 	}
-	// PNG is in the standard library and every browser renders it in an <img>.
-	var buf bytes.Buffer
-	if err := png.Encode(&buf, img); err != nil {
-		editorWriteError(w, http.StatusInternalServerError, "unable to encode %v,%v of %v: %v", group, number, rel, err)
+	if data == nil {
+		editorWriteError(w, http.StatusNotFound, "sprite %v,%v of %v has no image data", group, number, rel)
 		return
 	}
 	w.Header().Set("Content-Type", "image/png")
 	w.Header().Set("Cache-Control", "no-store")
-	_, _ = w.Write(buf.Bytes())
+	_, _ = w.Write(data)
 }
 
 // editorSffIndex parses a sprite coordinate (group or number) as a uint16.
@@ -2144,14 +2482,6 @@ func editorMotifKeyDerivedPtrs(query string) []reflect.Type {
 		}
 		declStruct, fieldType, ok := editorDeclaringField(owner, parts[i].name)
 		if !ok {
-			if owner.Kind() == reflect.Map {
-				// The part names a map key; the one after it is an element field.
-				if i+1 < len(parts) {
-					owner = owner.Elem()
-					i++
-					continue
-				}
-			}
 			// The engine does not model this name, so nothing can apply it.
 			return editorDerivedPtrs
 		}
@@ -2163,6 +2493,23 @@ func editorMotifKeyDerivedPtrs(query string) []reflect.Type {
 				owner = fieldType.Elem()
 				i++ // the map key
 				continue
+			}
+			// Default-key form: the map holds a single implicit entry and
+			// the next part names a field of the element
+			// (p1.cursor.active.scale, p1.cursor.done.snd, ... for p1-p8).
+			// Descend without skipping so the Anim-only element classifies
+			// as reload instead of refresh.
+			if i+1 < len(parts) {
+				elem := fieldType.Elem()
+				for elem.Kind() == reflect.Ptr {
+					elem = elem.Elem()
+				}
+				if elem.Kind() == reflect.Struct {
+					if _, _, ok := editorDeclaringField(elem, parts[i+1].name); ok {
+						owner = fieldType.Elem()
+						continue
+					}
+				}
 			}
 			return editorDerivedPtrs
 		}
@@ -2507,6 +2854,42 @@ func editorMotifMenuBuildKey(query string) bool {
 	return false
 }
 
+// editorReloadTails forces a reload for position and text-geometry tails
+// under the listed query prefixes (trailing dot included). Those values only
+// reach the screen through a reload: a live apply would leave the block
+// drawing the boot copy. Scoped per section on purpose: the same tails apply
+// live anywhere else, through the snapshot refill and the position pass
+// (every [Title Info] key, for example), so a blanket *.offset / *.scale /
+// *.pos / *.font rule would demote hundreds of working keys. A new scope is
+// one table row.
+var editorReloadTails = []struct {
+	prefix string
+	tails  []string
+	reason string
+}{
+	{"select_info.stage.", []string{"pos", "offset", "scale"},
+		"the select stage block is laid out when the motif loads"},
+}
+
+// editorMotifReloadTailKey reports whether a key ends in one of the
+// reload-forcing tails of its section (editorReloadTails): stage.pos, the
+// stage offset / scale, the offset / scale of the active / active2 / done
+// stage texts, and whatever later rows add.
+func editorMotifReloadTailKey(query string) (bool, string) {
+	for _, rt := range editorReloadTails {
+		if !strings.HasPrefix(query, rt.prefix) {
+			continue
+		}
+		tail := query[strings.LastIndex(query, ".")+1:]
+		for _, t := range rt.tails {
+			if tail == t {
+				return true, rt.reason
+			}
+		}
+	}
+	return false, ""
+}
+
 // editorCallLuaMethod runs a zero argument method of a global Lua table on the
 // engine thread. A missing table or method (an older script, or a unit test
 // with no Lua state) is a no-op, so callers do not have to guard.
@@ -2640,6 +3023,12 @@ func editorMotifApplyClassify(section, key string) (editorMotifApplyMode, string
 	// copy.
 	if editorMotifMenuBuildKey(query) {
 		return editorApplyReload, "the motif menus are built once, and a reload rebuilds them"
+	}
+	// Position and text-geometry tails that only reach the screen through a
+	// reload (editorReloadTails): a live apply would leave the block drawing
+	// the boot copy.
+	if ok, reason := editorMotifReloadTailKey(query); ok {
+		return editorApplyReload, reason
 	}
 	// A value a load time pointer snapshots (TextProperties, AnimationProperties,
 	// ...) is drawn from that snapshot, not from the field, so the snapshot has
@@ -2901,18 +3290,8 @@ type editorSaveRequestJSON struct {
 // editorHandleSave writes a single key back into a .def / .ini file, keeping the
 // rest of the file (ordering, comments, indentation) untouched.
 func editorHandleSave(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		editorWriteError(w, http.StatusMethodNotAllowed, "POST required")
-		return
-	}
-	// The custom header forces a CORS preflight, blocking cross-site writes.
-	if r.Header.Get("X-Editor-Request") == "" {
-		editorWriteError(w, http.StatusForbidden, "missing X-Editor-Request header")
-		return
-	}
-	body, err := io.ReadAll(io.LimitReader(r.Body, editorMaxBody))
-	if err != nil {
-		editorWriteError(w, http.StatusBadRequest, "unable to read body: %v", err)
+	body, ok := editorReadJSONRequest(w, r, true)
+	if !ok {
 		return
 	}
 	req := editorSaveRequestJSON{}
@@ -2964,8 +3343,9 @@ func editorHandleSave(w http.ResponseWriter, r *http.Request) {
 		// The key only takes effect once the motif is reloaded, so run that
 		// reload now instead of leaving it as a manual step. When the reload
 		// is refused (a match is running, ...) the save keeps its needsReload
-		// answer and the user reloads later, as before.
-		if _, err := editorReloadMotifSync(); err == nil {
+		// answer and the user reloads later, as before. editorHandleSave holds
+		// editorSaveMu here, so the no-lock core is the one to call.
+		if _, err := editorReloadMotifLocked(); err == nil {
 			applied, needsReload = true, false
 			reason = ""
 		} else {
@@ -3043,10 +3423,20 @@ func editorMotifReloadBlocked() string {
 //
 // It must run on the engine thread (see editorRunOnMainThread): the call runs
 // Lua code, and the game loop reads the motif every frame. The call is
-// protected, matching the nested statusLFunc calls in system.go. Callers hold
-// editorSaveMu (see editorHandleReload): the reload re-reads the file a save
-// just wrote, so it has to run after the write lands.
+// protected, matching the nested statusLFunc calls in system.go.
+//
+// editorReloadMotifSync takes editorSaveMu so a reload always runs after the
+// write it follows. Code that already holds the lock (editorHandleSave) must
+// call editorReloadMotifLocked instead; taking the lock again there would
+// deadlock, since Go's sync.Mutex is not re-entrant.
 func editorReloadMotifSync() (path string, err error) {
+	editorSaveMu.Lock()
+	defer editorSaveMu.Unlock()
+	return editorReloadMotifLocked()
+}
+
+// editorReloadMotifLocked is the reload core. Callers must hold editorSaveMu.
+func editorReloadMotifLocked() (path string, err error) {
 	out, err := editorRunOnEngineThreadTimeout(editorReloadTimeout, func() editorApplyOutcome {
 		if reason := editorMotifReloadBlocked(); reason != "" {
 			return editorApplyOutcome{reason: reason}
@@ -3093,25 +3483,244 @@ func editorReloadMotifSync() (path string, err error) {
 	return editorMotifPath(), nil
 }
 
+// ---------------------------------------------------------------------------
+// Pinned keys ([Editor Pins] in the engine config)
+// ---------------------------------------------------------------------------
+
+// editorPinsSection is the config.ini section holding the editor's pinned
+// keys. One line per pin, "path|section|key = 1": the triple itself is the
+// INI key, so pinning appends a line and unpinning deletes it, with no
+// numbering to keep in sync. The engine's config loader skips this section
+// (editorOwnsConfigSection) instead of warning for every key.
+const editorPinsSection = "Editor Pins"
+
+// editorOwnsConfigSection reports whether a config.ini section belongs to
+// the editor rather than the engine. The loader skips those instead of
+// warning that the Config struct has no such field.
+func editorOwnsConfigSection(name string) bool {
+	return strings.EqualFold(strings.TrimSpace(name), editorPinsSection)
+}
+
+// editorPinsMu serializes pin toggles. A toggle reads the config, edits it
+// line by line and writes it back, so two concurrent toggles could lose one.
+var editorPinsMu sync.Mutex
+
+// editorPinID joins a key's address into the single INI key stored for it.
+func editorPinID(path, section, key string) string {
+	return strings.TrimSpace(path) + "|" + strings.TrimSpace(section) + "|" + strings.TrimSpace(key)
+}
+
+// editorNormPinID normalizes a stored pin for comparison. Sections and keys
+// match the way the engine parsers do (case insensitively); paths the same
+// way, so Windows casing never duplicates a pin.
+func editorNormPinID(id string) string {
+	return strings.ToLower(strings.TrimSpace(id))
+}
+
+// editorParsePins reads the pinned triples out of raw config text. Only the
+// [Editor Pins] section is looked at; everything else passes through
+// untouched by the line edit below.
+func editorParsePins(text string) [][3]string {
+	out := [][3]string{}
+	in := false
+	for _, line := range strings.Split(text, "\n") {
+		t := strings.TrimSpace(line)
+		if strings.HasPrefix(t, "[") {
+			name := t
+			if j := strings.Index(name, "]"); j >= 0 {
+				name = name[1:j]
+			}
+			in = strings.EqualFold(strings.TrimSpace(name), editorPinsSection)
+			continue
+		}
+		if !in || t == "" || strings.HasPrefix(t, ";") {
+			continue
+		}
+		left := t
+		if i := strings.Index(left, "="); i >= 0 {
+			left = strings.TrimSpace(left[:i])
+		}
+		parts := strings.Split(left, "|")
+		if len(parts) != 3 {
+			continue
+		}
+		for i := range parts {
+			parts[i] = strings.TrimSpace(parts[i])
+			if parts[i] == "" {
+				break
+			}
+		}
+		if parts[0] == "" || parts[1] == "" || parts[2] == "" {
+			continue
+		}
+		out = append(out, [3]string{parts[0], parts[1], parts[2]})
+	}
+	return out
+}
+
+// editorSetPinFile pins or unpins one key in the config at cfgPath with a
+// line based edit, so the rest of the file (ordering, comments, spacing) is
+// preserved byte for byte. It reports whether the file changed.
+func editorSetPinFile(cfgPath, path, section, key string, pinned bool) (bool, error) {
+	id := editorPinID(path, section, key)
+	if strings.TrimSpace(path) == "" || strings.TrimSpace(section) == "" || strings.TrimSpace(key) == "" {
+		return false, fmt.Errorf("path, section and key are required")
+	}
+	norm := editorNormPinID(id)
+	if _, err := editorFileWithinCap(cfgPath, editorMaxReadFile); err != nil && !os.IsNotExist(err) {
+		return false, err
+	}
+	raw, err := os.ReadFile(cfgPath)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return false, err
+		}
+		if !pinned {
+			return false, nil
+		}
+		if err := os.MkdirAll(filepath.Dir(cfgPath), 0755); err != nil {
+			return false, err
+		}
+		raw = nil
+	}
+	lines := strings.Split(string(raw), "\n")
+	head, end := -1, len(lines)
+	for i, ln := range lines {
+		t := strings.TrimSpace(ln)
+		if !strings.HasPrefix(t, "[") {
+			continue
+		}
+		name := t
+		if j := strings.Index(name, "]"); j >= 0 {
+			name = name[1:j]
+		} else {
+			continue
+		}
+		if head < 0 && strings.EqualFold(strings.TrimSpace(name), editorPinsSection) {
+			head = i
+			continue
+		}
+		if head >= 0 {
+			end = i
+			break
+		}
+	}
+	found := -1
+	if head >= 0 {
+		for i := head + 1; i < end; i++ {
+			left := strings.TrimSpace(lines[i])
+			if left == "" || strings.HasPrefix(left, ";") {
+				continue
+			}
+			if j := strings.Index(left, "="); j >= 0 {
+				left = strings.TrimSpace(left[:j])
+			}
+			if editorNormPinID(left) == norm {
+				found = i
+				break
+			}
+		}
+	}
+	switch {
+	case pinned && found >= 0:
+		return false, nil
+	case pinned && head < 0:
+		text := string(raw)
+		if text != "" && !strings.HasSuffix(text, "\n") {
+			text += "\n"
+		}
+		text += "[" + editorPinsSection + "]\n" + id + " = 1\n"
+		if err := editorWriteFileAtomic(cfgPath, []byte(text)); err != nil {
+			return false, err
+		}
+		return true, nil
+	case pinned:
+		lines = append(lines[:end], append([]string{id + " = 1"}, lines[end:]...)...)
+	case found < 0:
+		return false, nil
+	default:
+		lines = append(lines[:found], lines[found+1:]...)
+	}
+	if err := editorWriteFileAtomic(cfgPath, []byte(strings.Join(lines, "\n"))); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// editorPinRequestJSON is the payload of POST /api/pins.
+type editorPinRequestJSON struct {
+	Path    string `json:"path"`
+	Section string `json:"section"`
+	Key     string `json:"key"`
+	Pinned  bool   `json:"pinned"`
+}
+
+// editorHandlePins serves the pinned keys backing the editor's pin column:
+// GET lists them, POST pins or unpins one in [Editor Pins] of the engine
+// config, so the marks survive a restart.
+func editorHandlePins(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		pins := [][3]string{}
+		cfgPath := editorConfigPath()
+		if _, err := editorFileWithinCap(cfgPath, editorMaxReadFile); err != nil && !os.IsNotExist(err) {
+			editorWriteError(w, editorFileReadStatus(err), "unable to read pins: %v", err)
+			return
+		}
+		if raw, err := os.ReadFile(cfgPath); err == nil {
+			pins = editorParsePins(string(raw))
+		} else if !os.IsNotExist(err) {
+			editorWriteError(w, http.StatusInternalServerError, "unable to read pins: %v", err)
+			return
+		}
+		out := make([]map[string]string, 0, len(pins))
+		for _, p := range pins {
+			out = append(out, map[string]string{"path": p[0], "section": p[1], "key": p[2]})
+		}
+		editorWriteJSON(w, map[string]any{"ok": true, "pins": out})
+	case http.MethodPost:
+		body, ok := editorReadJSONRequest(w, r, false)
+		if !ok {
+			return
+		}
+		req := editorPinRequestJSON{}
+		if err := json.Unmarshal(body, &req); err != nil {
+			editorWriteError(w, http.StatusBadRequest, "invalid JSON: %v", err)
+			return
+		}
+		if strings.TrimSpace(req.Path) == "" || strings.TrimSpace(req.Section) == "" || strings.TrimSpace(req.Key) == "" {
+			editorWriteError(w, http.StatusBadRequest, "path, section and key are required")
+			return
+		}
+		if _, err := editorSandboxPath(req.Path); err != nil {
+			editorWriteError(w, http.StatusBadRequest, "invalid path: %v", err)
+			return
+		}
+		editorPinsMu.Lock()
+		changed, err := editorSetPinFile(editorConfigPath(), req.Path, req.Section, req.Key, req.Pinned)
+		editorPinsMu.Unlock()
+		if err != nil {
+			editorWriteError(w, http.StatusInternalServerError, "unable to save pin: %v", err)
+			return
+		}
+		editorWriteJSON(w, map[string]any{"ok": true, "pinned": req.Pinned, "changed": changed})
+	default:
+		editorWriteError(w, http.StatusMethodNotAllowed, "GET or POST required")
+	}
+}
+
 // editorHandleReload reloads the configured motif from disk into the running
 // engine, so edits to reload-only keys (background definitions, [Music],
 // [Files] asset paths, localcoord, ...) show up without restarting the game.
 // Only safe outside a match; use the Lua reload() global for mid-match char /
 // stage / fight screen refreshes instead.
 func editorHandleReload(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		editorWriteError(w, http.StatusMethodNotAllowed, "POST required")
+	if _, ok := editorReadJSONRequest(w, r, true); !ok {
 		return
 	}
-	// The custom header forces a CORS preflight, blocking cross-site reloads.
-	if r.Header.Get("X-Editor-Request") == "" {
-		editorWriteError(w, http.StatusForbidden, "missing X-Editor-Request header")
-		return
-	}
-	// Serialize with saves: a reload re-reads the file a save just wrote, so
-	// it has to run after the write lands and its live apply.
-	editorSaveMu.Lock()
-	defer editorSaveMu.Unlock()
+	// editorReloadMotifSync takes editorSaveMu itself: a reload re-reads the
+	// file a save just wrote, so it has to run after the write lands and its
+	// live apply.
 	path, err := editorReloadMotifSync()
 	if err != nil {
 		msg := err.Error()
@@ -3136,6 +3745,9 @@ func editorHandleReload(w http.ResponseWriter, r *http.Request) {
 // editorEditINIFile updates (or removes, when value is nil) a single key inside
 // a section, editing the file line by line.
 func editorEditINIFile(path, section, key string, value *string) error {
+	if _, err := editorFileWithinCap(path, editorMaxReadFile); err != nil {
+		return err
+	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return err
@@ -3230,16 +3842,53 @@ func editorEditINIFile(path, section, key string, value *string) error {
 	return editorWriteTextFile(path, strings.Join(lines, "\n"), crlf)
 }
 
+// editorWriteFileAtomic writes data to path through a temporary file in the
+// same directory and an atomic rename, so a crash or a full disk mid-write
+// leaves the previous contents intact instead of a truncated file. The
+// original permission bits are kept.
+func editorWriteFileAtomic(path string, data []byte) error {
+	mode := os.FileMode(0644)
+	if info, err := os.Stat(path); err == nil {
+		mode = info.Mode().Perm()
+	}
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp*")
+	if err != nil {
+		return fmt.Errorf("unable to create a temporary file next to %v: %w", path, err)
+	}
+	tmpName := tmp.Name()
+	cleanup := func() {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+	}
+	if _, err := tmp.Write(data); err != nil {
+		cleanup()
+		return fmt.Errorf("unable to write %v: %w", path, err)
+	}
+	if err := tmp.Chmod(mode); err != nil {
+		cleanup()
+		return fmt.Errorf("unable to set the mode of %v: %w", path, err)
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpName)
+		return fmt.Errorf("unable to close %v: %w", path, err)
+	}
+	// os.Rename replaces an existing target on every supported platform
+	// (Windows included, through MoveFileEx with REPLACE_EXISTING), so the
+	// swap is atomic from a reader's point of view.
+	if err := os.Rename(tmpName, path); err != nil {
+		_ = os.Remove(tmpName)
+		return fmt.Errorf("unable to replace %v: %w", path, err)
+	}
+	return nil
+}
+
 // editorWriteTextFile writes text back, restoring the original line endings.
 func editorWriteTextFile(path, text string, crlf bool) error {
 	if crlf {
 		text = strings.ReplaceAll(text, "\n", "\r\n")
 	}
-	mode := os.FileMode(0644)
-	if info, err := os.Stat(path); err == nil {
-		mode = info.Mode().Perm()
-	}
-	if err := os.WriteFile(path, []byte(text), mode); err != nil {
+	if err := editorWriteFileAtomic(path, []byte(text)); err != nil {
 		return fmt.Errorf("unable to write %v: %w", path, err)
 	}
 	return nil
@@ -3248,6 +3897,10 @@ func editorWriteTextFile(path, text string, crlf bool) error {
 // editorHandleCharacters serves the character list built from select.def.
 func editorHandleCharacters(w http.ResponseWriter, r *http.Request) {
 	sel := editorSelectDefPath()
+	if _, err := editorFileWithinCap(sel, editorMaxReadFile); err != nil {
+		editorWriteError(w, editorFileReadStatus(err), "unable to read %v: %v", sel, err)
+		return
+	}
 	text, err := LoadText(sel)
 	if err != nil {
 		editorWriteError(w, http.StatusNotFound, "unable to read %v: %v", sel, err)
@@ -3306,6 +3959,7 @@ td.k{font-family:Consolas,monospace;color:#b7c4dc;white-space:nowrap}
 td.v input{width:100%;min-width:180px;background:#0e1117;border:1px solid var(--line);color:var(--fg);border-radius:4px;padding:3px 6px;font-family:Consolas,monospace}
 td.v select{width:100%;min-width:180px;background:#0e1117;border:1px solid var(--line);color:var(--fg);border-radius:4px;padding:3px 6px;font-family:Consolas,monospace}
 td.a{white-space:nowrap}
+td.pin{white-space:nowrap;width:1%}
 button.mini{background:#22303f;border:1px solid var(--line);color:var(--fg);border-radius:4px;padding:3px 8px;cursor:pointer}
 button.mini:hover{border-color:var(--acc)}
 .tag{font-size:10px;padding:1px 5px;border-radius:4px;border:1px solid var(--line);color:var(--dim)}
@@ -3477,6 +4131,26 @@ function badge(k) {
 // re-render (after a save or a reload) keeps what the user filtered on.
 // containers are addressed by their element id (motif-keys, stage-keys, ...).
 var keyFilter = {};
+// pins holds the pinned keys by "path\nsection\nkey", so a marked row floats
+// to the top of its table. It is filled from /api/pins at startup and kept
+// across re-renders; the config file on disk is the source of truth.
+// lastRender keeps each key table's last arguments, so a pin toggle can
+// re-render the same section without losing the filter text.
+var pins = {};
+var lastRender = {};
+function pinId(path, section, key) {
+	return path + '\n' + section + '\n' + key;
+}
+// loadPins fetches the pins stored in [Editor Pins] of the engine config. It
+// never rejects: without pins the tables simply render unpinned.
+function loadPins() {
+	return api('/api/pins').then(function (p) {
+		pins = {};
+		((p && p.pins) || []).forEach(function (pin) {
+			pins[pinId(pin.path, pin.section, pin.key)] = true;
+		});
+	}).catch(function () { pins = {}; });
+}
 // keyFilterMatch reports whether a lowercased KEY cell matches the lowercased
 // filter text. A "*" is a wildcard for any (possibly empty) run, so
 // "font*offset" finds every font offset key: the pieces around each "*"
@@ -3515,16 +4189,26 @@ function applyKeyFilter(container) {
 // view has a schema behind every key so the state says something, while a
 // .def opened from the Stage view has none. Type and default never had a
 // column of their own: they ride along as a tooltip on the key name and on
-// the value control, so the table stays three columns wide. A filter box
-// above the table narrows the rows by the KEY column's text.
+// the value control. The first column pins the row: pinned keys float to the
+// top and the mark is stored in [Editor Pins] of the engine config. A filter
+// box above the table narrows the rows by the KEY column's text.
 function renderKeys(container, path, section, keys, reload, plain) {
 	if (!keys.length) {
 		container.innerHTML = '<div class="small">no keys</div>';
 		return;
 	}
+	// Pinned rows float to the top. Stable by construction: each group keeps
+	// the order the service sent. The indexes below address this order, and
+	// the same order is cached for the pin toggle's re-render.
+	var pinnedRows = [], restRows = [];
+	keys.forEach(function (k) {
+		(pins[pinId(path, section, k.key)] ? pinnedRows : restRows).push(k);
+	});
+	keys = pinnedRows.concat(restRows);
+	lastRender[container.id] = { path: path, section: section, keys: keys, reload: reload, plain: plain };
 	var h = plain
-		? ['<table><thead><tr><th>Key</th><th>Value</th><th></th></tr></thead><tbody>']
-		: ['<table><thead><tr><th>Key</th><th>State</th><th>Value</th><th></th></tr></thead><tbody>'];
+		? ['<table><thead><tr><th>Pin</th><th>Key</th><th>Value</th><th></th></tr></thead><tbody>']
+		: ['<table><thead><tr><th>Pin</th><th>Key</th><th>State</th><th>Value</th><th></th></tr></thead><tbody>'];
 	keys.forEach(function (k, i) {
 		// Tooltip for the key cell and the value control: "type — default X",
 		// or just the type when the engine has no fixed default. A blank
@@ -3540,6 +4224,10 @@ function renderKeys(container, path, section, keys, reload, plain) {
 		var tip = meta;
 		if (def) { tip += (tip ? ' — default ' : 'default ') + def; }
 		h.push('<tr>');
+		var isPin = !!pins[pinId(path, section, k.key)];
+		h.push('<td class="pin"><button class="mini" data-pin="' + i + '" title="'
+			+ (isPin ? 'pinned — click to unpin' : 'pin this key') + '">'
+			+ (isPin ? '◈' : '◇') + '</button></td>');
 		h.push('<td class="k"' + (tip ? ' title="' + escAttr(tip) + '"' : '') + '>' + esc(k.key) + '</td>');
 		if (!plain) {
 			h.push('<td>' + badge(k) + '</td>');
@@ -3611,6 +4299,26 @@ function renderKeys(container, path, section, keys, reload, plain) {
 	container.onclick = function (ev) {
 		var b = ev.target.closest('button');
 		if (!b) { return; }
+		if (b.getAttribute('data-pin') !== null) {
+			var pidx = parseInt(b.getAttribute('data-pin'), 10);
+			var pk = keys[pidx];
+			var want = !pins[pinId(path, section, pk.key)];
+			fetch('/api/pins', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', 'X-Editor-Request': '1' },
+				body: JSON.stringify({ path: path, section: section, key: pk.key, pinned: want })
+			}).then(function (r) { return r.json(); }).then(function (res) {
+				if (!res.ok) {
+					toast(res.error || 'pin failed', true);
+					return;
+				}
+				if (res.pinned) { pins[pinId(path, section, pk.key)] = true; }
+				else { delete pins[pinId(path, section, pk.key)]; }
+				var c = lastRender[container.id];
+				if (c) { renderKeys(container, c.path, c.section, c.keys, c.reload, c.plain); }
+			}).catch(function (e) { toast(String(e), true); });
+			return;
+		}
 		var idx = parseInt(b.getAttribute('data-save') !== null ? b.getAttribute('data-save') : b.getAttribute('data-del'), 10);
 		var k = keys[idx];
 		var value = el('kv-' + idx).value;
@@ -4085,10 +4793,13 @@ function init() {
 			+ '  port ' + s.port + (s.serviceFromCommandLine ? ' (-httpservice)' : '');
 	}).catch(function () { el('status').textContent = 'offline'; });
 	initSff();
-	loadMotif();
 	el('motif-reload').onclick = reloadMotif;
-	var m = /[?&]view=([a-z]+)/.exec(window.location.search);
-	setView(m ? m[1] : 'motif');
+	// Pins first: the tables read them while rendering.
+	loadPins().then(function () {
+		loadMotif();
+		var m = /[?&]view=([a-z]+)/.exec(window.location.search);
+		setView(m ? m[1] : 'motif');
+	});
 }
 if (document.readyState === 'loading') {
 	document.addEventListener('DOMContentLoaded', init);

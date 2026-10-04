@@ -1,23 +1,24 @@
 # Ikemen-GO Built-in Editor Reference
 
 Local-only web editor for motif / stage / character definitions.
-Starts at boot with `-httpservice` or on demand from the title `Editor` menu.
+Starts at boot with `-httpservice` or on demand from the title `Editor` menu (`external/script/main.lua` `main.f_editor`).
 Listens on `127.0.0.1:6700`. Writes require the `X-Editor-Request` header
-and are jailed to the game folder (`editorSandboxPath`).
-
-Implementation: `src/editor_server.go`, `src/editor_webview_windows.go`
-(`github.com/jchv/go-webview2`, profile in `save/editor-webview`),
-`external/script/main.lua` (`main.f_editor`), Lua globals `openEditor(view)`,
-`editorURL(view)`, `closeEditor()`. Menu entries:
-`menu.itemname.editor*` in `src/resources/defaultMotif.ini`
-(`deploy/data/ikemen1`, `ikemen-480`; the mugen motif does not declare them).
+and are jailed to the game folder (`editorSandboxPath`). The built-in window lives
+on Windows (`src/editor_webview_windows.go`, `github.com/jchv/go-webview2`,
+profile in `save/editor-webview`) and other platforms fall back to the default
+browser (`src/editor_webview_other.go`).Implemented in `src/editor_server.go`, `src/editor_webview_windows.go`,
+`src/editor_webview_other.go`; the UI is embedded in the binary as
+`editorPageHTML`. The Lua entry point is `main.f_editor` in
+`external/script/main.lua` (`editorURL(view)` builds the URL with
+`editorNormalizeView`, `openEditor(view)` starts the service on demand and opens
+the window; `closeEditor()` destroys the window when one is open).
 
 ---
 
 ## API
 
 - `GET /` — single-page UI (Motif / Stage / Character tabs).
-- `GET /api/status` — version, port, motif, select.def, webview state.
+- `GET /api/status` — version, port, motif, select.def, webview state, and the two refresh endpoints.
 - `GET /api/motif` — motif broken down structurally: every section expanded
   with dotted keys from the `Motif` struct (`src/motif.go`, type + `default`
   tag), current value, defined / missing / unknown state; `<name>BGdef`
@@ -32,12 +33,26 @@ alone. Every key table has a filter box above it that narrows the visible rows
 - `GET /api/stages`, `GET /api/characters` — select.def `[Characters]` /
   `[ExtraStages]` entries (params, `[Info]`), mirroring
   `external/script/main.lua` parsing.
-- `GET /api/file?path=…` — any `.def` / `.ini` in the game folder as a
-  section tree through the same renderer.
+- `GET /api/file?path=…` — any text file with an allowlisted extension
+  (`.def .ini .txt .cfg .air .cmd .cns .st .json .lua .md`) in the game folder
+  as a section tree through the same renderer; other extensions are refused
+  (`415`) and oversized files are refused (`413`).
+- `GET /api/reload-req` — same as `/api/reload` but the service also runs the
+  interpreter bootstrap Lua; for external tooling only.
 - `GET /api/sff?file=…&group=…&number=…` — one sprite as PNG (private
-  `loadSffEx` decode with `keepPixels`, cached).
+  `loadSffEx` decode with `keepPixels`, cached; the loaded SFF is kept in a
+  small LRU cache keyed by path and validated by mtime / size).
 - `POST /api/save` — `{path, section, key, value, remove}`; line-based edit
   preserving order, comments, indentation, and inline-comment spacing.
+- `POST /api/save-req` — same as `/api/save` but the service also runs the
+  interpreter bootstrap Lua; for external tooling only.
+- `GET /api/pins`, `POST /api/pins` — pinned keys. Every key table leads
+  with a Pin column (◈ pinned, ◇ unpinned); pinned rows float to the top of
+  their section, the rest keeps its order. Toggling posts
+  `{path, section, key, pinned}` (needs the `X-Editor-Request` header) and
+  stores one `path|section|key = 1` line per pin in `[Editor Pins]` of the
+  engine config, so the marks survive a restart. The section is written with
+  a line-based edit and the engine otherwise ignores it.
 - `POST /api/reload` — reload the configured motif from disk into the running
   engine, so edits to reload-only keys show up without restarting the game.
   Runs the Lua `loadMotif()` global on the engine thread (re-parse, swap
@@ -59,6 +74,47 @@ alone. Every key table has a filter box above it that narrows the visible rows
 Enumerated keys render as combo boxes (`trans`, `projection`, `textwrap`,
 `banktype`, `space`, `savedata`, `scalemode`, `scalefilter`, font `type`,
 BG layer `type`, BG controller `type`); unknown values kept as `(custom)`.
+
+- Web view state from `editorWebViewState()`: `open:<title>`, `opening`,
+  `ready`, `no-runtime`, `unsupported` (other platforms).
+
+---
+
+## File access limits
+
+Every whole-file read the service performs is gated, so a request cannot pull
+an arbitrary amount of data into memory, and every write lands atomically.
+
+**Read caps.** The file size is `stat`ed before anything is read; a file over
+the cap is refused with `413 Request Entity Too Large` instead of being loaded.
+(`src/editor_server.go`)
+
+- `editorMaxReadFile` (16 MiB) — INI / def / select.def / engine-config text
+  reads: `/api/file`, `/api/stages`, `/api/characters`, `/api/save`, the pins
+  store, and the internal motif / select.def / `[Info]` lookups.
+- `editorMaxSFF` (256 MiB) — a sprite container opened by `/api/sff`.
+- `editorMaxBody` (1 MiB) — a JSON request body (`editorReadJSONRequest`, via
+  `io.LimitReader`).
+
+The text helpers share one gate: `editorFileWithinCap` (existing file + size
+check) and `editorReadableTextFile` (sandbox resolve + existence + extension
+allowlist + cap). `editorFileReadStatus` maps their errors to the HTTP status:
+`404` not found, `413` too large, `415` unsupported type, `400` otherwise.
+
+**Extension allowlist.** `/api/file` and the text helpers only read files whose
+extension is in `editorTextExtensions` — `.def .ini .txt .cfg .air .cmd .cns
+.st .json .lua .md`. Anything else is refused with `415 Unsupported Media
+Type`, so the endpoint cannot parse an arbitrary binary as INI. Engine-resolved
+paths (the configured motif, select.def, `[Info]` defs, the engine config) are
+not re-checked against the allowlist; they are only capped.
+
+**Atomic writes.** `editorWriteFileAtomic` writes to a temporary file in the
+same directory, restores the target's mode, then renames it over the target
+(`os.Rename` replaces an existing file on every supported platform, Windows
+included). A reader therefore never sees a half-written file, and a failed
+write leaves the original untouched. `editorWriteTextFile` (used by `/api/save`)
+and the pin editor (`/api/pins`) both go through it, preserving ordering,
+comments, and line endings.
 
 ---
 
@@ -169,16 +225,16 @@ Every key applies (`applied=true, needsReload=false`):
 
 ---
 
-## `[Select Info]` — 146 / 282 live
+## `[Select Info]` — 121 / 282 live
 
 Classified against `SelectInfoProperties` (`src/motif.go:659`).
 
-**assigned (32):** `rows`, `columns`, `wrapping`, `pos`, `showemptyboxes`,
+**assigned (35):** `rows`, `columns`, `wrapping`, `pos`, `showemptyboxes`,
 `moveoveremptyboxes`, `coopqueue`, `cell.size`, `cell.spacing`,
 `cell.random.switchtime`, `p1`–`p4.cursor.startcell` / `tween.factor` /
-`move.snd`, `p1`–`p4.random.move.snd`, `p2.cursor.blink`,
-`random.move.snd.cancel`, `stage.move.snd`, `stage.done.snd`, `cancel.snd`,
-`p1/p2.name.spacing`, `stage.pos`.
+`move.snd`, `p1`–`p4.cursor.done.snd`, `p1`–`p4.random.move.snd`,
+`p2.cursor.blink`, `random.move.snd.cancel`, `stage.move.snd`,
+`stage.done.snd`, `cancel.snd`, `p1/p2.name.spacing`.
 
 The cell grid is its own case: `rows`, `columns`, `cell.size`, `cell.spacing`
 and the `cell.<c>-<r>.offset` / `.spacing` / `.skip` overrides are assigned to
@@ -192,10 +248,9 @@ which flags the draw list for rebuild, so a save shows on the next frame. A
 lone `cell.spacing = 2` covers both axes (Mugen convention, as with the
 per-cell overrides); without that it would parse as `[2, 0]`.
 
-**refreshed (114):** `fadein.time`, `fadeout.time`, `title.offset` / `font` /
+**refreshed (86):** `fadein.time`, `fadeout.time`, `title.offset` / `font` /
 `layerno`, every `title.<mode>.text`, the ten `cell.*-N` override rows,
-`p1`–`p4.cursor.active.anim` / `active.scale` / `done.spr` / `done.scale` /
-`done.snd`, `p1/p2.name.offset` / `font` / `layerno`, `stage.font` /
+`p1/p2.name.offset` / `font` / `layerno`, `stage.font` /
 `active.font` / `active2.font` / `done.font` / `layerno`.
 
 The map-backed texts here (`title`, `record`, and elsewhere the menu items,
@@ -217,9 +272,14 @@ position pass is global and now idempotent for TextSprites too
 (`TextSprite.offsetBase`), so editing one screen does not walk another's text
 off screen (`TestEditorSaveDoesNotWalkOtherScreenTexts`).
 
-**reload (136):** `cell.bg.*`, `cell.random.spr` / `scale`, `cell.slot.*`,
-every `p1/p2.face.*` (incl. `done` / `random` / `loading` / `slot`), every
-`face2.*`, `portrait.*`, `stage.portrait.*` — `*Anim`-only snapshots.
+**reload (161):** `cell.bg.*`, `cell.random.spr` / `scale`, `cell.slot.*`,
+every `p1`–`p4.cursor.active.*` / `done.*` / `preview.*` visual (`anim`,
+`spr`, `offset`, `facing`, `scale`, … — the plain `done.snd` stays live),
+`stage.pos`, `stage.offset` / `scale` and the `active` / `active2` / `done`
+offset / scale, every `p1/p2.face.*` (incl. `done` / `random` / `loading` /
+`slot`), every `face2.*`, `portrait.*`, `stage.portrait.*` — `*Anim`-only
+snapshots, except the stage geometry, which only reaches the screen through
+a reload.
 
 ---
 

@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	lua "github.com/yuin/gopher-lua"
 	"gopkg.in/ini.v1"
@@ -620,9 +621,10 @@ func TestEditorRawSectionsThroughAPI(t *testing.T) {
 
 func TestEditorSectionHeaders(t *testing.T) {
 	// go-ini lowercases section names, so the original spelling is recovered
-	// from the raw text.
+	// from the raw text by editorRawSections, which is what the API handlers
+	// use to spell section names the way the file does.
 	text := "; comment\n[Title Info]\nmenu.pos = 1\n[TitleBG Background Sky]\ntype = normal\n[Begin Action 203]\n0, 0, 0, 10\n[Infobox Text]\nbody\n"
-	headers := editorSectionHeaders(text)
+	headers, _ := editorRawSections(text)
 	for norm, want := range map[string]string{
 		"title_info":             "Title Info",
 		"titlebg_background_sky": "TitleBG Background Sky",
@@ -630,7 +632,7 @@ func TestEditorSectionHeaders(t *testing.T) {
 		"infobox_text":           "Infobox Text",
 	} {
 		if got := headers[norm]; got != want {
-			t.Errorf("editorSectionHeaders[%q] = %q, want %q", norm, got, want)
+			t.Errorf("editorRawSections[%q] = %q, want %q", norm, got, want)
 		}
 	}
 }
@@ -919,7 +921,7 @@ func TestEditorPageElementIDs(t *testing.T) {
 		t.Errorf("defCombo is called %d times, want the definition plus one per .def view", n)
 	}
 	// A .def has no schema behind its keys, so the shared .def key table drops
-	// the State column; the motif view keeps all four.
+	// the State column; the motif view keeps all five with the Pin column.
 	plainCalls := 0
 	for _, line := range strings.Split(editorPageHTML, "\n") {
 		line = strings.TrimSpace(line)
@@ -938,6 +940,17 @@ func TestEditorPageElementIDs(t *testing.T) {
 	}
 	if !strings.Contains(editorPageHTML, `'<td class="k"'`) || !strings.Contains(editorPageHTML, `title="`) {
 		t.Error("the key cells do not carry a tooltip")
+	}
+	// The pin column leads every key table: a Pin header cell, a per-row
+	// toggle button and the /api/pins calls backing it.
+	if strings.Count(editorPageHTML, "<th>Pin</th>") != 2 {
+		t.Error("the key tables do not all start with a Pin column")
+	}
+	if !strings.Contains(editorPageHTML, `data-pin="`) {
+		t.Error("the key rows have no pin toggle")
+	}
+	if !strings.Contains(editorPageHTML, `'/api/pins'`) || !strings.Contains(editorPageHTML, "function loadPins(") {
+		t.Error("the pin column is not backed by /api/pins")
 	}
 }
 
@@ -995,6 +1008,161 @@ func TestEditorHandleFileAndSave(t *testing.T) {
 	editorHandleSave(rr, req)
 	if rr.Code != http.StatusBadRequest {
 		t.Errorf("POST /api/save outside the game folder = %d, want 400", rr.Code)
+	}
+}
+
+// Pinned keys live in [Editor Pins] of the engine config, one
+// "path|section|key" line per pin, edited line based so the rest of the file
+// (ordering, comments, spacing) is preserved byte for byte.
+func TestEditorPinsFile(t *testing.T) {
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "save", "config.ini")
+	const head = "; engine config\n[Options]\nDifficulty = 5\n"
+	if err := os.MkdirAll(filepath.Dir(cfg), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfg, []byte(head), 0644); err != nil {
+		t.Fatal(err)
+	}
+	pin := func(path, section, key string, pinned bool) bool {
+		t.Helper()
+		changed, err := editorSetPinFile(cfg, path, section, key, pinned)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return changed
+	}
+	if !pin("data/system.def", "Select Info", "p1.cursor.active.scale", true) {
+		t.Error("pinning did not report a change")
+	}
+	// Same address in different casing is the same pin.
+	if pin("data/system.def", "SELECT INFO", "P1.Cursor.Active.Scale", true) {
+		t.Error("re-pinning the same key reported a change")
+	}
+	got, err := os.ReadFile(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(got), "[Editor Pins]") ||
+		!strings.Contains(string(got), "data/system.def|Select Info|p1.cursor.active.scale = 1") {
+		t.Errorf("the pin was not stored: %q", got)
+	}
+	if !strings.HasPrefix(string(got), head) {
+		t.Errorf("the rest of the config moved: %q", got)
+	}
+	pins := editorParsePins(string(got))
+	if len(pins) != 1 || pins[0] != [3]string{"data/system.def", "Select Info", "p1.cursor.active.scale"} {
+		t.Errorf("parsed pins = %v, want the one pin", pins)
+	}
+	// Unpinning a key that was never pinned changes nothing.
+	if pin("data/system.def", "Select Info", "rows", false) {
+		t.Error("unpinning an unknown key reported a change")
+	}
+	if !pin("data/system.def", "Select Info", "p1.cursor.active.scale", false) {
+		t.Error("unpinning did not report a change")
+	}
+	got, err = os.ReadFile(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(got), "p1.cursor.active.scale") {
+		t.Errorf("the pin was not removed: %q", got)
+	}
+	if len(editorParsePins(string(got))) != 0 {
+		t.Errorf("pins remain after unpinning: %q", got)
+	}
+	// Pinning into a missing config creates it; unpinning from one changes nothing.
+	fresh := filepath.Join(dir, "fresh", "config.ini")
+	changed, err := editorSetPinFile(fresh, "data/system.def", "Select Info", "rows", true)
+	if err != nil || !changed {
+		t.Errorf("pinning into a missing config = %v, %v; want a change", changed, err)
+	}
+	changed, err = editorSetPinFile(filepath.Join(dir, "missing.ini"), "data/system.def", "Select Info", "rows", false)
+	if err != nil || changed {
+		t.Errorf("unpinning from a missing config = %v, %v; want no change", changed, err)
+	}
+}
+
+func TestEditorHandlePins(t *testing.T) {
+	oldBase, oldFlags := sys.baseDir, sys.cmdFlags
+	dir := t.TempDir()
+	sys.baseDir = dir
+	sys.cmdFlags = map[string]string{"-config": filepath.Join(dir, "save", "config.ini")}
+	defer func() { sys.baseDir, sys.cmdFlags = oldBase, oldFlags }()
+
+	get := func() []map[string]string {
+		t.Helper()
+		rr := httptest.NewRecorder()
+		editorHandlePins(rr, httptest.NewRequest(http.MethodGet, "/api/pins", nil))
+		if rr.Code != http.StatusOK {
+			t.Fatalf("GET /api/pins = %d: %s", rr.Code, rr.Body.String())
+		}
+		var res struct {
+			OK   bool                `json:"ok"`
+			Pins []map[string]string `json:"pins"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &res); err != nil || !res.OK {
+			t.Fatalf("GET /api/pins did not return pins: %s (%v)", rr.Body.String(), err)
+		}
+		return res.Pins
+	}
+	post := func(body string, header bool) *httptest.ResponseRecorder {
+		t.Helper()
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/pins", strings.NewReader(body))
+		if header {
+			req.Header.Set("X-Editor-Request", "1")
+		}
+		editorHandlePins(rr, req)
+		return rr
+	}
+	if pins := get(); len(pins) != 0 {
+		t.Fatalf("fresh config lists %d pins, want none", len(pins))
+	}
+	// Writes require the custom header so cross-site requests are blocked.
+	rr := post(`{"path":"data/system.def","section":"Select Info","key":"rows","pinned":true}`, false)
+	if rr.Code != http.StatusForbidden {
+		t.Errorf("POST /api/pins without X-Editor-Request = %d, want 403", rr.Code)
+	}
+	rr = post(`{"path":"data/system.def","section":"Select Info","key":"rows","pinned":true}`, true)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("POST /api/pins = %d: %s", rr.Code, rr.Body.String())
+	}
+	if pins := get(); len(pins) != 1 || pins[0]["key"] != "rows" {
+		t.Errorf("pinned keys = %v, want the rows pin", pins)
+	}
+	// Pinning twice reports no change but stays pinned.
+	rr = post(`{"path":"data/system.def","section":"Select Info","key":"rows","pinned":true}`, true)
+	if !strings.Contains(rr.Body.String(), `"changed": false`) {
+		t.Errorf("re-pinning did not report changed:false: %s", rr.Body.String())
+	}
+	rr = post(`{"path":"data/system.def","section":"Select Info","key":"rows","pinned":false}`, true)
+	if !strings.Contains(rr.Body.String(), `"pinned": false`) {
+		t.Errorf("unpinning did not confirm: %s", rr.Body.String())
+	}
+	if pins := get(); len(pins) != 0 {
+		t.Errorf("unpinned keys still listed: %v", pins)
+	}
+	// Paths outside the game folder are refused.
+	rr = post(`{"path":"../escape.def","section":"Info","key":"name","pinned":true}`, true)
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("POST /api/pins outside the game folder = %d, want 400", rr.Code)
+	}
+}
+
+// The engine loader skips the editor's own config section instead of
+// warning that the Config struct has no such field; everything else still
+// warns, so user typos keep surfacing.
+func TestEditorOwnsConfigSection(t *testing.T) {
+	for _, name := range []string{"Editor Pins", "editor pins", " EDITOR PINS "} {
+		if !editorOwnsConfigSection(name) {
+			t.Errorf("%q is not treated as editor state", name)
+		}
+	}
+	for _, name := range []string{"", "Options", "Config", "Editor Pins2", "Editor"} {
+		if editorOwnsConfigSection(name) {
+			t.Errorf("%q is treated as editor state, want a loader warning", name)
+		}
 	}
 }
 
@@ -2163,6 +2331,16 @@ func TestEditorSelectTitleQuery(t *testing.T) {
 func TestEditorAutoReloadCoversReloadKeys(t *testing.T) {
 	for _, c := range []struct{ section, key string }{
 		{"Select Info", "p1.face.scale"},
+		{"Select Info", "p1.cursor.active.scale"},
+		{"Select Info", "p2.cursor.active.anim"},
+		{"Select Info", "p3.cursor.done.scale"},
+		{"Select Info", "p4.cursor.preview.scale"},
+		{"Select Info", "stage.pos"},
+		{"Select Info", "stage.offset"},
+		{"Select Info", "stage.scale"},
+		{"Select Info", "stage.active.offset"},
+		{"Select Info", "stage.active2.scale"},
+		{"Select Info", "stage.done.scale"},
 		{"Select Info", "p2.face2.random.spr"},
 		{"Select Info", "stage.portrait.scale"},
 		{"Select Info", "cell.bg.spr"},
@@ -2180,6 +2358,8 @@ func TestEditorAutoReloadCoversReloadKeys(t *testing.T) {
 	for _, c := range []struct{ section, key string }{
 		{"Select Info", "title.offset"},
 		{"Select Info", "rows"},
+		{"Select Info", "stage.font"},
+		{"Select Info", "stage.move.snd"},
 		{"Files", "select"},
 	} {
 		if mode, _ := editorMotifApplyClassify(c.section, c.key); mode == editorApplyReload {
@@ -2332,6 +2512,43 @@ func TestEditorMotifMenuBuildKey(t *testing.T) {
 	} {
 		if mode, reason := editorMotifApplyClassify(c.section, c.key); mode != editorApplyReload {
 			t.Errorf("%v.%v is %v (%v), want a reload", c.section, c.key, mode, reason)
+		}
+	}
+}
+
+// Position and text-geometry tails reload instead of a live apply that would
+// not reach the screen; the rest of the block keeps its live classification.
+// Scoped per section: the same tails apply live anywhere else.
+func TestEditorMotifReloadTailKey(t *testing.T) {
+	for _, q := range []string{
+		"select_info.stage.pos",
+		"select_info.stage.offset",
+		"select_info.stage.scale",
+		"select_info.stage.active.offset",
+		"select_info.stage.active.scale",
+		"select_info.stage.active2.offset",
+		"select_info.stage.done.scale",
+	} {
+		if ok, reason := editorMotifReloadTailKey(q); !ok {
+			t.Errorf("%v is not treated as a reload tail key", q)
+		} else if reason == "" {
+			t.Errorf("%v reloads without a reason", q)
+		}
+		if mode, reason := editorMotifApplyClassify("Select Info", strings.TrimPrefix(q, "select_info.")); mode != editorApplyReload {
+			t.Errorf("Select Info %v is %v (%v), want a reload", q, mode, reason)
+		}
+	}
+	for _, q := range []string{
+		"select_info.stage.font",
+		"select_info.stage.text",
+		"select_info.stage.move.snd",
+		"select_info.stage.done.snd",
+		"select_info.stage.portrait.bg",
+		"select_info.title.offset",
+		"vs_screen.stage.pos",
+	} {
+		if ok, _ := editorMotifReloadTailKey(q); ok {
+			t.Errorf("%v is treated as a reload tail key, want a live apply", q)
 		}
 	}
 }
@@ -2651,7 +2868,7 @@ func TestEditorHandleSFFServesPNG(t *testing.T) {
 		_ = os.Chdir(oldwd)
 		sys.baseDir = oldBase
 		editorSffCache.mu.Lock()
-		editorSffCache.m = map[string]*Sff{}
+		editorSffCache.m = map[string]*editorSffEntry{}
 		editorSffCache.mu.Unlock()
 	}()
 	if err := os.Chdir(root); err != nil {
@@ -2703,6 +2920,238 @@ func TestEditorHandleSFFServesPNG(t *testing.T) {
 	// The decoded file is cached, so a second request does not re-read it.
 	if s2, err := editorLoadSff(filepath.Join(root, filepath.FromSlash(rel))); err != nil || s2 != sff {
 		t.Error("editorLoadSff did not return the cached Sff")
+	}
+}
+
+// -------------------------------------------------------------------
+// Reflection walk (editorMotifKeyDerivedPtrs)
+// -------------------------------------------------------------------
+
+// The map branch used to sit behind a guard that had already returned for a
+// non-struct owner, so it was dead code and the walk could not descend through
+// the map entries the loader builds. These cases pin the map descent the way
+// the loader (PopulateDataPointers) walks it.
+func TestEditorMotifKeyDerivedPtrsMapDescent(t *testing.T) {
+	// The default-key form: the map holds a single implicit entry and the part
+	// after the map field names a field of the element (p1.cursor.active.scale,
+	// ...). The element here declares an *Anim only, which is not refillable in
+	// place, so the key must classify as a reload.
+	if mode, reason := editorMotifApplyClassify("Select Info", "p1.cursor.active.scale"); mode != editorApplyReload {
+		t.Errorf("p1.cursor.active.scale is %v (%v), want a reload", mode, reason)
+	}
+	// The same for the nested done / preview maps of PlayerCursorProperties.
+	if mode, _ := editorMotifApplyClassify("Select Info", "p2.cursor.done.scale"); mode != editorApplyReload {
+		t.Errorf("p2.cursor.done.scale is %v, want a reload", mode)
+	}
+	// A map key plus element field form: menu.item.bg.<name>.scale. The element
+	// (BgAnimationProperties) carries an *Anim, so it needs a reload too.
+	if mode, _ := editorMotifApplyClassify("Title Info", "menu.item.bg.foo.scale"); mode != editorApplyReload {
+		t.Errorf("menu.item.bg.foo.scale is %v, want a reload", mode)
+	}
+	// A key that is not modeled by the struct falls back to the full pointer
+	// list, so it is never mistaken for a live field.
+	if ptrs := editorMotifKeyDerivedPtrs("select_info.p1.nope.scale"); len(ptrs) == 0 {
+		t.Error("an unmodeled key returned no derived pointers")
+	}
+}
+
+// -------------------------------------------------------------------
+// File read caps and extension allowlist
+// -------------------------------------------------------------------
+
+func TestEditorFileReadCaps(t *testing.T) {
+	oldBase := sys.baseDir
+	dir := t.TempDir()
+	sys.baseDir = dir
+	defer func() { sys.baseDir = oldBase }()
+
+	// A text file over the cap is refused before it is read.
+	big := filepath.Join(dir, "big.def")
+	if err := os.WriteFile(big, bytes.Repeat([]byte("x"), int(editorMaxReadFile)+1), 0644); err != nil {
+		t.Fatal(err)
+	}
+	rr := httptest.NewRecorder()
+	editorHandleFile(rr, httptest.NewRequest(http.MethodGet, "/api/file?path=big.def", nil))
+	if rr.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("GET /api/file on an oversized file = %d, want 413: %s", rr.Code, rr.Body.String())
+	}
+
+	// A binary/unsupported extension is refused even when it is small.
+	bin := filepath.Join(dir, "blob.bin")
+	if err := os.WriteFile(bin, []byte("not an ini"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	rr = httptest.NewRecorder()
+	editorHandleFile(rr, httptest.NewRequest(http.MethodGet, "/api/file?path=blob.bin", nil))
+	if rr.Code != http.StatusUnsupportedMediaType {
+		t.Errorf("GET /api/file on a .bin = %d, want 415: %s", rr.Code, rr.Body.String())
+	}
+
+	// A normal .def still reads.
+	if err := os.WriteFile(filepath.Join(dir, "ok.def"), []byte("[Info]\nname = A\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	rr = httptest.NewRecorder()
+	editorHandleFile(rr, httptest.NewRequest(http.MethodGet, "/api/file?path=ok.def", nil))
+	if rr.Code != http.StatusOK {
+		t.Errorf("GET /api/file on a small .def = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+}
+
+// TestEditorEditINIFileReadCap checks the save-side read is capped too: the
+// line-based edit reads the file before writing it back atomically.
+func TestEditorEditINIFileReadCap(t *testing.T) {
+	dir := t.TempDir()
+	big := filepath.Join(dir, "big.def")
+	if err := os.WriteFile(big, bytes.Repeat([]byte("x"), int(editorMaxReadFile)+1), 0644); err != nil {
+		t.Fatal(err)
+	}
+	value := "y"
+	err := editorEditINIFile(big, "Info", "name", &value)
+	if err == nil || !strings.Contains(err.Error(), "too large") {
+		t.Fatalf("editorEditINIFile on an oversized file = %v, want a size error", err)
+	}
+}
+
+// -------------------------------------------------------------------
+// Atomic writes
+// -------------------------------------------------------------------
+
+func TestEditorWriteFileAtomic(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "x.def")
+	if err := os.WriteFile(path, []byte("first"), 0640); err != nil {
+		t.Fatal(err)
+	}
+	if err := editorWriteFileAtomic(path, []byte("second")); err != nil {
+		t.Fatalf("editorWriteFileAtomic = %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "second" {
+		t.Errorf("contents = %q, want second", data)
+	}
+	// No temporary files are left behind.
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "x.def" {
+		t.Errorf("directory has %d entries, want only x.def", len(entries))
+	}
+}
+
+// -------------------------------------------------------------------
+// SFF cache invalidation and PNG caching
+// -------------------------------------------------------------------
+
+func TestEditorSffCacheInvalidation(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "a.sff")
+	if err := os.WriteFile(path, []byte("one"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	editorSffCachePut(path, newSff())
+	if e := editorSffCacheLookup(path); e == nil {
+		t.Fatal("the entry was not cached")
+	}
+	// Touching the file with new contents invalidates the entry.
+	if err := os.WriteFile(path, []byte("two-longer"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if e := editorSffCacheLookup(path); e != nil {
+		t.Error("a changed file kept its stale cache entry")
+	}
+}
+
+func TestEditorSffSpritePNGCache(t *testing.T) {
+	sff := newSff()
+	spr := &Sprite{Size: [2]uint16{1, 1}, pendingW: 1, pendingH: 1, pendingDepth: 32}
+	spr.pendingData = []byte{1, 2, 3, 4}
+	e := &editorSffEntry{sff: sff}
+	key := [2]uint16{9000, 0}
+	first, err := editorSffSpritePNG(e, key, spr)
+	if err != nil || first == nil {
+		t.Fatalf("editorSffSpritePNG = %v, %v", first, err)
+	}
+	second, err := editorSffSpritePNG(e, key, spr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if &first[0] != &second[0] {
+		t.Error("the encoded PNG was not cached")
+	}
+	if _, err := png.Decode(bytes.NewReader(first)); err != nil {
+		t.Errorf("the cached bytes are not a PNG: %v", err)
+	}
+}
+
+// -------------------------------------------------------------------
+// Reload locking split
+// -------------------------------------------------------------------
+
+// editorReloadMotifSync must be callable without the caller holding
+// editorSaveMu, and editorReloadMotifLocked must not try to take it again (a
+// non-reentrant mutex would deadlock). The reload is refused here, but the
+// calls still exercise the lock paths.
+func TestEditorReloadLockSplit(t *testing.T) {
+	oldFlags := sys.cmdFlags
+	oldBase := sys.baseDir
+	defer func() {
+		sys.cmdFlags = oldFlags
+		sys.baseDir = oldBase
+	}()
+	sys.baseDir = t.TempDir()
+	sys.cmdFlags = map[string]string{"-r": filepath.Join(sys.baseDir, "m.def")}
+	if err := os.WriteFile(sys.cmdFlags["-r"], []byte("[Info]\nname = M\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Stand in for System.await, which drains the engine task queue in the
+	// game; otherwise the reload waits for the full engine timeout.
+	stop := make(chan struct{})
+	drained := make(chan struct{})
+	go func() {
+		defer close(drained)
+		for {
+			select {
+			case f := <-sys.mainThreadTask:
+				f()
+			case <-stop:
+				return
+			}
+		}
+	}()
+	defer func() {
+		close(stop)
+		<-drained
+	}()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _ = editorReloadMotifSync()
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("editorReloadMotifSync deadlocked")
+	}
+
+	// The locked core, called with the lock held, must also return.
+	done = make(chan struct{})
+	go func() {
+		defer close(done)
+		editorSaveMu.Lock()
+		_, _ = editorReloadMotifLocked()
+		editorSaveMu.Unlock()
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("editorReloadMotifLocked deadlocked")
 	}
 }
 
@@ -2770,5 +3219,116 @@ func TestEditorAgainstConfiguredMotif(t *testing.T) {
 		if editorKeys[want] == "" {
 			t.Errorf("the configured motif does not declare %q", want)
 		}
+	}
+}
+
+// editorRawSectionsRegexReference finds the section headers without the
+// HasPrefix gate, so the gated scanner can be checked against it.
+func editorRawSectionsRegexReference(text string) map[string]string {
+	headers := map[string]string{}
+	for _, line := range strings.Split(NormalizeNewlines(text), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if m := editorHeaderPattern.FindStringSubmatch(trimmed); m != nil && strings.HasPrefix(trimmed, "[") {
+			headers[editorNormSection(strings.TrimSpace(m[1]))] = strings.TrimSpace(m[1])
+		}
+	}
+	return headers
+}
+
+// Gating the header regex on a leading '[' is only correct because the line is
+// already trimmed, so the anchored pattern cannot match anything else. This
+// pins that equivalence on the real motif and on the shapes that break a naive
+// rewrite.
+func TestEditorRawSectionsHeaderGate(t *testing.T) {
+	for _, text := range []string{
+		string(defaultMotif),
+		"[a]\nx = 1\n[ b ]\ny = 2\n[]\n[unterminated\n   [indented]\n; [commented]\n[a] trailing\n",
+		"", "\n\n", "[", "[]]", "[a]b]", "key = [bracketed]",
+	} {
+		want, got := editorRawSectionsRegexReference(text), map[string]string{}
+		headers, _ := editorRawSections(text)
+		for norm := range headers {
+			got[norm] = headers[norm]
+		}
+		if len(want) != len(got) {
+			t.Fatalf("header count mismatch: ungated=%d gated=%d for %.40q", len(want), len(got), text)
+		}
+		for k, v := range want {
+			if got[k] != v {
+				t.Errorf("header %q: ungated=%q gated=%q", k, v, got[k])
+			}
+		}
+	}
+}
+
+// The schema walk only depends on the compiled Motif type, so it is memoised.
+// The cached slice is shared, which callers must not mutate.
+func TestEditorMotifStructureIsMemoised(t *testing.T) {
+	first := editorMotifStructure()
+	second := editorMotifStructure()
+	if len(first) == 0 {
+		t.Skip("no motif structure")
+	}
+	if len(first) != len(second) {
+		t.Fatalf("structure length changed between calls: %d vs %d", len(first), len(second))
+	}
+	if &first[0] != &second[0] {
+		t.Error("the structure is rebuilt per call instead of reusing the cached slice")
+	}
+}
+
+// editorReadInfo runs once per select.def entry, so its result is memoised
+// against the file's identity: an unchanged file is not re-read, and editing it
+// invalidates the entry.
+func TestEditorReadInfoCache(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "kfm.def")
+	write := func(name string) {
+		if err := os.WriteFile(path, []byte(
+			"[Info]\nname = "+name+"\nauthor = someone\nlocalcoord = 320, 240\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("first")
+	if info := editorReadInfo(path); info.Name != "first" {
+		t.Fatalf("first read got %q, want %q", info.Name, "first")
+	}
+	if info := editorReadInfo(path); info.Name != "first" {
+		t.Fatalf("cached read got %q, want %q", info.Name, "first")
+	}
+	// Rewriting with new contents and a different size invalidates the entry.
+	write("second-and-longer")
+	if info := editorReadInfo(path); info.Name != "second-and-longer" {
+		t.Errorf("a changed file kept its stale [Info]: got %q", info.Name)
+	}
+	// A def with no [Info] section is not cached, so it stays empty.
+	empty := filepath.Join(dir, "empty.def")
+	if err := os.WriteFile(empty, []byte("[Other]\nx = 1\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if info := editorReadInfo(empty); info.Name != "" {
+		t.Errorf("a def without [Info] returned %q", info.Name)
+	}
+	// A missing file still returns empty rather than panicking.
+	if info := editorReadInfo(filepath.Join(dir, "nope.def")); info.Name != "" {
+		t.Errorf("a missing def returned %q", info.Name)
+	}
+}
+
+// The cache must stay inside its cap.
+func TestEditorReadInfoCacheBound(t *testing.T) {
+	dir := t.TempDir()
+	for i := 0; i < editorInfoCacheMax+20; i++ {
+		path := filepath.Join(dir, "c"+strconv.Itoa(i)+".def")
+		if err := os.WriteFile(path, []byte("[Info]\nname = n\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		editorReadInfo(path)
+	}
+	editorInfoCache.mu.Lock()
+	n := len(editorInfoCache.m)
+	editorInfoCache.mu.Unlock()
+	if n > editorInfoCacheMax {
+		t.Errorf("the [Info] cache holds %d entries, over the cap of %d", n, editorInfoCacheMax)
 	}
 }
