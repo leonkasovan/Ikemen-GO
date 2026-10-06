@@ -2633,6 +2633,16 @@ main.t_itemname = {
 	end,
 	['editorstage'] = function(t, item)
 		hook.run("main.t_itemname", t, item)
+		-- The community Stage Viewer module (when installed) is the in-engine
+		-- stage picker and viewport: start its mode, open the editor on its
+		-- stage view, then continue into the mode's select screen, where the
+		-- stage to edit is picked. Without the module the editor opens as
+		-- before and the game stays on the menu.
+		if main.t_itemname.stageviewer ~= nil then
+			local next_screen = main.t_itemname.stageviewer()
+			main.f_editor('stage')
+			return next_screen
+		end
 		main.f_editor('stage')
 		return nil
 	end,

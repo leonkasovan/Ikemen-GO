@@ -11,10 +11,10 @@ move them.
 
 | File | Lines | Role |
 | --- | --- | --- |
-| `src/editor_server.go` | 4812 | The whole service: HTTP handlers, path/INI helpers, reflection walk, live-apply engine, and the embedded UI (`editorPageHTML`) |
+| `src/editor_server.go` | 5551 | The whole service: HTTP handlers, path/INI helpers, reflection walk, live-apply engine, and the embedded UI (`editorPageHTML`) |
 | `src/editor_webview_windows.go` | 226 | Built-in window, `//go:build windows`, go-webview2 |
 | `src/editor_webview_other.go` | 21 | Stubs returning "unsupported", `//go:build !windows` |
-| `src/editor_server_test.go` | 3334 | 78 tests |
+| `src/editor_server_test.go` | 3937 | 90 tests |
 | `src/editor_webview_windows_test.go` | — | 4 tests |
 
 One file on purpose: the service is a self-contained subsystem with no build-tag
@@ -40,16 +40,17 @@ The file is organised by comment banners — grep for
 | Line | Section |
 | --- | --- |
 | 216 | Path / INI helpers |
-| 480 | HTTP plumbing |
-| 546 | Structural breakdown of the motif (`src/motif.go` → INI layout) |
-| 923 | INI values of the configured motif / stage / character files |
-| 1071 | API handlers |
-| 1449 | Section tree: screens, background definitions, actions |
-| 1693 | Stage / character breakdown (select.def) |
-| 2099 | Sprite preview (`/api/sff`) |
-| 2382 | Live apply (motif only) |
-| 3487 | Pinned keys (`[Editor Pins]` in the engine config) |
-| 3918 | Editor UI (single page, no external assets) |
+| 481 | HTTP plumbing |
+| 547 | Structural breakdown of the motif (`src/motif.go` → INI layout) |
+| 924 | INI values of the configured motif / stage / character files |
+| 1072 | API handlers |
+| 1455 | Section tree: screens, background definitions, actions |
+| 1699 | Stage / character breakdown (select.def) |
+| 2105 | Sprite preview (`/api/sff`) |
+| 2388 | Live apply (motif only) |
+| 3512 | Live apply (stage .def) |
+| 4115 | Pinned keys (`[Editor Pins]` in the engine config) |
+| 4569 | Editor UI (single page, no external assets) |
 
 ---
 
@@ -58,8 +59,8 @@ The file is organised by comment banners — grep for
 Two, and only two:
 
 ```
-main.go:204      -httpservice flag  ──▶ startEditorHTTPService()
-script.go:3508   Lua openEditor()   ──▶ openEditorAsync(view)
+src/main.go:204   -httpservice flag  ──▶ startEditorHTTPService()
+src/script.go:3508 Lua openEditor()  ──▶ openEditorAsync(view)
 ```
 
 `startEditorHTTPService` is idempotent behind `editorMu` and never blocks; it
@@ -302,6 +303,57 @@ Do not "tighten" this by narrowing the prefix. It was already tried and reverted
 would flip from reload to refresh and silently draw the boot copy. Adding a new
 scope is one table row. See `TestEditorMotifReloadTailKey`.
 
+### The stage twin — a second live apply
+
+`editorHandleSave` runs a second apply when the saved file is `sys.stage.def`
+(`editorStageApplySync`, gated by `editorStageBlocked`: netplay / replay /
+loading refused, a **match allowed** — that is the point of the feature). It has
+its own classification and its own truth:
+
+| Where | What |
+| --- | --- |
+| `editorStageLiveKeys` / `editorStageLayerLiveKeys` | the only keys the apply assigns, keyed by `editorNormSection` / the `bg` head |
+| `editorStageKeyMode` | classifies exactly against those two tables; a layer key also needs a valid `index` |
+| `editorStageApplyValue` | **one case per table entry**, with a `default:` that returns an error instead of doing nothing |
+
+The two maps plus the switch are kept in step by
+`TestEditorStageLiveTableIsApplied`: a table entry without a case would
+otherwise be reported as applied while the running stage kept the old value.
+Keep that test exhaustive when adding a key.
+
+**The assignment mirrors the loader, not merely "looks right".** Every case
+builds `IniSection{k: strings.TrimSpace(value)}` and calls the same parse helper
+`loadStage` / `readBackGround` calls, so the live field ends up holding what a
+reload would parse. Two traps:
+
+- `[Bound]` / `[PlayerInfo]` are read **after** the localcoord ratio has scaled
+  the 320-based defaults (`src/stage.go`), so the value in the file is stored
+  raw — scaling it in the live apply would make the stage shift on the next
+  reload. `TestEditorStageLiveApplyMatchesLoadStage` loads the same keys from
+  disk and compares field by field; it also fails if `loadStage` ever starts
+  scaling the file values, which is the signal to revisit this.
+- `[BG ...]` keys need the layer's position in `s.bg`. The page counts the
+  sections whose header starts with the `bg` token, in file order, which is
+  exactly `loadStage`'s collection order; a layer-looking section the engine does
+  not collect (`[BG0]`, no space) carries `-1` and its saves classify as reload
+  instead of touching the wrong layer.
+
+Camera keys end with `sys.cam.stageCamera = s.stageCamera; sys.cam.Reset()`
+(copied from `modifyStageVar`, jitter TODO included) — without it the edit does
+not show.
+
+**A stage reload is never automatic.** A stage save that needs one reports
+`needsReload` and stops; the automatic motif reload in `editorHandleSave` is
+gated on the saved file being the motif, so a stage save cannot restart the
+match behind the user's back. The button posts `/api/reloadstage`, which sets
+`sys.reloadFlg` + `sys.reloadStageFlg` on the engine thread for the match loop to
+consume (restart, `sys.stage = nil`, `Loader.loadStage` re-parses). Since no
+character slot is marked for reload, the loader keeps the resident characters
+(`sameChar` in `loadCharacter`: a full pass is logged, but `p.load` and the state
+compile are skipped) — the stage is the only thing rebuilt. Outside a match the
+flags are cleared by the next `resetRound()`, which is harmless — that match
+reads the stage from disk anyway.
+
 ---
 
 ## 7. Caches
@@ -337,23 +389,26 @@ justify the caching decisions above:
 | `editorMotifStructure` | 6.8 ms, 1.98 MB, 11,094 allocs | **24 ns, 0 B** |
 | `editorRawSections` (6k-line `.def`) | 9.26 ms, 24 MB/s | **0.84 ms, 208 MB/s** |
 | `editorReadInfo` | 13.7 ms, 2.95 MB per call | memoised |
-| `json.MarshalIndent` of one `/api/motif` | **67 ms, 12.6 MB** | unchanged |
+| `json.MarshalIndent` of one `/api/motif` | **67 ms, 12.6 MB** | unchanged — still the open item below |
 
 One `/api/motif` response is **~2 MB**: 36 sections, 9,577 schema keys,
 `structure` 530 KB + `sections` 787 KB + `tree` 788 KB.
 
 ### Known open item — the payload
 
-The embedded page reads `data.tree` for all rendering, `data.sections` only for
-`.length` (the count in the hint), and never reads `data.structure` at all. The
-tree also duplicates every key the sections already carry. Roughly 1.3 MB of the
-2 MB is redundant.
+The embedded page reads `state.motif.tree` for all rendering and never reads
+`data.structure` at all. `data.sections` is used for two things: `.length` (the
+count in the hint) and `buildFileTree` — it is stored in `state.page.sections`
+and rendered as the collapsible file tree next to the key tree. The tree also
+duplicates every key the sections already carry. Roughly 1.3 MB of the 2 MB is
+redundant.
 
 This was **not** changed because it alters the wire format and `structure` may
 be part of the API for external tooling. The natural fix is to make `structure`
-opt-in (`?structure=1`) and replace `sections` with a count, leaving the tree as
-the single carrier. Worth ~62% of the payload and the 67 ms encode — but it is
-an API decision, not a clean-up.
+opt-in (`?structure=1`) and trim the duplicated per-key bodies out of `sections`,
+leaving the tree as the single carrier — `sections` must keep its key/section
+shape, because the file tree is built from it. Worth ~62% of the payload and the
+67 ms encode — but it is an API decision, not a clean-up.
 
 ---
 
@@ -363,9 +418,21 @@ The service borrows a lot from the engine. When one of these changes, the editor
 is affected.
 
 **Engine state (engine thread only):** `sys.motif`, `sys.luaLState`,
-`sys.cachedMotifTable`, `sys.loader.state`, `sys.mainThreadTask`.
+`sys.cachedMotifTable`, `sys.loader.state`, `sys.mainThreadTask`, `sys.stage`
+(the live stage apply reads `def` and writes its fields), `sys.cam`
+(`stageCamera` + `Reset()` after a camera edit), `sys.reloadFlg` /
+`sys.reloadStageFlg` (the stage reload hands them to the match loop).
 **Engine state (safe from any goroutine):** `sys.baseDir`, `sys.cmdFlags`,
 `sys.middleOfMatch()`, `sys.gameRunning`, `sys.netplay()`.
+
+**Stage parsing (mirrored, not shared):** `loadStage` and `readBackGround` read
+the `.def` (`src/stage.go`); `editorStageApplyValue` re-runs those very
+assignments on the live struct, with the same `IniSection` helpers
+(`ReadI32` / `ReadF32` / `ReadBool` / `readI32ForStage` / `readF32ForStage`),
+plus `backGround.changeAnim` / `reset`, `Animation.Action`, `Clamp` and the
+`Projection` / `TransType` enums. When a section's parse changes, the case for it
+has to change with it — `TestEditorStageLiveApplyMatchesLoadStage` loads a real
+`.def` and compares the result.
 
 **Helpers:** `LoadINIFile`, `LoadINIText`, `LoadText`, `preprocessINIContent`,
 `NormalizeNewlines`, `SearchFile`, `SetValueUpdate`, `updateINIFile`,
@@ -407,6 +474,8 @@ Lua degrades quietly rather than erroring.
 | A reload-forced scope | one row in `editorReloadTails` | — |
 | A screen group | one row in `editorScreenGroups` (17 rows) | `Results` and `Pause` have no `Tags` — `groupFor` falls back to matching `results` / `pause` as a substring of the normalised section name |
 | A background layer/controller key | `editorBGElementSchema` / `editorBGCtrlSchema` | the defaults are `newBackGround()`'s, not arbitrary |
+| A stage live key | one entry in `editorStageLiveKeys` (or `editorStageLayerLiveKeys`) **and** a case in `editorStageApplyValue` | `TestEditorStageLiveTableIsApplied` fails on one without the other; mirror the read in `loadStage` / `readBackGround`, never "fix" the value |
+| Stage keys that only a reload can apply | nothing — they already classify as reload | the reason string is what the user sees next to the reload button |
 | A select-grid rebuild trigger | `editorSelectGridQuery` | only add what is genuinely baked into `start.t_grid` |
 | An endpoint | register in `startEditorHTTPService`; cap reads, sandbox paths, and require `X-Editor-Request` for writes | — |
 
@@ -415,18 +484,19 @@ Lua degrades quietly rather than erroring.
 ## 11. Testing
 
 ```bash
-make test-editor    # -run TestEditor, 82 tests (80 run, 2 opt-in WebView2)
+make test-editor    # -run TestEditor, 94 tests (92 run, 2 opt-in WebView2)
 make test-editor TESTFLAGS="-run TestFoo -v"   # quote it
 ```
 
 `make test`/`make test-editor` build with the real cgo env, so run them after a
 build. `make vet` is the right way to see vet issues (`test` passes `-vet=off`).
 
-Two patterns are worth copying.
+Three patterns are worth copying.
 
 **Stand in for the engine thread.** Most tests that touch
 `sys.mainThreadTask` would otherwise wait out the full timeout, so they drain the
-channel themselves:
+channel themselves (`editorDrainEngineTasks` in the stage tests, the inline
+version in `TestEditorRunOnMainThread`):
 
 ```go
 stop := make(chan struct{})
@@ -443,12 +513,18 @@ defer close(stop)
 `editorSaveMu`.
 
 **Save and restore global engine state.** `sys.cmdFlags`, `sys.baseDir`,
-`sys.motif` are process-wide; tests snapshot and restore them in a `defer`
-(`TestEditorReloadLockSplit`, `TestEditorAgainstConfiguredMotif`).
+`sys.motif`, `sys.stage`, `sys.cam`, `sys.reloadFlg` are process-wide; tests
+snapshot and restore them in a `defer` (`TestEditorReloadLockSplit`,
+`TestEditorAgainstConfiguredMotif`, `TestEditorStageApplyValue`).
 
 Classification tests are table-driven over real `motif.go` structs, so a
 motif change that shifts a key's mode fails loudly instead of silently changing
-the applied/needsReload answer the UI shows.
+the applied/needsReload answer the UI shows. The stage side has the same pair:
+`TestEditorStageKeyMode` for the classification and
+`TestEditorStageLiveApplyMatchesLoadStage` for the values — that one runs the
+real `loadStage` on two `.def` files and compares every field the live apply
+wrote, so a divergence between the two shows up as a failing field, not as a
+subtly shifted stage.
 
 ---
 
@@ -468,3 +544,19 @@ the applied/needsReload answer the UI shows.
   the motif is drawn every frame and its snapshots are handed out as handles.
   `POST /api/reload` answers `409`; a save that needed one reports
   `needsReload` and tells the user to reload later.
+- **The automatic motif reload is gated on the saved file being the motif.**
+  Without that gate a stage save that needs a reload would reload the motif
+  instead (and claim `applied`). A stage reload restarts the match and is always
+  the user's click.
+- **The stage live tables and `editorStageApplyValue` are three halves of one
+  thing** (`editorStageLiveKeys` + `editorStageLayerLiveKeys` + the switch).
+  Adding a key to a map alone gets it reported as applied while the running stage
+  keeps the old value; `TestEditorStageLiveTableIsApplied` exists to fail first.
+- **Do not scale `[Bound]` / `[PlayerInfo]` values in the live apply.** The
+  localcoord ratio in `loadStage` only touches the defaults, and it runs before
+  those sections are read. `TestEditorStageLiveApplyMatchesLoadStage` is the
+  proof; if it starts failing, the engine's parse changed, not the test.
+- **A stage reload outside a match does nothing** (`resetRound()` clears
+  `sys.reloadFlg` before the next match's loop sees it). That is deliberate: the
+  next match reads the `.def` from disk anyway, so the click is a no-op rather
+  than a queued surprise.

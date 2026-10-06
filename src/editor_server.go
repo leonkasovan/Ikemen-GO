@@ -112,6 +112,7 @@ func startEditorHTTPService() string {
 	mux.HandleFunc("/api/sff", editorHandleSFF)
 	mux.HandleFunc("/api/save", editorHandleSave)
 	mux.HandleFunc("/api/reload", editorHandleReload)
+	mux.HandleFunc("/api/reloadstage", editorHandleReloadStage)
 	mux.HandleFunc("/api/pins", editorHandlePins)
 
 	ln, err := net.Listen("tcp", addr)
@@ -1088,6 +1089,9 @@ func editorHandleStatus(w http.ResponseWriter, r *http.Request) {
 	sel := editorSelectDefPath()
 	exists := editorExistingFile(motif) != ""
 	_, cmdFlag := sys.cmdFlags["-httpservice"]
+	// The stage the engine has loaded, so the page can point the Stage view at
+	// the file a live apply would reach.
+	stage := editorLoadedStagePath()
 	editorWriteJSON(w, map[string]any{
 		"ok":                     true,
 		"version":                Version,
@@ -1102,6 +1106,8 @@ func editorHandleStatus(w http.ResponseWriter, r *http.Request) {
 		"serviceFromCommandLine": cmdFlag,
 		"structureSections":      len(editorMotifStructure()),
 		"webview":                editorWebViewState(),
+		"stage":                  stage,
+		"stageLoaded":            stage != "",
 	})
 }
 
@@ -3285,6 +3291,9 @@ type editorSaveRequestJSON struct {
 	Key     string `json:"key"`
 	Value   string `json:"value"`
 	Remove  bool   `json:"remove"`
+	// Index is the 0-based [BG ...] layer position in the file for a background
+	// layer key, -1 for every other section.
+	Index int `json:"index"`
 }
 
 // editorHandleSave writes a single key back into a .def / .ini file, keeping the
@@ -3330,21 +3339,37 @@ func editorHandleSave(w http.ResponseWriter, r *http.Request) {
 	if req.Remove {
 		action = "removed"
 	}
-	// The running engine mirrors the motif only, so push the edit into it when
-	// this is the configured motif. Any other file is inert to the engine.
+	// The running engine mirrors the motif and the loaded stage: push the edit
+	// into it when this is the configured motif, or when it is the .def of the
+	// stage the engine has loaded. Any other file is inert to the engine.
 	applied, needsReload, needsRestart, reason, warning, applyErr := false, false, false, "", "", error(nil)
-	if editorIsMotifPath(req.Path) {
+	motifPath := editorIsMotifPath(req.Path)
+	if motifPath {
 		var mode editorMotifApplyMode
 		applied, mode, reason, warning, applyErr = editorApplyMotifSync(req.Section, req.Key, req.Value, req.Remove)
 		needsReload = applyErr == nil && !applied && mode == editorApplyReload
 		needsRestart = applyErr == nil && !applied && mode == editorApplyRestart
 	}
-	if needsReload {
+	if !applied && !needsReload && !needsRestart && applyErr == nil {
+		// A stage key: applied live when the key allows it, otherwise the save
+		// asks for the stage reload (the user runs it with the "Reload stage in
+		// engine" button: a match restart is not run behind their back).
+		if out, handled := editorStageApplySync(abs, req.Section, req.Key, req.Value, req.Remove, req.Index); handled {
+			applied, warning, applyErr = out.applied, out.warning, out.err
+			if out.err == nil && !out.applied {
+				needsReload = true
+				reason = out.reason
+			}
+		}
+	}
+	if needsReload && motifPath {
 		// The key only takes effect once the motif is reloaded, so run that
 		// reload now instead of leaving it as a manual step. When the reload
 		// is refused (a match is running, ...) the save keeps its needsReload
 		// answer and the user reloads later, as before. editorHandleSave holds
-		// editorSaveMu here, so the no-lock core is the one to call.
+		// editorSaveMu here, so the no-lock core is the one to call. A stage
+		// reload is never run from here, whatever the state: the stage reload
+		// restarts the match.
 		if _, err := editorReloadMotifLocked(); err == nil {
 			applied, needsReload = true, false
 			reason = ""
@@ -3481,6 +3506,611 @@ func editorReloadMotifLocked() (path string, err error) {
 		return "", fmt.Errorf("%s", out.reason)
 	}
 	return editorMotifPath(), nil
+}
+
+// ---------------------------------------------------------------------------
+// Live apply (stage .def)
+// ---------------------------------------------------------------------------
+
+// editorStageBlocked reports why the loaded stage must not be touched right
+// now, or "" when it is safe. The stage is rollback state (state.go clones
+// stageList and the per-stage runtime state), so netplay and replays are
+// refused; a match is not, because editing the stage during a match is the
+// point.
+func editorStageBlocked() string {
+	if sys.netplay() {
+		return "netplay or a replay is active"
+	}
+	if sys.loader.state == LS_Loading {
+		return "assets are loading"
+	}
+	return ""
+}
+
+// editorStageLiveKeys is the set of scalar keys a save assigns to the running
+// *Stage. Every entry is an assignment the engine itself performs at runtime
+// (modifyStageVar in src/bytecode.go) or one loadStage makes while parsing the
+// .def (src/stage.go) and whose field the draw path reads back every frame. A
+// key missing here is classified as a reload, which keeps the live apply to
+// what the engine proves it can do.
+//
+// It is the single source of truth: editorStageKeyMode classifies against it
+// and editorStageApplyValue has one case per entry (TestEditorStageLiveTableIsApplied
+// keeps the two in step). Sections are keyed the way editorNormSection
+// normalizes a header.
+var editorStageLiveKeys = map[string]map[string]bool{
+	"stageinfo": {
+		"zoffset": true, "zoffsetlink": true, "autoturn": true, "resetbg": true,
+		"xscale": true, "yscale": true,
+	},
+	"bound": {
+		"screenleft": true, "screenright": true,
+	},
+	"playerinfo": {
+		"leftbound": true, "rightbound": true, "topbound": true, "botbound": true,
+		"p1startx": true, "p1starty": true, "p1startz": true, "p1facing": true,
+		"p2startx": true, "p2starty": true, "p2startz": true, "p2facing": true,
+	},
+	"camera": {
+		"boundleft": true, "boundright": true, "boundhigh": true, "boundlow": true,
+		"floortension": true, "tension": true, "tensionhigh": true, "tensionlow": true,
+		"cuthigh": true, "cutlow": true,
+		"verticalfollow": true, "tensionvel": true, "startzoom": true,
+		"zoomin": true, "zoomout": true, "zoomindelay": true,
+		"zoominspeed": true, "zoomoutspeed": true, "yscrollspeed": true,
+		"autocenter": true, "lowestcap": true,
+	},
+	"shadow": {
+		"intensity": true, "color": true, "xscale": true, "yscale": true,
+		"xshear": true, "angle": true, "xangle": true, "yangle": true,
+		"focallength": true, "ydelta": true, "fade.range": true,
+		"offset": true, "window": true, "projection": true,
+	},
+	"reflection": {
+		"intensity": true, "color": true, "layerno": true, "xscale": true,
+		"yscale": true, "xshear": true, "angle": true, "xangle": true,
+		"yangle": true, "focallength": true, "ydelta": true, "fade.range": true,
+		"offset": true, "window": true, "projection": true,
+	},
+}
+
+// editorStageLayerLiveKeys is the set of "[BG ...]" layer keys a save assigns
+// to the live layer: readBackGround's own assignments, all of them repeated by
+// modifyStageBG. Everything else a layer declares (type, path, tile,
+// positionlink, ...) is structural and read when the stage loads.
+var editorStageLayerLiveKeys = map[string]bool{
+	"start": true, "delta": true, "layerno": true, "xshear": true,
+	"angle": true, "xangle": true, "yangle": true, "focallength": true,
+	"projection": true, "scalestart": true, "scaledelta": true,
+	"velocity": true, "mask": true, "spriteno": true, "actionno": true,
+	"trans": true, "alpha": true,
+}
+
+// editorStageNormalizeKey lowercases and trims a key the way the INI parser
+// does, which is the spelling the live tables and the parse helpers use.
+func editorStageNormalizeKey(key string) string {
+	return strings.ToLower(strings.TrimSpace(key))
+}
+
+// editorStageKeyLive reports whether a key has a live assignment at all.
+func editorStageKeyLive(section, key string) bool {
+	if editorSectionHead(section) == "bg" {
+		return editorStageLayerLiveKeys[editorStageNormalizeKey(key)]
+	}
+	return editorStageLiveKeys[editorNormSection(section)][editorStageNormalizeKey(key)]
+}
+
+// editorStageKeyMode reports how a save of one key of the loaded stage's .def
+// can reach the engine: editorApplyLive when assigning the Stage field is
+// enough, editorApplyReload when the engine only reads the value (or the
+// section) while loading the stage. The second result is the reason shown to
+// the user for a reload.
+//
+// index is the position of the "[BG ...]" section in the file, which is the
+// position of the layer in s.bg (loadStage collects them in file order), or -1
+// for every other section.
+func editorStageKeyMode(s *Stage, section, key string, index int) (editorMotifApplyMode, string) {
+	if editorSectionHead(section) == "bg" {
+		if !editorStageKeyLive(section, key) {
+			return editorApplyReload, "it is read when the stage loads"
+		}
+		if s == nil || index < 0 || index >= len(s.bg) {
+			return editorApplyReload, "the background layer is not the loaded one"
+		}
+		return editorApplyLive, ""
+	}
+	if editorStageKeyLive(section, key) {
+		return editorApplyLive, ""
+	}
+	return editorApplyReload, "it is read when the stage loads"
+}
+
+// editorStageProjection maps the projection spelling of a .def to the enum.
+// Returns false for a value the parser does not accept, which leaves the field
+// alone (a reload would do the same).
+func editorStageProjection(v string) (Projection, bool) {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "orthographic":
+		return Projection_Orthographic, true
+	case "perspective":
+		return Projection_Perspective, true
+	case "perspective2":
+		return Projection_Perspective2, true
+	}
+	return Projection_Orthographic, false
+}
+
+// editorStageApplyTrans replays readBackGround's trans switch on a live layer,
+// preserving the parser's mask / alpha semantics. It is the same switch
+// modifyStageBG's trans parameter writes.
+func editorStageApplyTrans(bg *backGround, v string) error {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "add":
+		bg.anim.mask = 0
+		bg.anim.transType = TT_add
+		bg.anim.srcAlpha = 255
+		bg.anim.dstAlpha = 255
+	case "add1":
+		bg.anim.mask = 0
+		bg.anim.transType = TT_add
+		bg.anim.srcAlpha = 255
+		bg.anim.dstAlpha = 128
+	case "addalpha":
+		bg.anim.mask = 0
+		bg.anim.transType = TT_add
+		bg.anim.srcAlpha = 255
+		bg.anim.dstAlpha = 0 // In Mugen it defaults to this before reading the alpha
+	case "sub":
+		bg.anim.mask = 0
+		bg.anim.transType = TT_sub
+		bg.anim.srcAlpha = 255
+		bg.anim.dstAlpha = 255
+	case "subadd":
+		bg.anim.mask = 0
+		bg.anim.transType = TT_subadd
+		bg.anim.srcAlpha = 255
+		bg.anim.dstAlpha = 255
+	case "none":
+		// In Mugen this does the same as Default
+		bg.anim.transType = TT_default
+		bg.anim.srcAlpha = 255
+		bg.anim.dstAlpha = 0
+	case "default":
+		bg.anim.transType = TT_default
+		bg.anim.srcAlpha = 255
+		bg.anim.dstAlpha = 0
+	default:
+		return fmt.Errorf("invalid trans type: %v", v)
+	}
+	return nil
+}
+
+// editorStageApplyPlayer assigns the p<n><field> keys of [PlayerInfo].
+// Returns false when the key is not one of them.
+func editorStageApplyPlayer(s *Stage, is IniSection, key string) bool {
+	for slot := range 2 {
+		rest, ok := strings.CutPrefix(key, fmt.Sprintf("p%d", slot+1))
+		if !ok {
+			continue
+		}
+		switch rest {
+		case "startx":
+			is.ReadI32(key, &s.p[slot].startx)
+		case "starty":
+			is.ReadI32(key, &s.p[slot].starty)
+		case "startz":
+			is.ReadI32(key, &s.p[slot].startz)
+		case "facing":
+			is.ReadI32(key, &s.p[slot].facing)
+			// loadStage never leaves a facing of 0 (it would make the
+			// characters face away from each other): P1 keeps facing right and
+			// P2 left.
+			if s.p[slot].facing == 0 {
+				s.p[slot].facing = int32(1 - 2*slot)
+			}
+		default:
+			return false
+		}
+		return true
+	}
+	return false
+}
+
+// editorStageApplyColor assigns a [Shadow] / [Reflection] color the way
+// loadStage reads it: the channels are clamped, and a Mugen 1.1 stage forces
+// the shadow colour to black (shadow reports that special case; reflection
+// does not).
+func editorStageApplyColor(is IniSection, dst *uint32, s *Stage, shadow bool) {
+	var r, g, b int32
+	is.readI32ForStage("color", &r, &g, &b)
+	r, g, b = Clamp(r, 0, 255), Clamp(g, 0, 255), Clamp(b, 0, 255)
+	if shadow && s.ikemenver[0] == 0 && s.ikemenver[1] == 0 &&
+		s.mugenver[0] == 1 && s.mugenver[1] == 1 {
+		r, g, b = 0, 0, 0
+	}
+	*dst = uint32(r<<16 | g<<8 | b)
+}
+
+// editorStageApplyValue assigns one live key of the loaded stage from the value
+// stored in its .def, reproducing the assignment the loader makes while
+// parsing the file: the IniSection helpers called here are the ones loadStage
+// and readBackGround call, so the running stage ends up in the state a reload
+// would produce. The caller has already checked the gate (editorStageBlocked)
+// and the classification (editorStageKeyMode).
+//
+// The first result reports a value that was written to the file but only
+// partly took effect (an alpha outside a blend, a spriteno on a non-normal
+// layer, a start position consumed by the next round); an error means the live
+// value cannot be produced at all (an action the stage does not declare).
+func editorStageApplyValue(s *Stage, section, key, value string, index int) (string, error) {
+	if s == nil {
+		return "", fmt.Errorf("no stage is loaded")
+	}
+	k := editorStageNormalizeKey(key)
+	// The shape the INI parser hands the loader: the file's own key with the
+	// value the editor holds. Its value is trimmed, the way IniSection.Parse
+	// trims what follows the "=".
+	is := IniSection{k: strings.TrimSpace(value)}
+	refreshCamera := false
+	warning := ""
+	if editorSectionHead(section) == "bg" {
+		if index < 0 || index >= len(s.bg) {
+			return "", fmt.Errorf("the background layer is not the loaded one")
+		}
+		bg := s.bg[index]
+		var tmp int32
+		switch k {
+		case "start":
+			is.readF32ForStage("start", &bg.start[0], &bg.start[1])
+		case "delta":
+			is.readF32ForStage("delta", &bg.delta[0], &bg.delta[1])
+		case "layerno":
+			// Stage layers have no startlayer offset: loadStage passes 0.
+			is.ReadI32("layerno", &bg.layerno)
+		case "xshear":
+			is.readF32ForStage("xshear", &bg.xshear)
+		case "angle":
+			is.readF32ForStage("angle", &bg.rot.angle)
+		case "xangle":
+			is.readF32ForStage("xangle", &bg.rot.xangle)
+		case "yangle":
+			is.readF32ForStage("yangle", &bg.rot.yangle)
+		case "focallength":
+			is.readF32ForStage("focallength", &bg.fLength)
+		case "scalestart":
+			is.readF32ForStage("scalestart", &bg.scalestart[0], &bg.scalestart[1])
+		case "scaledelta":
+			is.readF32ForStage("scaledelta", &bg.scaledelta[0], &bg.scaledelta[1])
+		case "velocity":
+			// startv is what backGround.reset restores, bga.vel what moves the
+			// layer for the rest of the round.
+			is.readF32ForStage("velocity", &bg.startv[0], &bg.startv[1])
+			bg.bga.vel = bg.startv
+		case "mask":
+			if is.ReadI32("mask", &tmp) {
+				if tmp != 0 {
+					bg.anim.mask = 0
+				} else {
+					bg.anim.mask = -1
+				}
+			}
+		case "spriteno":
+			if bg._type != BG_Normal {
+				warning = "spriteno applies to normal layers only"
+				break
+			}
+			var g, n int32
+			if is.readI32ForStage("spriteno", &g, &n) {
+				bg.anim.frames = []AnimFrame{*newAnimFrame()}
+				bg.anim.frames[0].Group, bg.anim.frames[0].Number = g, n
+			}
+		case "actionno":
+			if bg._type != BG_Normal && bg._type != BG_Anim {
+				warning = "actionno applies to normal and anim layers only"
+				break
+			}
+			var v int32
+			if is.ReadI32("actionno", &v) {
+				if s.animTable.get(v) == nil {
+					return "", fmt.Errorf("there is no action %d in the stage", v)
+				}
+				bg.changeAnim(v, s.animTable)
+				bg._type = BG_Anim
+				// Stages update before characters, so the new animation has to
+				// be stepped once for the frame that is about to be drawn.
+				bg.anim.Action()
+			}
+		case "trans":
+			if err := editorStageApplyTrans(bg, value); err != nil {
+				return "", err
+			}
+		case "alpha":
+			if bg.anim.transType != TT_add && bg.anim.transType != TT_sub {
+				warning = "alpha is ignored unless trans is add or sub"
+				break
+			}
+			var a, b int32
+			if is.readI32ForStage("alpha", &a, &b) {
+				bg.anim.srcAlpha = int16(Clamp(a, 0, 255))
+				bg.anim.dstAlpha = int16(Clamp(b, 0, 255))
+			}
+		case "projection":
+			p, ok := editorStageProjection(value)
+			if !ok {
+				warning = "the engine does not know that projection, so it was left unchanged"
+				break
+			}
+			bg.projection = p
+		default:
+			return "", fmt.Errorf("the key has no live assignment")
+		}
+		return warning, nil
+	}
+	switch editorNormSection(section) {
+	case "stageinfo":
+		switch k {
+		case "zoffset":
+			is.ReadI32(k, &s.stageCamera.zoffset)
+			refreshCamera = true
+		case "zoffsetlink":
+			is.ReadI32(k, &s.zoffsetlink)
+		case "autoturn":
+			is.ReadBool(k, &s.autoturn)
+		case "resetbg":
+			is.ReadBool(k, &s.resetbg)
+		case "xscale", "yscale":
+			var v float32
+			if is.ReadF32(k, &v) {
+				// loadStage doubles an explicit value on a hires stage.
+				if s.hires {
+					v *= 2
+				}
+				if k == "xscale" {
+					s.scale[0] = v
+				} else {
+					s.scale[1] = v
+				}
+			}
+		default:
+			return "", fmt.Errorf("the key has no live assignment")
+		}
+	case "bound":
+		// loadStage reads [Bound] (and [PlayerInfo]) after the localcoord ratio
+		// has already scaled the defaults, so the value in the file is stored
+		// exactly as written - it is not scaled again.
+		switch k {
+		case "screenleft":
+			is.ReadI32(k, &s.screenleft)
+			refreshCamera = true
+		case "screenright":
+			is.ReadI32(k, &s.screenright)
+			refreshCamera = true
+		default:
+			return "", fmt.Errorf("the key has no live assignment")
+		}
+	case "playerinfo":
+		switch k {
+		case "leftbound":
+			is.ReadF32(k, &s.leftbound)
+		case "rightbound":
+			is.ReadF32(k, &s.rightbound)
+		case "topbound":
+			is.ReadF32(k, &s.topbound)
+		case "botbound":
+			is.ReadF32(k, &s.botbound)
+		default:
+			if !editorStageApplyPlayer(s, is, k) {
+				return "", fmt.Errorf("the key has no live assignment")
+			}
+		}
+		// The spawn position is read when the next round creates the
+		// characters, so an edit cannot move this round's fighters.
+		if strings.HasSuffix(k, "startx") || strings.HasSuffix(k, "starty") ||
+			strings.HasSuffix(k, "startz") || strings.HasSuffix(k, "facing") {
+			warning = "the new start position applies from the next round"
+		}
+	case "camera":
+		cam := &s.stageCamera
+		ints := map[string]*int32{
+			"boundleft": &cam.boundleft, "boundright": &cam.boundright,
+			"boundhigh": &cam.boundhigh, "boundlow": &cam.boundlow,
+			"floortension": &cam.floortension, "tension": &cam.tension,
+			"tensionhigh": &cam.tensionhigh, "tensionlow": &cam.tensionlow,
+			"cuthigh": &cam.cuthigh, "cutlow": &cam.cutlow,
+		}
+		floats := map[string]*float32{
+			"verticalfollow": &cam.verticalfollow, "tensionvel": &cam.tensionvel,
+			"startzoom": &cam.startzoom, "zoomin": &cam.zoomin,
+			"zoomout": &cam.zoomout, "zoomindelay": &cam.zoomindelay,
+			"zoominspeed": &cam.zoominspeed, "zoomoutspeed": &cam.zoomoutspeed,
+			"yscrollspeed": &cam.yscrollspeed,
+		}
+		bools := map[string]*bool{
+			"autocenter": &cam.autocenter, "lowestcap": &cam.lowestcap,
+		}
+		switch {
+		case ints[k] != nil:
+			is.ReadI32(k, ints[k])
+			if k == "tensionlow" {
+				// loadStage enables the Y tension when the file sets it.
+				cam.ytensionenable = true
+			}
+		case floats[k] != nil:
+			is.ReadF32(k, floats[k])
+		case bools[k] != nil:
+			is.ReadBool(k, bools[k])
+		default:
+			return "", fmt.Errorf("the key has no live assignment")
+		}
+		refreshCamera = true
+	case "shadow":
+		sdw := &s.sdw
+		floats := map[string]*float32{
+			"xscale": &sdw.xscale, "yscale": &sdw.yscale, "xshear": &sdw.xshear,
+			"angle": &sdw.rot.angle, "xangle": &sdw.rot.xangle,
+			"yangle": &sdw.rot.yangle, "focallength": &sdw.fLength,
+			"ydelta": &sdw.ydelta,
+		}
+		switch {
+		case floats[k] != nil:
+			is.ReadF32(k, floats[k])
+		case k == "intensity":
+			var v int32
+			if is.ReadI32(k, &v) {
+				sdw.intensity = Clamp(v, 0, 255)
+			}
+		case k == "color":
+			editorStageApplyColor(is, &sdw.color, s, true)
+		case k == "fade.range":
+			// The file spells the begin and the end in this order.
+			is.readI32ForStage(k, &sdw.fadeend, &sdw.fadebgn)
+		case k == "offset":
+			is.readF32ForStage(k, &sdw.offset[0], &sdw.offset[1])
+		case k == "window":
+			is.readF32ForStage(k, &sdw.window[0], &sdw.window[1],
+				&sdw.window[2], &sdw.window[3])
+		case k == "projection":
+			p, ok := editorStageProjection(value)
+			if !ok {
+				warning = "the engine does not know that projection, so it was left unchanged"
+				break
+			}
+			sdw.projection = p
+		default:
+			return "", fmt.Errorf("the key has no live assignment")
+		}
+	case "reflection":
+		ref := &s.reflection
+		floats := map[string]*float32{
+			"xscale": &ref.xscale, "yscale": &ref.yscale, "xshear": &ref.xshear,
+			"angle": &ref.rot.angle, "xangle": &ref.rot.xangle,
+			"yangle": &ref.rot.yangle, "focallength": &ref.fLength,
+			"ydelta": &ref.ydelta,
+		}
+		switch {
+		case floats[k] != nil:
+			is.ReadF32(k, floats[k])
+		case k == "intensity":
+			var v int32
+			if is.ReadI32(k, &v) {
+				ref.intensity = Clamp(v, 0, 255)
+			}
+		case k == "color":
+			editorStageApplyColor(is, &ref.color, s, false)
+		case k == "layerno":
+			var v int32
+			if is.ReadI32(k, &v) {
+				ref.layerno = Clamp(v, -1, 0)
+			}
+		case k == "fade.range":
+			is.readI32ForStage(k, &ref.fadeend, &ref.fadebgn)
+		case k == "offset":
+			is.readF32ForStage(k, &ref.offset[0], &ref.offset[1])
+		case k == "window":
+			is.readF32ForStage(k, &ref.window[0], &ref.window[1],
+				&ref.window[2], &ref.window[3])
+		case k == "projection":
+			p, ok := editorStageProjection(value)
+			if !ok {
+				warning = "the engine does not know that projection, so it was left unchanged"
+				break
+			}
+			ref.projection = p
+		default:
+			return "", fmt.Errorf("the key has no live assignment")
+		}
+	default:
+		return "", fmt.Errorf("the key has no live assignment")
+	}
+	if refreshCamera {
+		// The engine's own way of making a camera edit take effect, copied
+		// from modifyStageVar (src/bytecode.go).
+		sys.cam.stageCamera = s.stageCamera
+		sys.cam.Reset()
+	}
+	return warning, nil
+}
+
+// editorLoadedStagePath returns the .def of the stage the engine has loaded,
+// or "" when none is loaded. sys.stage is engine state, so the read is posted
+// to the engine thread; on a timeout or a full queue the empty string is
+// returned without reading the captured value (a successful run orders the
+// write through the result channel).
+func editorLoadedStagePath() string {
+	def := ""
+	if err := editorRunOnMainThread(func() error {
+		if sys.stage != nil {
+			def = sys.stage.def
+		}
+		return nil
+	}); err != nil {
+		return ""
+	}
+	return def
+}
+
+// editorStageApplySync brings the running stage in line with an editor edit.
+// The file on disk is always written first (by the caller); this pushes the
+// value into the live *Stage when the edited file is the loaded stage's .def
+// and the key allows a live assignment.
+//
+// The second result reports whether abs is the loaded stage's .def at all;
+// when it is false the save is a plain file write (a character def, a stage
+// that is not loaded, or no stage loaded at all) and the engine must not be
+// told anything about it.
+func editorStageApplySync(abs, section, key, value string, remove bool, index int) (editorApplyOutcome, bool) {
+	res := &struct{ handled bool }{}
+	out, err := editorRunOnEngineThread(func() editorApplyOutcome {
+		s := sys.stage
+		if s == nil {
+			return editorApplyOutcome{}
+		}
+		def, err := editorSandboxPath(s.def)
+		if err != nil || !strings.EqualFold(filepath.Clean(def), filepath.Clean(abs)) {
+			return editorApplyOutcome{}
+		}
+		res.handled = true
+		if reason := editorStageBlocked(); reason != "" {
+			return editorApplyOutcome{reason: reason}
+		}
+		if remove || strings.TrimSpace(value) == "" {
+			return editorApplyOutcome{reason: "removing or clearing a key needs a stage reload"}
+		}
+		if mode, reason := editorStageKeyMode(s, section, key, index); mode != editorApplyLive {
+			return editorApplyOutcome{reason: reason}
+		}
+		warning, err := editorStageApplyValue(s, section, key, value, index)
+		if err != nil {
+			return editorApplyOutcome{err: err}
+		}
+		return editorApplyOutcome{applied: true, warning: warning}
+	})
+	if err != nil {
+		return editorApplyOutcome{err: err}, false
+	}
+	return out, res.handled
+}
+
+// editorReloadStageSync schedules the stage reload the script's match loop
+// consumes: the current match restarts (like the pause menu's Rematch),
+// sys.stage is dropped and Loader.loadStage re-reads the .def from disk. No
+// character slot is marked for reload, so the loader keeps the resident
+// characters ("Same char kept") instead of re-parsing and re-compiling their
+// defs; the stage is the only thing rebuilt. A match is not required: outside
+// one the next match reads the stage from disk anyway (the flags are cleared
+// when that match's round is set up), so a click at the menu is harmless.
+// Netplay and replays are refused: the stage is rollback state.
+func editorReloadStageSync() error {
+	editorSaveMu.Lock()
+	defer editorSaveMu.Unlock()
+	return editorRunOnMainThread(func() error {
+		if reason := editorStageBlocked(); reason != "" {
+			return fmt.Errorf("%s", reason)
+		}
+		sys.reloadFlg = true
+		sys.reloadStageFlg = true
+		return nil
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -3740,6 +4370,29 @@ func editorHandleReload(w http.ResponseWriter, r *http.Request) {
 	editorWriteJSON(w, map[string]any{
 		"ok": true, "path": path, "message": "reloaded",
 	})
+}
+
+// editorHandleReloadStage re-reads the loaded stage's .def from disk into the
+// running engine. Unlike the motif reload it works during a match: it schedules
+// the restart that makes Loader.loadStage parse the file again. Structural stage
+// edits ([BGdef], [Music], localcoord, a removed key, ...) are the ones that
+// need it.
+func editorHandleReloadStage(w http.ResponseWriter, r *http.Request) {
+	if _, ok := editorReadJSONRequest(w, r, true); !ok {
+		return
+	}
+	if err := editorReloadStageSync(); err != nil {
+		msg := err.Error()
+		code := http.StatusInternalServerError
+		if msg == "netplay or a replay is active" || msg == "assets are loading" {
+			code = http.StatusConflict
+		}
+		LogMessage("[Editor] stage reload refused: %v", msg)
+		editorWriteError(w, code, "%s", msg)
+		return
+	}
+	LogMessage("[Editor] stage reload scheduled")
+	editorWriteJSON(w, map[string]any{"ok": true, "message": "reload scheduled"})
 }
 
 // editorEditINIFile updates (or removes, when value is nil) a single key inside
@@ -4019,6 +4672,11 @@ select{background:#0e1117;border:1px solid var(--line);color:var(--fg);border-ra
       <div class="panel">
         <div class="small">Stage</div>
         <select id="stage-list" style="margin:6px 0"></select>
+        <div class="small" style="margin:6px 0"><button class="mini" id="stage-reload">Reload stage in engine</button>
+        <button class="mini" id="stage-use">Use stage loaded in engine</button>
+        <span class="small">reload re-reads the .def into the running engine (restarts the
+        current match); use selects the stage the engine has loaded</span>
+        <span class="small" id="stage-loaded"></span></div>
         <div class="small">Sections</div>
         <div class="sectree" id="stage-sections"></div>
       </div>
@@ -4131,6 +4789,10 @@ function badge(k) {
 // re-render (after a save or a reload) keeps what the user filtered on.
 // containers are addressed by their element id (motif-keys, stage-keys, ...).
 var keyFilter = {};
+// lastDefCombo keeps the entries each .def combo box (stage-list,
+// character-list) was filled with, so an action can select one by path
+// instead of only by the index the browser holds.
+var lastDefCombo = {};
 // pins holds the pinned keys by "path\nsection\nkey", so a marked row floats
 // to the top of its table. It is filled from /api/pins at startup and kept
 // across re-renders; the config file on disk is the source of truth.
@@ -4192,7 +4854,9 @@ function applyKeyFilter(container) {
 // the value control. The first column pins the row: pinned keys float to the
 // top and the mark is stored in [Editor Pins] of the engine config. A filter
 // box above the table narrows the rows by the KEY column's text.
-function renderKeys(container, path, section, keys, reload, plain) {
+// index is the layer position of a stage .def section (-1 elsewhere), which a
+// save of a "[BG ...]" key sends so the engine can address the runtime layer.
+function renderKeys(container, path, section, keys, reload, plain, index) {
 	if (!keys.length) {
 		container.innerHTML = '<div class="small">no keys</div>';
 		return;
@@ -4205,7 +4869,7 @@ function renderKeys(container, path, section, keys, reload, plain) {
 		(pins[pinId(path, section, k.key)] ? pinnedRows : restRows).push(k);
 	});
 	keys = pinnedRows.concat(restRows);
-	lastRender[container.id] = { path: path, section: section, keys: keys, reload: reload, plain: plain };
+	lastRender[container.id] = { path: path, section: section, keys: keys, reload: reload, plain: plain, index: index };
 	var h = plain
 		? ['<table><thead><tr><th>Pin</th><th>Key</th><th>Value</th><th></th></tr></thead><tbody>']
 		: ['<table><thead><tr><th>Pin</th><th>Key</th><th>State</th><th>Value</th><th></th></tr></thead><tbody>'];
@@ -4315,7 +4979,7 @@ function renderKeys(container, path, section, keys, reload, plain) {
 				if (res.pinned) { pins[pinId(path, section, pk.key)] = true; }
 				else { delete pins[pinId(path, section, pk.key)]; }
 				var c = lastRender[container.id];
-				if (c) { renderKeys(container, c.path, c.section, c.keys, c.reload, c.plain); }
+				if (c) { renderKeys(container, c.path, c.section, c.keys, c.reload, c.plain, c.index); }
 			}).catch(function (e) { toast(String(e), true); });
 			return;
 		}
@@ -4323,7 +4987,10 @@ function renderKeys(container, path, section, keys, reload, plain) {
 		var k = keys[idx];
 		var value = el('kv-' + idx).value;
 		var remove = b.getAttribute('data-del') !== null;
-		post({ path: path, section: section, key: k.key, value: value, remove: remove }).then(function (res) {
+		post({
+			path: path, section: section, key: k.key, value: value, remove: remove,
+			index: (typeof index === 'number' ? index : -1)
+		}).then(function (res) {
 			if (res.ok) {
 				var what = (remove ? 'Removed ' : 'Saved ') + k.key;
 				if (res.applied) {
@@ -4344,11 +5011,14 @@ function renderKeys(container, path, section, keys, reload, plain) {
 						+ (res.applyReason ? ': ' + res.applyReason : ''), true);
 				} else if (res.needsReload) {
 					// Written to the file; the running engine picks it up on
-					// "Reload motif in engine" (or a restart).
-					toast(what + ' — saved, reload the motif to apply'
+					// "Reload motif in engine" / "Reload stage in engine" (or
+					// a restart). The reload button lives in the view the
+					// table belongs to.
+					var which = container.id.indexOf('motif') === 0 ? 'motif' : 'stage';
+					toast(what + ' — saved, reload the ' + which + ' to apply'
 						+ (res.applyReason ? ': ' + res.applyReason : ''), true);
 				} else {
-					toast(what);
+					toast(what + (res.applyReason ? ' \u2014 ' + res.applyReason : ''));
 				}
 				if (reload) { reload(); }
 			} else {
@@ -4388,9 +5058,61 @@ function reloadMotif() {
 		}
 	}).catch(function (e) { toast(String(e), true); });
 }
+// reloadStage asks the engine to re-read the stage .def: the current match
+// restarts with a freshly loaded stage. Works during a match (unlike the motif
+// reload); refused during netplay, replays or while assets are loading.
+function reloadStage() {
+	fetch('/api/reloadstage', {
+		method: 'POST',
+		headers: { 'X-Editor-Request': '1' }
+	}).then(function (r) { return r.json(); }).then(function (res) {
+		if (res.ok) {
+			toast('Stage reload scheduled');
+			if (state.page && !el('view-stage').classList.contains('hidden')) {
+				loadFile(state.page.path, editorEls('stage'));
+			}
+			refreshLoadedStage();
+		} else {
+			toast(res.error || 'reload failed', true);
+		}
+	}).catch(function (e) { toast(String(e), true); });
+}
+// refreshLoadedStage shows which stage the engine has loaded, so the stage
+// picked in the Stage Viewer is visible in the editor.
+function refreshLoadedStage() {
+	api('/api/status').then(function (st) {
+		el('stage-loaded').innerHTML = st.stageLoaded
+			? 'loaded in engine: <b>' + esc(st.stage) + '</b>'
+			: 'no stage loaded in the engine';
+	}).catch(function () {});
+}
+// useLoadedStage selects the stage the engine has loaded in the stage combo, so
+// the in-engine picker drives what the editor edits.
+function useLoadedStage() {
+	api('/api/status').then(function (st) {
+		var norm = function (p) { return String(p || '').replace(/\\/g, '/').toLowerCase(); };
+		var want = norm(st.stage);
+		if (!want) { toast('No stage is loaded in the engine', true); return; }
+		var items = lastDefCombo['stage-list'] || [];
+		var list = el('stage-list');
+		var byFull = -1, byName = -1;
+		items.forEach(function (it, i) {
+			var p = norm(it.path || it.def);
+			if (p === want) { byFull = i; }
+			if (p.split('/').pop() === want.split('/').pop()) { byName = i; }
+		});
+		var pick = byFull >= 0 ? byFull : byName;
+		if (pick < 0) { toast('The loaded stage is not in the list: ' + st.stage, true); return; }
+		list.value = String(pick);
+		list.onchange();
+		refreshLoadedStage();
+		toast('Editing the stage loaded in the engine');
+	}).catch(function (e) { toast(String(e), true); });
+}
 function nodeCount(n) {
 	return n.total ? n.defined + '/' + n.total : (n.keys || []).length;
 }
+
 // treeHTML renders section nodes as the collapsible tree the motif and the
 // stage view share. A node id is "<prefix><i>" and a child "<id>.<j>", so the
 // index stays in step with the data-sid attributes in the DOM.
@@ -4476,7 +5198,7 @@ function showSection(sid) {
 			: '<div class="small">this entry only groups the sections below it</div>';
 		return;
 	}
-	renderKeys(el('motif-keys'), state.motif.path, n.name, n.keys, loadMotif);
+	renderKeys(el('motif-keys'), state.motif.path, n.name, n.keys, loadMotif, undefined, -1);
 }
 // rawBlock renders a section body as preformatted, read only content.
 function rawBlock(text) {
@@ -4563,10 +5285,19 @@ function buildFileTree(sections) {
 		defs[head.slice(0, -3)] = node;
 		defNames[name] = node;
 	});
+	// bgIndex is the index of a layer in s.bg, so a save can reach the right
+	// runtime layer. loadStage collects the background layers in file order:
+	// every section whose header starts with the "bg" token, plus a section
+	// named "bg" (src/stage.go); headOf() gives that token for exactly those,
+	// so the counter only advances for them.
+	var layerIndex = -1;
 	(sections || []).forEach(function (s) {
 		var name = s.name || '(top level)';
+		var isLayer = headOf(name) === 'bg';
+		if (isLayer) { layerIndex++; }
 		if (defNames[name]) { return; }  // already placed as a block owner
 		var node = nodeOf(s);
+		if (isLayer) { node.bgIndex = layerIndex; }
 		var block = bgBlockOf(name);
 		if (block) {
 			var owner = ownerFor(block);
@@ -4648,8 +5379,10 @@ function showFileSection(sid, els) {
 	}
 	var keys = n.keys.map(function (k) { return { key: k.key, value: k.value, defined: true, choices: k.choices }; });
 	// A .def has no schema behind its keys, so the State column would only
-	// repeat itself here.
-	renderKeys(els.keys, state.page.path, n.name, keys, function () { loadFile(state.page.path, els); }, true);
+	// repeat itself here. A stage layer carries its index in s.bg, so a save
+	// of one of its keys reaches the right runtime layer.
+	renderKeys(els.keys, state.page.path, n.name, keys, function () { loadFile(state.page.path, els); }, true,
+		typeof n.bgIndex === 'number' ? n.bgIndex : -1);
 }
 // defCombo fills a view's combo box with one "label — def" entry per file and
 // hands the chosen one to onPick. The stage and the character view share it, so
@@ -4668,6 +5401,9 @@ function defCombo(listId, items, onPick) {
 	});
 	list.innerHTML = h.join('');
 	list.disabled = false;
+	// Remember what the combo offers, so the "use stage loaded in engine"
+	// action can find an entry by path.
+	lastDefCombo[listId] = items;
 	list.onchange = function () { onPick(items[parseInt(this.value, 10)]); };
 	list.value = '0';
 	onPick(items[0]);
@@ -4691,6 +5427,9 @@ function loadStages() {
 			previewDef(sffEls('stage'), st.path);
 			loadFile(st.path, editorEls('stage'));
 		});
+		// Which stage the engine has loaded is what a save reaches, so show it
+		// next to the picker.
+		refreshLoadedStage();
 	}).catch(function (e) { toast(String(e), true); });
 }
 
@@ -4794,6 +5533,8 @@ function init() {
 	}).catch(function () { el('status').textContent = 'offline'; });
 	initSff();
 	el('motif-reload').onclick = reloadMotif;
+	el('stage-reload').onclick = reloadStage;
+	el('stage-use').onclick = useLoadedStage;
 	// Pins first: the tables read them while rendering.
 	loadPins().then(function () {
 		loadMotif();

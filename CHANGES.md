@@ -2,6 +2,64 @@
 
 ## Features
 
+### feat: live stage editing in the built-in editor (Stage Viewer menu entry)
+`src/editor_server.go`, `src/editor_server_test.go`, `external/script/main.lua`,
+`docs/ikemen_editor.md`, `docs/context-editor.md`
+
+The editor used to mirror the motif only: a save to a stage `.def` was written to
+disk and the running engine never noticed. A stage save now reaches the running
+`*Stage` when the file is the `.def` of the stage the engine has loaded
+(`sys.stage`), and one explicit reload covers the keys that are only read when a
+stage loads.
+
+- **Live apply.** `editorStageKeyMode` classifies against two tables
+  (`editorStageLiveKeys`, `editorStageLayerLiveKeys`) listing exactly the
+  assignments the engine itself makes — what `modifyStageVar` / `modifyStageBG`
+  write at runtime and what `loadStage` / `readBackGround` parse while loading.
+  `[StageInfo]`, `[Bound]`, `[PlayerInfo]`, `[Camera]`, `[Shadow]`,
+  `[Reflection]` scalars and `[BG ...]` layer properties are assigned on the
+  engine thread (`editorStageApplyValue`) through the same `IniSection` helpers
+  the loader calls, with the same clamps (`[Shadow]` / `[Reflection]`
+  `intensity`, `color`, the Mugen 1.1 shadow-colour rule) and the engine's own
+  camera refresh (`sys.cam.stageCamera = s.stageCamera; sys.cam.Reset()`,
+  copied from `modifyStageVar`), which is what makes a camera edit show.
+  `[Bound]` / `[PlayerInfo]` values are stored raw: `loadStage` reads them
+  *after* the localcoord ratio has scaled the 320-based defaults, so scaling
+  them in the apply would shift the stage on the next reload.
+  `[PlayerInfo]` start / facing edits answer `applyWarning` "the new start
+  position applies from the next round" (the next round spawns the characters).
+- **Everything else is a reload**: `[BGdef]`, `[Info]`, `[Music]`, `localcoord`,
+  `[BG ...]` controllers and structural layer keys (`type`, `path`, `tile`,
+  `positionlink`, `[BG0]`-style headers the engine does not collect), key
+  removal. `POST /api/reloadstage` (**Reload stage in engine** button) sets
+  `sys.reloadFlg` + `sys.reloadStageFlg` on the engine thread: the match loop
+  restarts, drops `sys.stage` and `Loader.loadStage` re-reads the `.def`. No
+  character slot is marked for reload, so the resident characters are kept
+  (`Same char kept`) instead of being re-parsed. Unlike the motif reload it works
+  during a match, and it is never run automatically by a save (the automatic
+  motif reload is gated on the saved file being the motif, so a stage save cannot
+  restart the match behind the user's back).
+- `POST /api/save` gained `index`: the position of a `[BG ...]` layer section in
+  the file (`-1` elsewhere), counted the way `loadStage` collects `s.bg` (in file
+  order, headers starting with the `bg` token), so a layer key reaches the right
+  runtime layer. `GET /api/status` reports the loaded stage (`stage`,
+  `stageLoaded`), and the Stage view shows it next to a **Use stage loaded in
+  engine** action that selects that `.def` in the combo, so the stage picked in
+  the game is the one being edited.
+- **EDITOR → STAGE** (`main.t_itemname['editorstage']`) now runs the community
+  Stage Viewer mode (`external/mods/stageviewer/stageviewer.lua`) when it is
+  installed — its select screen is the in-engine stage picker and the viewer
+  match is the viewport — then opens the editor at `?view=stage`. Without the
+  module the entry only opens the editor, as before.
+
+The stage is rollback state (`state.go` clones `stageList` and the per-stage
+runtime state), so netplay and replays refuse the live apply and the reload with
+`409`; a match does not, because editing the stage during a match is the point.
+Twelve tests, including `TestEditorStageLiveApplyMatchesLoadStage`, which loads
+two real `.def` files through `loadStage` and compares every field the live apply
+wrote, and `TestEditorStageLiveTableIsApplied`, which fails when a key is listed
+in a live table without a matching assignment case.
+
 ### perf: editor read path — memoised schema, gated header regex, cached `[Info]`
 `src/editor_server.go`, `src/editor_server_test.go`
 

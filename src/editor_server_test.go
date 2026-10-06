@@ -925,7 +925,7 @@ func TestEditorPageElementIDs(t *testing.T) {
 	plainCalls := 0
 	for _, line := range strings.Split(editorPageHTML, "\n") {
 		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "renderKeys(") && strings.HasSuffix(line, ", true);") {
+		if strings.HasPrefix(line, "renderKeys(") && strings.Contains(line, ", true,") {
 			plainCalls++
 		}
 	}
@@ -3330,5 +3330,608 @@ func TestEditorReadInfoCacheBound(t *testing.T) {
 	editorInfoCache.mu.Unlock()
 	if n > editorInfoCacheMax {
 		t.Errorf("the [Info] cache holds %d entries, over the cap of %d", n, editorInfoCacheMax)
+	}
+}
+
+// -------------------------------------------------------------------
+// Live apply (stage .def)
+// -------------------------------------------------------------------
+
+// editorDrainEngineTasks stands in for System.await, which is what drains the
+// engine task queue in the game, so whatever a test posts runs on the engine
+// thread it pretends to be.
+func editorDrainEngineTasks(t *testing.T) {
+	t.Helper()
+	stop := make(chan struct{})
+	drained := make(chan struct{})
+	go func() {
+		defer close(drained)
+		for {
+			select {
+			case f := <-sys.mainThreadTask:
+				f()
+			case <-stop:
+				return
+			}
+		}
+	}()
+	t.Cleanup(func() {
+		close(stop)
+		<-drained
+	})
+}
+
+// editorStageFixture builds a stage with the given number of background layers
+// and an animation table holding action 1, so a live apply has real targets.
+func editorStageFixture(layers int) *Stage {
+	s := newStage("stages/test.def")
+	sff := newSff()
+	s.animTable = AnimationTable{anims: map[int32]*Animation{1: newAnimation(sff, &sff.palList)}}
+	for range layers {
+		s.bg = append(s.bg, newBackGround(sff))
+	}
+	return s
+}
+
+func TestEditorStageKeyMode(t *testing.T) {
+	s := editorStageFixture(2)
+	for _, c := range []struct {
+		section, key string
+		index        int
+		live         bool
+	}{
+		{"Camera", "boundleft", -1, true},
+		{"StageInfo", "zoffset", -1, true},
+		{"Bound", "screenleft", -1, true},
+		{"PlayerInfo", "p1startx", -1, true},
+		{"Shadow", "intensity", -1, true},
+		{"Reflection", "layerno", -1, true},
+		{"BG 0", "start", 0, true},
+		{"BG 1", "trans", 1, true},
+		{"BGdef", "spr", -1, false},
+		{"Info", "name", -1, false},
+		{"Music", "bgmusic", -1, false},
+		{"Camera", "startx", -1, false},
+		{"StageInfo", "localcoord", -1, false},
+		{"BG 0", "start", -1, false},
+		{"BG 0", "start", 2, false},
+		// A layer key the live apply does not assign (type, path, tile, ...)
+		// has to ask for a reload instead of quietly doing nothing.
+		{"BG 0", "type", 0, false},
+	} {
+		mode, reason := editorStageKeyMode(s, c.section, c.key, c.index)
+		if (mode == editorApplyLive) != c.live {
+			t.Errorf("%v.%v (index %d) = %v, want live=%v", c.section, c.key, c.index, mode, c.live)
+		}
+		if !c.live && reason == "" {
+			t.Errorf("%v.%v (index %d) has no reload reason", c.section, c.key, c.index)
+		}
+	}
+}
+
+// Every key of the live table must really be assigned by
+// editorStageApplyValue: a table entry without a case would be reported as
+// applied while the running stage kept the old value.
+func TestEditorStageLiveTableIsApplied(t *testing.T) {
+	s := editorStageFixture(1)
+	// One sample per key shape the parse helpers accept.
+	values := map[string]string{
+		"color": "255, 128, 64", "fade.range": "0, -30", "offset": "1, 2",
+		"window": "0, 0, 10, 10", "projection": "perspective", "trans": "add",
+	}
+	for section, keys := range editorStageLiveKeys {
+		for key := range keys {
+			v := values[key]
+			if v == "" {
+				v = "1"
+			}
+			if _, err := editorStageApplyValue(s, section, key, v, -1); err != nil {
+				t.Errorf("%v.%v = %v: %v", section, key, v, err)
+			}
+		}
+	}
+	for key := range editorStageLayerLiveKeys {
+		v := values[key]
+		if v == "" {
+			v = "1"
+		}
+		// alpha needs a blend, which the layer's own key order provides: set
+		// trans first, like the file does.
+		if key == "alpha" {
+			if _, err := editorStageApplyValue(s, "BG 0", "trans", "add", 0); err != nil {
+				t.Fatalf("BG 0/trans: %v", err)
+			}
+		}
+		if _, err := editorStageApplyValue(s, "BG 0", key, v, 0); err != nil {
+			t.Errorf("BG 0.%v = %v: %v", key, v, err)
+		}
+	}
+	if len(editorStageLiveKeys) == 0 || len(editorStageLayerLiveKeys) == 0 {
+		t.Error("the live tables are empty, so the test checked nothing")
+	}
+}
+
+func TestEditorStageApplyValue(t *testing.T) {
+	oldCam := sys.cam
+	defer func() { sys.cam = oldCam }()
+	s := editorStageFixture(0)
+
+	if _, err := editorStageApplyValue(s, "Camera", "boundleft", "-300", -1); err != nil {
+		t.Fatalf("Camera/boundleft: %v", err)
+	}
+	if s.stageCamera.boundleft != -300 {
+		t.Errorf("boundleft = %d, want -300", s.stageCamera.boundleft)
+	}
+	// The camera edit reaches the running camera, which is what makes it show
+	// on the next frame (the engine's own modifyStageVar does the same).
+	if sys.cam.stageCamera.boundleft != -300 {
+		t.Error("sys.cam was not refreshed after the camera edit")
+	}
+
+	if _, err := editorStageApplyValue(s, "StageInfo", "zoffset", "150", -1); err != nil {
+		t.Fatalf("StageInfo/zoffset: %v", err)
+	}
+	if s.stageCamera.zoffset != 150 {
+		t.Errorf("zoffset = %d, want 150", s.stageCamera.zoffset)
+	}
+
+	// Values are read the way loadStage reads them: clamped into the field.
+	if _, err := editorStageApplyValue(s, "Shadow", "intensity", "300", -1); err != nil {
+		t.Fatalf("Shadow/intensity: %v", err)
+	}
+	if s.sdw.intensity != 255 {
+		t.Errorf("shadow intensity = %d, wanted it clamped to 255", s.sdw.intensity)
+	}
+
+	// fade.range stores its two values as fadeend, fadebgn.
+	if _, err := editorStageApplyValue(s, "Shadow", "fade.range", "0, -30", -1); err != nil {
+		t.Fatalf("Shadow/fade.range: %v", err)
+	}
+	if s.sdw.fadeend != 0 || s.sdw.fadebgn != -30 {
+		t.Errorf("fade.range = %d, %d, want 0, -30", s.sdw.fadeend, s.sdw.fadebgn)
+	}
+
+	// The start position is assigned, but the characters are already spawned:
+	// the save has to say that it only applies from the next round.
+	warning, err := editorStageApplyValue(s, "PlayerInfo", "p1startx", "-70", -1)
+	if err != nil {
+		t.Fatalf("PlayerInfo/p1startx: %v", err)
+	}
+	if s.p[0].startx != -70 {
+		t.Errorf("p1startx = %d, want -70", s.p[0].startx)
+	}
+	if warning == "" {
+		t.Error("no warning for a start position the current round cannot use")
+	}
+
+	// A key outside the live table is refused, never silently ignored.
+	if _, err := editorStageApplyValue(s, "Info", "name", "x", -1); err == nil {
+		t.Error("a non-live key was accepted")
+	}
+}
+
+func TestEditorStageApplyLayerValue(t *testing.T) {
+	s := editorStageFixture(2)
+	s.bg[0].start = [2]float32{1, 2}
+
+	if _, err := editorStageApplyValue(s, "BG 1", "start", "100,50", 1); err != nil {
+		t.Fatalf("BG 1/start: %v", err)
+	}
+	if s.bg[1].start != [2]float32{100, 50} {
+		t.Errorf("layer 1 start = %v, want 100,50", s.bg[1].start)
+	}
+	if s.bg[0].start != [2]float32{1, 2} {
+		t.Errorf("layer 0 was touched: start = %v", s.bg[0].start)
+	}
+
+	// velocity is what moves the layer for the rest of the round, and startv
+	// is what backGround.reset restores.
+	if _, err := editorStageApplyValue(s, "BG 1", "velocity", "2,0", 1); err != nil {
+		t.Fatalf("BG 1/velocity: %v", err)
+	}
+	if s.bg[1].startv != [2]float32{2, 0} || s.bg[1].bga.vel != [2]float32{2, 0} {
+		t.Errorf("velocity: startv = %v, vel = %v, want 2,0 in both",
+			s.bg[1].startv, s.bg[1].bga.vel)
+	}
+
+	if _, err := editorStageApplyValue(s, "BG 1", "trans", "add", 1); err != nil {
+		t.Fatalf("BG 1/trans: %v", err)
+	}
+	if an := s.bg[1].anim; an.transType != TT_add || an.srcAlpha != 255 ||
+		an.dstAlpha != 255 || an.mask != 0 {
+		t.Errorf("trans=add gave type %v, alpha %d/%d, mask %d",
+			an.transType, an.srcAlpha, an.dstAlpha, an.mask)
+	}
+
+	// alpha applies to the blend the file's own trans set.
+	if _, err := editorStageApplyValue(s, "BG 1", "alpha", "100,50", 1); err != nil {
+		t.Fatalf("BG 1/alpha: %v", err)
+	}
+	if s.bg[1].anim.srcAlpha != 100 || s.bg[1].anim.dstAlpha != 50 {
+		t.Errorf("alpha = %d/%d, want 100/50", s.bg[1].anim.srcAlpha, s.bg[1].anim.dstAlpha)
+	}
+
+	// Layer 0 has no blend: alpha is ignored, and the save says so instead of
+	// claiming a full apply.
+	warning, err := editorStageApplyValue(s, "BG 0", "alpha", "100,50", 0)
+	if err != nil {
+		t.Fatalf("BG 0/alpha: %v", err)
+	}
+	if warning == "" {
+		t.Error("alpha outside a blend was not reported")
+	}
+	if s.bg[0].anim.srcAlpha != 255 || s.bg[0].anim.dstAlpha != 0 {
+		t.Error("alpha changed a layer whose trans does not use it")
+	}
+
+	// spriteno replaces the layer's single frame.
+	if _, err := editorStageApplyValue(s, "BG 0", "spriteno", "1,2", 0); err != nil {
+		t.Fatalf("BG 0/spriteno: %v", err)
+	}
+	if f := s.bg[0].anim.frames; len(f) != 1 || f[0].Group != 1 || f[0].Number != 2 {
+		t.Errorf("spriteno gave %+v, want one frame of 1,2", f)
+	}
+
+	// actionno swaps the animation; an action the stage does not declare is an
+	// error rather than a silent no-op.
+	if _, err := editorStageApplyValue(s, "BG 0", "actionno", "1", 0); err != nil {
+		t.Fatalf("BG 0/actionno: %v", err)
+	}
+	if s.bg[0]._type != BG_Anim || s.bg[0].actionno != 1 {
+		t.Errorf("actionno 1 gave type %v, action %d", s.bg[0]._type, s.bg[0].actionno)
+	}
+	if _, err := editorStageApplyValue(s, "BG 0", "actionno", "9", 0); err == nil {
+		t.Error("an action the stage does not declare was accepted")
+	}
+}
+
+func TestEditorStageApplySyncPaths(t *testing.T) {
+	oldStage, oldBase := sys.stage, sys.baseDir
+	dir := t.TempDir()
+	sys.baseDir = dir
+	defer func() { sys.stage, sys.baseDir = oldStage, oldBase }()
+	editorDrainEngineTasks(t)
+
+	if err := os.MkdirAll(filepath.Join(dir, "stages"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	def := filepath.Join(dir, "stages", "s.def")
+	if err := os.WriteFile(def, []byte("[Camera]\nboundleft = -125\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	sys.stage = &Stage{def: "stages/s.def"}
+
+	// A file that is not the loaded stage's .def stays a plain write: the save
+	// must not be advertised as reaching the engine.
+	if out, handled := editorStageApplySync(filepath.Join(dir, "stages", "other.def"),
+		"Camera", "boundleft", "-200", false, -1); handled {
+		t.Errorf("another stage was handled: %+v", out)
+	}
+
+	out, handled := editorStageApplySync(def, "Camera", "boundleft", "-200", false, -1)
+	if !handled {
+		t.Fatal("the loaded stage's .def was not recognised")
+	}
+	if !out.applied || out.err != nil || out.reason != "" {
+		t.Errorf("apply = %+v, want it applied without a reason", out)
+	}
+	if sys.stage.stageCamera.boundleft != -200 {
+		t.Errorf("boundleft = %d, want -200", sys.stage.stageCamera.boundleft)
+	}
+
+	// Removing a key cannot be reproduced by an assignment.
+	out, handled = editorStageApplySync(def, "Camera", "boundleft", "", true, -1)
+	if !handled || out.applied || out.reason == "" {
+		t.Errorf("a removal = %+v (handled %v), want a reload reason", out, handled)
+	}
+
+	// With no stage loaded nothing is the loaded stage.
+	sys.stage = nil
+	if _, handled := editorStageApplySync(def, "Camera", "boundleft", "-200", false, -1); handled {
+		t.Error("a stage was handled with no stage loaded")
+	}
+}
+
+func TestEditorStageApplyRefusedDuringNetplay(t *testing.T) {
+	oldStage, oldBase, oldReplay := sys.stage, sys.baseDir, sys.replayFile
+	dir := t.TempDir()
+	sys.baseDir = dir
+	sys.stage = &Stage{def: "stages/s.def"}
+	defer func() { sys.stage, sys.baseDir, sys.replayFile = oldStage, oldBase, oldReplay }()
+	editorDrainEngineTasks(t)
+
+	// The stage is rollback state, so a replay (or netplay) refuses the write.
+	sys.replayFile = &ReplayFile{}
+	out, handled := editorStageApplySync(filepath.Join(dir, "stages", "s.def"),
+		"Camera", "boundleft", "-200", false, -1)
+	if !handled {
+		t.Fatal("the loaded stage's .def was not recognised")
+	}
+	if out.applied {
+		t.Error("a stage edit applied during a replay")
+	}
+	if out.reason != "netplay or a replay is active" {
+		t.Errorf("reason = %q, want the netplay refusal", out.reason)
+	}
+}
+
+func TestEditorReloadStageEndpoint(t *testing.T) {
+	oldRunning, oldEnd, oldPost := sys.gameRunning, sys.fightLoopEnd, sys.postMatchFlg
+	oldNet, oldReplay, oldRollback := sys.netConnection, sys.replayFile, sys.rollback.session
+	oldLoader := sys.loader.state
+	oldFlg, oldStageFlg := sys.reloadFlg, sys.reloadStageFlg
+	defer func() {
+		sys.gameRunning, sys.fightLoopEnd, sys.postMatchFlg = oldRunning, oldEnd, oldPost
+		sys.netConnection, sys.replayFile, sys.rollback.session = oldNet, oldReplay, oldRollback
+		sys.loader.state = oldLoader
+		sys.reloadFlg, sys.reloadStageFlg = oldFlg, oldStageFlg
+	}()
+	editorDrainEngineTasks(t)
+
+	post := func() *httptest.ResponseRecorder {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/reloadstage", nil)
+		req.Header.Set("X-Editor-Request", "1")
+		editorHandleReloadStage(rr, req)
+		return rr
+	}
+
+	// The custom header is what keeps cross-site requests from restarting the
+	// match.
+	rr := httptest.NewRecorder()
+	editorHandleReloadStage(rr, httptest.NewRequest(http.MethodPost, "/api/reloadstage", nil))
+	if rr.Code != http.StatusForbidden {
+		t.Errorf("POST /api/reloadstage without X-Editor-Request = %d, want 403", rr.Code)
+	}
+
+	sys.gameRunning, sys.fightLoopEnd, sys.postMatchFlg = false, true, false
+	sys.replayFile = &ReplayFile{}
+	if rr := post(); rr.Code != http.StatusConflict {
+		t.Errorf("reload during a replay = %d, want 409", rr.Code)
+	}
+	sys.replayFile = nil
+
+	sys.loader.state = LS_Loading
+	if rr := post(); rr.Code != http.StatusConflict {
+		t.Errorf("reload while loading = %d, want 409", rr.Code)
+	}
+	sys.loader.state = LS_Complete
+
+	// A match is where the reload is worth having: it schedules the restart
+	// that makes the loader read the .def again.
+	sys.gameRunning, sys.fightLoopEnd, sys.postMatchFlg = true, false, false
+	if rr := post(); rr.Code != http.StatusOK {
+		t.Fatalf("reload during a match = %d: %s", rr.Code, rr.Body.String())
+	}
+	if !sys.reloadFlg || !sys.reloadStageFlg {
+		t.Error("the reload flags were not set, so the match would not restart")
+	}
+}
+
+func TestEditorStageReloadMarkup(t *testing.T) {
+	for _, want := range []string{
+		`id="stage-reload"`, `id="stage-use"`, `id="stage-loaded"`,
+		"'/api/reloadstage'", "function reloadStage()",
+		"function useLoadedStage()", "function refreshLoadedStage()",
+		"el('stage-reload').onclick = reloadStage;",
+		"el('stage-use').onclick = useLoadedStage;",
+	} {
+		if !strings.Contains(editorPageHTML, want) {
+			t.Errorf("the page is missing %v", want)
+		}
+	}
+	// A "[BG ...]" save has to carry the layer's position so the engine can
+	// address the runtime layer: the tree records it and the table sends it.
+	if !strings.Contains(editorPageHTML, "node.bgIndex = layerIndex;") {
+		t.Error("the layer nodes carry no index into the loaded stage")
+	}
+	if !strings.Contains(editorPageHTML, "index: (typeof index === 'number' ? index : -1)") {
+		t.Error("a save does not send the layer index")
+	}
+	// The reload toast names the view the table belongs to, so a stage save
+	// does not send the user to the motif reload.
+	if !strings.Contains(editorPageHTML, "reload the ' + which + ' to apply") {
+		t.Error("the reload toast is not view aware")
+	}
+}
+
+func TestEditorSaveStageAppliesLive(t *testing.T) {
+	oldStage, oldBase, oldCam, oldMotif := sys.stage, sys.baseDir, sys.cam, sys.motif
+	dir := t.TempDir()
+	sys.baseDir = dir
+	// An empty motif: the file being saved is the stage, not the motif.
+	sys.motif = Motif{}
+	sys.stage = &Stage{def: "stages/s.def"}
+	defer func() {
+		sys.stage, sys.baseDir, sys.cam, sys.motif = oldStage, oldBase, oldCam, oldMotif
+	}()
+	editorDrainEngineTasks(t)
+
+	if err := os.MkdirAll(filepath.Join(dir, "stages"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "stages", "s.def")
+	if err := os.WriteFile(path, []byte("[Camera]\nboundleft = -125\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	body := `{"path":"stages/s.def","section":"Camera","key":"boundleft","value":"-200","index":-1}`
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/save", strings.NewReader(body))
+	req.Header.Set("X-Editor-Request", "1")
+	editorHandleSave(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("POST /api/save = %d: %s", rr.Code, rr.Body.String())
+	}
+	var res struct {
+		Applied     bool   `json:"applied"`
+		NeedsReload bool   `json:"needsReload"`
+		Reason      string `json:"applyReason"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &res); err != nil {
+		t.Fatal(err)
+	}
+	if !res.Applied || res.NeedsReload {
+		t.Errorf("applied=%v needsReload=%v (%v), want a live apply", res.Applied, res.NeedsReload, res.Reason)
+	}
+	if sys.stage.stageCamera.boundleft != -200 {
+		t.Errorf("the running stage has boundleft %d, want -200", sys.stage.stageCamera.boundleft)
+	}
+	// The write lands first: the engine is never ahead of the file.
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "boundleft = -200") {
+		t.Errorf("the file was not written: %q", raw)
+	}
+}
+
+func TestEditorSaveStageNotLoadedStaysPlain(t *testing.T) {
+	oldStage, oldBase, oldMotif := sys.stage, sys.baseDir, sys.motif
+	dir := t.TempDir()
+	sys.baseDir = dir
+	sys.motif = Motif{}
+	sys.stage = &Stage{def: "stages/s.def"}
+	defer func() { sys.stage, sys.baseDir, sys.motif = oldStage, oldBase, oldMotif }()
+	editorDrainEngineTasks(t)
+
+	if err := os.MkdirAll(filepath.Join(dir, "chars"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "chars", "x.def"), []byte("[Info]\nname = A\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	body := `{"path":"chars/x.def","section":"Info","key":"name","value":"B","index":-1}`
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/save", strings.NewReader(body))
+	req.Header.Set("X-Editor-Request", "1")
+	editorHandleSave(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("POST /api/save = %d: %s", rr.Code, rr.Body.String())
+	}
+	var res struct {
+		Applied     bool   `json:"applied"`
+		NeedsReload bool   `json:"needsReload"`
+		Reason      string `json:"applyReason"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &res); err != nil {
+		t.Fatal(err)
+	}
+	if res.Applied || res.NeedsReload || res.Reason != "" {
+		t.Errorf("a file that is not the loaded stage reported applied=%v needsReload=%v (%v)",
+			res.Applied, res.NeedsReload, res.Reason)
+	}
+}
+
+func TestEditorStatusReportsLoadedStage(t *testing.T) {
+	oldStage := sys.stage
+	defer func() { sys.stage = oldStage }()
+	editorDrainEngineTasks(t)
+
+	status := func() (string, bool) {
+		t.Helper()
+		rr := httptest.NewRecorder()
+		editorHandleStatus(rr, httptest.NewRequest(http.MethodGet, "/api/status", nil))
+		var st struct {
+			Stage       string `json:"stage"`
+			StageLoaded bool   `json:"stageLoaded"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &st); err != nil {
+			t.Fatal(err)
+		}
+		return st.Stage, st.StageLoaded
+	}
+
+	sys.stage = &Stage{def: "stages/s.def"}
+	if stage, loaded := status(); stage != "stages/s.def" || !loaded {
+		t.Errorf("status reports stage=%q loaded=%v, want stages/s.def true", stage, loaded)
+	}
+	sys.stage = nil
+	if stage, loaded := status(); stage != "" || loaded {
+		t.Errorf("status reports stage=%q loaded=%v with no stage, want empty", stage, loaded)
+	}
+}
+
+// The live apply stores what loadStage's parse stores. [Bound] and [PlayerInfo]
+// are read *after* the localcoord ratio has already scaled the defaults
+// (src/stage.go:1168-1206), so the value written in the file is not scaled a
+// second time: writing the same key into the file and loading the stage has to
+// produce the value the live apply assigns.
+func TestEditorStageLiveApplyMatchesLoadStage(t *testing.T) {
+	oldCam := sys.cam
+	defer func() { sys.cam = oldCam }()
+
+	dir := t.TempDir()
+	write := func(name, text string) string {
+		t.Helper()
+		path := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(text), 0644); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	// A 640 wide localcoord: the ratio that would double a value is 2.
+	const base = "[StageInfo]\nlocalcoord = 640, 480\n"
+	const full = "[StageInfo]\nlocalcoord = 640, 480\nzoffset = 150\n" +
+		"\n[Bound]\nscreenleft = 20\nscreenright = 30\n" +
+		"\n[PlayerInfo]\nleftbound = -900\nrightbound = 900\np1startx = -100\np1facing = 0\n" +
+		"\n[Camera]\nboundleft = -125\n"
+	loaded, err := loadStage(write("stages/full.def", full), true)
+	if err != nil {
+		t.Fatalf("loading the stage with the keys: %v", err)
+	}
+	live, err := loadStage(write("stages/base.def", base), true)
+	if err != nil {
+		t.Fatalf("loading the stage without the keys: %v", err)
+	}
+	if live.screenleft != 30 || live.p[0].startx != -140 {
+		t.Fatalf("loadStage no longer scales the defaults (screenleft %d, p1startx %d): "+
+			"the live apply has to be revisited", live.screenleft, live.p[0].startx)
+	}
+
+	for _, k := range []struct{ section, key, value string }{
+		{"Bound", "screenleft", "20"},
+		{"Bound", "screenright", "30"},
+		{"PlayerInfo", "leftbound", "-900"},
+		{"PlayerInfo", "rightbound", "900"},
+		{"PlayerInfo", "p1startx", "-100"},
+		{"PlayerInfo", "p1facing", "0"},
+		{"Camera", "boundleft", "-125"},
+		{"StageInfo", "zoffset", "150"},
+	} {
+		if _, err := editorStageApplyValue(live, k.section, k.key, k.value, -1); err != nil {
+			t.Fatalf("%v.%v: %v", k.section, k.key, err)
+		}
+	}
+
+	if live.screenleft != loaded.screenleft || live.screenright != loaded.screenright {
+		t.Errorf("screen bounds = %d/%d, loadStage gives %d/%d",
+			live.screenleft, live.screenright, loaded.screenleft, loaded.screenright)
+	}
+	if live.leftbound != loaded.leftbound || live.rightbound != loaded.rightbound {
+		t.Errorf("player bounds = %v/%v, loadStage gives %v/%v",
+			live.leftbound, live.rightbound, loaded.leftbound, loaded.rightbound)
+	}
+	if live.p[0].startx != loaded.p[0].startx || live.p[0].facing != loaded.p[0].facing {
+		t.Errorf("p1 spawn = %d/%d, loadStage gives %d/%d",
+			live.p[0].startx, live.p[0].facing, loaded.p[0].startx, loaded.p[0].facing)
+	}
+	if live.stageCamera.boundleft != loaded.stageCamera.boundleft {
+		t.Errorf("camera boundleft = %d, loadStage gives %d",
+			live.stageCamera.boundleft, loaded.stageCamera.boundleft)
+	}
+	if live.stageCamera.zoffset != loaded.stageCamera.zoffset {
+		t.Errorf("zoffset = %d, loadStage gives %d",
+			live.stageCamera.zoffset, loaded.stageCamera.zoffset)
+	}
+	// The file value, not the ratio scaled one: 20 stays 20 on a 640 stage.
+	if loaded.screenleft != 20 || loaded.p[0].startx != -100 {
+		t.Fatalf("loadStage scaled a [Bound] / [PlayerInfo] file value (%d, %d)",
+			loaded.screenleft, loaded.p[0].startx)
 	}
 }

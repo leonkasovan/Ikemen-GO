@@ -2,6 +2,11 @@
 
 Local-only web editor for motif / stage / character definitions.
 Starts at boot with `-httpservice` or on demand from the title `Editor` menu (`external/script/main.lua` `main.f_editor`).
+The `EDITOR → STAGE` entry runs the community Stage Viewer mode when its module
+is installed (`external/mods/stageviewer/`), so the in-engine stage select is the
+picker and the viewer match is the viewport: the stage it loads is the `.def`
+the Stage view edits, and edits to it reach the running engine without a restart
+(see *Live apply (stage .def)* below).
 Listens on `127.0.0.1:6700`. Writes require the `X-Editor-Request` header
 and are jailed to the game folder (`editorSandboxPath`). The built-in window lives
 on Windows (`src/editor_webview_windows.go`, `github.com/jchv/go-webview2`,
@@ -18,7 +23,9 @@ the window; `closeEditor()` destroys the window when one is open).
 ## API
 
 - `GET /` — single-page UI (Motif / Stage / Character tabs).
-- `GET /api/status` — version, port, motif, select.def, webview state, and the two refresh endpoints.
+- `GET /api/status` — version, port, motif, select.def, webview state, the two
+  refresh endpoints, and the stage the engine has loaded (`stage`, `stageLoaded`:
+  the `.def` path a stage save would reach, empty when none is loaded).
 - `GET /api/motif` — motif broken down structurally: every section expanded
   with dotted keys from the `Motif` struct (`src/motif.go`, type + `default`
   tag), current value, defined / missing / unknown state; `<name>BGdef`
@@ -42,8 +49,11 @@ alone. Every key table has a filter box above it that narrows the visible rows
 - `GET /api/sff?file=…&group=…&number=…` — one sprite as PNG (private
   `loadSffEx` decode with `keepPixels`, cached; the loaded SFF is kept in a
   small LRU cache keyed by path and validated by mtime / size).
-- `POST /api/save` — `{path, section, key, value, remove}`; line-based edit
-  preserving order, comments, indentation, and inline-comment spacing.
+- `POST /api/save` — `{path, section, key, value, remove, index}`; line-based
+  edit preserving order, comments, indentation, and inline-comment spacing.
+  `index` is the position of a `[BG ...]` layer section in the file (the
+  position of the layer in the loaded stage's `s.bg`), `-1` for every other
+  section: it is what lets a stage layer edit reach the right runtime layer.
 - `POST /api/save-req` — same as `/api/save` but the service also runs the
   interpreter bootstrap Lua; for external tooling only.
 - `GET /api/pins`, `POST /api/pins` — pinned keys. Every key table leads
@@ -70,6 +80,20 @@ alone. Every key table has a filter box above it that narrows the visible rows
   from boot: the select screen's cell grid (`start.f_updateGrid`) and the menus
   (`main.f_rebuildMenus`: `main.menu`, the pause menus, the options menu, and
   the attract-vs-title group choice). See *Load-time Lua captures* below.
+- `POST /api/reloadstage` — re-read the loaded stage's `.def` from disk into the
+  running engine, for the stage keys that are only read when the stage loads
+  (`[BGdef]`, `[Info]`, `[Music]`, `[BG ...]` controllers, `localcoord`, a
+  removed key). Unlike the motif reload it **works during a match**: it sets
+  `sys.reloadFlg` + `sys.reloadStageFlg` on the engine thread, which the match
+  loop consumes by restarting the match (`winp = -2`), dropping `sys.stage` and
+  letting `Loader.loadStage` parse the file again. No character slot is marked
+  for reload, so the loader keeps the resident characters (`Same char kept`)
+  rather than re-parsing their defs — the stage is what is rebuilt. Requires the
+  `X-Editor-Request` header; refused with `409` during netplay / a replay or
+  while assets are loading. The Stage view has a `Reload stage in engine` button
+  for it; it is never run automatically by a save (a match restart behind the
+  user's back would be hostile), so a structural stage save only reports "saved,
+  reload the stage to apply".
 
 Enumerated keys render as combo boxes (`trans`, `projection`, `textwrap`,
 `banktype`, `space`, `savedata`, `scalemode`, `scalefilter`, font `type`,
@@ -118,7 +142,7 @@ comments, and line endings.
 
 ---
 
-## Live apply (motif only)
+## Live apply (motif)
 
 A Motif-view save writes the file first, then brings the in-memory motif in
 line (`SetValueUpdate` / `updateINIFile`) so a later `Motif.Save` cannot
@@ -169,6 +193,92 @@ Four modes, decided by walking the key to the struct that declares it
 
 Measured on the bundled motif: 1205 assigned, 2427 refreshed, 5816
 reload-only.
+
+---
+
+## Live apply (stage .def)
+
+The same order as a motif save — the file is written first, unconditionally —
+and then a second live apply runs when the saved file is the `.def` of the stage
+the engine has loaded (`sys.stage`, compared case-insensitively after
+`editorSandboxPath`, `editorStageApplySync`). Anything else is a plain write, so
+a character `.def`, or a stage that is not the loaded one, changes nothing in
+the engine beyond the file.
+
+Two modes only (`editorStageKeyMode`), because a stage has no load-time
+snapshots to refill:
+
+| Mode | Meaning | Keys |
+| --- | --- | --- |
+| assigned | the field is read by the draw path every frame, and the engine itself assigns it at runtime (`modifyStageVar` / `modifyStageBG`) or while parsing (`loadStage`) | the tables below |
+| reload | read when the stage loads | everything else: `[BGdef]`, `[Info]`, `[Music]`, `localcoord`, `[BG ...]` controllers and structural layer keys (`type`, `path`, `tile`, `positionlink`, …), any key removal |
+
+Sections and keys applied live (`editorStageLiveKeys`, one case per entry in
+`editorStageApplyValue`):
+
+| Section | Keys |
+| --- | --- |
+| `[StageInfo]` | `zoffset`, `zoffsetlink`, `autoturn`, `resetbg`, `xscale`, `yscale` |
+| `[Bound]` | `screenleft`, `screenright` |
+| `[PlayerInfo]` | `leftbound`, `rightbound`, `topbound`, `botbound`, `p1startx`/`p1starty`/`p1startz`/`p1facing`, `p2startx`/`p2starty`/`p2startz`/`p2facing` |
+| `[Camera]` | `boundleft`, `boundright`, `boundhigh`, `boundlow`, `floortension`, `tension`, `tensionhigh`, `tensionlow`, `cuthigh`, `cutlow`, `verticalfollow`, `tensionvel`, `startzoom`, `zoomin`, `zoomout`, `zoomindelay`, `zoominspeed`, `zoomoutspeed`, `yscrollspeed`, `autocenter`, `lowestcap` |
+| `[Shadow]` / `[Reflection]` | `intensity`, `color` (+ `layerno` for the reflection), `xscale`, `yscale`, `xshear`, `angle`, `xangle`, `yangle`, `focallength`, `ydelta`, `fade.range`, `offset`, `window`, `projection` |
+| `[BG ...]` | `start`, `delta`, `layerno`, `xshear`, `angle`, `xangle`, `yangle`, `focallength`, `projection`, `scalestart`, `scaledelta`, `velocity`, `mask`, `spriteno`, `actionno`, `trans`, `alpha` |
+
+The assignment is the loader's own: `editorStageApplyValue` builds the
+`IniSection` the parser would see (the trimmed value under the file's key) and
+calls the same `ReadI32` / `ReadF32` / `ReadBool` / `readI32ForStage` /
+`readF32ForStage` helpers `loadStage` and `readBackGround` call, so the running
+stage ends up in the state a reload would produce. The consequences worth
+knowing:
+
+- **`[Bound]` and `[PlayerInfo]` values are stored raw.** `loadStage` reads
+  them *after* the localcoord ratio has already scaled the 320-based defaults
+  (`src/stage.go`), so a 640-wide stage keeps `screenleft = 20` as `20`, not
+  `40`. Scaling them in the live apply would make the ground shift on the next
+  reload. `TestEditorStageLiveApplyMatchesLoadStage` pins the equivalence.
+- **`[StageInfo]` `xscale` / `yscale` are doubled on a hires stage**, like
+  `loadStage` does for an explicit value.
+- **Camera keys refresh the running camera** (`sys.cam.stageCamera =
+  s.stageCamera; sys.cam.Reset()`), copied from `modifyStageVar`; that is what
+  makes the edit visible on the next frame. `[Camera] tensionlow` also sets
+  `ytensionenable`, mirroring `loadStage`.
+- **`[PlayerInfo]` start / facing keys warn**: they are consumed when the next
+  round spawns the characters, so the save answers `applyWarning` "the new start
+  position applies from the next round".
+- **`[Shadow] color` is forced black on a Mugen 1.1 stage**
+  (`ikemenver == 0`, `mugenver == 1.1`), and both colours are clamped per
+  channel, exactly as the loader reads them.
+- **`[BG ...]` keys need the layer's index** (`index` in the save request,
+  `bgIndex` on the tree node): the JS counts the sections whose header starts
+  with the `bg` token, in file order, which is the order `loadStage` collects
+  `s.bg` in. A layer the engine does not collect (`[BG0]`, no space) gets `-1`
+  and its saves ask for a reload instead of touching the wrong layer.
+- **`actionno`** swaps the animation (`bg.changeAnim`) and reports an error when
+  the stage has no such action; `spriteno` and `alpha` warn when they do not
+  apply to the layer's type / blend; `velocity` writes both `startv` (what
+  `backGround.reset` restores) and `bga.vel` (what moves the layer this round).
+
+A save to a reload-only stage key reports `needsReload` with the reason and does
+**not** run anything: the `Reload stage in engine` button (`POST
+/api/reloadstage`) restarts the match against the freshly parsed file. The
+automatic reload of a motif save is gated on the saved file *being* the motif,
+so a stage save never triggers it.
+
+**Gates.** `editorStageBlocked` refuses netplay and replays (the stage is
+rollback state — `state.go` clones `stageList` and the per-stage runtime state)
+and a running asset load; a match is explicitly allowed, because editing the
+stage during a match is the point.
+
+**Title menu.** `EDITOR → STAGE` (`main.t_itemname['editorstage']` in
+`external/script/main.lua`) runs `main.t_itemname.stageviewer()` — defined by the
+community Stage Viewer module, autoloaded from `external/mods/**/*.lua` — when
+it is installed, opens the editor on `?view=stage`, and then continues into the
+mode's select screen, which is the in-engine stage picker. Without the module
+the entry only opens the editor, as before. The Stage view's `Use stage loaded
+in engine` action selects the `.def` `/api/status` reports (full path first,
+file name as fallback), so the stage picked in the game is the one being
+edited.
 
 ---
 
